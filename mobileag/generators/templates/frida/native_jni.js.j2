@@ -1,0 +1,128 @@
+// Frida Native JNI Hook for {{ package_name }}
+// Finding: {{ title }}
+// CWE: {{ cwe }}
+// Target: {{ class_name }}
+//
+// Run: frida -U -f {{ package_name }} -l this_script.js --no-pause
+// Requires: Rooted device with frida-server running
+
+Java.perform(function() {
+    console.log("[*] Native JNI Hook — {{ package_name }}");
+
+    // --- Enumerate loaded native libraries ---
+    Process.enumerateModules({
+        onMatch: function(module) {
+            if (module.name.indexOf("lib") === 0 && module.name.indexOf(".so") !== -1) {
+                console.log("[*] Native library: " + module.name + " @ " + module.base);
+            }
+        },
+        onComplete: function() {}
+    });
+
+    // --- Hook JNI RegisterNatives to find dynamically registered methods ---
+    try {
+        var RegisterNatives = Module.findExportByName(null, "RegisterNatives");
+        if (RegisterNatives) {
+            Interceptor.attach(RegisterNatives, {
+                onEnter: function(args) {
+                    var env = args[0];
+                    var clazz = args[1];
+                    var methods = args[2];
+                    var count = args[3].toInt32();
+                    console.log("\n[+] RegisterNatives called");
+                    console.log("    Class: " + Java.vm.tryGetEnv().getClassName(clazz));
+                    console.log("    Method count: " + count);
+                }
+            });
+            console.log("[*] RegisterNatives hooked");
+        }
+    } catch(e) {
+        console.log("[-] RegisterNatives hook failed: " + e);
+    }
+
+    // --- Hook System.loadLibrary ---
+    try {
+        var System = Java.use("java.lang.System");
+        System.loadLibrary.implementation = function(libName) {
+            console.log("[+] System.loadLibrary(\"" + libName + "\")");
+            this.loadLibrary(libName);
+
+            // After loading, enumerate exports
+            setTimeout(function() {
+                try {
+                    var mod = Process.findModuleByName("lib" + libName + ".so");
+                    if (mod) {
+                        console.log("[*] Exports in lib" + libName + ".so:");
+                        mod.enumerateExports().forEach(function(exp) {
+                            if (exp.name.indexOf("Java_") === 0 || exp.name.indexOf("JNI_") === 0) {
+                                console.log("    " + exp.type + " " + exp.name + " @ " + exp.address);
+                            }
+                        });
+                    }
+                } catch(e) {}
+            }, 500);
+        };
+        console.log("[*] System.loadLibrary hooked");
+    } catch(e) {
+        console.log("[-] System.loadLibrary hook failed: " + e);
+    }
+
+    {% if class_name %}
+    // --- Hook native methods of target class ---
+    try {
+        var targetClass = Java.use("{{ class_name }}");
+        var methods = targetClass.class.getDeclaredMethods();
+
+        methods.forEach(function(method) {
+            var modifiers = method.getModifiers();
+            var isNative = (modifiers & 0x100) !== 0;  // Modifier.NATIVE
+
+            if (isNative) {
+                var methodName = method.getName();
+                console.log("[*] Found native method: " + methodName);
+
+                try {
+                    targetClass[methodName].overloads.forEach(function(overload) {
+                        overload.implementation = function() {
+                            console.log("\n[+] Native call: {{ class_name }}." + methodName + "()");
+                            for (var i = 0; i < arguments.length; i++) {
+                                try {
+                                    console.log("    arg[" + i + "] = " + JSON.stringify(arguments[i]));
+                                } catch(e) {
+                                    console.log("    arg[" + i + "] = " + arguments[i]);
+                                }
+                            }
+                            var ret = this[methodName].apply(this, arguments);
+                            console.log("    return = " + ret);
+                            return ret;
+                        };
+                    });
+                } catch(e) {
+                    console.log("[-] Could not hook " + methodName + ": " + e);
+                }
+            }
+        });
+    } catch(e) {
+        console.log("[-] Target class hook failed: " + e);
+    }
+    {% endif %}
+
+    // --- Hook unsafe C functions in all loaded .so files ---
+    var unsafeFunctions = ["strcpy", "strcat", "sprintf", "gets", "scanf"];
+    unsafeFunctions.forEach(function(funcName) {
+        try {
+            var addr = Module.findExportByName(null, funcName);
+            if (addr) {
+                Interceptor.attach(addr, {
+                    onEnter: function(args) {
+                        console.log("[!] Unsafe call: " + funcName + "()");
+                        console.log("    From: " + Thread.backtrace(this.context, Backtracer.ACCURATE)
+                            .map(DebugSymbol.fromAddress).join("\n    "));
+                    }
+                });
+            }
+        } catch(e) {}
+    });
+
+    console.log("[+] Native JNI hooks installed");
+});

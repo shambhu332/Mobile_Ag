@@ -1,0 +1,127 @@
+// Frida String Decryption Hook for {{ package_name }}
+// Finding: {{ title }}
+// CWE: {{ cwe }}
+// Target: {{ class_name }}
+//
+// Run: frida -U -f {{ package_name }} -l this_script.js --no-pause
+// Requires: Rooted device with frida-server running
+//
+// This script hooks common string decryption and crypto methods
+// to capture decrypted values at runtime.
+
+Java.perform(function() {
+    console.log("[*] String Decryption Hook — {{ package_name }}");
+
+    // --- Hook javax.crypto.Cipher ---
+    try {
+        var Cipher = Java.use("javax.crypto.Cipher");
+
+        Cipher.doFinal.overload("[B").implementation = function(input) {
+            var result = this.doFinal(input);
+            var algorithm = this.getAlgorithm();
+            console.log("\n[+] Cipher.doFinal()");
+            console.log("    Algorithm: " + algorithm);
+            console.log("    Input  (" + input.length + " bytes): " + bytesToHex(input));
+            console.log("    Output (" + result.length + " bytes): " + bytesToHex(result));
+
+            try {
+                var inputStr = Java.use("java.lang.String").$new(input, "UTF-8");
+                var outputStr = Java.use("java.lang.String").$new(result, "UTF-8");
+                console.log("    Input  (text): " + inputStr);
+                console.log("    Output (text): " + outputStr);
+            } catch(e) {}
+
+            return result;
+        };
+        console.log("[*] Cipher.doFinal hooked");
+    } catch(e) {
+        console.log("[-] Cipher hook failed: " + e);
+    }
+
+    // --- Hook SecretKeySpec (captures encryption keys) ---
+    try {
+        var SecretKeySpec = Java.use("javax.crypto.spec.SecretKeySpec");
+
+        SecretKeySpec.$init.overload("[B", "java.lang.String").implementation = function(keyBytes, algorithm) {
+            console.log("\n[+] SecretKeySpec created");
+            console.log("    Algorithm: " + algorithm);
+            console.log("    Key (" + keyBytes.length + " bytes): " + bytesToHex(keyBytes));
+            try {
+                console.log("    Key (text): " + Java.use("java.lang.String").$new(keyBytes, "UTF-8"));
+            } catch(e) {}
+            return this.$init(keyBytes, algorithm);
+        };
+        console.log("[*] SecretKeySpec hooked");
+    } catch(e) {
+        console.log("[-] SecretKeySpec hook failed: " + e);
+    }
+
+    // --- Hook IvParameterSpec (captures IVs) ---
+    try {
+        var IvParameterSpec = Java.use("javax.crypto.spec.IvParameterSpec");
+
+        IvParameterSpec.$init.overload("[B").implementation = function(iv) {
+            console.log("\n[+] IvParameterSpec created");
+            console.log("    IV (" + iv.length + " bytes): " + bytesToHex(iv));
+            return this.$init(iv);
+        };
+        console.log("[*] IvParameterSpec hooked");
+    } catch(e) {
+        console.log("[-] IvParameterSpec hook failed: " + e);
+    }
+
+    // --- Hook Base64 decode (common in string decryption) ---
+    try {
+        var Base64 = Java.use("android.util.Base64");
+
+        Base64.decode.overload("java.lang.String", "int").implementation = function(str, flags) {
+            var result = this.decode(str, flags);
+            console.log("\n[+] Base64.decode()");
+            console.log("    Input:  " + str.substring(0, Math.min(str.length, 100)));
+            try {
+                console.log("    Output: " + Java.use("java.lang.String").$new(result, "UTF-8").substring(0, 100));
+            } catch(e) {}
+            return result;
+        };
+        console.log("[*] Base64.decode hooked");
+    } catch(e) {
+        console.log("[-] Base64 hook failed: " + e);
+    }
+
+    {% if class_name %}
+    // --- Hook target class string methods ---
+    try {
+        var target = Java.use("{{ class_name }}");
+        var methods = target.class.getDeclaredMethods();
+        methods.forEach(function(method) {
+            var name = method.getName();
+            var returnType = method.getReturnType().getName();
+            if (returnType === "java.lang.String" || returnType === "[B") {
+                try {
+                    target[name].overloads.forEach(function(overload) {
+                        overload.implementation = function() {
+                            var retVal = this[name].apply(this, arguments);
+                            console.log("[+] {{ class_name }}." + name + "() = " + retVal);
+                            return retVal;
+                        };
+                    });
+                } catch(e) {}
+            }
+        });
+        console.log("[*] Target class methods hooked");
+    } catch(e) {
+        console.log("[-] Target class hook failed: " + e);
+    }
+    {% endif %}
+
+    // --- Helper: bytes to hex string ---
+    function bytesToHex(bytes) {
+        var hex = [];
+        for (var i = 0; i < bytes.length; i++) {
+            hex.push(("0" + (bytes[i] & 0xFF).toString(16)).slice(-2));
+        }
+        return hex.join("");
+    }
+
+    console.log("[+] String decryption hooks installed");
+});

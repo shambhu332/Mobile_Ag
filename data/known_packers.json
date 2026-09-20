@@ -1,0 +1,18 @@
+[
+  {
+    "packer_name": "Jiagu / 360",
+    "signatures": ["libjiagu.so", "libjiagu_a64.so", "com.stub.StubApp"]
+  },
+  {
+    "packer_name": "Tencent / Legu",
+    "signatures": ["libtxsplash.so", "libshell.so", "com.tencent.StubShell"]
+  },
+  {
+    "packer_name": "Bangcle / Secneo",
+    "signatures": ["libsecexe.so", "libsecmain.so", "com.secneo.apkwrapper.ApplicationWrapper"]
+  },
+  {
+    "packer_name": "DexProtector",
+    "signatures": ["libdexprotector.so", "dexprotector.Env"]
+  }
+]

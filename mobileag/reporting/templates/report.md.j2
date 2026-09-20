@@ -1,0 +1,67 @@
+# MobileAg Security Analysis Report
+**Target Package:** `{{ app_info.package_name }}`
+**Date:** {{ date }}
+**Scan ID:** `{{ scan_id }}`
+
+## 1. Application Profile
+| Metric | Value |
+|---|---|
+| Framework | {{ app_info.framework }} |
+| Obfuscation | {{ app_info.obfuscation_level }} |
+
+## 2. Executive Summary
+The security analysis identified **{{ stats.total }}** confirmed vulnerabilities:
+- 🔴 **CRITICAL:** {{ stats.critical }}
+- 🟠 **HIGH:** {{ stats.high }}
+- 🟡 **MEDIUM:** {{ stats.medium }}
+- 🔵 **LOW:** {{ stats.low }}
+- ⚪ **INFO:** {{ stats.info }}
+
+{% if errors %}
+### Warnings during scan
+{% for err in errors %}
+- {{ err }}
+{% endfor %}
+{% endif %}
+
+---
+
+## 3. Confirmed Vulnerabilities
+
+{% for finding in findings %}
+### {{ loop.index }}. {{ finding.title }}
+**Severity:** {{ finding.severity }} | **CVSS 3.1:** {{ finding.cvss_score }} | **Confidence:** {{ finding.confidence|default('N/A') }}
+
+**CWE:** {{ finding.cwe_id }}
+**Component:** `{{ finding.affected_component }}`
+{% if finding.file_path %}**Location:** `{{ finding.file_path }}`{% if finding.line_number %}:{{ finding.line_number }}{% endif %}{% endif %}
+
+#### Description
+{{ finding.description }}
+
+#### Code Evidence
+```java
+{{ finding.code_snippet }}
+```
+
+#### Remediation
+{{ finding.remediation }}
+
+{% if finding.frida_script or finding.poc_guide %}
+*Note: A reproduction guide or Frida script has been generated for this finding in the output directory.*
+{% endif %}
+
+---
+{% endfor %}
+
+{% if api_endpoints %}
+## 4. Extracted API Endpoints
+The following API endpoints were discovered in the application:
+
+| Method | Endpoint | Authenticated |
+|---|---|---|
+{% for ep in api_endpoints %}
+| {{ ep.method|default('ANY') }} | `{{ ep.url }}` | {{ 'Yes' if ep.requires_auth else 'No' }} |
+{% endfor %}
+
+{% endif %}

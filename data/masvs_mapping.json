@@ -1,0 +1,9 @@
+{
+  "MASVS-STORAGE-1": "The app does not write sensitive data to local storage unless necessary.",
+  "MASVS-STORAGE-2": "Sensitive data is encrypted at rest.",
+  "MASVS-CRYPTO-1": "The app uses cryptography according to industry best practices.",
+  "MASVS-AUTH-1": "The app uses secure authentication mechanisms.",
+  "MASVS-NETWORK-1": "Data is encrypted on the network.",
+  "MASVS-PLATFORM-1": "IPC mechanisms are secure.",
+  "MASVS-PLATFORM-2": "App permissions are minimal."
+}

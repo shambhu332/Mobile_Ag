@@ -1,0 +1,23 @@
+{
+  "CWE-22": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')",
+  "CWE-78": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+  "CWE-89": "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+  "CWE-200": "Exposure of Sensitive Information to an Unauthorized Actor",
+  "CWE-285": "Improper Authorization",
+  "CWE-306": "Missing Authentication for Critical Function",
+  "CWE-311": "Missing Encryption of Sensitive Data",
+  "CWE-319": "Cleartext Transmission of Sensitive Information",
+  "CWE-321": "Use of Hard-coded Cryptographic Key",
+  "CWE-327": "Use of a Broken or Risky Cryptographic Algorithm",
+  "CWE-489": "Active Debug Code",
+  "CWE-530": "Exposure of Backup File to an Unauthorized Control Sphere",
+  "CWE-532": "Insertion of Sensitive Information into Log File",
+  "CWE-601": "URL Redirection to Untrusted Site ('Open Redirect')",
+  "CWE-732": "Incorrect Permission Assignment for Critical Resource",
+  "CWE-749": "Exposed Dangerous Method or Function",
+  "CWE-798": "Use of Hard-coded Credentials",
+  "CWE-922": "Insecure Storage of Sensitive Information",
+  "CWE-925": "Improper Verification of Intent by Broadcast Receiver",
+  "CWE-926": "Improper Export of Android Application Components",
+  "CWE-927": "Use of Implicit Intent for Sensitive Communication"
+}

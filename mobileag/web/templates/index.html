@@ -82,6 +82,12 @@
           <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
         </button>
 
+        <button onclick="switchView('taint')" id="nav-taint" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="git-merge" class="w-4 h-4 text-emerald-400"></i>
+          <span>Taint Dataflow</span>
+          <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
+        </button>
+
         <button onclick="switchView('findings')" id="nav-findings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="alert-octagon" class="w-4 h-4"></i>
           <span>Findings & Triage</span>
@@ -572,6 +578,9 @@
                   <button onclick="dispatchDastDeeplink()" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Dispatch Intent VIEW">
                     <i data-lucide="external-link" class="w-3.5 h-3.5 text-sky-400"></i>
                   </button>
+                  <button onclick="auditDastDeepLinks()" class="px-2.5 py-1.5 bg-sky-900/50 hover:bg-sky-800 border border-sky-700/60 rounded-lg text-sky-300 text-[11px] font-mono flex items-center gap-1" title="Run Deep Link Matrix Fuzzing (OAuth, Traversal, UXSS)">
+                    <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Fuzz Matrix
+                  </button>
                 </div>
               </div>
               <div>
@@ -593,22 +602,150 @@
                 </div>
               </div>
               <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Volatile RAM Forensics (CWE-316)</label>
+                <button onclick="auditDastMemory()" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
+                  <i data-lucide="cpu" class="w-3.5 h-3.5 text-yellow-400"></i> Audit Process RAM Secrets
+                </button>
+              </div>
+              <div>
                 <label class="block text-slate-400 text-[11px] mb-1">Sandbox Storage Forensics</label>
-                <button onclick="auditDastStorage()" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs">
-                  <i data-lucide="folder-search" class="w-3.5 h-3.5 text-pink-400"></i> Audit Sandbox Storage (Prefs & DBs)
+                <button onclick="auditDastStorage()" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
+                  <i data-lucide="folder-search" class="w-3.5 h-3.5 text-pink-400"></i> Audit Sandbox (Prefs & DBs)
+                </button>
+              </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Autonomous UI Exploration</label>
+                <button onclick="crawlDastUI()" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
+                  <i data-lucide="bot" class="w-3.5 h-3.5 text-cyan-400"></i> Run UIAutomator Crawl (5 steps)
                 </button>
               </div>
             </div>
 
-            <!-- Suite Launch Trigger -->
-            <div class="pt-2 flex items-center justify-between border-t border-borderSubtle">
-              <span id="dast-fuzz-status" class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready for dynamic assessment
+            <!-- Suite Launch Trigger & Configuration Toggles -->
+            <div class="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-borderSubtle">
+              <div class="flex items-center gap-3 text-[11px] font-mono text-slate-300">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" id="dast-opt-storage" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+                  <span>Storage</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" id="dast-opt-memory" checked class="rounded bg-slate-800 border-borderSubtle text-yellow-500" />
+                  <span>RAM (CWE-316)</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" id="dast-opt-crawl" class="rounded bg-slate-800 border-borderSubtle text-cyan-500" />
+                  <span>UI Crawl</span>
+                </label>
+              </div>
+              <div class="flex items-center gap-3">
+                <span id="dast-fuzz-status" class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready
+                </span>
+                <button onclick="runDastFuzzSuite()" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
+                  <i data-lucide="play-circle" class="w-4 h-4"></i> Run Full DAST Assessment Suite
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 1.5: Frida Dynamic Runtime Instrumentation Card -->
+        <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-borderSubtle pb-2.5">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                <i data-lucide="syringe" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-semibold text-white uppercase tracking-wider">Frida Dynamic Instrumentation & Runtime Hooks</h4>
+                <p class="text-[10px] font-mono text-slate-400">Deploy live JavaScript hooks into running Android processes for cryptographic inspection, SSL unpinning, and root cloaking.</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="frida-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/60 border border-purple-800 text-purple-300 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> frida-server Ready
               </span>
-              <button onclick="runDastFuzzSuite()" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
-                <i data-lucide="play-circle" class="w-4 h-4"></i> Run Full DAST Assessment Suite
+              <button onclick="checkFridaServerStatus()" class="px-2.5 py-1 bg-card hover:bg-slate-700 border border-borderSubtle rounded text-slate-300 text-[11px] font-mono flex items-center gap-1">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i> Check Status
               </button>
             </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+            <!-- Preset 1: SSL Unpinning -->
+            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
+                    <i data-lucide="shield-off" class="w-3.5 h-3.5 text-amber-400"></i> Universal SSL Unpinning
+                  </span>
+                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800">CWE-295</span>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Hooks X509TrustManager, OkHttp3 CertificatePinner, and WebViewClient onReceivedSslError.</p>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="deployFridaScript('unpinning')" class="flex-1 py-1.5 rounded bg-purple-700 hover:bg-purple-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Deploy Hook
+                </button>
+                <button onclick="previewFridaScript('unpinning')" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
+                  <i data-lucide="code" class="w-3 h-3"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Preset 2: Crypto Telemetry -->
+            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
+                    <i data-lucide="key" class="w-3.5 h-3.5 text-sky-400"></i> Crypto & Cipher Monitor
+                  </span>
+                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800">CWE-327</span>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Intercepts `javax.crypto.Cipher.init` to stream live algorithms, ECB modes, and static IVs.</p>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="deployFridaScript('crypto')" class="flex-1 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Deploy Hook
+                </button>
+                <button onclick="previewFridaScript('crypto')" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
+                  <i data-lucide="code" class="w-3 h-3"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Preset 3: Root Bypass -->
+            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
+                    <i data-lucide="eye-off" class="w-3.5 h-3.5 text-emerald-400"></i> Anti-Root & Cloak Bypass
+                  </span>
+                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Root-Cloak</span>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Hooks `File.exists` and cloaks root binaries (`su`, `busybox`, `Magisk`) from target detection.</p>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="deployFridaScript('root_bypass')" class="flex-1 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3 h-3"></i> Deploy Hook
+                </button>
+                <button onclick="previewFridaScript('root_bypass')" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
+                  <i data-lucide="code" class="w-3 h-3"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Frida Hook Script Modal/Drawer -->
+          <div id="frida-script-preview-panel" class="hidden bg-black/90 border border-borderSubtle rounded-lg p-3 text-xs font-mono">
+            <div class="flex items-center justify-between pb-2 border-b border-borderSubtle mb-2">
+              <span id="frida-preview-title" class="text-slate-300 font-semibold">// Frida Hook Script Preview</span>
+              <div class="flex items-center gap-2">
+                <button onclick="copyFridaScript()" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 text-slate-300 text-[10px]">Copy</button>
+                <button onclick="document.getElementById('frida-script-preview-panel').classList.add('hidden')" class="text-slate-400 hover:text-white">✕</button>
+              </div>
+            </div>
+            <pre id="frida-script-code" class="text-emerald-400 max-h-48 overflow-y-auto leading-relaxed"></pre>
           </div>
         </div>
 
@@ -682,6 +819,100 @@
             <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
               <i data-lucide="shield" class="w-6 h-6 mx-auto mb-2 text-slate-600"></i>
               No dynamic runtime vulnerabilities recorded yet. Launch intent fuzzing to discover unhandled crashes or token leaks.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- VIEW: STATIC TAINT & DATAFLOW STUDIO -->
+      <!-- =================================================================== -->
+      <div id="view-taint" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">
+        
+        <!-- Header & Quick Preset Bar -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <i data-lucide="git-merge" class="w-4 h-4"></i>
+              </div>
+              <h3 class="text-sm font-semibold text-white">Inter-Procedural Static Taint & Dataflow Engine</h3>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400">
+                Source-to-Sink Tracking
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Traces untrusted user inputs (Intent extras, deep links, query parameters) through variable propagation into critical sinks (WebViews, SQLite, IPC launchers, file ops, system commands).</p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <select id="taint-sample-selector" onchange="loadSelectedTaintSample()" class="bg-card border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-mono">
+              <option value="uxss">Preset 1: WebView UXSS (CWE-749)</option>
+              <option value="sqli">Preset 2: SQL Injection (CWE-89)</option>
+              <option value="redirect">Preset 3: Intent Redirection (CWE-927)</option>
+              <option value="traversal">Preset 4: Path Traversal (CWE-22)</option>
+              <option value="command">Preset 5: Command Injection (CWE-78)</option>
+              <option value="clear">Clear Editor</option>
+            </select>
+            <button onclick="runTaintAnalysis()" id="btn-run-taint" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i> Analyze Dataflow
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Workspace: Code Editor (Left) & Propagation Analysis (Right) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1">
+          
+          <!-- Code Input Panel (6 cols) -->
+          <div class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="code-2" class="w-4 h-4 text-sky-400"></i>
+                <h4 class="text-xs font-semibold text-white uppercase tracking-wider">Java / Kotlin Source Code</h4>
+              </div>
+              <input type="text" id="taint-file-path" value="VulnerableActivity.java" class="bg-card border border-borderSubtle rounded px-2 py-0.5 text-[11px] font-mono text-slate-300 w-48" placeholder="Filename.java" />
+            </div>
+
+            <div class="flex-1 min-h-[440px] flex flex-col">
+              <textarea id="taint-source-input" spellcheck="false" class="w-full flex-1 bg-black/80 border border-borderSubtle rounded-lg p-3 font-mono text-xs text-slate-200 focus:outline-none focus:border-emerald-500 leading-relaxed resize-none" placeholder="// Paste Java or Kotlin source code here..."></textarea>
+            </div>
+            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1">
+              <span>Lines: <span id="taint-line-count">0</span></span>
+              <span>Sinks: WebView, SQLite, IPC, Files, Command</span>
+            </div>
+          </div>
+
+          <!-- Taint Findings & Propagation Visualizer (6 cols) -->
+          <div class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto max-h-[640px]">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="git-commit" class="w-4 h-4 text-amber-400"></i> Discovered Taint Chains
+              </h4>
+              <span id="taint-findings-badge" class="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-800 text-slate-400">0 Flows</span>
+            </div>
+
+            <!-- Flow summary counts -->
+            <div class="grid grid-cols-3 gap-3">
+              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
+                <div class="text-[10px] font-mono text-slate-400">Tainted Sinks</div>
+                <div id="taint-stat-sinks" class="text-base font-bold font-mono text-red-400">0</div>
+              </div>
+              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
+                <div class="text-[10px] font-mono text-slate-400">Highest Severity</div>
+                <div id="taint-stat-sev" class="text-base font-bold font-mono text-slate-400">NONE</div>
+              </div>
+              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
+                <div class="text-[10px] font-mono text-slate-400">Confidence</div>
+                <div id="taint-stat-conf" class="text-base font-bold font-mono text-emerald-400">100%</div>
+              </div>
+            </div>
+
+            <!-- Taint findings container -->
+            <div id="taint-findings-container" class="space-y-3">
+              <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
+                <i data-lucide="git-pull-request" class="w-6 h-6 mx-auto mb-2 text-slate-600"></i>
+                Select a preset above or paste your application code, then click "Analyze Dataflow" to trace source-to-sink vulnerability paths.
+              </div>
             </div>
           </div>
         </div>
@@ -837,6 +1068,7 @@
       }
 
       if (viewId === 'dast') loadDastView();
+      if (viewId === 'taint') loadTaintView();
       if (viewId === 'agents') loadAgentsView();
       if (viewId === 'scans') loadScansView();
       if (viewId === 'settings') loadSettingsView();
@@ -1996,6 +2228,10 @@
       showToast(`Initiating DAST Assessment Suite on ${dastActiveDevice}...`, 'info');
 
       try {
+        const optStorage = document.getElementById('dast-opt-storage')?.checked ?? true;
+        const optMemory = document.getElementById('dast-opt-memory')?.checked ?? true;
+        const optCrawl = document.getElementById('dast-opt-crawl')?.checked ?? false;
+
         const payload = {
           serial: dastActiveDevice,
           package_name: pkg,
@@ -2003,7 +2239,9 @@
           activities: act ? [act] : [`${pkg}.MainActivity`],
           deeplinks: uri ? [uri] : [],
           authorities: auth ? [auth] : [],
-          audit_storage: true,
+          audit_storage: optStorage,
+          audit_memory: optMemory,
+          crawl_ui: optCrawl,
         };
         const res = await fetch('/api/dast/fuzz', {
           method: 'POST',
@@ -2110,6 +2348,444 @@
               <div class="pt-2 border-t border-borderSubtle/60 flex items-start gap-2 text-[11px] font-mono text-slate-400">
                 <i data-lucide="wrench" class="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5"></i>
                 <div><span class="text-slate-300 font-semibold">Remediation:</span> ${escapeHtml(f.remediation)}</div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+    // =========================================================================
+    // Advanced DAST Extensions: DeepLink Matrix, Memory Forensics, UI Crawler, Frida
+    // =========================================================================
+
+    // 1. Deep Link Fuzzing Matrix
+    async function auditDastDeepLinks() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      const uri = document.getElementById('dast-input-deeplink')?.value.trim() || '';
+      if (!uri) {
+        showToast('Specify a deep link URI or scheme (e.g. targetapp://)', 'error');
+        return;
+      }
+      showToast(`Running Deep Link Fuzzing Matrix on ${uri}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/deeplinks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, deep_links: [uri] }),
+        });
+        const data = await res.json();
+        const results = data.results || [];
+        const findings = data.findings || [];
+
+        if (findings.length > 0) {
+          findings.forEach(f => {
+            if (!dastFindings.some(existing => existing.title === f.title)) {
+              dastFindings.unshift(f);
+            }
+          });
+          renderDastFindings();
+          showToast(`Deep Link Audit: ${findings.length} injection / crash flaws detected!`, 'error');
+        } else {
+          showToast(`Deep Link Matrix Complete: Exercised ${results.length} payloads safely`, 'success');
+        }
+        setTimeout(fetchDastLogcat, 1000);
+      } catch (e) {
+        showToast(`Deep Link Fuzzing error: ${e}`, 'error');
+      }
+    }
+
+    // 2. Volatile RAM Forensics (CWE-316)
+    async function auditDastMemory() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      showToast(`Auditing volatile process memory (/proc/<pid>/mem) for ${pkg}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/memory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg }),
+        });
+        const data = await res.json();
+        const report = data.report || {};
+        const findings = report.findings || [];
+
+        if (findings.length > 0) {
+          findings.forEach(f => {
+            if (!dastFindings.some(existing => existing.title === f.title)) {
+              dastFindings.unshift(f);
+            }
+          });
+          renderDastFindings();
+          showToast(`RAM Forensics (CWE-316): ${findings.length} cleartext secrets retained in memory!`, 'error');
+        } else if (report.process_found === false) {
+          showToast(`No running process found for ${pkg}. Launch the app on device first.`, 'info');
+        } else {
+          showToast('No lingering cleartext secrets detected in volatile RAM buffers', 'success');
+        }
+      } catch (e) {
+        showToast(`Memory audit error: ${e}`, 'error');
+      }
+    }
+
+    // 3. Autonomous UI Crawler
+    async function crawlDastUI() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      showToast(`Autonomous UIAutomator crawler starting for ${pkg} (5 steps)...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/crawl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, max_steps: 5 }),
+        });
+        const data = await res.json();
+        const rep = data.report || {};
+        showToast(`UI Crawl Complete: ${rep.screens_explored || 0} screens, ${rep.dialogs_dismissed || 0} dialogs dismissed, ${rep.inputs_filled || 0} inputs filled`, 'success');
+        setTimeout(fetchDastLogcat, 1000);
+      } catch (e) {
+        showToast(`UI Crawler error: ${e}`, 'error');
+      }
+    }
+
+    // 4. Frida Dynamic Instrumentation & Hooks
+    let activeFridaScriptCode = '';
+
+    async function checkFridaServerStatus() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const badge = document.getElementById('frida-status-badge');
+      if (badge) {
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> Checking...';
+      }
+      try {
+        const res = await fetch('/api/dast/frida', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: 'com.android.systemui', script_type: 'unpinning' }),
+        });
+        const data = await res.json();
+        const isRunning = data.result && data.result.frida_server_running;
+        if (badge) {
+          if (isRunning) {
+            badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-300 flex items-center gap-1.5';
+            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> frida-server Online';
+            showToast('frida-server verified running on target device', 'success');
+          } else {
+            badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/60 border border-purple-800 text-purple-300 flex items-center gap-1.5';
+            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> Script Generator Ready';
+            showToast('Frida payload generator ready (frida-server daemon idle)', 'info');
+          }
+        }
+      } catch (e) {
+        showToast(`Frida check notice: ${e}`, 'info');
+      }
+    }
+
+    async function deployFridaScript(scriptType) {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      showToast(`Deploying Frida hook [${scriptType}] to ${pkg}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/frida', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, script_type: scriptType }),
+        });
+        const data = await res.json();
+        activeFridaScriptCode = data.script || '';
+
+        previewFridaScript(scriptType, data.script);
+        showToast(`Frida hook [${scriptType}] deployed successfully to /data/local/tmp`, 'success');
+        setTimeout(fetchDastLogcat, 1000);
+      } catch (e) {
+        showToast(`Frida deploy error: ${e}`, 'error');
+      }
+    }
+
+    async function previewFridaScript(scriptType, codeOverride) {
+      const panel = document.getElementById('frida-script-preview-panel');
+      const title = document.getElementById('frida-preview-title');
+      const pre = document.getElementById('frida-script-code');
+      if (!panel || !pre) return;
+
+      if (!codeOverride) {
+        const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+        try {
+          const res = await fetch('/api/dast/frida', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serial: dastActiveDevice || 'preview', package_name: pkg, script_type: scriptType }),
+          });
+          const data = await res.json();
+          activeFridaScriptCode = data.script || '';
+        } catch (e) {
+          activeFridaScriptCode = '// Could not load preview';
+        }
+      } else {
+        activeFridaScriptCode = codeOverride;
+      }
+
+      if (title) title.textContent = `// Frida Hook: ${scriptType.toUpperCase()}`;
+      pre.textContent = activeFridaScriptCode;
+      panel.classList.remove('hidden');
+      panel.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function copyFridaScript() {
+      if (activeFridaScriptCode) {
+        navigator.clipboard.writeText(activeFridaScriptCode);
+        showToast('Frida script copied to clipboard', 'success');
+      }
+    }
+
+    // =========================================================================
+    // 5. Static Taint & Dataflow Studio
+    // =========================================================================
+    const TAINT_SAMPLES = {
+      uxss: `package com.target.app;
+
+import android.content.Intent;
+import android.os.Bundle;
+import android.webkit.WebView;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class VulnerableWebActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_web);
+
+        WebView webView = findViewById(R.id.webview);
+        webView.getSettings().setJavaScriptEnabled(true);
+
+        // Untrusted source: Intent extra string
+        String targetUrl = getIntent().getStringExtra("target_url");
+
+        // Intermediate variable propagation
+        String validatedUrl = targetUrl;
+
+        // Critical Sink: Unvalidated WebView URL execution (CWE-749 UXSS)
+        webView.loadUrl(validatedUrl);
+    }
+}`,
+      sqli: `package com.target.app;
+
+import android.content.Intent;
+import android.database.sqlite.SQLiteDatabase;
+
+public class InsecureDatabaseHandler {
+    public void queryUserRecords(Intent incoming, SQLiteDatabase db) {
+        // Untrusted source: Intent query parameter
+        String searchFilter = incoming.getStringExtra("search_query");
+
+        // Intermediate tainted propagation
+        String sqlQuery = "SELECT * FROM accounts WHERE username = '" + searchFilter + "'";
+
+        // Critical Sink: Unparameterized SQL Query (CWE-89 SQLi)
+        db.rawQuery(sqlQuery, null);
+    }
+}`,
+      redirect: `package com.target.app;
+
+import android.content.Intent;
+import android.os.Bundle;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class InsecureProxyActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Untrusted source: arbitrary parcelable Intent from untrusted caller
+        Intent forwardedIntent = (Intent) getIntent().getParcelableExtra("extra_intent");
+
+        // Critical Sink: Arbitrary IPC Intent Redirection (CWE-927)
+        startActivity(forwardedIntent);
+    }
+}`,
+      traversal: `package com.target.app;
+
+import android.content.Intent;
+import java.io.File;
+import java.io.FileInputStream;
+
+public class FileViewerActivity {
+    public void openSharedDocument(Intent intent) {
+        // Untrusted source: deep link query parameter
+        String filename = intent.getData().getQueryParameter("filepath");
+
+        // Critical Sink: Arbitrary File Access (CWE-22 Path Traversal)
+        File targetFile = new File("/data/data/com.target.app/files/", filename);
+        openFileInput(targetFile.getName());
+    }
+}`,
+      command: `package com.target.app;
+
+import android.content.Intent;
+
+public class DiagnosticHandler {
+    public void executePing(Intent intent) throws Exception {
+        // Untrusted source: network host string from intent
+        String host = intent.getStringExtra("ping_host");
+
+        // Critical Sink: Command Injection (CWE-78)
+        Runtime.getRuntime().exec("ping -c 1 " + host);
+    }
+}`
+    };
+
+    function loadTaintView() {
+      const input = document.getElementById('taint-source-input');
+      if (input && !input.value.trim()) {
+        loadSelectedTaintSample('uxss');
+      }
+    }
+
+    function loadSelectedTaintSample(overrideType) {
+      const selector = document.getElementById('taint-sample-selector');
+      const input = document.getElementById('taint-source-input');
+      const lineCounter = document.getElementById('taint-line-count');
+      const type = overrideType || (selector ? selector.value : 'uxss');
+
+      if (type === 'clear') {
+        if (input) input.value = '';
+        if (lineCounter) lineCounter.textContent = '0';
+        return;
+      }
+
+      if (input && TAINT_SAMPLES[type]) {
+        input.value = TAINT_SAMPLES[type];
+        if (lineCounter) lineCounter.textContent = input.value.split('\n').length;
+      }
+    }
+
+    async function runTaintAnalysis() {
+      const input = document.getElementById('taint-source-input');
+      const filePathInput = document.getElementById('taint-file-path');
+      const btn = document.getElementById('btn-run-taint');
+      const code = input ? input.value : '';
+      const filePath = filePathInput ? filePathInput.value.trim() : 'VulnerableActivity.java';
+
+      if (!code.trim()) {
+        showToast('Please paste or select source code to analyze', 'error');
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="w-3 h-3 rounded-full bg-white animate-spin"></span> Tracking Flows...';
+      }
+
+      showToast('Tracing source-to-sink dataflows...', 'info');
+
+      try {
+        const res = await fetch('/api/analysis/taint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_code: code, file_path: filePath }),
+        });
+        const data = await res.json();
+        const findings = data.findings || [];
+
+        renderTaintFindings(findings);
+        showToast(`Taint Analysis: Discovered ${findings.length} tainted sinks!`, findings.length > 0 ? 'error' : 'success');
+      } catch (e) {
+        showToast(`Taint Analysis error: ${e}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i> Analyze Dataflow';
+          lucide.createIcons();
+        }
+      }
+    }
+
+    function renderTaintFindings(findings) {
+      const container = document.getElementById('taint-findings-container');
+      const badge = document.getElementById('taint-findings-badge');
+      const statSinks = document.getElementById('taint-stat-sinks');
+      const statSev = document.getElementById('taint-stat-sev');
+      const statConf = document.getElementById('taint-stat-conf');
+
+      if (!container) return;
+
+      if (badge) badge.textContent = `${findings.length} Flow${findings.length === 1 ? '' : 's'}`;
+      if (statSinks) statSinks.textContent = findings.length;
+
+      if (findings.length === 0) {
+        if (statSev) statSev.textContent = 'CLEAN';
+        container.innerHTML = `
+          <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
+            <i data-lucide="shield-check" class="w-6 h-6 mx-auto mb-2 text-emerald-400"></i>
+            No source-to-sink dataflow vulnerabilities detected in the analyzed snippet. Inputs appear properly sanitized.
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      const hasCrit = findings.some(f => f.severity === 'CRITICAL');
+      const hasHigh = findings.some(f => f.severity === 'HIGH');
+      if (statSev) statSev.textContent = hasCrit ? 'CRITICAL' : (hasHigh ? 'HIGH' : 'MEDIUM');
+
+      container.innerHTML = findings.map((f, idx) => {
+        const sevColor = f.severity === 'CRITICAL' ? 'bg-red-950/80 text-red-300 border-red-800' :
+                         f.severity === 'HIGH' ? 'bg-orange-950/80 text-orange-300 border-orange-800' :
+                         'bg-yellow-950/80 text-yellow-300 border-yellow-800';
+
+        return `
+          <div class="bg-card border border-borderSubtle rounded-xl p-4 space-y-3 font-mono text-xs">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sevColor}">${f.severity}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 border border-slate-700">${escapeHtml(f.cwe_id)}</span>
+                  ${f.owasp_masvs ? `<span class="px-1.5 py-0.2 rounded bg-sky-950 text-[10px] text-sky-300 border border-sky-800">${escapeHtml(f.owasp_masvs)}</span>` : ''}
+                </div>
+                <h5 class="text-sm font-semibold text-white mt-1.5">${escapeHtml(f.title)}</h5>
+                <p class="text-[11px] text-slate-400 font-sans mt-1 leading-relaxed">${escapeHtml(f.description.split('\\n\\n')[0] || f.description)}</p>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-[10px] text-slate-400">CVSS v3.1</div>
+                <div class="text-sm font-bold text-red-400">${f.cvss_score ? f.cvss_score.toFixed(1) : '8.8'}</div>
+              </div>
+            </div>
+
+            <!-- Taint Trace Snippet -->
+            ${f.code_snippet ? `
+              <div class="bg-black/80 rounded-lg p-2.5 border border-borderSubtle">
+                <div class="text-[10px] text-slate-400 mb-1 flex items-center justify-between">
+                  <span>Sink Line ${f.line_number || 'N/A'}:</span>
+                  <span class="text-sky-400 font-semibold">${escapeHtml(f.file_path || 'Source')}</span>
+                </div>
+                <code class="text-amber-300 text-[11px] leading-relaxed block">${escapeHtml(f.code_snippet)}</code>
+              </div>
+            ` : ''}
+
+            <!-- Remediation -->
+            ${f.remediation ? `
+              <div class="pt-2 border-t border-borderSubtle/60 flex items-start gap-2 text-[11px] text-slate-300 font-sans">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5"></i>
+                <div><span class="font-semibold text-white">Remediation:</span> ${escapeHtml(f.remediation)}</div>
               </div>
             ` : ''}
           </div>

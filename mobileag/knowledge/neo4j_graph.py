@@ -31,11 +31,23 @@ class AttackGraph:
         if NEO4J_AVAILABLE:
             try:
                 self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
-                self._connected = True
             except Exception as e:
-                logger.warning(f"Failed to connect to Neo4j at {uri}: {e}")
+                logger.warning(f"Failed to initialize Neo4j driver for {uri}: {e}")
         else:
             logger.warning("neo4j driver not installed. Attack graph will operate in degraded mode.")
+
+    async def verify_connection(self) -> bool:
+        """Verify real network connectivity to the Neo4j instance."""
+        if not self.driver:
+            self._connected = False
+            return False
+        try:
+            await self.driver.verify_connectivity()
+            self._connected = True
+            return True
+        except Exception:
+            self._connected = False
+            return False
 
     async def initialize(self):
         """Creates constraints and indexes."""
@@ -178,6 +190,76 @@ class AttackGraph:
                     "apis_count": record["apis_count"]
                 }
         return {}
+
+    async def export_visjs_graph(self, scan_id: str) -> Optional[Dict[str, List[Dict[str, Any]]]]:
+        """Query Neo4j and return Vis.js compatible nodes and edges."""
+        if not self._connected or not self.driver:
+            return None
+
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        seen_nodes: set = set()
+
+        query = """
+        MATCH (a:App {scan_id: $scan_id})
+        OPTIONAL MATCH (a)-[r]->(target)
+        RETURN a, type(r) AS rel_type, target, labels(target) AS target_labels
+        """
+
+        color_map = {
+            "App": "#00F0FF",
+            "Component": "#00E599",
+            "Vulnerability": "#FF0055",
+            "APIEndpoint": "#FF8800",
+            "Secret": "#F59E0B"
+        }
+
+        try:
+            async with self.driver.session() as session:
+                result = await session.run(query, scan_id=scan_id)
+                async for record in result:
+                    a = record["a"]
+                    if a and a.get("scan_id") not in seen_nodes:
+                        seen_nodes.add(a.get("scan_id"))
+                        nodes.append({
+                            "id": a.get("scan_id"),
+                            "label": f"{a.get('package_name', 'App')}\n(v{a.get('version', '1.0')})",
+                            "group": "app",
+                            "shape": "dot",
+                            "size": 32,
+                            "color": color_map["App"]
+                        })
+
+                    target = record["target"]
+                    rel_type = record["rel_type"]
+                    labels = record["target_labels"] or []
+                    primary_label = labels[0] if labels else "Component"
+
+                    if target:
+                        target_id = target.get("finding_id") or target.get("name") or target.get("url") or str(id(target))
+                        if target_id not in seen_nodes:
+                            seen_nodes.add(target_id)
+                            label_txt = target.get("name") or target.get("title") or target.get("url") or "Node"
+                            nodes.append({
+                                "id": target_id,
+                                "label": label_txt[:35],
+                                "group": primary_label.lower(),
+                                "shape": "square" if primary_label == "Vulnerability" else "dot",
+                                "size": 24 if primary_label == "Vulnerability" else 20,
+                                "color": color_map.get(primary_label, "#94A3B8")
+                            })
+
+                        if a and rel_type:
+                            edges.append({
+                                "from": a.get("scan_id"),
+                                "to": target_id,
+                                "label": rel_type.replace("HAS_", "").replace("CALLS_", "").lower()
+                            })
+
+            return {"nodes": nodes, "edges": edges} if nodes else None
+        except Exception as e:
+            logger.warning(f"Failed to query Neo4j for Vis.js export: {e}")
+            return None
 
     async def close(self) -> None:
         """Close the Neo4j driver."""

@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MobileAg — Enterprise Mobile AppSec Testing Platform</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            appbg: '#0B0F17',
+            panel: '#111726',
+            card: '#161F33',
+            borderSubtle: '#1E293B',
+            borderHighlight: '#334155',
+            primary: '#0ea5e9',
+            accent: '#10b981',
+            danger: '#ef4444',
+            warning: '#f97316'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Vis.js for Network Topology Graph -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+  <!-- Chart.js for MASVS Radar & Metrics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* Professional Developer Tools Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0B0F17; }
+    ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+
+<body class="bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased select-none">
+
+  <!-- ===================================================================== -->
+  <!-- 1. NAVIGATION SIDEBAR -->
+  <!-- ===================================================================== -->
+  <aside class="w-60 bg-panel border-r border-borderSubtle flex flex-col justify-between shrink-0 z-20">
+    <div class="flex flex-col">
+      
+      <!-- Brand Header -->
+      <div class="h-16 flex items-center gap-3 px-5 border-b border-borderSubtle">
+        <div class="w-8 h-8 rounded-lg bg-sky-600/20 border border-sky-500/40 flex items-center justify-center text-sky-400">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-sm font-semibold text-white tracking-wide">MobileAg</h1>
+          <p class="text-[10px] font-mono text-slate-400">AppSec SAST v2.2</p>
+        </div>
+      </div>
+
+      <!-- Main Navigation Menu -->
+      <nav class="p-3 space-y-1">
+        <button onclick="switchView('surface')" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
+          <i data-lucide="network" class="w-4 h-4"></i>
+          <span>Attack Surface</span>
+        </button>
+
+        <button onclick="switchView('findings')" id="nav-findings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+          <span>Findings & Triage</span>
+          <span id="nav-findings-count" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-300">5</span>
+        </button>
+
+        <button onclick="switchView('scans')" id="nav-scans" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="history" class="w-4 h-4"></i>
+          <span>Scan History</span>
+        </button>
+
+        <button onclick="switchView('agents')" id="nav-agents" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="cpu" class="w-4 h-4"></i>
+          <span>Analyzer Agents</span>
+          <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="Engine Active"></span>
+        </button>
+
+        <button onclick="switchView('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+          <span>Configuration</span>
+        </button>
+      </nav>
+
+    </div>
+
+    <!-- Bottom Telemetry & Status -->
+    <div class="p-4 border-t border-borderSubtle space-y-3">
+      <div class="flex items-center justify-between text-[11px] font-mono">
+        <span class="text-slate-400">Pipeline Status:</span>
+        <span id="sidebar-status-text" class="text-emerald-400 font-semibold">ONLINE</span>
+      </div>
+
+      <div class="bg-card rounded-lg p-2.5 border border-borderSubtle space-y-1.5 text-[10px] font-mono text-slate-400">
+        <div class="flex items-center justify-between">
+          <span>Engine:</span>
+          <span class="text-slate-200">AST Taint 2.2</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>Neo4j Graph:</span>
+          <span id="sidebar-neo4j-status" class="text-slate-300">Checking...</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>WebSocket:</span>
+          <span id="sidebar-ws-status" class="text-emerald-400">Connected</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===================================================================== -->
+  <!-- 2. MAIN VIEW CONTAINER -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    
+    <!-- Top Header Bar -->
+    <header class="h-16 border-b border-borderSubtle bg-panel/80 px-6 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">TARGET</span>
+          <h2 id="top-package-name" class="text-sm font-semibold text-white font-mono">com.target.mobile.app</h2>
+        </div>
+        <span id="top-version" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">v14.8.2</span>
+        <span id="top-framework" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Native (Java/Kotlin)</span>
+        <span id="top-obfuscation" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">R8 ProGuard</span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-3">
+        <!-- New Scan Trigger -->
+        <button onclick="openNewScanModal()" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-2 transition shadow-sm">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+          <span>New Target Scan</span>
+        </button>
+
+        <!-- Export Report Dropdown -->
+        <div class="relative">
+          <button onclick="toggleExportMenu()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-200 text-xs flex items-center gap-2 transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Export Report</span>
+            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+          </button>
+          <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-40 bg-panel border border-borderSubtle rounded-lg shadow-xl z-30 py-1 text-xs font-mono">
+            <button onclick="exportReportJSON()" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
+              <i data-lucide="file-json" class="w-3.5 h-3.5 text-sky-400"></i> JSON Report
+            </button>
+            <button onclick="exportReportMarkdown()" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
+              <i data-lucide="file-text" class="w-3.5 h-3.5 text-emerald-400"></i> Markdown Report
+            </button>
+          </div>
+        </div>
+
+        <!-- Copilot Toggle Button -->
+        <button onclick="toggleCopilotDrawer()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-xs flex items-center gap-1.5 transition">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+          <span>Copilot</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Workspace Views (Multi-Tab Switching) -->
+    <div class="flex-1 overflow-hidden relative">
+
+      <!-- =================================================================== -->
+      <!-- VIEW 1: ATTACK SURFACE & OVERVIEW (Default) -->
+      <!-- =================================================================== -->
+      <div id="view-surface" class="view-panel h-full flex flex-col overflow-y-auto p-5 gap-4">
+        
+        <!-- KPI Telemetry Bar -->
+        <div class="grid grid-cols-5 gap-4 shrink-0">
+          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-slate-400 uppercase">Total Findings</p>
+              <h3 id="kpi-total" class="text-2xl font-bold font-mono text-white mt-0.5">21</h3>
+            </div>
+            <div class="w-9 h-9 rounded-lg bg-slate-800 border border-borderSubtle flex items-center justify-center text-slate-300">
+              <i data-lucide="shield" class="w-4 h-4"></i>
+            </div>
+          </div>
+
+          <div class="bg-panel border border-red-900/40 rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-red-400 uppercase">Critical / High</p>
+              <h3 id="kpi-critical-high" class="text-2xl font-bold font-mono text-red-400 mt-0.5">6</h3>
+            </div>
+            <div class="w-9 h-9 rounded-lg bg-red-950/40 border border-red-800/40 flex items-center justify-center text-red-400">
+              <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            </div>
+          </div>
+
+          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-orange-400 uppercase">Medium / Low</p>
+              <h3 id="kpi-med-low" class="text-2xl font-bold font-mono text-orange-400 mt-0.5">12</h3>
+            </div>
+            <div class="w-9 h-9 rounded-lg bg-orange-950/30 border border-orange-800/30 flex items-center justify-center text-orange-400">
+              <i data-lucide="info" class="w-4 h-4"></i>
+            </div>
+          </div>
+
+          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-emerald-400 uppercase">MASVS Benchmark</p>
+              <h3 id="kpi-masvs" class="text-2xl font-bold font-mono text-emerald-400 mt-0.5">78%</h3>
+            </div>
+            <div class="w-9 h-9 rounded-lg bg-emerald-950/30 border border-emerald-800/30 flex items-center justify-center text-emerald-400">
+              <i data-lucide="check-circle" class="w-4 h-4"></i>
+            </div>
+          </div>
+
+          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-sky-400 uppercase">Consensus Verification</p>
+              <h3 id="kpi-consensus" class="text-2xl font-bold font-mono text-sky-400 mt-0.5">94.2%</h3>
+            </div>
+            <div class="w-9 h-9 rounded-lg bg-sky-950/30 border border-sky-800/30 flex items-center justify-center text-sky-400">
+              <i data-lucide="layers" class="w-4 h-4"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Topology Canvas Container -->
+        <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col flex-1 min-h-[380px] shadow-sm relative">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="network" class="w-4 h-4 text-sky-400"></i>
+              <h3 class="text-xs font-semibold text-white tracking-wide uppercase">Attack Surface Topology Graph</h3>
+              <span id="graph-source-label" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Source: Embedded</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="graphFit()" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">Fit View</button>
+              <button onclick="graphZoomIn()" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">+</button>
+              <button onclick="graphZoomOut()" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">-</button>
+            </div>
+          </div>
+
+          <div id="visjs-container" class="w-full flex-1 rounded-lg bg-[#070A10] border border-borderSubtle overflow-hidden relative"></div>
+          
+          <div class="absolute bottom-6 left-6 text-[10px] font-mono text-slate-400 bg-panel/90 px-3 py-1.5 rounded-lg border border-borderSubtle pointer-events-none">
+            Click node to inspect | Drag to rearrange | Scroll to zoom
+          </div>
+        </div>
+
+        <!-- Bottom Row: Agent Stream + MASVS Radar Chart -->
+        <div class="grid grid-cols-2 gap-4 h-64 shrink-0">
+          
+          <!-- Real-Time Agent Stream -->
+          <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-3 border-b border-borderSubtle pb-2">
+              <div class="flex items-center gap-2">
+                <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
+                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">Active Agent Telemetry</h4>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Live Execution Stream</span>
+            </div>
+
+            <div id="agent-telemetry-feed" class="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- OWASP MASVS Radar Chart -->
+          <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-1 border-b border-borderSubtle pb-2">
+              <div class="flex items-center gap-2">
+                <i data-lucide="radar" class="w-4 h-4 text-sky-400"></i>
+                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">OWASP MASVS 7-Axis Benchmark</h4>
+              </div>
+              <span id="masvs-summary-score" class="text-[11px] font-mono text-emerald-400 font-bold">78 / 100</span>
+            </div>
+
+            <div class="flex-1 relative flex items-center justify-center pt-2">
+              <canvas id="masvs-canvas"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- VIEW 2: FINDINGS & TRIAGE WORKSPACE -->
+      <!-- =================================================================== -->
+      <div id="view-findings" class="view-panel h-full hidden flex overflow-hidden">
+        
+        <!-- Left: Findings Table / List -->
+        <div class="flex-1 flex flex-col border-r border-borderSubtle bg-appbg overflow-hidden">
+          <!-- Filters & Search Toolbar -->
+          <div class="p-4 border-b border-borderSubtle bg-panel flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 flex-1 max-w-md">
+              <div class="relative w-full">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500"></i>
+                <input type="text" id="findings-search-input" oninput="applyFindingsFilter()" placeholder="Search title, CWE, component, or file path..." 
+                  class="w-full bg-card border border-borderSubtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono" />
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <!-- Severity Filter Buttons -->
+              <div class="flex items-center gap-1 bg-card p-0.5 rounded-lg border border-borderSubtle text-xs font-mono">
+                <button onclick="setSeverityFilter('ALL')" id="sev-all" class="sev-btn px-2.5 py-1 rounded bg-slate-700 text-white font-medium">All</button>
+                <button onclick="setSeverityFilter('CRITICAL')" id="sev-crit" class="sev-btn px-2.5 py-1 rounded text-red-400 hover:bg-slate-800">Critical</button>
+                <button onclick="setSeverityFilter('HIGH')" id="sev-high" class="sev-btn px-2.5 py-1 rounded text-orange-400 hover:bg-slate-800">High</button>
+                <button onclick="setSeverityFilter('MEDIUM')" id="sev-med" class="sev-btn px-2.5 py-1 rounded text-yellow-400 hover:bg-slate-800">Medium</button>
+              </div>
+
+              <!-- Status Filter -->
+              <select id="status-filter-select" onchange="applyFindingsFilter()" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-sky-500">
+                <option value="ALL">All Statuses</option>
+                <option value="CONFIRMED">Confirmed TP</option>
+                <option value="UNVERIFIED">Unverified</option>
+                <option value="FALSE_POSITIVE">False Positive</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Findings List -->
+          <div id="findings-full-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Right: Single Finding Inspector Drawer -->
+        <div id="finding-detail-drawer" class="w-[460px] bg-panel flex flex-col shrink-0 overflow-y-auto p-5 border-l border-borderSubtle">
+          <div class="flex items-center justify-between border-b border-borderSubtle pb-3 mb-4">
+            <h3 class="text-xs font-semibold text-white tracking-wide uppercase">Finding Details & Remediation</h3>
+            <span id="detail-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">STATUS</span>
+          </div>
+
+          <div id="detail-content" class="space-y-4 text-xs">
+            <div class="text-slate-400 text-center py-12 font-mono text-xs">
+              Select any finding from the list to inspect its AST context, CVSS vector, and remediation code.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- VIEW 3: SCAN HISTORY -->
+      <!-- =================================================================== -->
+      <div id="view-scans" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Target Scan Repository</h3>
+            <p class="text-xs text-slate-400">Historical security assessments and active analysis runs</p>
+          </div>
+          <button onclick="openNewScanModal()" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i> Launch New Scan
+          </button>
+        </div>
+
+        <div class="bg-panel border border-borderSubtle rounded-xl overflow-hidden shadow-sm">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-card border-b border-borderSubtle text-slate-400 uppercase text-[10px]">
+              <tr>
+                <th class="py-3 px-4">Scan ID</th>
+                <th class="py-3 px-4">Target Application</th>
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Findings Breakdown</th>
+                <th class="py-3 px-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="scans-table-body" class="divide-y divide-borderSubtle text-slate-200">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- VIEW 4: ANALYZER AGENTS -->
+      <!-- =================================================================== -->
+      <div id="view-agents" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Security Analyzer Agents</h3>
+            <p class="text-xs text-slate-400">Multi-layer static, native, and dependency audit modules</p>
+          </div>
+          <button onclick="triggerAllAgents()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-xs text-slate-200 font-mono flex items-center gap-1.5">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Run Full Pipeline
+          </button>
+        </div>
+
+        <div id="agents-grid" class="grid grid-cols-2 gap-4">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- VIEW 5: CONFIGURATION & SETTINGS -->
+      <!-- =================================================================== -->
+      <div id="view-settings" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
+        <div class="max-w-2xl space-y-6">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Platform Settings & Engine Configuration</h3>
+            <p class="text-xs text-slate-400">Configure LLM providers, graph databases, and analysis thresholds</p>
+          </div>
+
+          <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
+            <div>
+              <label class="block text-slate-300 mb-1">Primary LLM Provider</label>
+              <select id="cfg-llm-primary" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+                <option value="gemini_pro">Google Gemini 1.5 Pro</option>
+                <option value="openai">OpenAI GPT-4o</option>
+                <option value="claude">Anthropic Claude 3.5 Sonnet</option>
+                <option value="deepseek">DeepSeek R1 / V3</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-slate-300 mb-1">Backup / Consensus LLM Provider</label>
+              <select id="cfg-llm-fallback" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+                <option value="openai">OpenAI GPT-4o</option>
+                <option value="claude">Anthropic Claude 3.5 Sonnet</option>
+                <option value="deepseek">DeepSeek R1 / V3</option>
+                <option value="gemini_pro">Google Gemini 1.5 Pro</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-slate-300 mb-1">Secret Scanner Shannon Entropy Threshold</label>
+              <input type="number" step="0.1" id="cfg-entropy" value="4.5" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
+            </div>
+
+            <div>
+              <label class="block text-slate-300 mb-1">Neo4j Bolt URI</label>
+              <input type="text" id="cfg-neo4j-uri" value="bolt://localhost:7687" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-borderSubtle">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="cfg-deep-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+                <span class="text-slate-300">Enable Contextual AST & State Taint Analysis</span>
+              </label>
+
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="cfg-reachability" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+                <span class="text-slate-300">Enable Call-Graph Dead Code Reachability Pruning</span>
+              </label>
+
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="cfg-consensus" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+                <span class="text-slate-300">Enable Multi-Model Consensus Voting (Eliminates FPs)</span>
+              </label>
+            </div>
+
+            <div class="pt-4 flex items-center justify-end">
+              <button onclick="saveSettingsForm()" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-2">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i> Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- 3. COPILOT SLIDE-OVER DRAWER -->
+    <!-- =================================================================== -->
+    <div id="copilot-drawer" class="fixed bottom-4 right-4 w-96 bg-panel border border-borderSubtle rounded-xl shadow-2xl flex flex-col z-40 transition-all duration-300 transform translate-y-[520px] h-[480px]">
+      <div class="h-12 border-b border-borderSubtle px-4 flex items-center justify-between shrink-0 bg-card rounded-t-xl cursor-pointer" onclick="toggleCopilotDrawer()">
+        <div class="flex items-center gap-2">
+          <i data-lucide="sparkles" class="w-4 h-4 text-sky-400"></i>
+          <h4 class="text-xs font-semibold text-white">MobileAg Security Copilot</h4>
+        </div>
+        <button class="text-slate-400 hover:text-white">
+          <i data-lucide="chevron-up" id="copilot-chevron" class="w-4 h-4 transition-transform"></i>
+        </button>
+      </div>
+
+      <!-- Chat Feed -->
+      <div id="copilot-messages" class="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
+        <div class="bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 leading-relaxed">
+          Hello! I am your <strong>MobileAg Copilot</strong>. I can explain findings, trace taint paths, or generate secure remediation code for your target.
+        </div>
+      </div>
+
+      <!-- Suggestion Chips -->
+      <div class="px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto border-t border-borderSubtle bg-appbg text-[10px] font-mono text-slate-400">
+        <button onclick="askCopilotPrompt('How to fix CWE-926?')" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap">Fix CWE-926</button>
+        <button onclick="askCopilotPrompt('Explain WebView vulnerability')" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap">WebView Risk</button>
+        <button onclick="askCopilotPrompt('Summarize MASVS compliance')" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap">MASVS Summary</button>
+      </div>
+
+      <!-- Input Bar -->
+      <div class="p-3 border-t border-borderSubtle bg-card rounded-b-xl flex items-center gap-2 shrink-0">
+        <input type="text" id="copilot-chat-input" onkeydown="if(event.key==='Enter') sendCopilotChat()" placeholder="Ask about vulnerabilities or fixes..." 
+          class="flex-1 bg-appbg border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono" />
+        <button onclick="sendCopilotChat()" class="p-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- 4. NEW SCAN MODAL -->
+  <!-- ===================================================================== -->
+  <div id="scan-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-panel border border-borderSubtle rounded-2xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4 border-b border-borderSubtle pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-alert" class="w-5 h-5 text-sky-400"></i>
+          <h3 class="text-sm font-semibold text-white">Initiate Target Security Scan</h3>
+        </div>
+        <button onclick="closeNewScanModal()" class="text-slate-500 hover:text-slate-300">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-xs font-mono">
+        <div>
+          <label class="block text-slate-300 mb-1">Target APK Absolute File Path</label>
+          <input type="text" id="modal-apk-input" value="/home/shambhu/Desktop/target.apk" 
+            class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <div>
+          <label class="block text-slate-300 mb-1">LLM Provider Routing</label>
+          <select id="modal-provider-select" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+            <option value="gemini_pro">Google Gemini 1.5 Pro</option>
+            <option value="openai">OpenAI GPT-4o</option>
+            <option value="claude">Anthropic Claude 3.5 Sonnet</option>
+            <option value="deepseek">DeepSeek R1 / V3</option>
+            <option value="offline">Offline Heuristic Engine (No API calls)</option>
+          </select>
+        </div>
+
+        <div class="space-y-2 pt-2 border-t border-borderSubtle">
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="modal-opt-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+            <span class="text-slate-300">Run Inter-Procedural Contextual Taint Analysis</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="modal-opt-binary" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+            <span class="text-slate-300">Run Native ELF Binary Hardening Check (pyelftools)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-borderSubtle">
+        <button onclick="closeNewScanModal()" class="px-4 py-2 rounded-lg bg-card hover:bg-slate-700 text-xs text-slate-300 font-mono">Cancel</button>
+        <button onclick="submitNewScan()" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono">Launch Scan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed top-5 right-5 space-y-2 z-50 pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- 5. JAVASCRIPT CLIENT LOGIC -->
+  <!-- ===================================================================== -->
+  <script>
+    let activeView = 'surface';
+    let currentScan = null;
+    let visNetwork = null;
+    let visNodes = null;
+    let visEdges = null;
+    let masvsChart = null;
+    let activeSeverityFilter = 'ALL';
+    let selectedFindingId = null;
+    let wsConnection = null;
+    let copilotOpen = false;
+
+    // Toast Notification System
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `px-4 py-2.5 rounded-lg border text-xs font-mono shadow-lg transition-all transform duration-300 flex items-center gap-2 pointer-events-auto ${
+        type === 'success' ? 'bg-emerald-950 border-emerald-800 text-emerald-300' :
+        type === 'error' ? 'bg-red-950 border-red-800 text-red-300' :
+        'bg-slate-900 border-slate-700 text-slate-200'
+      }`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // View Navigation
+    function switchView(viewId) {
+      activeView = viewId;
+      document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('bg-sky-950/40', 'text-sky-400', 'border', 'border-sky-800/40');
+        el.classList.add('text-slate-400');
+      });
+
+      const targetView = document.getElementById(`view-${viewId}`);
+      if (targetView) targetView.classList.remove('hidden');
+
+      const activeNav = document.getElementById(`nav-${viewId}`);
+      if (activeNav) {
+        activeNav.classList.add('bg-sky-950/40', 'text-sky-400', 'border', 'border-sky-800/40');
+        activeNav.classList.remove('text-slate-400');
+      }
+
+      if (viewId === 'agents') loadAgentsView();
+      if (viewId === 'scans') loadScansView();
+      if (viewId === 'settings') loadSettingsView();
+      if (viewId === 'findings') applyFindingsFilter();
+      if (viewId === 'surface' && visNetwork) visNetwork.fit();
+
+      lucide.createIcons();
+    }
+
+    // Load Scan Data
+    async function loadInitialScan() {
+      try {
+        const res = await fetch('/api/scans');
+        const list = await res.json();
+        currentScan = list[0];
+        
+        // Fetch dynamic graph
+        try {
+          const graphRes = await fetch(`/api/scans/${currentScan.scan_id}/graph`);
+          const graphData = await graphRes.json();
+          if (graphData && graphData.graph) {
+            currentScan.attack_surface_graph = graphData.graph;
+            const srcLabel = document.getElementById('graph-source-label');
+            if (srcLabel) {
+              srcLabel.textContent = graphData.source === 'neo4j' ? 'Source: Neo4j Live' : 'Source: Embedded';
+            }
+          }
+        } catch (e) {
+          console.warn('Graph query error:', e);
+        }
+
+        renderDashboard(currentScan);
+      } catch (err) {
+        console.error('Failed to load scan:', err);
+      }
+    }
+
+    function renderDashboard(scan) {
+      if (!scan) return;
+
+      // Header values
+      document.getElementById('top-package-name').textContent = scan.package_name || 'com.target.mobile.app';
+      document.getElementById('top-version').textContent = 'v' + (scan.version || '1.0.0');
+      document.getElementById('top-framework').textContent = scan.framework || 'Native';
+      document.getElementById('top-obfuscation').textContent = scan.obfuscation_level || 'ProGuard';
+
+      // KPI cards
+      document.getElementById('kpi-total').textContent = scan.stats.total;
+      document.getElementById('kpi-critical-high').textContent = (scan.stats.critical || 0) + (scan.stats.high || 0);
+      document.getElementById('kpi-med-low').textContent = (scan.stats.medium || 0) + (scan.stats.low || 0);
+      document.getElementById('kpi-masvs').textContent = (scan.stats.masvs_score || 78) + '%';
+      document.getElementById('kpi-consensus').textContent = (scan.stats.consensus_accuracy || 94.2) + '%';
+      document.getElementById('nav-findings-count').textContent = (scan.findings || []).length;
+
+      // Render Modules
+      renderVisNetwork(scan.attack_surface_graph || { nodes: [], edges: [] });
+      renderAgentTelemetryFeed(scan.agent_telemetry || []);
+      renderMasvsRadarChart(scan.masvs_compliance || {});
+      applyFindingsFilter();
+
+      lucide.createIcons();
+    }
+
+    // Vis.js Network Topology
+    function renderVisNetwork(graphData) {
+      const container = document.getElementById('visjs-container');
+      visNodes = new vis.DataSet(graphData.nodes || []);
+      visEdges = new vis.DataSet(graphData.edges || []);
+
+      const data = { nodes: visNodes, edges: visEdges };
+      const options = {
+        nodes: {
+          font: { color: '#E2E8F0', face: 'JetBrains Mono', size: 10 },
+          borderWidth: 1.5,
+        },
+        edges: {
+          color: { color: '#334155', highlight: '#0ea5e9', hover: '#0ea5e9' },
+          font: { color: '#64748B', face: 'JetBrains Mono', size: 9, align: 'top' },
+          arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+          smooth: { type: 'continuous' }
+        },
+        physics: {
+          stabilization: true,
+          barnesHut: { gravitationalConstant: -2800, springLength: 85 }
+        },
+        interaction: { hover: true }
+      };
+
+      if (visNetwork) visNetwork.destroy();
+      visNetwork = new vis.Network(container, data, options);
+
+      visNetwork.on('click', function(params) {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          selectFindingByNode(nodeId);
+        }
+      });
+    }
+
+    function graphFit() { if (visNetwork) visNetwork.fit({ animation: true }); }
+    function graphZoomIn() { if (visNetwork) visNetwork.moveTo({ scale: visNetwork.getScale() * 1.3 }); }
+    function graphZoomOut() { if (visNetwork) visNetwork.moveTo({ scale: visNetwork.getScale() * 0.7 }); }
+
+    function selectFindingByNode(nodeId) {
+      if (!currentScan || !currentScan.findings) return;
+      const f = currentScan.findings.find(item => item.id === nodeId || (item.cwe_id && item.cwe_id.toLowerCase() === nodeId.toLowerCase()));
+      if (f) {
+        switchView('findings');
+        inspectFinding(f.id);
+      }
+    }
+
+    // Agent Telemetry Feed
+    function renderAgentTelemetryFeed(list) {
+      const feed = document.getElementById('agent-telemetry-feed');
+      feed.innerHTML = '';
+      list.forEach(agent => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2 rounded-lg bg-card border border-borderSubtle';
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span class="font-mono font-medium text-slate-200 text-xs">${agent.name}</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] font-mono text-sky-400">${agent.findings > 0 ? agent.findings + ' issues' : 'clean'}</span>
+            <span class="text-[10px] font-mono text-slate-500">${agent.duration}</span>
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">PASS</span>
+          </div>
+        `;
+        feed.appendChild(item);
+      });
+    }
+
+    // Chart.js MASVS Radar
+    function renderMasvsRadarChart(compliance) {
+      const ctx = document.getElementById('masvs-canvas');
+      if (!ctx) return;
+
+      const labels = Object.keys(compliance);
+      const dataValues = Object.values(compliance);
+
+      if (masvsChart) masvsChart.destroy();
+      masvsChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'MASVS Compliance (%)',
+            data: dataValues,
+            backgroundColor: 'rgba(14, 165, 233, 0.15)',
+            borderColor: '#0ea5e9',
+            borderWidth: 1.5,
+            pointBackgroundColor: '#10b981',
+            pointBorderColor: '#fff',
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              angleLines: { color: '#1E293B' },
+              grid: { color: '#1E293B' },
+              pointLabels: { color: '#94A3B8', font: { size: 9, family: 'JetBrains Mono' } },
+              ticks: { display: false, min: 0, max: 100 }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // Findings Filter & Inspector
+    function setSeverityFilter(sev) {
+      activeSeverityFilter = sev;
+      document.querySelectorAll('.sev-btn').forEach(b => {
+        b.classList.remove('bg-slate-700', 'text-white');
+        b.classList.add('text-slate-400');
+      });
+      const activeBtn = document.getElementById(`sev-${sev === 'CRITICAL' ? 'crit' : sev.toLowerCase()}`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-slate-700', 'text-white');
+        activeBtn.classList.remove('text-slate-400');
+      }
+      applyFindingsFilter();
+    }
+
+    function applyFindingsFilter() {
+      const query = (document.getElementById('findings-search-input')?.value || '').toLowerCase();
+      const status = document.getElementById('status-filter-select')?.value || 'ALL';
+      const container = document.getElementById('findings-full-list');
+      if (!container || !currentScan) return;
+
+      container.innerHTML = '';
+      const list = (currentScan.findings || []).filter(f => {
+        const matchesSev = activeSeverityFilter === 'ALL' || f.severity === activeSeverityFilter;
+        const matchesStatus = status === 'ALL' || f.status === status;
+        const matchesQuery = !query || 
+          (f.title && f.title.toLowerCase().includes(query)) ||
+          (f.cwe_id && f.cwe_id.toLowerCase().includes(query)) ||
+          (f.affected_component && f.affected_component.toLowerCase().includes(query));
+        return matchesSev && matchesStatus && matchesQuery;
+      });
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="text-center py-12 text-slate-500 font-mono text-xs">No findings matching the selected filters.</div>`;
+        return;
+      }
+
+      list.forEach(f => {
+        const card = document.createElement('div');
+        const isSelected = selectedFindingId === f.id;
+        card.className = `p-3 rounded-lg border transition cursor-pointer ${
+          isSelected ? 'bg-card border-sky-500' : 'bg-panel border-borderSubtle hover:border-slate-600'
+        }`;
+        card.onclick = () => inspectFinding(f.id);
+
+        const sevColors = {
+          CRITICAL: 'bg-red-950 text-red-400 border-red-800',
+          HIGH: 'bg-orange-950 text-orange-400 border-orange-800',
+          MEDIUM: 'bg-yellow-950 text-yellow-400 border-yellow-800',
+          LOW: 'bg-blue-950 text-blue-400 border-blue-800',
+        };
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${sevColors[f.severity] || 'border-slate-700 text-slate-400'}">${f.severity}</span>
+              <span class="text-xs font-mono font-bold text-slate-300">${f.cwe_id}</span>
+              <span class="text-[11px] font-mono text-slate-400">CVSS ${f.cvss_score}</span>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded ${f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">${f.status}</span>
+          </div>
+          <h4 class="text-xs font-medium text-white mb-1">${f.title}</h4>
+          <p class="text-[11px] text-slate-400 truncate font-mono">${f.affected_component || f.file_path}</p>
+        `;
+        container.appendChild(card);
+      });
+
+      // Default inspect first finding
+      if (!selectedFindingId && list.length > 0) {
+        inspectFinding(list[0].id);
+      }
+    }
+
+    function inspectFinding(findingId) {
+      selectedFindingId = findingId;
+      const f = (currentScan.findings || []).find(item => item.id === findingId);
+      if (!f) return;
+
+      // Update badge
+      const badge = document.getElementById('detail-status-badge');
+      badge.textContent = f.status;
+      badge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+        f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+        f.status === 'FALSE_POSITIVE' ? 'bg-red-950 text-red-400 border border-red-800' :
+        'bg-slate-800 text-slate-300 border border-slate-700'
+      }`;
+
+      // Populate content
+      const detailContainer = document.getElementById('detail-content');
+      detailContainer.innerHTML = `
+        <div>
+          <h4 class="text-sm font-semibold text-white mb-1">${f.title}</h4>
+          <div class="flex items-center gap-2 font-mono text-[11px] text-slate-400 mb-2">
+            <span>${f.cwe_id}</span> • <span>CVSS ${f.cvss_score} (${f.cvss_vector || 'N/A'})</span>
+          </div>
+          <p class="text-slate-300 leading-relaxed text-xs">${f.description}</p>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] font-mono text-slate-400 uppercase">Affected Source Code</span>
+            <button onclick="copySnippet('${encodeURIComponent(f.code_snippet || '')}')" class="text-[10px] font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy
+            </button>
+          </div>
+          <div class="bg-appbg p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-sky-300 overflow-x-auto">
+            <pre><code>${escapeHtml(f.code_snippet || 'No snippet available')}</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <span class="text-[10px] font-mono text-slate-400 uppercase block mb-1">Remediation Guidance</span>
+          <div class="bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 text-xs leading-relaxed">
+            ${f.remediation || 'Follow OWASP Mobile Security verification criteria.'}
+          </div>
+        </div>
+
+        <!-- Triage Action Buttons -->
+        <div class="pt-3 border-t border-borderSubtle flex items-center justify-between">
+          <span class="text-[10px] font-mono text-slate-500">MASVS: ${f.owasp_masvs || 'MASVS-PLATFORM-1'}</span>
+          <div class="flex items-center gap-2">
+            <button onclick="submitTriage('${f.id}', 'CONFIRMED')" class="px-3 py-1.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 text-xs font-mono transition">
+              Confirm TP
+            </button>
+            <button onclick="submitTriage('${f.id}', 'FALSE_POSITIVE')" class="px-3 py-1.5 rounded bg-red-950 hover:bg-red-900 text-red-300 border border-red-800 text-xs font-mono transition">
+              Flag False Positive
+            </button>
+          </div>
+        </div>
+      `;
+
+      lucide.createIcons();
+    }
+
+    async function submitTriage(findingId, verdict) {
+      try {
+        const res = await fetch(`/api/findings/${findingId}/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verdict })
+        });
+        const data = await res.json();
+        
+        // Update local memory
+        const f = (currentScan.findings || []).find(item => item.id === findingId);
+        if (f) f.status = verdict;
+        
+        inspectFinding(findingId);
+        applyFindingsFilter();
+        showToast(`Triage recorded: ${verdict}`, 'success');
+      } catch (err) {
+        showToast('Error recording triage feedback', 'error');
+      }
+    }
+
+    function copySnippet(encodedCode) {
+      const text = decodeURIComponent(encodedCode);
+      navigator.clipboard.writeText(text);
+      showToast('Code snippet copied to clipboard', 'success');
+    }
+
+    // Scans History View
+    async function loadScansView() {
+      const tbody = document.getElementById('scans-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Loading scan history...</td></tr>';
+
+      try {
+        const res = await fetch('/api/scans');
+        const list = await res.json();
+        tbody.innerHTML = '';
+
+        list.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-card/50 transition';
+          tr.innerHTML = `
+            <td class="py-3 px-4 text-sky-400 font-bold">${s.scan_id}</td>
+            <td class="py-3 px-4">${s.package_name || s.app_name}</td>
+            <td class="py-3 px-4 text-slate-400">${s.created_at || 'Just now'}</td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 rounded text-[10px] ${s.status === 'completed' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-sky-950 text-sky-400 border border-sky-800'}">
+                ${s.status.toUpperCase()}
+              </span>
+            </td>
+            <td class="py-3 px-4">
+              <span class="text-red-400">${s.stats.critical || 0} Crit</span> • 
+              <span class="text-orange-400">${s.stats.high || 0} High</span> • 
+              <span class="text-yellow-400">${s.stats.medium || 0} Med</span>
+            </td>
+            <td class="py-3 px-4 text-right">
+              <button onclick="loadSpecificScan('${s.scan_id}')" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 text-[11px]">
+                Open
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-400">Failed to load scans.</td></tr>';
+      }
+    }
+
+    async function loadSpecificScan(scanId) {
+      try {
+        const res = await fetch(`/api/scans/${scanId}`);
+        currentScan = await res.json();
+        switchView('surface');
+        renderDashboard(currentScan);
+        showToast(`Loaded target: ${currentScan.package_name || currentScan.app_name}`, 'success');
+      } catch (e) {
+        showToast('Error loading scan details', 'error');
+      }
+    }
+
+    // Agents View
+    async function loadAgentsView() {
+      const grid = document.getElementById('agents-grid');
+      grid.innerHTML = '<div class="col-span-2 text-center py-10 text-slate-500 font-mono text-xs">Loading agents...</div>';
+
+      try {
+        const res = await fetch('/api/agents');
+        const list = await res.json();
+        grid.innerHTML = '';
+
+        list.forEach(a => {
+          const card = document.createElement('div');
+          card.className = 'bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col justify-between space-y-3';
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 uppercase">${a.category}</span>
+                <span class="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${a.status}
+                </span>
+              </div>
+              <h4 class="text-xs font-semibold text-white">${a.name}</h4>
+              <p class="text-[11px] text-slate-400 mt-1">${a.description}</p>
+            </div>
+
+            <div class="pt-2 border-t border-borderSubtle flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <div>
+                <span>Findings: <strong class="text-white">${a.findings_count}</strong></span> • 
+                <span>Runtime: <strong class="text-slate-300">${a.last_runtime}</strong></span>
+              </div>
+              <button onclick="runSingleAgent('${a.id}')" class="px-2 py-1 rounded bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-[10px]">
+                Run Audit
+              </button>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+      } catch (e) {
+        grid.innerHTML = '<div class="col-span-2 text-center text-red-400 font-mono text-xs">Failed to load agent metadata.</div>';
+      }
+    }
+
+    function runSingleAgent(agentId) {
+      showToast(`Triggered ${agentId} on target APK`, 'info');
+    }
+
+    function triggerAllAgents() {
+      showToast('Executing full SAST pipeline across all 8 agents...', 'info');
+    }
+
+    // Settings View
+    async function loadSettingsView() {
+      try {
+        const res = await fetch('/api/settings');
+        const cfg = await res.json();
+        if (cfg.llm_primary_provider) document.getElementById('cfg-llm-primary').value = cfg.llm_primary_provider;
+        if (cfg.llm_fallback_provider) document.getElementById('cfg-llm-fallback').value = cfg.llm_fallback_provider;
+        if (cfg.entropy_threshold) document.getElementById('cfg-entropy').value = cfg.entropy_threshold;
+        if (cfg.neo4j_uri) document.getElementById('cfg-neo4j-uri').value = cfg.neo4j_uri;
+        if (cfg.enable_deep_taint !== undefined) document.getElementById('cfg-deep-taint').checked = cfg.enable_deep_taint;
+        if (cfg.enable_reachability_filter !== undefined) document.getElementById('cfg-reachability').checked = cfg.enable_reachability_filter;
+        if (cfg.enable_consensus_voting !== undefined) document.getElementById('cfg-consensus').checked = cfg.enable_consensus_voting;
+      } catch (e) {
+        console.warn('Error loading settings:', e);
+      }
+    }
+
+    async function saveSettingsForm() {
+      const payload = {
+        llm_primary_provider: document.getElementById('cfg-llm-primary').value,
+        llm_fallback_provider: document.getElementById('cfg-llm-fallback').value,
+        entropy_threshold: parseFloat(document.getElementById('cfg-entropy').value),
+        neo4j_uri: document.getElementById('cfg-neo4j-uri').value,
+        enable_deep_taint: document.getElementById('cfg-deep-taint').checked,
+        enable_reachability_filter: document.getElementById('cfg-reachability').checked,
+        enable_consensus_voting: document.getElementById('cfg-consensus').checked,
+      };
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        showToast('Settings saved successfully', 'success');
+      } catch (err) {
+        showToast('Failed to save settings', 'error');
+      }
+    }
+
+    // Copilot Slide-Over Drawer
+    function toggleCopilotDrawer() {
+      copilotOpen = !copilotOpen;
+      const drawer = document.getElementById('copilot-drawer');
+      const chevron = document.getElementById('copilot-chevron');
+      if (copilotOpen) {
+        drawer.classList.remove('translate-y-[520px]');
+        chevron.style.transform = 'rotate(180deg)';
+      } else {
+        drawer.classList.add('translate-y-[520px]');
+        chevron.style.transform = 'rotate(0deg)';
+      }
+    }
+
+    function askCopilotPrompt(promptText) {
+      document.getElementById('copilot-chat-input').value = promptText;
+      sendCopilotChat();
+    }
+
+    async function sendCopilotChat() {
+      const input = document.getElementById('copilot-chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+
+      const container = document.getElementById('copilot-messages');
+      // User bubble
+      const userBubble = document.createElement('div');
+      userBubble.className = 'bg-sky-950/50 p-2.5 rounded-lg border border-sky-800 text-sky-200 text-right';
+      userBubble.textContent = text;
+      container.appendChild(userBubble);
+
+      // Assistant thinking bubble
+      const assistantBubble = document.createElement('div');
+      assistantBubble.className = 'bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 space-y-1';
+      assistantBubble.innerHTML = '<span class="animate-pulse text-sky-400 font-mono text-[10px]">Analyzing codebase & findings...</span>';
+      container.appendChild(assistantBubble);
+      container.scrollTop = container.scrollHeight;
+
+      try {
+        const res = await fetch('/api/copilot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text })
+        });
+        const data = await res.json();
+        assistantBubble.innerHTML = formatMarkdownToHtml(data.response);
+      } catch (err) {
+        assistantBubble.innerHTML = '<span class="text-red-400">Failed to connect to Copilot engine.</span>';
+      }
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function formatMarkdownToHtml(md) {
+      // Basic markdown processor
+      return md
+        .replace(/^### (.*$)/gim, '<h4 class="font-bold text-white text-xs mb-1">$1</h4>')
+        .replace(/\*\*(.*?)\*\*/gim, '<strong class="text-white">$1</strong>')
+        .replace(/\*(.*?)\*/gim, '<em class="text-slate-300">$1</em>')
+        .replace(/`([^`]+)`/gim, '<code class="px-1 py-0.5 rounded bg-appbg text-sky-300 font-mono text-[11px]">$1</code>')
+        .replace(/```([a-z]*)\n([\s\S]*?)```/gim, '<pre class="bg-appbg p-2.5 rounded border border-borderSubtle font-mono text-[11px] text-sky-300 overflow-x-auto my-1.5"><code>$2</code></pre>')
+        .replace(/\n/gim, '<br/>');
+    }
+
+    // Modal & Scan Launching
+    function openNewScanModal() { document.getElementById('scan-modal').classList.remove('hidden'); }
+    function closeNewScanModal() { document.getElementById('scan-modal').classList.add('hidden'); }
+
+    async function submitNewScan() {
+      const apkPath = document.getElementById('modal-apk-input').value.trim();
+      if (!apkPath) {
+        showToast('Please specify target APK path', 'error');
+        return;
+      }
+      closeNewScanModal();
+      showToast('Starting security scan...', 'info');
+
+      try {
+        const res = await fetch('/api/scans/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apk_path: apkPath })
+        });
+        const data = await res.json();
+        showToast(`Scan launched: ${data.scan_id}`, 'success');
+        switchView('surface');
+      } catch (err) {
+        showToast('Failed to start scan', 'error');
+      }
+    }
+
+    // Export Reports
+    function toggleExportMenu() {
+      const menu = document.getElementById('export-dropdown');
+      menu.classList.toggle('hidden');
+    }
+
+    function exportReportJSON() {
+      toggleExportMenu();
+      if (!currentScan) return;
+      const blob = new Blob([JSON.stringify(currentScan, null, 2)], { type: 'application/json' });
+      downloadBlob(blob, `mobileag_report_${currentScan.scan_id || 'export'}.json`);
+      showToast('JSON report exported successfully', 'success');
+    }
+
+    function exportReportMarkdown() {
+      toggleExportMenu();
+      if (!currentScan) return;
+      let md = `# MobileAg Security Audit Report\n\nTarget: ${currentScan.package_name}\nDate: ${currentScan.created_at}\n\n## Findings\n\n`;
+      (currentScan.findings || []).forEach(f => {
+        md += `### [${f.severity}] ${f.title} (${f.cwe_id})\n`;
+        md += `- CVSS Score: ${f.cvss_score}\n`;
+        md += `- Affected Component: ${f.affected_component}\n`;
+        md += `- Description: ${f.description}\n`;
+        md += `- Remediation: ${f.remediation}\n\n`;
+      });
+      const blob = new Blob([md], { type: 'text/markdown' });
+      downloadBlob(blob, `mobileag_report_${currentScan.scan_id || 'export'}.md`);
+      showToast('Markdown report exported successfully', 'success');
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Live Telemetry WebSocket
+    function connectTelemetryWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/telemetry`;
+
+      try {
+        wsConnection = new WebSocket(wsUrl);
+
+        wsConnection.onopen = function() {
+          const wsLabel = document.getElementById('sidebar-ws-status');
+          if (wsLabel) wsLabel.textContent = 'Live Connected';
+        };
+
+        wsConnection.onmessage = function(event) {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'agent_progress') {
+              handleLiveEvent(data);
+            }
+          } catch (e) {
+            console.warn('WS parse error:', e);
+          }
+        };
+
+        wsConnection.onclose = function() {
+          const wsLabel = document.getElementById('sidebar-ws-status');
+          if (wsLabel) wsLabel.textContent = 'Reconnecting...';
+          setTimeout(connectTelemetryWebSocket, 3000);
+        };
+      } catch (e) {
+        console.warn('WebSocket init failed:', e);
+      }
+    }
+
+    function handleLiveEvent(data) {
+      // Prepend to agent telemetry feed
+      const feed = document.getElementById('agent-telemetry-feed');
+      if (feed) {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2 rounded-lg bg-sky-950/40 border border-sky-800/40';
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span>
+            <span class="font-mono font-medium text-sky-300 text-xs">${data.stage}</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] font-mono text-slate-300">${data.message.substring(0, 36)}...</span>
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-sky-950 text-sky-400 border border-sky-800">${data.progress}%</span>
+          </div>
+        `;
+        feed.insertBefore(item, feed.firstChild);
+      }
+
+      // Live finding append
+      if (data.finding && currentScan) {
+        currentScan.findings = currentScan.findings || [];
+        currentScan.findings.unshift(data.finding);
+        document.getElementById('kpi-total').textContent = (currentScan.findings.length);
+        document.getElementById('nav-findings-count').textContent = currentScan.findings.length;
+        if (activeView === 'findings') applyFindingsFilter();
+        showToast(`Discovered: ${data.finding.title}`, 'info');
+      }
+
+      // Live graph node
+      if (data.graph_node && visNodes) {
+        if (!visNodes.get(data.graph_node.id)) visNodes.add(data.graph_node);
+        if (data.graph_edge && visEdges) visEdges.add(data.graph_edge);
+      }
+    }
+
+    async function checkGraphStatus() {
+      try {
+        const res = await fetch('/api/graph/status');
+        const data = await res.json();
+        const el = document.getElementById('sidebar-neo4j-status');
+        if (el) {
+          el.textContent = data.neo4j_connected ? 'Connected' : 'Embedded';
+          el.className = data.neo4j_connected ? 'text-sky-400 font-bold' : 'text-slate-300';
+        }
+      } catch (e) {
+        console.warn('Graph status check failed:', e);
+      }
+    }
+
+    function escapeHtml(text) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    // Close export dropdown on click outside
+    window.addEventListener('click', (e) => {
+      const menu = document.getElementById('export-dropdown');
+      if (menu && !menu.contains(e.target) && !e.target.closest('button[onclick="toggleExportMenu()"]')) {
+        menu.classList.add('hidden');
+      }
+    });
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadInitialScan();
+      checkGraphStatus();
+      connectTelemetryWebSocket();
+    });
+  </script>
+</body>
+</html>

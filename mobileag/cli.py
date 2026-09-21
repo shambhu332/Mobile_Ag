@@ -80,5 +80,42 @@ def diff(old: str, new: str, output: str):
         sys.exit(1)
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Host address to bind to")
+@click.option("--port", default=8080, help="Port to listen on", type=int)
+def web(host: str, port: int):
+    """Launch the MobileAg Enterprise AppSec Dashboard."""
+    import socket
+    from mobileag.web.app import run_server
+
+    actual_port = port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, port))
+        except OSError:
+            test_port = port + 1
+            while test_port < port + 50:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                    s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        s2.bind((host, test_port))
+                        actual_port = test_port
+                        break
+                    except OSError:
+                        test_port += 1
+            console.print(f"[bold yellow]Notice:[/] Port {port} is in use. Auto-switching to port [bold green]{actual_port}[/].")
+
+    console.print(Panel.fit(
+        f"[bold cyan]MobileAg Enterprise AppSec Dashboard[/]\n"
+        f"URL: [link=http://{host}:{actual_port}]http://{host}:{actual_port}[/link]",
+        border_style="cyan"
+    ))
+    try:
+        run_server(host=host, port=actual_port)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Web dashboard stopped.[/]")
+
+
 if __name__ == "__main__":
     main()

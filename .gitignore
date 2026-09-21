@@ -27,6 +27,8 @@ dist/
 output/
 tmp/
 *.log
+*.db
+*.sqlite
 
 # IDE & OS
 .idea/

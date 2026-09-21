@@ -16,15 +16,20 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from config.settings import get_settings
+from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.dast import (
     ADBManager,
     ConnectedDevice,
+    DeepLinkFuzzer,
+    FridaRunner,
     HTTPTransaction,
     IntentFuzzer,
     LogcatAuditor,
+    MemoryForensicsAuditor,
     ProviderAuditor,
     StorageAuditor,
     TrafficAuditor,
+    UICrawler,
 )
 from mobileag.knowledge.neo4j_graph import AttackGraph
 from mobileag.reporting.finding import FindingStatus, Severity
@@ -37,11 +42,20 @@ logcat_auditor = LogcatAuditor()
 traffic_auditor = TrafficAuditor()
 storage_auditor = StorageAuditor(adb=adb_manager)
 provider_auditor = ProviderAuditor(adb=adb_manager)
+deeplink_fuzzer = DeepLinkFuzzer(adb=adb_manager)
+frida_runner = FridaRunner(adb=adb_manager)
+ui_crawler = UICrawler(adb=adb_manager)
+memory_auditor = MemoryForensicsAuditor(adb=adb_manager)
+taint_engine = TaintEngine()
+
 intent_fuzzer = IntentFuzzer(
     adb=adb_manager,
     auditor=logcat_auditor,
     storage_auditor=storage_auditor,
     provider_auditor=provider_auditor,
+    deeplink_fuzzer=deeplink_fuzzer,
+    ui_crawler=ui_crawler,
+    memory_auditor=memory_auditor,
 )
 
 
@@ -668,6 +682,37 @@ class DastFuzzRequest(BaseModel):
     authorities: Optional[list[str]] = None
     targeted_extras: Optional[dict[str, list[str]]] = None
     audit_storage: bool = True
+    audit_memory: bool = False
+    crawl_ui: bool = False
+
+
+class DeepLinkAuditRequest(BaseModel):
+    serial: str
+    package_name: str
+    deep_links: list[str]
+
+
+class MemoryAuditRequest(BaseModel):
+    serial: str
+    package_name: str
+
+
+class UICrawlRequest(BaseModel):
+    serial: str
+    package_name: str
+    max_steps: int = 5
+
+
+class FridaDeployRequest(BaseModel):
+    serial: str
+    package_name: str
+    script_type: str = "unpinning"  # "unpinning", "crypto", "root_bypass"
+
+
+class TaintAnalyzeRequest(BaseModel):
+    source_code: str
+    file_path: str = "VulnerableActivity.java"
+
 
 
 
@@ -793,6 +838,57 @@ async def audit_dast_providers(req: ProviderAuditRequest) -> dict[str, Any]:
     return {"status": "success", "results": results, "findings": f_dicts}
 
 
+@app.post("/api/dast/deeplinks")
+async def audit_dast_deeplinks(req: DeepLinkAuditRequest) -> dict[str, Any]:
+    """Audit and fuzz deep links / custom schemes for OAuth theft, file access, and UXSS."""
+    results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links)
+    f_dicts = [f.to_dict() for f in findings]
+    demo = get_initial_demo_scan()
+    for f in f_dicts:
+        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
+            demo["findings"].append(f)
+    return {"status": "success", "results": results, "findings": f_dicts}
+
+
+@app.post("/api/dast/memory")
+async def audit_dast_memory(req: MemoryAuditRequest) -> dict[str, Any]:
+    """Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."""
+    report = await memory_auditor.run_memory_audit(req.serial, req.package_name)
+    demo = get_initial_demo_scan()
+    for f in report.get("findings", []):
+        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
+            demo["findings"].append(f)
+    return {"status": "success", "report": report}
+
+
+@app.post("/api/dast/crawl")
+async def crawl_dast_ui(req: UICrawlRequest) -> dict[str, Any]:
+    """Autonomously navigate UI views with UIAutomator to expand dynamic coverage."""
+    report = await ui_crawler.crawl_app(req.serial, req.package_name, max_steps=req.max_steps)
+    return {"status": "success", "report": report}
+
+
+@app.post("/api/dast/frida")
+async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
+    """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass)."""
+    if req.script_type == "crypto":
+        script = frida_runner.generate_crypto_monitor_script()
+    elif req.script_type == "root_bypass":
+        script = frida_runner.generate_root_bypass_script()
+    else:
+        script = frida_runner.generate_unpinning_script()
+    res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
+    return {"status": "success", "result": res, "script": script}
+
+
+@app.post("/api/analysis/taint")
+async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
+    """Perform inter-procedural static source-to-sink taint analysis on supplied code."""
+    findings = taint_engine.analyze_source_content(req.source_code, req.file_path)
+    f_dicts = [f.to_dict() for f in findings]
+    return {"status": "success", "findings": f_dicts}
+
+
 async def run_dast_background_task(req: DastFuzzRequest) -> None:
     """Execute dynamic fuzzing, IPC audits, and storage forensics with WebSocket telemetry."""
     serial = req.serial
@@ -874,12 +970,43 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "type": "dast_progress",
             "stage": "Sandbox Storage Forensics",
             "message": "Inspecting SharedPreferences, SQLite databases, and disk cache on device...",
-            "progress": 90,
+            "progress": 85,
             "timestamp": datetime.now().isoformat(),
         })
         storage_res = await storage_auditor.audit_all_storage(serial, pkg)
         for sf in storage_res.get("findings", []):
             findings.append(Finding(**sf))
+
+    # Autonomous UI Crawling (if requested)
+    if req.crawl_ui:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Autonomous UI Crawling",
+            "message": "Autonomously crawling UI hierarchies and exercising interactable views...",
+            "progress": 90,
+            "timestamp": datetime.now().isoformat(),
+        })
+        crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5)
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "UI Crawl Complete",
+            "message": f"Explored {crawl_res.get('screens_explored', 0)} screens, dismissed {crawl_res.get('dialogs_dismissed', 0)} dialogs.",
+            "progress": 92,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    # Volatile Process Memory Forensics (if requested)
+    if req.audit_memory:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Volatile Memory Forensics",
+            "message": "Auditing active process heap and RAM for lingering cleartext secrets (CWE-316)...",
+            "progress": 95,
+            "timestamp": datetime.now().isoformat(),
+        })
+        mem_res = await memory_auditor.run_memory_audit(serial, pkg)
+        for mf in mem_res.get("findings", []):
+            findings.append(Finding(**mf))
 
     # Append to active findings
     demo = get_initial_demo_scan()

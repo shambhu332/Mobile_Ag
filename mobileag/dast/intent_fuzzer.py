@@ -12,9 +12,12 @@ import logging
 from typing import Any, Optional
 
 from mobileag.dast.adb_manager import ADBManager
+from mobileag.dast.deeplink_fuzzer import DeepLinkFuzzer
 from mobileag.dast.logcat_auditor import LogcatAuditor
+from mobileag.dast.memory_forensics import MemoryForensicsAuditor
 from mobileag.dast.provider_auditor import ProviderAuditor
 from mobileag.dast.storage_auditor import StorageAuditor
+from mobileag.dast.ui_crawler import UICrawler
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
@@ -30,11 +33,18 @@ class IntentFuzzer:
         auditor: Optional[LogcatAuditor] = None,
         storage_auditor: Optional[StorageAuditor] = None,
         provider_auditor: Optional[ProviderAuditor] = None,
+        deeplink_fuzzer: Optional[DeepLinkFuzzer] = None,
+        ui_crawler: Optional[UICrawler] = None,
+        memory_auditor: Optional[MemoryForensicsAuditor] = None,
     ) -> None:
         self.adb = adb or ADBManager()
         self.auditor = auditor or LogcatAuditor()
         self.storage_auditor = storage_auditor or StorageAuditor(adb=self.adb)
         self.provider_auditor = provider_auditor or ProviderAuditor(adb=self.adb)
+        self.deeplink_fuzzer = deeplink_fuzzer or DeepLinkFuzzer(adb=self.adb)
+        self.ui_crawler = ui_crawler or UICrawler(adb=self.adb)
+        self.memory_auditor = memory_auditor or MemoryForensicsAuditor(adb=self.adb)
+
 
     async def exercise_component(
         self,
@@ -156,38 +166,12 @@ class IntentFuzzer:
         package_name: str,
         deeplinks: list[str],
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
-        """Exercise deep links and custom URI schemes to test intent handling."""
-        results: list[dict[str, Any]] = []
-        all_findings: list[Finding] = []
-
-        for uri in deeplinks:
-            # Test 1: Base URI invocation
-            res = await self.exercise_component(
-                serial=serial,
-                package_name=package_name,
-                component_name="",
-                action="android.intent.action.VIEW",
-                data_uri=uri,
-            )
-            res["test_name"] = "Base Deep Link VIEW"
-            results.append(res)
-            all_findings.extend(res["findings"])
-
-            # Test 2: Injected query string testing
-            delim = "&" if "?" in uri else "?"
-            fuzzed_uri = f"{uri}{delim}redirect=https://audit.local&id=0&payload=test"
-            res_fuzz = await self.exercise_component(
-                serial=serial,
-                package_name=package_name,
-                component_name="",
-                action="android.intent.action.VIEW",
-                data_uri=fuzzed_uri,
-            )
-            res_fuzz["test_name"] = "Fuzzed Parameter Deep Link"
-            results.append(res_fuzz)
-            all_findings.extend(res_fuzz["findings"])
-
-        return results, all_findings
+        """Exercise deep links and custom URI schemes via DeepLinkFuzzer."""
+        return await self.deeplink_fuzzer.fuzz_deep_links(
+            serial=serial,
+            package_name=package_name,
+            deep_links=deeplinks,
+        )
 
     async def run_full_dast_suite(
         self,
@@ -199,6 +183,8 @@ class IntentFuzzer:
         authorities: Optional[list[str]] = None,
         targeted_extras: Optional[dict[str, list[str]]] = None,
         audit_storage: bool = True,
+        audit_memory: bool = False,
+        crawl_ui: bool = False,
     ) -> dict[str, Any]:
         """Execute the comprehensive dynamic assessment pipeline against target device."""
         suite_report: dict[str, Any] = {
@@ -211,6 +197,7 @@ class IntentFuzzer:
             "leaks_detected": 0,
             "storage_flaws_detected": 0,
             "provider_flaws_detected": 0,
+            "memory_flaws_detected": 0,
             "tests_run": 0,
             "screenshot_b64": None,
         }
@@ -248,12 +235,12 @@ class IntentFuzzer:
         suite_report["tests_run"] += len(act_results)
         suite_report["findings"].extend([f.to_dict() for f in act_findings])
 
-        # 4. Deep Link Exercising
+        # 4. Deep Link Matrix Fuzzing
         if target_deeplinks:
-            dl_results, dl_findings = await self.fuzz_deeplinks(
+            dl_results, dl_findings = await self.deeplink_fuzzer.fuzz_deep_links(
                 serial=serial,
                 package_name=package_name,
-                deeplinks=target_deeplinks,
+                deep_links=target_deeplinks,
             )
             suite_report["tests_run"] += len(dl_results)
             suite_report["findings"].extend([f.to_dict() for f in dl_findings])
@@ -269,11 +256,29 @@ class IntentFuzzer:
             suite_report["provider_flaws_detected"] = len(prov_findings)
             suite_report["findings"].extend([f.to_dict() for f in prov_findings])
 
-        # 6. Post-Execution Storage Sandbox Forensics
+        # 6. Autonomous UI State Crawling (if enabled)
+        if crawl_ui:
+            crawl_res = await self.ui_crawler.crawl_app(serial, package_name, max_steps=5)
+            suite_report["stages"].append({
+                "stage": "Autonomous UI Crawl",
+                "screens_explored": crawl_res["screens_explored"],
+                "dialogs_dismissed": crawl_res["dialogs_dismissed"],
+                "inputs_filled": crawl_res["inputs_filled"],
+                "buttons_clicked": crawl_res["buttons_clicked"],
+            })
+
+        # 7. Volatile Memory Forensics (if enabled)
+        if audit_memory:
+            mem_res = await self.memory_auditor.run_memory_audit(serial, package_name)
+            suite_report["memory_flaws_detected"] = mem_res["memory_findings_count"]
+            suite_report["findings"].extend(mem_res["findings"])
+
+        # 8. Post-Execution Storage Sandbox Forensics
         if audit_storage:
             storage_res = await self.storage_auditor.audit_all_storage(serial, package_name)
             suite_report["storage_flaws_detected"] = storage_res["total_storage_findings"]
             suite_report["findings"].extend(storage_res["findings"])
+
 
         # 7. Capture Final Screenshot
         screenshot = await self.adb.capture_screenshot(serial)

@@ -125,8 +125,10 @@ def web(host: str, port: int):
 @click.option("--deeplinks", default=None, help="Comma-separated deep-link URIs to test")
 @click.option("--authorities", default=None, help="Comma-separated ContentProvider authorities to audit")
 @click.option("--audit-storage/--no-audit-storage", default=True, help="Audit sandbox SharedPreferences & SQLite on rooted device")
+@click.option("--audit-memory/--no-audit-memory", default=True, help="Audit volatile process memory for cleartext credentials (CWE-316)")
+@click.option("--crawl-ui/--no-crawl-ui", default=False, help="Autonomously explore UI views with UIAutomator")
 @click.option("--output", default="./output/dast", help="Output directory for dynamic report", type=click.Path())
-def dast(package: str, serial: str | None, apk: str | None, activities: str | None, deeplinks: str | None, authorities: str | None, audit_storage: bool, output: str):
+def dast(package: str, serial: str | None, apk: str | None, activities: str | None, deeplinks: str | None, authorities: str | None, audit_storage: bool, audit_memory: bool, crawl_ui: bool, output: str):
     """Run dynamic application security testing (DAST) on connected emulator or device."""
     import json
     from mobileag.dast import ADBManager, IntentFuzzer
@@ -169,6 +171,8 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
             deeplinks=dl_list,
             authorities=auth_list,
             audit_storage=audit_storage,
+            audit_memory=audit_memory,
+            crawl_ui=crawl_ui,
         )
 
         # Output summary
@@ -183,19 +187,45 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
         console.print(f" - Logcat Leaks:       [bold yellow]{report['leaks_detected']}[/]")
         console.print(f" - Storage Flaws:      [bold magenta]{report.get('storage_flaws_detected', 0)}[/]")
         console.print(f" - Provider Flaws:     [bold red]{report.get('provider_flaws_detected', 0)}[/]")
+        console.print(f" - Memory Flaws:       [bold yellow]{report.get('memory_flaws_detected', 0)}[/]")
         console.print(f" - Full Report:        [link={report_file.resolve()}]{report_file.resolve()}[/link]\n")
 
 
     try:
         asyncio.run(_run_dast())
     except KeyboardInterrupt:
-        console.print("\n[bold red]DAST assessment aborted by user.[/]")
-        sys.exit(1)
+        console.print("\n[bold yellow]DAST test interrupted by user.[/]")
     except Exception as e:
-        console.print(f"\n[bold red]Error during DAST execution:[/] {e}")
+        console.print(f"[bold red]DAST failed:[/] {e}")
         sys.exit(1)
+
+
+@main.command()
+@click.option("--src", required=True, help="Path to decompiled source directory (Java/Kotlin)", type=click.Path(exists=True))
+@click.option("--output", default="./output/taint", help="Output directory for taint analysis report", type=click.Path())
+def taint(src: str, output: str):
+    """Run inter-procedural static source-to-sink taint analysis."""
+    import json
+    from mobileag.analysis import TaintEngine
+
+    console.print(Panel.fit(
+        f"[bold green]MobileAg Static Taint & Dataflow Engine[/]\n"
+        f"Source Directory: [bold]{src}[/]",
+        border_style="green"
+    ))
+
+    engine = TaintEngine()
+    findings = engine.analyze_directory(src)
+
+    out_dir = Path(output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_file = out_dir / "taint_findings.json"
+    report_file.write_text(json.dumps([f.to_dict() for f in findings], indent=2))
+
+    console.print(f"\n[bold green]Taint Analysis Complete![/]")
+    console.print(f" - Sinks Tainted: [bold red]{len(findings)}[/]")
+    console.print(f" - Report Saved:  [link={report_file.resolve()}]{report_file.resolve()}[/link]\n")
 
 
 if __name__ == "__main__":
     main()
-

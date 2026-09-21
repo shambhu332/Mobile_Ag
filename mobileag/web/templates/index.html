@@ -76,11 +76,18 @@
           <span>Attack Surface</span>
         </button>
 
+        <button onclick="switchView('dast')" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="smartphone" class="w-4 h-4"></i>
+          <span>Live DAST & Emulators</span>
+          <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
+        </button>
+
         <button onclick="switchView('findings')" id="nav-findings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="alert-octagon" class="w-4 h-4"></i>
           <span>Findings & Triage</span>
           <span id="nav-findings-count" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-300">5</span>
         </button>
+
 
         <button onclick="switchView('scans')" id="nav-scans" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="history" class="w-4 h-4"></i>
@@ -472,7 +479,201 @@
         </div>
       </div>
 
+      <!-- =================================================================== -->
+      <!-- VIEW: LIVE DAST & EMULATORS -->
+      <!-- =================================================================== -->
+      <div id="view-dast" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">
+        
+        <!-- Header & Connection Bar -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <i data-lucide="smartphone" class="w-4 h-4"></i>
+              </div>
+              <h3 class="text-sm font-semibold text-white">Dynamic Application Security Testing (DAST) Workspace</h3>
+              <span id="dast-adb-indicator" class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ADB Ready
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Live Android runtime instrumentation, rooted emulator verification, component intent fuzzing, and logcat auditing.</p>
+          </div>
+
+          <!-- Quick Connect & Refresh Bar -->
+          <div class="flex items-center gap-2 font-mono text-xs">
+            <div class="flex items-center bg-card border border-borderSubtle rounded-lg px-2 py-1">
+              <span class="text-slate-500 mr-2 text-[11px]">TCP:</span>
+              <input type="text" id="dast-tcp-input" value="127.0.0.1:5555" placeholder="host:port" class="bg-transparent border-none text-slate-200 text-xs focus:outline-none w-32" />
+            </div>
+            <button onclick="connectDastDevice()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
+              <i data-lucide="link" class="w-3.5 h-3.5 text-sky-400"></i> Connect
+            </button>
+            <button onclick="refreshDastDevices()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-400"></i> Refresh
+            </button>
+            <button onclick="restartDastRoot()" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-emerald-400"></i> Root Shell
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 1: Fleet & Orchestration Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <!-- Device Fleet Card (5 cols) -->
+          <div class="lg:col-span-5 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="cpu" class="w-3.5 h-3.5 text-sky-400"></i> Connected Target Fleet
+              </h4>
+              <span id="dast-fleet-count" class="text-[10px] font-mono px-2 py-0.5 rounded bg-card text-slate-400 border border-borderSubtle">0 Connected</span>
+            </div>
+
+            <div id="dast-device-fleet-list" class="flex-1 space-y-2 overflow-y-auto max-h-56 pr-1 text-xs">
+              <!-- Rendered via JS -->
+              <div class="p-4 rounded-lg bg-card/60 border border-dashed border-borderSubtle text-center text-slate-400">
+                <p class="text-xs">Scanning for connected emulators and devices...</p>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-borderSubtle flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>Active Target:</span>
+              <span id="dast-active-target-label" class="text-sky-400 font-semibold">None Selected</span>
+            </div>
+          </div>
+
+          <!-- Orchestrator & Intent Fuzzer Card (7 cols) -->
+          <div class="lg:col-span-7 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Component Exerciser & Intent Fuzzer
+              </h4>
+              <span class="text-[10px] font-mono text-slate-400">Autonomous DAST Execution</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Target Package Name</label>
+                <input type="text" id="dast-input-package" value="com.target.mobile.app" class="w-full bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
+              </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Target Component / Activity</label>
+                <div class="flex items-center gap-1.5">
+                  <input type="text" id="dast-input-activity" value=".activity.DeepLinkRouterActivity" placeholder="com.app/.MainActivity" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
+                  <button onclick="launchDastActivity()" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Launch with am start">
+                    <i data-lucide="play" class="w-3.5 h-3.5 text-emerald-400"></i>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Deep Link / Custom Scheme URI</label>
+                <div class="flex items-center gap-1.5">
+                  <input type="text" id="dast-input-deeplink" value="targetapp://auth?token=fuzz_payload" placeholder="scheme://host/path" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
+                  <button onclick="dispatchDastDeeplink()" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Dispatch Intent VIEW">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-sky-400"></i>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">APK Host File (Auto-Grant Permissions)</label>
+                <div class="flex items-center gap-1.5">
+                  <input type="text" id="dast-input-apk" placeholder="/path/to/target.apk" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
+                  <button onclick="installDastApk()" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Install to target device">
+                    <i data-lucide="download" class="w-3.5 h-3.5 text-purple-400"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Suite Launch Trigger -->
+            <div class="pt-2 flex items-center justify-between border-t border-borderSubtle">
+              <span id="dast-fuzz-status" class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready for dynamic assessment
+              </span>
+              <button onclick="runDastFuzzSuite()" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
+                <i data-lucide="play-circle" class="w-4 h-4"></i> Run Automated Intent Fuzzing & Crash Audit
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Live Logcat Console & Device Screen Stream -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <!-- Terminal Console (8 cols) -->
+          <div class="lg:col-span-8 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i> Live Logcat & Runtime Telemetry
+                </h4>
+                <span id="dast-log-counter" class="text-[10px] font-mono px-2 py-0.5 rounded bg-card text-slate-400 border border-borderSubtle">0 lines</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs font-mono">
+                <input type="text" id="dast-log-filter" oninput="filterDastTerminalLogs()" placeholder="Filter logcat..." class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-sky-500 w-36" />
+                <button onclick="fetchDastLogcat()" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] flex items-center gap-1">
+                  <i data-lucide="download-cloud" class="w-3 h-3 text-sky-400"></i> Dump Buffer
+                </button>
+                <button onclick="clearDastLogcat()" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] flex items-center gap-1">
+                  <i data-lucide="trash-2" class="w-3 h-3 text-red-400"></i> Clear
+                </button>
+              </div>
+            </div>
+
+            <!-- Terminal Output -->
+            <div id="dast-terminal" class="bg-black/90 border border-borderSubtle rounded-lg p-3 font-mono text-[11px] h-72 overflow-y-auto leading-relaxed text-slate-300 space-y-0.5 select-text">
+              <div class="text-slate-500">// Connected to ADB Logcat Buffer. Click 'Dump Buffer' or run intent fuzzing to stream events...</div>
+            </div>
+          </div>
+
+          <!-- Device Screen Snapshot & Telemetry (4 cols) -->
+          <div class="lg:col-span-4 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="camera" class="w-3.5 h-3.5 text-purple-400"></i> Device Screen Mirror
+              </h4>
+              <button onclick="captureDastScreenshot()" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] font-mono flex items-center gap-1">
+                <i data-lucide="aperture" class="w-3 h-3 text-sky-400"></i> Capture Screen
+              </button>
+            </div>
+
+            <!-- Frame Container -->
+            <div id="dast-screenshot-container" class="flex-1 bg-card/60 border border-borderSubtle rounded-lg p-2 flex items-center justify-center min-h-[280px]">
+              <div id="dast-screenshot-placeholder" class="text-center p-4 text-slate-500 text-xs">
+                <i data-lucide="image" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+                <p>No screen capture yet.</p>
+                <p class="text-[10px] text-slate-600 mt-1">Click 'Capture Screen' to grab current frame from emulator/device.</p>
+              </div>
+              <img id="dast-screenshot-img" src="" alt="Device Screen" class="hidden max-h-64 object-contain rounded border border-borderSubtle shadow-md" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: DAST Findings & Crash Traces -->
+        <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-400"></i> Dynamic Security Findings & Runtime Traces
+              </h4>
+              <p class="text-[11px] text-slate-400 mt-0.5">Identified via live activity intent fuzzing, crash interception, and logcat credential auditing.</p>
+            </div>
+            <span id="dast-findings-count" class="px-2.5 py-1 rounded-full text-xs font-mono bg-red-950/60 border border-red-800 text-red-300">0 Dynamic Findings</span>
+          </div>
+
+          <div id="dast-findings-container" class="space-y-3">
+            <!-- Rendered via JS -->
+            <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
+              <i data-lucide="shield" class="w-6 h-6 mx-auto mb-2 text-slate-600"></i>
+              No dynamic runtime vulnerabilities recorded yet. Launch intent fuzzing to discover unhandled crashes or token leaks.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
     </div>
+
 
     <!-- =================================================================== -->
     <!-- 3. COPILOT SLIDE-OVER DRAWER -->
@@ -619,6 +820,7 @@
         activeNav.classList.remove('text-slate-400');
       }
 
+      if (viewId === 'dast') loadDastView();
       if (viewId === 'agents') loadAgentsView();
       if (viewId === 'scans') loadScansView();
       if (viewId === 'settings') loadSettingsView();
@@ -626,6 +828,7 @@
       if (viewId === 'surface' && visNetwork) visNetwork.fit();
 
       lucide.createIcons();
+
     }
 
     // Load Scan Data
@@ -1243,11 +1446,14 @@
             const data = JSON.parse(event.data);
             if (data.type === 'agent_progress') {
               handleLiveEvent(data);
+            } else if (data.type === 'dast_progress' || data.type === 'dast_finding') {
+              handleDastLiveEvent(data);
             }
           } catch (e) {
             console.warn('WS parse error:', e);
           }
         };
+
 
         wsConnection.onclose = function() {
           const wsLabel = document.getElementById('sidebar-ws-status');
@@ -1309,10 +1515,523 @@
       }
     }
 
+    // =========================================================================
+    // DAST & Emulator Live Orchestration Logic
+    // =========================================================================
+    let dastActiveDevice = null;
+    let dastDevices = [];
+    let dastFindings = [];
+    let dastRawLogs = [];
+
+    async function loadDastView() {
+      if (currentScan && currentScan.package_name) {
+        const pkgInput = document.getElementById('dast-input-package');
+        if (pkgInput && (!pkgInput.value || pkgInput.value === 'com.target.mobile.app')) {
+          pkgInput.value = currentScan.package_name;
+        }
+      }
+      await refreshDastDevices();
+      renderDastFindings();
+    }
+
+    async function refreshDastDevices() {
+      try {
+        const res = await fetch('/api/dast/devices');
+        const data = await res.json();
+        dastDevices = data.devices || [];
+
+        // Update badge and indicator
+        const badge = document.getElementById('nav-dast-device-badge');
+        if (badge) badge.textContent = `${dastDevices.length} Devs`;
+
+        const fleetCount = document.getElementById('dast-fleet-count');
+        if (fleetCount) fleetCount.textContent = `${dastDevices.length} Connected`;
+
+        const adbIndicator = document.getElementById('dast-adb-indicator');
+        if (adbIndicator) {
+          if (data.adb_available) {
+            adbIndicator.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400 flex items-center gap-1.5';
+            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ADB Ready';
+          } else {
+            adbIndicator.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-950/60 border border-amber-800 text-amber-400 flex items-center gap-1.5';
+            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> ADB Offline';
+          }
+        }
+
+        renderDastDeviceFleet();
+
+        // Auto-select first device if none selected
+        if (!dastActiveDevice && dastDevices.length > 0) {
+          selectDastDevice(dastDevices[0].serial);
+        }
+      } catch (e) {
+        console.warn('Error fetching DAST devices:', e);
+        showToast('Error refreshing ADB devices', 'error');
+      }
+    }
+
+    function renderDastDeviceFleet() {
+      const container = document.getElementById('dast-device-fleet-list');
+      if (!container) return;
+
+      if (dastDevices.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 rounded-lg bg-card/60 border border-dashed border-borderSubtle text-center text-slate-400 space-y-2">
+            <i data-lucide="smartphone" class="w-6 h-6 mx-auto text-slate-600"></i>
+            <p class="text-xs text-slate-300 font-medium">No Android Devices / Emulators Detected</p>
+            <p class="text-[11px] text-slate-500">Start your rooted emulator (AVD, Genymotion, or Corellium) and click below or connect via TCP.</p>
+            <div class="pt-2">
+              <button onclick="connectDastDevice()" class="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-mono">
+                Connect 127.0.0.1:5555
+              </button>
+            </div>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = dastDevices.map(dev => {
+        const isSelected = dev.serial === dastActiveDevice;
+        const rootBadge = dev.is_rooted 
+          ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700 text-[10px] font-mono text-emerald-300 font-semibold flex items-center gap-1">
+               <span class="w-1 h-1 rounded-full bg-emerald-400"></span> # ROOT (uid=0)
+             </span>`
+          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400">Shell (non-root)</span>`;
+
+        return `
+          <div onclick="selectDastDevice('${dev.serial}')" class="p-3 rounded-lg border cursor-pointer transition ${
+            isSelected 
+              ? 'bg-sky-950/40 border-sky-500/60 shadow-sm' 
+              : 'bg-card hover:bg-slate-800/60 border-borderSubtle'
+          }">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="${dev.is_emulator ? 'monitor' : 'smartphone'}" class="w-4 h-4 ${isSelected ? 'text-sky-400' : 'text-slate-400'}"></i>
+                <span class="font-mono font-semibold text-white text-xs">${escapeHtml(dev.model || dev.serial)}</span>
+                ${dev.is_emulator ? '<span class="text-[9px] px-1 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono uppercase">Emulator</span>' : ''}
+              </div>
+              ${rootBadge}
+            </div>
+            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 mt-2">
+              <span>Serial: <span class="text-slate-300">${escapeHtml(dev.serial)}</span></span>
+              <span>Android ${escapeHtml(dev.android_version)} (API ${escapeHtml(dev.sdk_level)})</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function selectDastDevice(serial) {
+      dastActiveDevice = serial;
+      const label = document.getElementById('dast-active-target-label');
+      if (label) label.textContent = serial;
+      renderDastDeviceFleet();
+      showToast(`Selected Device: ${serial}`, 'info');
+    }
+
+    async function connectDastDevice() {
+      const input = document.getElementById('dast-tcp-input');
+      const hostPort = input ? input.value.trim() : '127.0.0.1:5555';
+      showToast(`Connecting to ${hostPort}...`, 'info');
+      try {
+        const res = await fetch('/api/dast/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host_port: hostPort }),
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(`Connected: ${data.output}`, 'success');
+        } else {
+          showToast(`ADB: ${data.output || 'Could not connect'}`, 'info');
+        }
+        await refreshDastDevices();
+      } catch (e) {
+        showToast(`Connection error: ${e}`, 'error');
+      }
+    }
+
+    async function restartDastRoot() {
+      if (!dastActiveDevice) {
+        showToast('Please select a device from the fleet first', 'error');
+        return;
+      }
+      showToast(`Attempting adbd restart as root on ${dastActiveDevice}...`, 'info');
+      try {
+        const res = await fetch('/api/dast/root', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice }),
+        });
+        const data = await res.json();
+        if (data.is_rooted) {
+          showToast(`Success: Root shell verified on ${dastActiveDevice}`, 'success');
+        } else {
+          showToast(`Notice: ${data.output}`, 'info');
+        }
+        await refreshDastDevices();
+      } catch (e) {
+        showToast(`Root switch error: ${e}`, 'error');
+      }
+    }
+
+    async function installDastApk() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const apkInput = document.getElementById('dast-input-apk');
+      const apkPath = apkInput ? apkInput.value.trim() : '';
+      if (!apkPath) {
+        showToast('Please specify an APK path on the host', 'error');
+        return;
+      }
+
+      showToast(`Installing ${apkPath} with runtime permissions (-g)...`, 'info');
+      try {
+        const res = await fetch('/api/dast/install', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, apk_path: apkPath, grant_permissions: true }),
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(`Installed successfully on ${dastActiveDevice}`, 'success');
+        } else {
+          showToast(`Install notice: ${data.output || data.message}`, 'error');
+        }
+      } catch (e) {
+        showToast(`Install error: ${e}`, 'error');
+      }
+    }
+
+    async function launchDastActivity() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || '';
+      const act = document.getElementById('dast-input-activity')?.value.trim() || '';
+      if (!act) {
+        showToast('Specify an activity component to launch', 'error');
+        return;
+      }
+      const fullComp = act.includes('/') ? act : `${pkg}/${act}`;
+      showToast(`Launching ${fullComp}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, component: fullComp }),
+        });
+        const data = await res.json();
+        showToast(`Launch: ${data.status === 'success' ? 'Triggered' : data.output}`, 'info');
+        setTimeout(fetchDastLogcat, 1000);
+      } catch (e) {
+        showToast(`Launch error: ${e}`, 'error');
+      }
+    }
+
+    async function dispatchDastDeeplink() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const uri = document.getElementById('dast-input-deeplink')?.value.trim() || '';
+      if (!uri) {
+        showToast('Specify a deep link URI', 'error');
+        return;
+      }
+      showToast(`Dispatching URI: ${uri}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/deeplink', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, uri: uri }),
+        });
+        const data = await res.json();
+        showToast(`Deep Link dispatched (${data.status})`, 'info');
+        setTimeout(fetchDastLogcat, 1000);
+      } catch (e) {
+        showToast(`Deep link error: ${e}`, 'error');
+      }
+    }
+
+    async function fetchDastLogcat() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || '';
+      showToast(`Dumping logcat from ${dastActiveDevice}...`, 'info');
+
+      try {
+        const res = await fetch(`/api/dast/logcat?serial=${encodeURIComponent(dastActiveDevice)}&package_name=${encodeURIComponent(pkg)}&lines=250`);
+        const data = await res.json();
+        dastRawLogs = data.lines || [];
+
+        renderDastTerminal(dastRawLogs);
+
+        const counter = document.getElementById('dast-log-counter');
+        if (counter) counter.textContent = `${dastRawLogs.length} lines`;
+
+        // Process any findings discovered
+        if (data.findings && data.findings.length > 0) {
+          data.findings.forEach(f => {
+            if (!dastFindings.some(existing => existing.title === f.title)) {
+              dastFindings.unshift(f);
+            }
+          });
+          renderDastFindings();
+          showToast(`Logcat Audit: ${data.findings.length} security alerts found!`, 'error');
+        } else {
+          showToast(`Retrieved ${dastRawLogs.length} logcat lines`, 'success');
+        }
+      } catch (e) {
+        showToast(`Logcat error: ${e}`, 'error');
+      }
+    }
+
+    function renderDastTerminal(lines) {
+      const term = document.getElementById('dast-terminal');
+      if (!term) return;
+
+      if (!lines || lines.length === 0) {
+        term.innerHTML = '<div class="text-slate-500">// Log buffer is currently empty.</div>';
+        return;
+      }
+
+      term.innerHTML = lines.map(line => {
+        let colorClass = 'text-slate-300';
+        if (line.includes('FATAL EXCEPTION') || line.includes('AndroidRuntime') || line.includes('NullPointerException')) {
+          colorClass = 'text-red-400 font-bold bg-red-950/30 px-1 rounded';
+        } else if (line.includes(' E ') || line.includes('ERROR:')) {
+          colorClass = 'text-red-400';
+        } else if (line.includes(' W ') || line.includes('WARN:')) {
+          colorClass = 'text-amber-400';
+        } else if (line.includes(' D ')) {
+          colorClass = 'text-sky-300';
+        } else if (line.includes('Bearer') || line.includes('AIzaSy') || line.includes('AKIA')) {
+          colorClass = 'text-emerald-300 font-semibold bg-emerald-950/50 px-1 rounded';
+        }
+        return `<div class="${colorClass}">${escapeHtml(line)}</div>`;
+      }).join('');
+
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function filterDastTerminalLogs() {
+      const filter = document.getElementById('dast-log-filter')?.value.toLowerCase() || '';
+      if (!filter) {
+        renderDastTerminal(dastRawLogs);
+        return;
+      }
+      const filtered = dastRawLogs.filter(l => l.toLowerCase().includes(filter));
+      renderDastTerminal(filtered);
+    }
+
+    async function clearDastLogcat() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      try {
+        await fetch('/api/dast/logcat/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice }),
+        });
+        dastRawLogs = [];
+        renderDastTerminal([]);
+        const counter = document.getElementById('dast-log-counter');
+        if (counter) counter.textContent = '0 lines';
+        showToast('Device logcat buffer cleared', 'success');
+      } catch (e) {
+        showToast(`Clear error: ${e}`, 'error');
+      }
+    }
+
+    async function captureDastScreenshot() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      showToast('Capturing screen frame...', 'info');
+
+      try {
+        const res = await fetch('/api/dast/screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice }),
+        });
+        const data = await res.json();
+        if (data.status === 'success' && data.image_b64) {
+          const img = document.getElementById('dast-screenshot-img');
+          const placeholder = document.getElementById('dast-screenshot-placeholder');
+          if (img && placeholder) {
+            img.src = data.image_b64;
+            img.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+          }
+          showToast('Device frame captured successfully', 'success');
+        } else {
+          showToast('Screenshot capture failed', 'error');
+        }
+      } catch (e) {
+        showToast(`Screenshot error: ${e}`, 'error');
+      }
+    }
+
+    async function runDastFuzzSuite() {
+      if (!dastActiveDevice) {
+        showToast('Select a target device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      const act = document.getElementById('dast-input-activity')?.value.trim() || '';
+      const uri = document.getElementById('dast-input-deeplink')?.value.trim() || '';
+      const apk = document.getElementById('dast-input-apk')?.value.trim() || '';
+
+      const btn = document.getElementById('btn-dast-run-suite');
+      const statusLabel = document.getElementById('dast-fuzz-status');
+      if (btn) btn.disabled = true;
+      if (statusLabel) {
+        statusLabel.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> Dynamic Suite Running...';
+      }
+
+      showToast(`Initiating DAST Fuzz Suite on ${dastActiveDevice}...`, 'info');
+
+      try {
+        const payload = {
+          serial: dastActiveDevice,
+          package_name: pkg,
+          apk_path: apk || null,
+          activities: act ? [act] : [`${pkg}.MainActivity`],
+          deeplinks: uri ? [uri] : [],
+        };
+        const res = await fetch('/api/dast/fuzz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        showToast(data.message || 'DAST suite running in background', 'success');
+      } catch (e) {
+        showToast(`Fuzz suite error: ${e}`, 'error');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function handleDastLiveEvent(data) {
+      if (data.type === 'dast_progress') {
+        const statusLabel = document.getElementById('dast-fuzz-status');
+        if (statusLabel) {
+          statusLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> [${data.stage}] ${escapeHtml(data.message)}`;
+        }
+        // Append event to terminal
+        const term = document.getElementById('dast-terminal');
+        if (term) {
+          const div = document.createElement('div');
+          div.className = 'text-sky-400 font-mono font-medium';
+          div.textContent = `[*] [${data.stage} ${data.progress}%] ${data.message}`;
+          term.appendChild(div);
+          term.scrollTop = term.scrollHeight;
+        }
+        if (data.progress === 100) {
+          const btn = document.getElementById('btn-dast-run-suite');
+          if (btn) btn.disabled = false;
+          showToast('Dynamic assessment completed!', 'success');
+          setTimeout(fetchDastLogcat, 500);
+        }
+      } else if (data.type === 'dast_finding') {
+        if (!dastFindings.some(existing => existing.title === data.finding.title)) {
+          dastFindings.unshift(data.finding);
+        }
+        renderDastFindings();
+        showToast(`🚨 Dynamic Finding: ${data.finding.title}`, 'error');
+      }
+    }
+
+    function renderDastFindings() {
+      const container = document.getElementById('dast-findings-container');
+      const countBadge = document.getElementById('dast-findings-count');
+      if (!container) return;
+
+      if (countBadge) countBadge.textContent = `${dastFindings.length} Dynamic Findings`;
+
+      if (dastFindings.length === 0) {
+        container.innerHTML = `
+          <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
+            <i data-lucide="shield-check" class="w-6 h-6 mx-auto mb-2 text-emerald-500/60"></i>
+            No dynamic runtime vulnerabilities recorded yet. Launch intent fuzzing to discover unhandled crashes or token leaks.
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = dastFindings.map((f, idx) => {
+        const sevColor = f.severity === 'CRITICAL' ? 'bg-red-950 text-red-300 border-red-800' :
+                         f.severity === 'HIGH' ? 'bg-orange-950 text-orange-300 border-orange-800' :
+                         'bg-amber-950 text-amber-300 border-amber-800';
+
+        return `
+          <div class="p-4 rounded-xl bg-card border border-borderSubtle hover:border-slate-700 transition flex flex-col space-y-3">
+            <div class="flex items-start justify-between gap-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold border ${sevColor}">${f.severity}</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 font-semibold">${f.cwe_id || 'CWE'}</span>
+                  <span class="text-xs text-slate-400 font-mono">CVSS ${f.cvss_score || 'N/A'}</span>
+                  <span class="px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-800 text-[10px] font-mono text-purple-300">Live Dynamic</span>
+                </div>
+                <h4 class="text-sm font-semibold text-white">${escapeHtml(f.title)}</h4>
+                <p class="text-xs text-slate-400 font-mono">Component: <span class="text-slate-200">${escapeHtml(f.affected_component || 'Runtime')}</span></p>
+              </div>
+
+              <!-- Triage Controls -->
+              <div class="flex items-center gap-2 shrink-0">
+                <button onclick="submitTriageVerdict('${f.id || 'find-dast-' + idx}', 'CONFIRMED')" class="px-2.5 py-1 rounded bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-xs font-mono flex items-center gap-1">
+                  <i data-lucide="check" class="w-3 h-3"></i> Confirm
+                </button>
+                <button onclick="submitTriageVerdict('${f.id || 'find-dast-' + idx}', 'FALSE_POSITIVE')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 text-xs font-mono flex items-center gap-1">
+                  <i data-lucide="x" class="w-3 h-3"></i> False Positive
+                </button>
+              </div>
+            </div>
+
+            <!-- Description & Evidence Snippet -->
+            <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(f.description || '')}</p>
+            ${f.code_snippet ? `
+              <div class="bg-black/80 border border-borderSubtle rounded-lg p-2.5 text-[11px] font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">
+                <code>${escapeHtml(f.code_snippet)}</code>
+              </div>
+            ` : ''}
+
+            <!-- Remediation Guidance -->
+            ${f.remediation ? `
+              <div class="pt-2 border-t border-borderSubtle/60 flex items-start gap-2 text-[11px] font-mono text-slate-400">
+                <i data-lucide="wrench" class="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5"></i>
+                <div><span class="text-slate-300 font-semibold">Remediation:</span> ${escapeHtml(f.remediation)}</div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
     function escapeHtml(text) {
       const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
       return text.replace(/[&<>"']/g, m => map[m]);
     }
+
 
     // Close export dropdown on click outside
     window.addEventListener('click', (e) => {
@@ -1327,7 +2046,9 @@
       loadInitialScan();
       checkGraphStatus();
       connectTelemetryWebSocket();
+      refreshDastDevices();
     });
+
   </script>
 </body>
 </html>

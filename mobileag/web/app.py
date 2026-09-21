@@ -16,10 +16,24 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from config.settings import get_settings
+from mobileag.dast import (
+    ADBManager,
+    ConnectedDevice,
+    HTTPTransaction,
+    IntentFuzzer,
+    LogcatAuditor,
+    TrafficAuditor,
+)
 from mobileag.knowledge.neo4j_graph import AttackGraph
 from mobileag.reporting.finding import FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
+
+# Initialize DAST & Knowledge subsystems
+adb_manager = ADBManager()
+logcat_auditor = LogcatAuditor()
+traffic_auditor = TrafficAuditor()
+intent_fuzzer = IntentFuzzer(adb=adb_manager, auditor=logcat_auditor)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = REPO_ROOT / "output"
@@ -597,7 +611,239 @@ async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
     return {"status": "success", "settings": RUNTIME_SETTINGS}
 
 
+# =============================================================================
+# DAST (Dynamic Application Security Testing) Endpoints
+# =============================================================================
+class DeviceConnectRequest(BaseModel):
+    host_port: str = "127.0.0.1:5555"
+
+
+class DeviceActionRequest(BaseModel):
+    serial: str
+
+
+class InstallApkRequest(BaseModel):
+    serial: str
+    apk_path: str
+    grant_permissions: bool = True
+
+
+class LaunchActivityRequest(BaseModel):
+    serial: str
+    component: str
+
+
+class DispatchDeeplinkRequest(BaseModel):
+    serial: str
+    uri: str
+
+
+class DastFuzzRequest(BaseModel):
+    serial: str
+    package_name: str
+    apk_path: Optional[str] = None
+    activities: Optional[list[str]] = None
+    deeplinks: Optional[list[str]] = None
+
+
+@app.get("/api/dast/devices")
+async def get_dast_devices() -> dict[str, Any]:
+    """List connected Android devices, emulators, and verify root shell status."""
+    avail = await adb_manager.is_adb_available()
+    devices = await adb_manager.list_devices() if avail else []
+    return {
+        "adb_available": avail,
+        "adb_path": adb_manager.adb_bin,
+        "device_count": len(devices),
+        "devices": [
+            {
+                "serial": d.serial,
+                "status": d.status,
+                "model": d.model,
+                "android_version": d.android_version,
+                "sdk_level": d.sdk_level,
+                "is_emulator": d.is_emulator,
+                "is_rooted": d.is_rooted,
+            }
+            for d in devices
+        ],
+    }
+
+
+@app.post("/api/dast/connect")
+async def connect_dast_device(req: DeviceConnectRequest) -> dict[str, Any]:
+    """Connect to a local or remote emulator/device over TCP/IP."""
+    res = await adb_manager.connect_device(req.host_port)
+    return res
+
+
+@app.post("/api/dast/root")
+async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
+    """Restart adbd with root privileges on the selected device."""
+    res = await adb_manager.restart_root(req.serial)
+    return res
+
+
+@app.post("/api/dast/install")
+async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
+    """Install an APK onto the target device with auto-granted runtime permissions."""
+    res = await adb_manager.install_apk(req.serial, req.apk_path, req.grant_permissions)
+    return res
+
+
+@app.post("/api/dast/launch")
+async def launch_dast_activity(req: LaunchActivityRequest) -> dict[str, Any]:
+    """Launch an Android component or exported activity via am start."""
+    res = await adb_manager.launch_activity(req.serial, req.component)
+    return res
+
+
+@app.post("/api/dast/deeplink")
+async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest) -> dict[str, Any]:
+    """Dispatch a custom URI scheme or deep-link to the target device."""
+    res = await intent_fuzzer.exercise_component(
+        serial=req.serial,
+        package_name="",
+        component_name="",
+        action="android.intent.action.VIEW",
+        data_uri=req.uri,
+    )
+    return {
+        "status": "success" if not res.get("crashed") else "crashed",
+        "result": res,
+    }
+
+
+@app.get("/api/dast/logcat")
+async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = 200) -> dict[str, Any]:
+    """Dump recent logcat buffer and audit for CWE-532 leaks and fatal crashes."""
+    raw_lines = await adb_manager.get_logcat_dump(serial=serial, filter_pkg=package_name, lines=lines)
+    findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name or "")
+    return {
+        "serial": serial,
+        "lines": raw_lines,
+        "line_count": len(raw_lines),
+        "findings": [f.to_dict() for f in findings],
+    }
+
+
+@app.post("/api/dast/logcat/clear")
+async def clear_dast_logcat(req: DeviceActionRequest) -> dict[str, Any]:
+    """Clear device logcat buffer."""
+    success = await adb_manager.clear_logcat(req.serial)
+    return {"status": "success" if success else "failed"}
+
+
+@app.post("/api/dast/screenshot")
+async def capture_dast_screenshot(req: DeviceActionRequest) -> dict[str, Any]:
+    """Capture a live screenshot of the device screen."""
+    png_bytes = await adb_manager.capture_screenshot(req.serial)
+    if png_bytes:
+        import base64
+        b64 = base64.b64encode(png_bytes).decode("utf-8")
+        return {"status": "success", "image_b64": f"data:image/png;base64,{b64}"}
+    return {"status": "error", "message": "Screenshot capture failed"}
+
+
+async def run_dast_background_task(req: DastFuzzRequest) -> None:
+    """Execute dynamic fuzzing and stream telemetry events over WebSockets."""
+    serial = req.serial
+    pkg = req.package_name
+
+    await manager.broadcast({
+        "type": "dast_progress",
+        "stage": "DAST Initialized",
+        "message": f"Starting dynamic assessment on {serial} for {pkg}...",
+        "progress": 10,
+        "timestamp": datetime.now().isoformat(),
+    })
+
+    # Device verification
+    devs = await adb_manager.list_devices()
+    target_dev = next((d for d in devs if d.serial == serial), None)
+    is_root = target_dev.is_rooted if target_dev else False
+
+    await manager.broadcast({
+        "type": "dast_progress",
+        "stage": "Device Verified",
+        "message": f"Device {serial} confirmed (Rooted: {is_root})",
+        "progress": 25,
+        "timestamp": datetime.now().isoformat(),
+    })
+
+    # Optional APK installation
+    if req.apk_path:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "APK Installation",
+            "message": f"Installing {req.apk_path} with auto-permissions (-g)...",
+            "progress": 40,
+            "timestamp": datetime.now().isoformat(),
+        })
+        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=True)
+
+    # Activity intent fuzzing
+    acts = req.activities or [f"{pkg}.MainActivity"]
+    await manager.broadcast({
+        "type": "dast_progress",
+        "stage": "Intent Exercising",
+        "message": f"Exercising {len(acts)} activities with boundary payloads...",
+        "progress": 65,
+        "timestamp": datetime.now().isoformat(),
+    })
+
+    _, findings = await intent_fuzzer.fuzz_activity_intents(serial, pkg, acts)
+
+    # Deep-link fuzzing
+    if req.deeplinks:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Deep Link Fuzzing",
+            "message": f"Invoking {len(req.deeplinks)} deep links and URI schemes...",
+            "progress": 85,
+            "timestamp": datetime.now().isoformat(),
+        })
+        _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks)
+        findings.extend(dl_findings)
+
+    # Append to active findings
+    demo = get_initial_demo_scan()
+    for f in findings:
+        f_dict = f.to_dict()
+        demo.setdefault("findings", []).append(f_dict)
+        await manager.broadcast({
+            "type": "dast_finding",
+            "finding": f_dict,
+            "message": f"Dynamic issue detected: {f.title}",
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    crashes = len([f for f in findings if f.cwe_id == "CWE-755"])
+    leaks = len([f for f in findings if f.cwe_id == "CWE-532"])
+
+    await manager.broadcast({
+        "type": "dast_progress",
+        "stage": "DAST Complete",
+        "message": f"Dynamic assessment completed. Identified {len(findings)} issues ({crashes} crashes, {leaks} leaks).",
+        "progress": 100,
+        "timestamp": datetime.now().isoformat(),
+    })
+
+
+@app.post("/api/dast/fuzz")
+async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Trigger dynamic activity intent fuzzing and crash monitoring."""
+    background_tasks.add_task(run_dast_background_task, req)
+    return {
+        "status": "initiated",
+        "device": req.serial,
+        "package_name": req.package_name,
+        "message": f"DAST execution started on {req.serial}. Streaming on /ws/telemetry",
+    }
+
+
 class RunScanRequest(BaseModel):
+
     apk_path: str
     output_dir: Optional[str] = "./output"
 

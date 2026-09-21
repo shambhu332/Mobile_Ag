@@ -126,3 +126,7 @@ class Finding(BaseModel):
             "poc_guide": self.poc_guide,
             "status": self.status.value,
         }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert finding to standard dictionary."""
+        return self.model_dump()

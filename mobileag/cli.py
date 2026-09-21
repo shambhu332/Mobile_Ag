@@ -123,8 +123,10 @@ def web(host: str, port: int):
 @click.option("--apk", default=None, help="Path to APK to install before dynamic testing", type=click.Path(exists=True))
 @click.option("--activities", default=None, help="Comma-separated activity component names to exercise")
 @click.option("--deeplinks", default=None, help="Comma-separated deep-link URIs to test")
+@click.option("--authorities", default=None, help="Comma-separated ContentProvider authorities to audit")
+@click.option("--audit-storage/--no-audit-storage", default=True, help="Audit sandbox SharedPreferences & SQLite on rooted device")
 @click.option("--output", default="./output/dast", help="Output directory for dynamic report", type=click.Path())
-def dast(package: str, serial: str | None, apk: str | None, activities: str | None, deeplinks: str | None, output: str):
+def dast(package: str, serial: str | None, apk: str | None, activities: str | None, deeplinks: str | None, authorities: str | None, audit_storage: bool, output: str):
     """Run dynamic application security testing (DAST) on connected emulator or device."""
     import json
     from mobileag.dast import ADBManager, IntentFuzzer
@@ -156,6 +158,7 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
 
         act_list = [a.strip() for a in activities.split(",")] if activities else [f"{package}.MainActivity"]
         dl_list = [d.strip() for d in deeplinks.split(",")] if deeplinks else []
+        auth_list = [p.strip() for p in authorities.split(",")] if authorities else []
 
         console.print(f"[*] Executing dynamic intent fuzzing across {len(act_list)} component(s)...")
         report = await fuzzer.run_full_dast_suite(
@@ -164,6 +167,8 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
             apk_path=apk,
             activities=act_list,
             deeplinks=dl_list,
+            authorities=auth_list,
+            audit_storage=audit_storage,
         )
 
         # Output summary
@@ -176,7 +181,10 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
         console.print(f" - Tests Executed:     [bold]{report['tests_run']}[/]")
         console.print(f" - Unhandled Crashes:  [bold red]{report['crashes_detected']}[/]")
         console.print(f" - Logcat Leaks:       [bold yellow]{report['leaks_detected']}[/]")
+        console.print(f" - Storage Flaws:      [bold magenta]{report.get('storage_flaws_detected', 0)}[/]")
+        console.print(f" - Provider Flaws:     [bold red]{report.get('provider_flaws_detected', 0)}[/]")
         console.print(f" - Full Report:        [link={report_file.resolve()}]{report_file.resolve()}[/link]\n")
+
 
     try:
         asyncio.run(_run_dast())

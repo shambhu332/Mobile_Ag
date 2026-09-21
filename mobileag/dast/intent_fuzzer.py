@@ -1,8 +1,8 @@
-"""Autonomous Intent and Deep Link Fuzzer for Android DAST.
+"""Autonomous Intent, Deep Link, and IPC Fuzzer for Android DAST.
 
-Executes exported activities, services, and deep-link URI schemes via ADB
-while actively observing the logcat stream for unhandled runtime exceptions (CWE-755)
-and credential/token leakage (CWE-532).
+Executes exported activities, services, deep-link URI schemes, content providers,
+and post-execution storage forensics via ADB while actively observing the logcat stream
+for unhandled runtime exceptions (CWE-755) and credential/token leakage (CWE-532).
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from mobileag.dast.adb_manager import ADBManager
 from mobileag.dast.logcat_auditor import LogcatAuditor
+from mobileag.dast.provider_auditor import ProviderAuditor
+from mobileag.dast.storage_auditor import StorageAuditor
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
@@ -20,11 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 class IntentFuzzer:
-    """Exerciser and fuzzer for Android IPC components and URI schemes."""
+    """Exerciser and fuzzer for Android IPC components, URI schemes, and storage forensics."""
 
-    def __init__(self, adb: Optional[ADBManager] = None, auditor: Optional[LogcatAuditor] = None) -> None:
+    def __init__(
+        self,
+        adb: Optional[ADBManager] = None,
+        auditor: Optional[LogcatAuditor] = None,
+        storage_auditor: Optional[StorageAuditor] = None,
+        provider_auditor: Optional[ProviderAuditor] = None,
+    ) -> None:
         self.adb = adb or ADBManager()
         self.auditor = auditor or LogcatAuditor()
+        self.storage_auditor = storage_auditor or StorageAuditor(adb=self.adb)
+        self.provider_auditor = provider_auditor or ProviderAuditor(adb=self.adb)
 
     async def exercise_component(
         self,
@@ -36,9 +46,8 @@ class IntentFuzzer:
         extra_args: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         """Launch a specific component via `am start` and monitor for crash/leak."""
-        # Format component: e.g. com.example/.MainActivity
         full_comp = component_name if "/" in component_name else f"{package_name}/{component_name}"
-        
+
         cmd_args = ["-s", serial, "shell", "am", "start", "-W"]
         if action:
             cmd_args.extend(["-a", action])
@@ -72,7 +81,6 @@ class IntentFuzzer:
             # Small delay to capture asynchronous runtime exceptions on Android main thread
             await asyncio.sleep(0.5)
 
-
             # Retrieve logcat dump
             logs = await self.adb.get_logcat_dump(serial, filter_pkg=package_name, lines=150)
             if not logs:
@@ -99,13 +107,13 @@ class IntentFuzzer:
         serial: str,
         package_name: str,
         activities: list[str],
+        targeted_extras: Optional[dict[str, list[str]]] = None,
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
-        """Systematically exercise activities with empty, null, and boundary test intent extras."""
+        """Systematically exercise activities with empty, null, boundary, and SAST-bound extras."""
         results: list[dict[str, Any]] = []
         all_findings: list[Finding] = []
 
-        # Standard test intent mutations to identify unhandled null checks & type casts
-        test_payloads = [
+        base_payloads = [
             ("Standard Empty Launch", []),
             ("Empty String Extra", ["--es", "query", ""]),
             ("Null Key Extra", ["--es", "target_url", "null"]),
@@ -114,7 +122,18 @@ class IntentFuzzer:
         ]
 
         for act in activities:
-            for test_name, extras in test_payloads:
+            # Check if SAST extracted specific Intent extra keys for this activity
+            act_clean = act.split("/")[-1] if "/" in act else act
+            matched_extras = (targeted_extras or {}).get(act) or (targeted_extras or {}).get(act_clean) or []
+
+            current_payloads = list(base_payloads)
+            # Add hybrid SAST-targeted extra mutations
+            for key in matched_extras:
+                current_payloads.append((f"SAST-Bound Extra '{key}' (Canary)", ["--es", key, "http://127.0.0.1:8080/canary"]))
+                current_payloads.append((f"SAST-Bound Extra '{key}' (Empty)", ["--es", key, ""]))
+                current_payloads.append((f"SAST-Bound Extra '{key}' (Boundary)", ["--es", key, "B" * 256]))
+
+            for test_name, extras in current_payloads:
                 res = await self.exercise_component(
                     serial=serial,
                     package_name=package_name,
@@ -177,6 +196,9 @@ class IntentFuzzer:
         apk_path: Optional[str] = None,
         activities: Optional[list[str]] = None,
         deeplinks: Optional[list[str]] = None,
+        authorities: Optional[list[str]] = None,
+        targeted_extras: Optional[dict[str, list[str]]] = None,
+        audit_storage: bool = True,
     ) -> dict[str, Any]:
         """Execute the comprehensive dynamic assessment pipeline against target device."""
         suite_report: dict[str, Any] = {
@@ -187,6 +209,8 @@ class IntentFuzzer:
             "findings": [],
             "crashes_detected": 0,
             "leaks_detected": 0,
+            "storage_flaws_detected": 0,
+            "provider_flaws_detected": 0,
             "tests_run": 0,
             "screenshot_b64": None,
         }
@@ -210,15 +234,16 @@ class IntentFuzzer:
                 "details": install_res.get("output"),
             })
 
-        # Default fallback components if none supplied
         target_activities = activities or [f"{package_name}.MainActivity"]
         target_deeplinks = deeplinks or []
+        target_authorities = authorities or []
 
-        # 3. Activity Intent Fuzzing
+        # 3. Activity Intent Fuzzing (with hybrid extras binding)
         act_results, act_findings = await self.fuzz_activity_intents(
             serial=serial,
             package_name=package_name,
             activities=target_activities,
+            targeted_extras=targeted_extras,
         )
         suite_report["tests_run"] += len(act_results)
         suite_report["findings"].extend([f.to_dict() for f in act_findings])
@@ -233,7 +258,24 @@ class IntentFuzzer:
             suite_report["tests_run"] += len(dl_results)
             suite_report["findings"].extend([f.to_dict() for f in dl_findings])
 
-        # 5. Capture Final Screenshot
+        # 5. Content Provider IPC Auditing
+        if target_authorities:
+            prov_results, prov_findings = await self.provider_auditor.audit_providers(
+                serial=serial,
+                package_name=package_name,
+                authorities=target_authorities,
+            )
+            suite_report["tests_run"] += len(prov_results)
+            suite_report["provider_flaws_detected"] = len(prov_findings)
+            suite_report["findings"].extend([f.to_dict() for f in prov_findings])
+
+        # 6. Post-Execution Storage Sandbox Forensics
+        if audit_storage:
+            storage_res = await self.storage_auditor.audit_all_storage(serial, package_name)
+            suite_report["storage_flaws_detected"] = storage_res["total_storage_findings"]
+            suite_report["findings"].extend(storage_res["findings"])
+
+        # 7. Capture Final Screenshot
         screenshot = await self.adb.capture_screenshot(serial)
         if screenshot:
             import base64

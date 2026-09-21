@@ -365,11 +365,50 @@ class CodeReviewer:
                 findings.extend(self._audit_dynamic_receivers(content, rel_path, stem))
                 findings.extend(self._audit_trust_managers_and_verifiers(content, rel_path, stem))
                 findings.extend(self._audit_biometric_auth(content, rel_path, stem))
+                findings.extend(self._audit_keystore_specs(content, rel_path, stem))
 
             except Exception as e:
                 logger.debug(f"Could not inspect file {file_path}: {e}")
 
         return findings
+
+    def _audit_keystore_specs(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
+        """Identify Android Keystore keys generated without user authentication binding."""
+        findings = []
+        if "KeyGenParameterSpec" not in content:
+            return findings
+
+        builder_matches = re.finditer(r"KeyGenParameterSpec\.Builder\s*\([^)]+\)(.*?)\.build\(\)", content, re.DOTALL)
+        for m in builder_matches:
+            block = m.group(1)
+            if "setUserAuthenticationRequired(true)" not in block:
+                cwe = "CWE-305"
+                findings.append({
+                    "title": f"KeyStore Key Generated Without User Authentication Requirement in {stem}",
+                    "description": (
+                        "A cryptographic key is generated in Android Keystore without enforcing "
+                        "`setUserAuthenticationRequired(true)`. Keys generated without this parameter "
+                        "can be leveraged by background services or unauthorized local processes "
+                        "without prompting for biometric or lock-screen authentication."
+                    ),
+                    "severity": Severity.MEDIUM,
+                    "cwe": cwe,
+                    "component": stem,
+                    "file_path": rel_path,
+                    "line_number": 1,
+                    "snippet": f"KeyGenParameterSpec.Builder(...){block[:100]}....build()",
+                    "remediation": "Call `.setUserAuthenticationRequired(true)` and `.setInvalidatedByBiometricEnrollment(true)` when building KeyGenParameterSpec."
+                })
+        return findings
+
+    def extract_intent_extras(self, content: str) -> list[str]:
+        """Extract Intent extra keys used by components to guide dynamic fuzzing."""
+        extras = set()
+        pattern = re.compile(r"""(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|hasExtra)\s*\(\s*["']([a-zA-Z0-9_.-]+)["']""")
+        for m in pattern.finditer(content):
+            extras.add(m.group(1))
+        return list(extras)
+
 
     async def review(self, decompiled_path: str, manifest_data: dict[str, Any]) -> list[Finding]:
         """Review decompiled source code for vulnerabilities and return Finding models."""

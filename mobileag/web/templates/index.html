@@ -583,6 +583,21 @@
                   </button>
                 </div>
               </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Content Provider Authority (IPC Audit)</label>
+                <div class="flex items-center gap-1.5">
+                  <input type="text" id="dast-input-authority" placeholder="com.target.provider" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
+                  <button onclick="auditDastProviders()" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Audit Content Provider">
+                    <i data-lucide="database" class="w-3.5 h-3.5 text-amber-400"></i>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-slate-400 text-[11px] mb-1">Sandbox Storage Forensics</label>
+                <button onclick="auditDastStorage()" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs">
+                  <i data-lucide="folder-search" class="w-3.5 h-3.5 text-pink-400"></i> Audit Sandbox Storage (Prefs & DBs)
+                </button>
+              </div>
             </div>
 
             <!-- Suite Launch Trigger -->
@@ -591,11 +606,12 @@
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready for dynamic assessment
               </span>
               <button onclick="runDastFuzzSuite()" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
-                <i data-lucide="play-circle" class="w-4 h-4"></i> Run Automated Intent Fuzzing & Crash Audit
+                <i data-lucide="play-circle" class="w-4 h-4"></i> Run Full DAST Assessment Suite
               </button>
             </div>
           </div>
         </div>
+
 
         <!-- Section 2: Live Logcat Console & Device Screen Stream -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -1887,6 +1903,78 @@
       }
     }
 
+    async function auditDastStorage() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      showToast(`Auditing sandbox storage (/data/data/${pkg})...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/storage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg }),
+        });
+        const data = await res.json();
+        const report = data.report || {};
+        const findings = report.findings || [];
+
+        if (findings.length > 0) {
+          findings.forEach(f => {
+            if (!dastFindings.some(existing => existing.title === f.title)) {
+              dastFindings.unshift(f);
+            }
+          });
+          renderDastFindings();
+          showToast(`Storage Forensics: ${findings.length} cleartext flaws discovered!`, 'error');
+        } else {
+          showToast('No insecure storage flaws detected in sandbox', 'success');
+        }
+      } catch (e) {
+        showToast(`Storage audit error: ${e}`, 'error');
+      }
+    }
+
+    async function auditDastProviders() {
+      if (!dastActiveDevice) {
+        showToast('Select a device first', 'error');
+        return;
+      }
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
+      const auth = document.getElementById('dast-input-authority')?.value.trim();
+      if (!auth) {
+        showToast('Please specify a Content Provider authority', 'error');
+        return;
+      }
+      showToast(`Auditing Content Provider authority: ${auth}...`, 'info');
+
+      try {
+        const res = await fetch('/api/dast/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, authorities: [auth] }),
+        });
+        const data = await res.json();
+        const findings = data.findings || [];
+
+        if (findings.length > 0) {
+          findings.forEach(f => {
+            if (!dastFindings.some(existing => existing.title === f.title)) {
+              dastFindings.unshift(f);
+            }
+          });
+          renderDastFindings();
+          showToast(`Provider Audit: ${findings.length} IPC/SQL flaws found!`, 'error');
+        } else {
+          showToast('Provider queried securely without leaks', 'success');
+        }
+      } catch (e) {
+        showToast(`Provider audit error: ${e}`, 'error');
+      }
+    }
+
     async function runDastFuzzSuite() {
       if (!dastActiveDevice) {
         showToast('Select a target device first', 'error');
@@ -1896,6 +1984,7 @@
       const act = document.getElementById('dast-input-activity')?.value.trim() || '';
       const uri = document.getElementById('dast-input-deeplink')?.value.trim() || '';
       const apk = document.getElementById('dast-input-apk')?.value.trim() || '';
+      const auth = document.getElementById('dast-input-authority')?.value.trim() || '';
 
       const btn = document.getElementById('btn-dast-run-suite');
       const statusLabel = document.getElementById('dast-fuzz-status');
@@ -1904,7 +1993,7 @@
         statusLabel.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> Dynamic Suite Running...';
       }
 
-      showToast(`Initiating DAST Fuzz Suite on ${dastActiveDevice}...`, 'info');
+      showToast(`Initiating DAST Assessment Suite on ${dastActiveDevice}...`, 'info');
 
       try {
         const payload = {
@@ -1913,6 +2002,8 @@
           apk_path: apk || null,
           activities: act ? [act] : [`${pkg}.MainActivity`],
           deeplinks: uri ? [uri] : [],
+          authorities: auth ? [auth] : [],
+          audit_storage: true,
         };
         const res = await fetch('/api/dast/fuzz', {
           method: 'POST',
@@ -1926,6 +2017,7 @@
         if (btn) btn.disabled = false;
       }
     }
+
 
     function handleDastLiveEvent(data) {
       if (data.type === 'dast_progress') {

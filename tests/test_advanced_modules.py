@@ -160,3 +160,44 @@ async def test_code_reviewer_scope_aware_analyses(code_reviewer):
         assert "CWE-297" in cwe_set
         # Biometric Auth without CryptoObject (CWE-287)
         assert "CWE-287" in cwe_set
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_keystore_and_intent_extras(code_reviewer):
+    """Test Keystore UserAuthenticationRequired audit (CWE-305) and Intent extra extraction."""
+    source_code = """
+    package com.target.app;
+    import android.security.keystore.KeyGenParameterSpec;
+    import android.security.keystore.KeyProperties;
+    import android.content.Intent;
+
+    public class SecurityService {
+        public void generateKey() {
+            KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder("key_alias",
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build();
+        }
+
+        public void process(Intent intent) {
+            String token = intent.getStringExtra("auth_token_param");
+            int userId = intent.getIntExtra("user_id_key", 0);
+            boolean isRoot = intent.getBooleanExtra("is_admin", false);
+        }
+    }
+    """
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        java_file = Path(tmpdir) / "SecurityService.java"
+        java_file.write_text(source_code)
+
+        findings = await code_reviewer.review(tmpdir, {})
+        cwe_set = {f.cwe_id for f in findings}
+        assert "CWE-305" in cwe_set
+
+        extras = code_reviewer.extract_intent_extras(source_code)
+        assert "auth_token_param" in extras
+        assert "user_id_key" in extras
+        assert "is_admin" in extras
+

@@ -6,6 +6,8 @@ import pytest
 from mobileag.dast.adb_manager import ADBManager, ConnectedDevice
 from mobileag.dast.intent_fuzzer import IntentFuzzer
 from mobileag.dast.logcat_auditor import LogcatAuditor
+from mobileag.dast.provider_auditor import ProviderAuditor
+from mobileag.dast.storage_auditor import StorageAuditor
 from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
 
 
@@ -94,4 +96,93 @@ async def test_intent_fuzzer_crash_capture():
     assert len(res["findings"]) == 1
     assert res["findings"][0].cwe_id == "CWE-755"
     assert "com.target.app.VulnActivity" in res["findings"][0].affected_component
+
+
+@pytest.mark.asyncio
+async def test_storage_auditor_shared_preferences():
+    mock_adb = ADBManager()
+    auditor = StorageAuditor(adb=mock_adb)
+
+    async def mock_run_su(serial, cmd):
+        if "ls -1" in cmd:
+            return "user_session.xml\nsettings.xml"
+        if "cat /data/data/com.test.app/shared_prefs/user_session.xml" in cmd:
+            return '<map><string name="auth_token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDc</string></map>'
+        if "cat /data/data/com.test.app/shared_prefs/settings.xml" in cmd:
+            return '<map><boolean name="dark_mode" value="true" /></map>'
+        return ""
+
+    auditor._run_su_cmd = mock_run_su
+    findings = await auditor.audit_shared_preferences(serial="emulator-5554", package_name="com.test.app")
+    assert len(findings) == 1
+    assert findings[0].cwe_id == "CWE-312"
+    assert "user_session.xml" in findings[0].title
+
+
+@pytest.mark.asyncio
+async def test_storage_auditor_sqlite_databases():
+    mock_adb = ADBManager()
+    auditor = StorageAuditor(adb=mock_adb)
+
+    async def mock_run_su(serial, cmd):
+        if "ls -1" in cmd:
+            return "app_accounts.db"
+        if "head -c 16" in cmd:
+            return "SQLite format 3\x00"
+        if "sqlite3" in cmd:
+            return "users\ncredentials"
+        return ""
+
+    auditor._run_su_cmd = mock_run_su
+    findings = await auditor.audit_sqlite_databases(serial="emulator-5554", package_name="com.test.app")
+    assert len(findings) == 1
+    assert findings[0].cwe_id == "CWE-312"
+    assert "app_accounts.db" in findings[0].title
+    assert "users, credentials" in findings[0].description
+
+
+@pytest.mark.asyncio
+async def test_storage_auditor_cache_and_audit_all():
+    mock_adb = ADBManager()
+    auditor = StorageAuditor(adb=mock_adb)
+
+    async def mock_run_su(serial, cmd):
+        if "grep" in cmd:
+            return "/data/data/com.test.app/cache/req1: Authorization: Bearer token123"
+        return ""
+
+    auditor._run_su_cmd = mock_run_su
+    findings = await auditor.audit_cache_leakage(serial="emulator-5554", package_name="com.test.app")
+    assert len(findings) == 1
+    assert findings[0].cwe_id == "CWE-524"
+
+    res = await auditor.audit_all_storage(serial="emulator-5554", package_name="com.test.app")
+    assert res["total_storage_findings"] == 1
+    assert res["cache_findings"] == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_leak_and_sqli():
+    mock_adb = ADBManager()
+
+    async def mock_exec(cmd, timeout=4.0):
+        if "--where" in cmd:
+            return (0, b"", b"android.database.sqlite.SQLiteException: syntax error near '1=1'")
+        return (0, b"Row: 0 _id=1, username=admin, token=sec123\n", b"")
+
+    mock_adb._exec_cmd = mock_exec
+    auditor = ProviderAuditor(adb=mock_adb)
+
+    results, findings = await auditor.audit_providers(
+        serial="emulator-5554",
+        package_name="com.test.app",
+        authorities=["com.test.app.provider"],
+    )
+
+    assert len(results) == 1
+    assert len(findings) == 2
+    cwes = [f.cwe_id for f in findings]
+    assert "CWE-926" in cwes  # Exported Content Provider leak
+    assert "CWE-89" in cwes   # SQL syntax error leakage
+
 

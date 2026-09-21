@@ -64,3 +64,54 @@ def test_dast_fuzz_trigger_endpoint(client):
         data = response.json()
         assert data["status"] == "initiated"
         assert data["device"] == "emulator-5554"
+
+
+def test_dast_storage_endpoint(client):
+    with patch("mobileag.web.app.storage_auditor.audit_all_storage") as mock_storage:
+        mock_storage.return_value = {
+            "package_name": "com.target.testapp",
+            "device_serial": "emulator-5554",
+            "total_storage_findings": 1,
+            "shared_prefs_findings": 1,
+            "database_findings": 0,
+            "cache_findings": 0,
+            "findings": [{
+                "id": "find-storage-01",
+                "title": "Cleartext Secret in SharedPreferences: session.xml [auth_token]",
+                "severity": "HIGH",
+                "cwe_id": "CWE-312",
+            }],
+        }
+        response = client.post("/api/dast/storage", json={
+            "serial": "emulator-5554",
+            "package_name": "com.target.testapp",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["report"]["total_storage_findings"] == 1
+
+
+def test_dast_providers_endpoint(client):
+    with patch("mobileag.web.app.provider_auditor.audit_providers") as mock_prov:
+        mock_prov.return_value = (
+            [{"authority": "com.target.testapp.provider", "uri": "content://com.target.testapp.provider", "findings_count": 1}],
+            [Finding(
+                title="Exported Content Provider Leak: content://com.target.testapp.provider",
+                description="Leaked query data",
+                severity=Severity.HIGH,
+                cwe_id="CWE-926",
+            )]
+        )
+        response = client.post("/api/dast/providers", json={
+            "serial": "emulator-5554",
+            "package_name": "com.target.testapp",
+            "authorities": ["com.target.testapp.provider"],
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert len(data["results"]) == 1
+        assert len(data["findings"]) == 1
+        assert data["findings"][0]["cwe_id"] == "CWE-926"
+

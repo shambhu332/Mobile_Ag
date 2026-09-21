@@ -22,6 +22,8 @@ from mobileag.dast import (
     HTTPTransaction,
     IntentFuzzer,
     LogcatAuditor,
+    ProviderAuditor,
+    StorageAuditor,
     TrafficAuditor,
 )
 from mobileag.knowledge.neo4j_graph import AttackGraph
@@ -33,7 +35,15 @@ logger = logging.getLogger(__name__)
 adb_manager = ADBManager()
 logcat_auditor = LogcatAuditor()
 traffic_auditor = TrafficAuditor()
-intent_fuzzer = IntentFuzzer(adb=adb_manager, auditor=logcat_auditor)
+storage_auditor = StorageAuditor(adb=adb_manager)
+provider_auditor = ProviderAuditor(adb=adb_manager)
+intent_fuzzer = IntentFuzzer(
+    adb=adb_manager,
+    auditor=logcat_auditor,
+    storage_auditor=storage_auditor,
+    provider_auditor=provider_auditor,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = REPO_ROOT / "output"
@@ -638,12 +648,27 @@ class DispatchDeeplinkRequest(BaseModel):
     uri: str
 
 
+class StorageAuditRequest(BaseModel):
+    serial: str
+    package_name: str
+
+
+class ProviderAuditRequest(BaseModel):
+    serial: str
+    package_name: str
+    authorities: list[str]
+
+
 class DastFuzzRequest(BaseModel):
     serial: str
     package_name: str
     apk_path: Optional[str] = None
     activities: Optional[list[str]] = None
     deeplinks: Optional[list[str]] = None
+    authorities: Optional[list[str]] = None
+    targeted_extras: Optional[dict[str, list[str]]] = None
+    audit_storage: bool = True
+
 
 
 @app.get("/api/dast/devices")
@@ -745,8 +770,31 @@ async def capture_dast_screenshot(req: DeviceActionRequest) -> dict[str, Any]:
     return {"status": "error", "message": "Screenshot capture failed"}
 
 
+@app.post("/api/dast/storage")
+async def audit_dast_storage(req: StorageAuditRequest) -> dict[str, Any]:
+    """Audit local sandbox storage (SharedPreferences, SQLite DBs, and cache) post-execution."""
+    report = await storage_auditor.audit_all_storage(req.serial, req.package_name)
+    demo = get_initial_demo_scan()
+    for f in report.get("findings", []):
+        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
+            demo["findings"].append(f)
+    return {"status": "success", "report": report}
+
+
+@app.post("/api/dast/providers")
+async def audit_dast_providers(req: ProviderAuditRequest) -> dict[str, Any]:
+    """Audit exported Content Providers for unauthorized access and SQL syntax leakage."""
+    results, findings = await provider_auditor.audit_providers(req.serial, req.package_name, req.authorities)
+    f_dicts = [f.to_dict() for f in findings]
+    demo = get_initial_demo_scan()
+    for f in f_dicts:
+        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
+            demo["findings"].append(f)
+    return {"status": "success", "results": results, "findings": f_dicts}
+
+
 async def run_dast_background_task(req: DastFuzzRequest) -> None:
-    """Execute dynamic fuzzing and stream telemetry events over WebSockets."""
+    """Execute dynamic fuzzing, IPC audits, and storage forensics with WebSocket telemetry."""
     serial = req.serial
     pkg = req.package_name
 
@@ -754,7 +802,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         "type": "dast_progress",
         "stage": "DAST Initialized",
         "message": f"Starting dynamic assessment on {serial} for {pkg}...",
-        "progress": 10,
+        "progress": 5,
         "timestamp": datetime.now().isoformat(),
     })
 
@@ -767,7 +815,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         "type": "dast_progress",
         "stage": "Device Verified",
         "message": f"Device {serial} confirmed (Rooted: {is_root})",
-        "progress": 25,
+        "progress": 20,
         "timestamp": datetime.now().isoformat(),
     })
 
@@ -777,22 +825,24 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "type": "dast_progress",
             "stage": "APK Installation",
             "message": f"Installing {req.apk_path} with auto-permissions (-g)...",
-            "progress": 40,
+            "progress": 35,
             "timestamp": datetime.now().isoformat(),
         })
         await adb_manager.install_apk(serial, req.apk_path, grant_permissions=True)
 
-    # Activity intent fuzzing
+    # Activity intent fuzzing (with targeted extras if provided)
     acts = req.activities or [f"{pkg}.MainActivity"]
     await manager.broadcast({
         "type": "dast_progress",
         "stage": "Intent Exercising",
         "message": f"Exercising {len(acts)} activities with boundary payloads...",
-        "progress": 65,
+        "progress": 50,
         "timestamp": datetime.now().isoformat(),
     })
 
-    _, findings = await intent_fuzzer.fuzz_activity_intents(serial, pkg, acts)
+    _, findings = await intent_fuzzer.fuzz_activity_intents(
+        serial, pkg, acts, targeted_extras=req.targeted_extras
+    )
 
     # Deep-link fuzzing
     if req.deeplinks:
@@ -800,11 +850,36 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "type": "dast_progress",
             "stage": "Deep Link Fuzzing",
             "message": f"Invoking {len(req.deeplinks)} deep links and URI schemes...",
-            "progress": 85,
+            "progress": 65,
             "timestamp": datetime.now().isoformat(),
         })
         _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks)
         findings.extend(dl_findings)
+
+    # Content Provider Auditing
+    if req.authorities:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Content Provider Auditing",
+            "message": f"Auditing {len(req.authorities)} Content Provider authorities via IPC...",
+            "progress": 80,
+            "timestamp": datetime.now().isoformat(),
+        })
+        _, prov_findings = await provider_auditor.audit_providers(serial, pkg, req.authorities)
+        findings.extend(prov_findings)
+
+    # Sandbox Storage Forensics (SharedPreferences, SQLite, Cache)
+    if req.audit_storage:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Sandbox Storage Forensics",
+            "message": "Inspecting SharedPreferences, SQLite databases, and disk cache on device...",
+            "progress": 90,
+            "timestamp": datetime.now().isoformat(),
+        })
+        storage_res = await storage_auditor.audit_all_storage(serial, pkg)
+        for sf in storage_res.get("findings", []):
+            findings.append(Finding(**sf))
 
     # Append to active findings
     demo = get_initial_demo_scan()
@@ -819,15 +894,17 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         })
 
     crashes = len([f for f in findings if f.cwe_id == "CWE-755"])
-    leaks = len([f for f in findings if f.cwe_id == "CWE-532"])
+    leaks = len([f for f in findings if f.cwe_id in ("CWE-532", "CWE-312")])
+    provs = len([f for f in findings if f.cwe_id in ("CWE-926", "CWE-89")])
 
     await manager.broadcast({
         "type": "dast_progress",
         "stage": "DAST Complete",
-        "message": f"Dynamic assessment completed. Identified {len(findings)} issues ({crashes} crashes, {leaks} leaks).",
+        "message": f"Dynamic assessment completed. Identified {len(findings)} issues ({crashes} crashes, {leaks} storage/log leaks, {provs} IPC/SQL flaws).",
         "progress": 100,
         "timestamp": datetime.now().isoformat(),
     })
+
 
 
 @app.post("/api/dast/fuzz")

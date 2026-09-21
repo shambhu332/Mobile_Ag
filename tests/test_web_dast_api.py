@@ -160,3 +160,40 @@ def test_scan_run_autonomous_endpoint(client):
     assert "scan_id" in data
 
 
+def test_dast_traffic_audit_endpoint(client):
+    response = client.post(
+        "/api/dast/traffic/audit",
+        json={
+            "transactions": [
+                {
+                    "url": "https://api.example.com/v1/accounts/98765/transactions",
+                    "method": "GET",
+                    "response_status": 200,
+                    "response_headers": {"Strict-Transport-Security": "max-age=31536000"},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["findings_count"] >= 1
+    assert any(f["cwe_id"] == "CWE-639" for f in data["findings"])
+
+
+def test_dast_frida_unified_endpoint(client):
+    response = client.post(
+        "/api/dast/frida",
+        json={
+            "serial": "emulator-5554",
+            "package_name": "com.target.app",
+            "script_type": "unified",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "Unified Enterprise Runtime" in data["script"]
+
+
+

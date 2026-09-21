@@ -10,7 +10,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+try:
+    import frida
+    HAS_NATIVE_FRIDA = True
+except ImportError:
+    frida = None
+    HAS_NATIVE_FRIDA = False
 
 from mobileag.dast.adb_manager import ADBManager
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
@@ -256,3 +263,58 @@ Java.perform(function () {
             "package_name": package_name,
             "script_length": len(script_code),
         }
+
+    def generate_all_in_one_agent_script(self) -> str:
+        """Combine SSL unpinning, root/emulator cloaking, and crypto monitoring into a single unified hook."""
+        return f"""
+// === MobileAg Unified Enterprise Runtime Instrumentation Hook ===
+{self.generate_unpinning_script()}
+{self.generate_root_bypass_script()}
+{self.generate_crypto_monitor_script()}
+console.log("[MobileAg-Frida] Unified Dynamic Instrumentation Suite Active.");
+"""
+
+    def attach_and_instrument_session(
+        self,
+        package_name: str,
+        script_code: str,
+        on_message: Optional[Callable[[dict, bytes | None], None]] = None,
+    ) -> dict[str, Any]:
+        """Attach to running app via native Python Frida RPC or return diagnostics if unavailable."""
+        if not HAS_NATIVE_FRIDA or frida is None:
+            return {
+                "status": "native_frida_unavailable",
+                "native_frida": False,
+                "package_name": package_name,
+                "message": "Native frida module not installed or unavailable in this environment. Falling back to ADB runner.",
+            }
+
+        try:
+            device = None
+            try:
+                device = frida.get_usb_device(timeout=2)
+            except Exception:
+                device = frida.get_remote_device()
+
+            session = device.attach(package_name)
+            script = session.create_script(script_code)
+            if on_message:
+                script.on("message", on_message)
+            script.load()
+
+            return {
+                "status": "attached",
+                "native_frida": True,
+                "package_name": package_name,
+                "session": session,
+                "script": script,
+            }
+        except Exception as e:
+            logger.warning("Native Frida attach failed for %s: %s", package_name, e)
+            return {
+                "status": "error",
+                "native_frida": True,
+                "package_name": package_name,
+                "error": str(e),
+            }
+

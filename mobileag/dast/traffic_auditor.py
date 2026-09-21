@@ -126,4 +126,124 @@ class TrafficAuditor:
                     remediation="Include `Cache-Control: no-store, no-cache` in all sensitive authentication and user data API responses.",
                 ))
 
+            # 4. OWASP API1 - Broken Object Level Authorization / Predictable Sequential ID (CWE-639)
+            bola_pattern = re.search(r"/(?:users|accounts|orders|customers|profiles|messages|invoices)/(\d+)(?:/|$|\?)", parsed.path, re.IGNORECASE)
+            if bola_pattern:
+                rec_id = bola_pattern.group(1)
+                cwe = "CWE-639"
+                score, vector = get_default_cvss_for_cwe(cwe)
+                findings.append(Finding(
+                    title=f"Predictable Resource Identifier (Potential BOLA/IDOR): {parsed.path}",
+                    description=(
+                        f"The endpoint `{parsed.path}` uses an incremental or predictable numeric identifier `{rec_id}`. "
+                        "If the backend does not strictly validate object ownership against the session token, "
+                        "attackers can enumerate and access other users' private resources (OWASP API Security Top 10 - API1:2023)."
+                    ),
+                    severity=Severity.MEDIUM,
+                    confidence=0.8,
+                    cwe_id=cwe,
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    owasp_masvs="MASVS-NETWORK-2",
+                    affected_component=parsed.netloc,
+                    file_path=tx.url,
+                    line_number=1,
+                    code_snippet=f"{tx.method} {parsed.path}",
+                    detection_method="TrafficAuditor (Dynamic)",
+                    status=FindingStatus.CONFIRMED,
+                    remediation="Migrate from predictable integer IDs to non-sequential UUIDs (v4) and enforce backend authorization checks.",
+                ))
+
+            # 5. OWASP API3 - Sensitive Data / PII Leaks in Response Payload (CWE-359)
+            if tx.response_body:
+                body = tx.response_body
+                leaks = []
+                if re.search(r"\b\d{3}-\d{2}-\d{4}\b", body):
+                    leaks.append("Social Security Number (SSN)")
+                if re.search(r"-----BEGIN (?:RSA|EC|PRIVATE|DSA) KEY-----", body):
+                    leaks.append("Unencrypted Private Key")
+                if re.search(r'(?i)"(?:password|user_password|secret_pin)"\s*:\s*"[^"]+"', body):
+                    leaks.append("Plaintext Password/Secret")
+                if re.search(r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\b", body):
+                    leaks.append("Credit Card Number (PAN)")
+
+                if leaks:
+                    cwe = "CWE-359"
+                    score, vector = get_default_cvss_for_cwe(cwe)
+                    findings.append(Finding(
+                        title=f"Sensitive PII / Credential Exposure in API Response: {', '.join(leaks)}",
+                        description=(
+                            f"The response from `{parsed.netloc}{parsed.path}` contained unencrypted sensitive data: "
+                            f"{', '.join(leaks)}.\n\n"
+                            "APIs should filter and omit sensitive PII from client-facing payloads."
+                        ),
+                        severity=Severity.HIGH,
+                        confidence=0.9,
+                        cwe_id=cwe,
+                        cvss_score=score,
+                        cvss_vector=vector,
+                        owasp_masvs="MASVS-STORAGE-1",
+                        affected_component=parsed.netloc,
+                        file_path=tx.url,
+                        line_number=1,
+                        code_snippet=f"Payload matches sensitive patterns: {', '.join(leaks)}",
+                        detection_method="TrafficAuditor (Dynamic)",
+                        status=FindingStatus.CONFIRMED,
+                        remediation="Filter sensitive attributes at the serialization layer before returning API responses.",
+                    ))
+
+            # 6. OWASP API7 - Missing HSTS Header on Production HTTPS (CWE-16)
+            if parsed.scheme == "https" and not (parsed.hostname in ("localhost", "127.0.0.1")):
+                if "strict-transport-security" not in resp_headers:
+                    cwe = "CWE-16"
+                    score, vector = get_default_cvss_for_cwe(cwe)
+                    findings.append(Finding(
+                        title=f"Missing HSTS Header on HTTPS Endpoint: {parsed.netloc}",
+                        description=(
+                            f"The HTTPS server at `{parsed.netloc}` does not send a `Strict-Transport-Security` header. "
+                            "Clients may be vulnerable to SSL stripping attacks on initial connection."
+                        ),
+                        severity=Severity.LOW,
+                        confidence=0.85,
+                        cwe_id=cwe,
+                        cvss_score=score,
+                        cvss_vector=vector,
+                        owasp_masvs="MASVS-NETWORK-1",
+                        affected_component=parsed.netloc,
+                        file_path=tx.url,
+                        line_number=1,
+                        code_snippet=f"Response headers missing Strict-Transport-Security",
+                        detection_method="TrafficAuditor (Dynamic)",
+                        status=FindingStatus.CONFIRMED,
+                        remediation="Add `Strict-Transport-Security: max-age=31536000; includeSubDomains` header.",
+                    ))
+
+            # 7. Permissive CORS Policy with Credentials (CWE-942)
+            allow_origin = resp_headers.get("access-control-allow-origin", "")
+            allow_creds = resp_headers.get("access-control-allow-credentials", "").lower()
+            if allow_origin == "*" and allow_creds == "true":
+                cwe = "CWE-942"
+                score, vector = get_default_cvss_for_cwe(cwe)
+                findings.append(Finding(
+                    title=f"Overly Permissive CORS Policy with Credentials: {parsed.netloc}",
+                    description=(
+                        f"The server at `{parsed.netloc}` specifies `Access-Control-Allow-Origin: *` "
+                        f"combined with `Access-Control-Allow-Credentials: true`. This allows malicious third-party "
+                        "web contexts to issue authenticated cross-origin requests."
+                    ),
+                    severity=Severity.HIGH,
+                    confidence=0.95,
+                    cwe_id=cwe,
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    owasp_masvs="MASVS-NETWORK-1",
+                    affected_component=parsed.netloc,
+                    file_path=tx.url,
+                    line_number=1,
+                    code_snippet="Access-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true",
+                    detection_method="TrafficAuditor (Dynamic)",
+                    status=FindingStatus.CONFIRMED,
+                    remediation="Do not combine wildcard origins with Allow-Credentials. Whitelist specific trusted origins.",
+                ))
+
         return findings

@@ -719,12 +719,17 @@ class UICrawlRequest(BaseModel):
 class FridaDeployRequest(BaseModel):
     serial: str
     package_name: str
-    script_type: str = "unpinning"  # "unpinning", "crypto", "root_bypass"
+    script_type: str = "unpinning"  # "unpinning", "crypto", "root_bypass", "unified"
 
 
 class TaintAnalyzeRequest(BaseModel):
     source_code: str
     file_path: str = "VulnerableActivity.java"
+
+
+class TrafficAuditRequest(BaseModel):
+    transactions: list[dict[str, Any]] = []
+
 
 
 
@@ -883,15 +888,41 @@ async def crawl_dast_ui(req: UICrawlRequest) -> dict[str, Any]:
 
 @app.post("/api/dast/frida")
 async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
-    """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass)."""
+    """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass, unified)."""
     if req.script_type == "crypto":
         script = frida_runner.generate_crypto_monitor_script()
     elif req.script_type == "root_bypass":
         script = frida_runner.generate_root_bypass_script()
+    elif req.script_type in ("all", "unified"):
+        script = frida_runner.generate_all_in_one_agent_script()
     else:
         script = frida_runner.generate_unpinning_script()
     res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
     return {"status": "success", "result": res, "script": script}
+
+
+@app.post("/api/dast/traffic/audit")
+async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
+    """Audit recorded HTTP transactions against OWASP API Security Top 10 rules."""
+    txs = []
+    for item in req.transactions:
+        txs.append(
+            HTTPTransaction(
+                url=item.get("url", ""),
+                method=item.get("method", "GET"),
+                request_headers=item.get("request_headers", {}),
+                response_status=item.get("response_status", 200),
+                response_headers=item.get("response_headers", {}),
+                request_body=item.get("request_body"),
+                response_body=item.get("response_body"),
+            )
+        )
+    findings = traffic_auditor.audit_transactions(txs)
+    return {
+        "status": "success",
+        "findings_count": len(findings),
+        "findings": [f.to_dict() for f in findings],
+    }
 
 
 @app.post("/api/analysis/taint")

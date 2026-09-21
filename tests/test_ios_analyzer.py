@@ -99,3 +99,51 @@ def test_ios_ipa_full_pipeline():
         assert results["findings_count"] >= 1
         assert results["macho_security"]["pie_enabled"] is True
         assert results["macho_security"]["has_stack_canary"] is True
+
+
+def test_ios_advanced_api_and_keychain_audit():
+    analyzer = IOSSecurityAnalyzer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        binary_path = Path(tmpdir) / "TargetBinary"
+
+        # Binary containing strings for kSecAttrAccessibleAlways, kCCAlgorithmDES, CC_MD5, UIPasteboard
+        binary_content = (
+            b"\x00" * 64
+            + b"kSecAttrAccessibleAlways\x00"
+            + b"kCCAlgorithmDES\x00"
+            + b"CC_MD5\x00"
+            + b"UIPasteboard\x00generalPasteboard\x00"
+        )
+        binary_path.write_bytes(binary_content)
+
+        findings = analyzer.audit_binary_symbols_and_apis(binary_path)
+        assert len(findings) >= 4
+
+        cwes = {f.cwe_id for f in findings}
+        assert "CWE-312" in cwes  # Insecure keychain
+        assert "CWE-327" in cwes  # Insecure DES
+        assert "CWE-328" in cwes  # Broken MD5
+        assert "CWE-200" in cwes  # General pasteboard
+
+
+def test_ios_file_sharing_audit():
+    analyzer = IOSSecurityAnalyzer()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        plist_path = Path(tmpdir) / "Info.plist"
+
+        plist_data = {
+            "CFBundleIdentifier": "com.target.iosapp",
+            "UIFileSharingEnabled": True,
+            "LSSupportsOpeningDocumentsInPlace": True,
+        }
+
+        with open(plist_path, "wb") as f:
+            plistlib.dump(plist_data, f)
+
+        findings = analyzer.audit_info_plist(plist_path)
+        assert len(findings) == 1
+        assert findings[0].cwe_id == "CWE-200"
+        assert "File Sharing Enabled" in findings[0].title
+

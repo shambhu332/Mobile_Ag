@@ -75,6 +75,13 @@ SMALI_SOURCES = {
     "Landroid/net/Uri;->getLastPathSegment": "DEEP_LINK_PATH",
     "Landroid/content/Context;->getIntent": "ACTIVITY_INTENT",
     "Landroid/app/Activity;->getIntent": "ACTIVITY_INTENT",
+    "Landroid/content/ClipboardManager;->getPrimaryClip": "CLIPBOARD_DATA",
+    "Landroid/content/ClipboardManager;->getText": "CLIPBOARD_DATA",
+    "Landroid/content/SharedPreferences;->getString": "SHARED_PREFS_DATA",
+    "Landroid/content/ContentResolver;->query": "CONTENT_RESOLVER_QUERY",
+    "Landroid/telephony/TelephonyManager;->getDeviceId": "DEVICE_IMEI",
+    "Landroid/telephony/TelephonyManager;->getImei": "DEVICE_IMEI",
+    "Landroid/location/LocationManager;->getLastKnownLocation": "GEOLOCATION",
 }
 
 # Smali Sink signatures and corresponding CWE classifications
@@ -132,7 +139,37 @@ SMALI_SINKS = {
         "severity": Severity.MEDIUM,
         "title": "Untrusted File Path Traversal Constructor",
         "desc": "External Intent or query parameter reaches new File() constructor without path canonicalization."
-    }
+    },
+    "Ldalvik/system/DexClassLoader;-><init>": {
+        "cwe": "CWE-470",
+        "severity": Severity.CRITICAL,
+        "title": "Untrusted Dynamic Code Execution via DexClassLoader",
+        "desc": "External untrusted parameter reaches DexClassLoader constructor, enabling arbitrary code loading."
+    },
+    "Ldalvik/system/PathClassLoader;-><init>": {
+        "cwe": "CWE-470",
+        "severity": Severity.CRITICAL,
+        "title": "Untrusted Dynamic Code Execution via PathClassLoader",
+        "desc": "External untrusted parameter reaches PathClassLoader constructor, enabling arbitrary code loading."
+    },
+    "Ljava/lang/reflect/Method;->invoke": {
+        "cwe": "CWE-470",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Input Reaches Dynamic Reflection Invocation",
+        "desc": "External untrusted data reaches Method.invoke(), allowing arbitrary reflection execution or sandbox bypass."
+    },
+    "Landroid/content/ContentResolver;->delete": {
+        "cwe": "CWE-926",
+        "severity": Severity.HIGH,
+        "title": "Untrusted IPC Dataflow to ContentResolver Deletion",
+        "desc": "Untrusted external parameter flows into ContentResolver.delete(), risking arbitrary data deletion."
+    },
+    "Landroid/content/ContentResolver;->update": {
+        "cwe": "CWE-926",
+        "severity": Severity.HIGH,
+        "title": "Untrusted IPC Dataflow to ContentResolver Update",
+        "desc": "Untrusted external parameter flows into ContentResolver.update(), risking database record tampering."
+    },
 }
 
 
@@ -154,18 +191,48 @@ class SmaliCallGraphEngine:
         if base_path.is_file() and base_path.suffix == ".smali":
             smali_files.append(base_path)
         else:
-            # Search recursively for .smali files in smali, smali_classes*, etc.
             smali_files = list(base_path.glob("**/*.smali"))
 
         logger.info("Found %d smali files for call graph construction", len(smali_files))
         for sf in smali_files:
             self._parse_smali_file(sf)
 
+        self._resolve_synthetic_and_lambda_bridges()
+
         logger.info("Constructed Call Graph with %d methods", len(self.methods))
         return self.methods
 
+    def _resolve_synthetic_and_lambda_bridges(self) -> None:
+        """Resolve synthetic bridge methods (access$*) and lambdas to connect inter-procedural paths."""
+        bridge_keys = [
+            k for k, m in self.methods.items()
+            if m.method_name.startswith("access$") or "lambda$" in m.method_name or "$$ExternalSynthetic" in m.class_name
+        ]
+
+        for b_key in bridge_keys:
+            bridge_method = self.methods[b_key]
+            # Find callers that invoke this bridge
+            for caller in self.methods.values():
+                if caller.key == b_key:
+                    continue
+                has_invocation = any(
+                    inv == b_key or inv.startswith(f"{bridge_method.class_name}->{bridge_method.method_name}")
+                    for inv in caller.invocations
+                )
+                if has_invocation:
+                    # Propagate downstream targets, sources, and sinks from the bridge
+                    for downstream in bridge_method.invocations:
+                        if downstream not in caller.invocations:
+                            caller.invocations.append(downstream)
+                    for src in bridge_method.sources_called:
+                        if src not in caller.sources_called:
+                            caller.sources_called.append(src)
+                    for snk in bridge_method.sinks_called:
+                        if snk not in caller.sinks_called:
+                            caller.sinks_called.append(snk)
+
     def _parse_smali_file(self, smali_file: Path) -> None:
-        """Parse class definition, methods, and invoke instructions in a Smali file."""
+        """Parse class definition, methods, invoke instructions, and reflection in a Smali file."""
         try:
             content = smali_file.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
@@ -174,12 +241,15 @@ class SmaliCallGraphEngine:
 
         current_class = ""
         current_method: Optional[MethodNode] = None
+        register_strings: dict[str, str] = {}
+        last_reflected_method_name: Optional[str] = None
 
         class_re = re.compile(r"^\.class\s+.*?(L[a-zA-Z0-9_$/]+;)", re.MULTILINE)
         super_re = re.compile(r"^\.super\s+(L[a-zA-Z0-9_$/]+;)", re.MULTILINE)
         method_re = re.compile(r"^\.method\s+.*?\s+([a-zA-Z0-9_$<>-]+)(\([^)]*\)[a-zA-Z0-9_$/;\[]+)", re.MULTILINE)
-        end_method_re = re.compile(r"^\.end\s+method", re.MULTILINE)
         invoke_re = re.compile(r"invoke-(?:virtual|direct|static|interface|super).*?\s+(L[a-zA-Z0-9_$/]+;)->([a-zA-Z0-9_$<>-]+)(\([^)]*\)[a-zA-Z0-9_$/;\[]+)")
+        const_str_re = re.compile(r'const-string(?:/jumbo)?\s+([vp]\d+),\s*"([^"]+)"')
+        invoke_args_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\}")
 
         match_class = class_re.search(content)
         if match_class:
@@ -206,32 +276,65 @@ class SmaliCallGraphEngine:
                         file_path=str(smali_file),
                         line_number=line_num
                     )
+                    register_strings.clear()
+                    last_reflected_method_name = None
 
             elif stripped.startswith(".end method"):
                 if current_method:
                     self.methods[current_method.key] = current_method
                     current_method = None
+                    register_strings.clear()
+                    last_reflected_method_name = None
 
-            elif current_method and stripped.startswith("invoke-"):
-                inv_match = invoke_re.search(stripped)
-                if inv_match:
-                    target_class = inv_match.group(1)
-                    target_name = inv_match.group(2)
-                    target_sig = inv_match.group(3)
-                    target_key = f"{target_class}->{target_name}{target_sig}"
-                    prefix_key = f"{target_class}->{target_name}"
+            elif current_method:
+                # Track string constants loaded into registers
+                str_match = const_str_re.search(stripped)
+                if str_match:
+                    reg, val = str_match.group(1), str_match.group(2)
+                    register_strings[reg] = val
 
-                    current_method.invocations.append(target_key)
+                if stripped.startswith("invoke-"):
+                    inv_match = invoke_re.search(stripped)
+                    if inv_match:
+                        target_class = inv_match.group(1)
+                        target_name = inv_match.group(2)
+                        target_sig = inv_match.group(3)
+                        target_key = f"{target_class}->{target_name}{target_sig}"
+                        prefix_key = f"{target_class}->{target_name}"
 
-                    # Check if target is a known source
-                    for src_prefix in SMALI_SOURCES:
-                        if prefix_key == src_prefix or target_key.startswith(src_prefix):
-                            current_method.sources_called.append(prefix_key)
+                        current_method.invocations.append(target_key)
 
-                    # Check if target is a known sink
-                    for sink_prefix in SMALI_SINKS:
-                        if prefix_key == sink_prefix or target_key.startswith(sink_prefix):
-                            current_method.sinks_called.append(sink_prefix)
+                        # Check reflection resolution: Class.getMethod or getDeclaredMethod
+                        if target_class == "Ljava/lang/Class;" and target_name in ("getMethod", "getDeclaredMethod"):
+                            args_match = invoke_args_re.search(stripped)
+                            if args_match:
+                                regs = [r.strip() for r in args_match.group(1).split(",") if r.strip()]
+                                # Typically: invoke-virtual {vClass, vMethodName, ...}
+                                if len(regs) >= 2 and regs[1] in register_strings:
+                                    last_reflected_method_name = register_strings[regs[1]]
+
+                        # Check reflection invocation: Method.invoke
+                        if target_class == "Ljava/lang/reflect/Method;" and target_name == "invoke":
+                            # Register Method.invoke itself as sink
+                            current_method.sinks_called.append("Ljava/lang/reflect/Method;->invoke")
+                            if last_reflected_method_name:
+                                # Resolve reflective call target into invocation list
+                                ref_key = f"[Reflective]->{last_reflected_method_name}"
+                                current_method.invocations.append(ref_key)
+                                # If the reflected method name corresponds to a known sink, register that sink!
+                                for sink_prefix in SMALI_SINKS:
+                                    if sink_prefix.endswith(f"->{last_reflected_method_name}"):
+                                        current_method.sinks_called.append(sink_prefix)
+
+                        # Check if target is a known source
+                        for src_prefix in SMALI_SOURCES:
+                            if prefix_key == src_prefix or target_key.startswith(src_prefix):
+                                current_method.sources_called.append(prefix_key)
+
+                        # Check if target is a known sink
+                        for sink_prefix in SMALI_SINKS:
+                            if prefix_key == sink_prefix or target_key.startswith(sink_prefix):
+                                current_method.sinks_called.append(sink_prefix)
 
     def find_source_sink_paths(self, max_depth: int = 6) -> list[CallChainFinding]:
         """Traverse the Call Graph to find paths from method sources to method sinks."""

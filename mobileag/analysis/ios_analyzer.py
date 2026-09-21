@@ -188,6 +188,168 @@ class IOSSecurityAnalyzer:
                 )
             )
 
+        # 3. Insecure File Sharing / Document Browser Audit (CWE-200 / CWE-276)
+        file_sharing = plist.get("UIFileSharingEnabled", False)
+        opening_in_place = plist.get("LSSupportsOpeningDocumentsInPlace", False)
+        if file_sharing or opening_in_place:
+            score, vector = get_default_cvss_for_cwe("CWE-200")
+            findings.append(
+                Finding(
+                    id="ios-sharing-001",
+                    title="CWE-200: iOS File Sharing Enabled (UIFileSharingEnabled)",
+                    description=(
+                        "The application enables UIFileSharingEnabled or LSSupportsOpeningDocumentsInPlace. "
+                        "This grants access to the app's entire Documents directory to the iOS Files app, "
+                        "iTunes, and computer backups, exposing private app databases and session tokens."
+                    ),
+                    severity=Severity.MEDIUM,
+                    cwe_id="CWE-200",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component="Info.plist [UIFileSharingEnabled]",
+                    file_path=str(p_path),
+                    code_snippet="<key>UIFileSharingEnabled</key>\n<true/>",
+                    remediation="Disable UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace unless user file export is strictly required.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=1.0,
+                )
+            )
+
+        return findings
+
+    def audit_binary_symbols_and_apis(self, binary_path: str | Path) -> list[Finding]:
+        """Scan Mach-O binary and embedded strings for insecure APIs, deprecated crypto, and keychain flags."""
+        findings: list[Finding] = []
+        b_path = Path(binary_path)
+        if not b_path.exists():
+            return findings
+
+        try:
+            raw_bytes = b_path.read_bytes()
+        except Exception as e:
+            logger.warning("Failed reading binary for symbol audit: %s", e)
+            return findings
+
+        # 1. Insecure Keychain Accessibility (CWE-312)
+        if b"kSecAttrAccessibleAlways" in raw_bytes or b"kSecAttrAccessibleAlwaysThisDeviceOnly" in raw_bytes:
+            score, vector = get_default_cvss_for_cwe("CWE-312")
+            findings.append(
+                Finding(
+                    id="ios-keychain-001",
+                    title="CWE-312: Insecure iOS Keychain Accessibility (kSecAttrAccessibleAlways)",
+                    description=(
+                        "The binary references the deprecated and insecure keychain attribute `kSecAttrAccessibleAlways` "
+                        "or `kSecAttrAccessibleAlwaysThisDeviceOnly`. These attributes store sensitive keychain secrets "
+                        "in an unencrypted, accessible state even when the device is locked."
+                    ),
+                    severity=Severity.HIGH,
+                    cwe_id="CWE-312",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component=f"{b_path.name} (Keychain)",
+                    file_path=str(b_path),
+                    code_snippet="Mach-O symbol reference: kSecAttrAccessibleAlways",
+                    remediation="Migrate to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` or `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=0.95,
+                )
+            )
+
+        # 2. Obsolete / Weak Cryptography & Hashes (CWE-327 / CWE-328)
+        if b"kCCAlgorithmDES" in raw_bytes or b"kCCAlgorithm3DES" in raw_bytes:
+            score, vector = get_default_cvss_for_cwe("CWE-327")
+            findings.append(
+                Finding(
+                    id="ios-crypto-001",
+                    title="CWE-327: Obsolete Block Cipher (DES/3DES) Used in iOS Binary",
+                    description=(
+                        "The Mach-O binary imports CommonCrypto symbols for DES / 3DES (kCCAlgorithmDES). "
+                        "DES uses an obsolete 56-bit key susceptible to brute-force attacks and SWEET32 collisions."
+                    ),
+                    severity=Severity.HIGH,
+                    cwe_id="CWE-327",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component=f"{b_path.name} (CommonCrypto)",
+                    file_path=str(b_path),
+                    code_snippet="Mach-O symbol reference: kCCAlgorithmDES / kCCAlgorithm3DES",
+                    remediation="Use AES-GCM (kCCAlgorithmAES) with a 256-bit key via CryptoKit or CommonCrypto.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=0.95,
+                )
+            )
+
+        if b"kCCAlgorithmRC4" in raw_bytes:
+            score, vector = get_default_cvss_for_cwe("CWE-327")
+            findings.append(
+                Finding(
+                    id="ios-crypto-002",
+                    title="CWE-327: Broken Stream Cipher (RC4) Used in iOS Binary",
+                    description=(
+                        "The binary references kCCAlgorithmRC4. RC4 contains critical statistical biases in its keystream, "
+                        "enabling plaintext recovery attacks."
+                    ),
+                    severity=Severity.HIGH,
+                    cwe_id="CWE-327",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component=f"{b_path.name} (CommonCrypto)",
+                    file_path=str(b_path),
+                    code_snippet="Mach-O symbol reference: kCCAlgorithmRC4",
+                    remediation="Replace RC4 with AES-GCM or ChaCha20-Poly1305.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=0.95,
+                )
+            )
+
+        if b"CC_MD5" in raw_bytes:
+            score, vector = get_default_cvss_for_cwe("CWE-328")
+            findings.append(
+                Finding(
+                    id="ios-crypto-003",
+                    title="CWE-328: Cryptographically Broken Hash Algorithm (MD5) in iOS Binary",
+                    description=(
+                        "The Mach-O binary imports CC_MD5. MD5 is vulnerable to collision generation attacks "
+                        "and should not be used for cryptographic signatures or token validation."
+                    ),
+                    severity=Severity.MEDIUM,
+                    cwe_id="CWE-328",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component=f"{b_path.name} (CommonCrypto)",
+                    file_path=str(b_path),
+                    code_snippet="Mach-O symbol reference: CC_MD5",
+                    remediation="Upgrade to SHA-256 (CC_SHA256) or SHA-3 via Apple CryptoKit.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=0.9,
+                )
+            )
+
+        # 3. Insecure Pasteboard Sharing (CWE-200)
+        if b"generalPasteboard" in raw_bytes and b"UIPasteboard" in raw_bytes:
+            score, vector = get_default_cvss_for_cwe("CWE-200")
+            findings.append(
+                Finding(
+                    id="ios-pasteboard-001",
+                    title="CWE-200: System-wide Pasteboard Access (UIPasteboard.generalPasteboard)",
+                    description=(
+                        "The application accesses UIPasteboard.generalPasteboard. Sensitive clipboard data "
+                        "(passwords, OTPs, auth tokens) placed in the general pasteboard is accessible by any "
+                        "foreground application or cross-device Universal Clipboard."
+                    ),
+                    severity=Severity.LOW,
+                    cwe_id="CWE-200",
+                    cvss_score=score,
+                    cvss_vector=vector,
+                    affected_component=f"{b_path.name} (UIPasteboard)",
+                    file_path=str(b_path),
+                    code_snippet="Symbol reference: [UIPasteboard generalPasteboard]",
+                    remediation="Enforce local-only clipboard options (UIPasteboardOptionLocalOnly) or set an expirationDate.",
+                    status=FindingStatus.CONFIRMED,
+                    confidence=0.85,
+                )
+            )
+
         return findings
 
     def audit_macho_binary(self, binary_path: str | Path) -> tuple[MachOSecurityHeaders, list[Finding]]:
@@ -293,6 +455,8 @@ class IOSSecurityAnalyzer:
         if extracted.get("binary_path"):
             macho_headers, bin_findings = self.audit_macho_binary(extracted["binary_path"])
             all_findings.extend(bin_findings)
+            sym_findings = self.audit_binary_symbols_and_apis(extracted["binary_path"])
+            all_findings.extend(sym_findings)
 
         return {
             "app_name": extracted["app_name"],

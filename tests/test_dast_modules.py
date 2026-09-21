@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from mobileag.dast.adb_manager import ADBManager, ConnectedDevice
+from mobileag.dast.frida_runner import FridaRunner
 from mobileag.dast.intent_fuzzer import IntentFuzzer
 from mobileag.dast.logcat_auditor import LogcatAuditor
+from mobileag.dast.mitm_proxy import AsyncMITMProxy
 from mobileag.dast.provider_auditor import ProviderAuditor
 from mobileag.dast.storage_auditor import StorageAuditor
 from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
@@ -184,5 +186,89 @@ async def test_provider_auditor_leak_and_sqli():
     cwes = [f.cwe_id for f in findings]
     assert "CWE-926" in cwes  # Exported Content Provider leak
     assert "CWE-89" in cwes   # SQL syntax error leakage
+
+
+def test_traffic_auditor_owasp_api_top10():
+    auditor = TrafficAuditor()
+    transactions = [
+        # BOLA / IDOR check
+        HTTPTransaction(
+            url="https://api.example.com/v1/users/45123/profile",
+            method="GET",
+            response_status=200,
+            response_headers={"Strict-Transport-Security": "max-age=31536000"},
+        ),
+        # PII exposure in response payload
+        HTTPTransaction(
+            url="https://api.example.com/v1/checkout",
+            method="POST",
+            response_status=200,
+            response_headers={"Strict-Transport-Security": "max-age=31536000"},
+            response_body='{"status":"ok", "ssn":"123-45-6789", "user_password":"plainSecret123"}',
+        ),
+        # Missing HSTS & Permissive CORS with credentials
+        HTTPTransaction(
+            url="https://api.example.com/v1/public-data",
+            method="GET",
+            response_status=200,
+            response_headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Credentials": "true",
+            },
+        ),
+    ]
+
+    findings = auditor.audit_transactions(transactions)
+    cwes = {f.cwe_id for f in findings}
+
+    assert "CWE-639" in cwes  # BOLA / IDOR
+    assert "CWE-359" in cwes  # Sensitive PII exposure
+    assert "CWE-16" in cwes   # Missing HSTS
+    assert "CWE-942" in cwes  # Permissive CORS with credentials
+
+
+@pytest.mark.asyncio
+async def test_async_mitm_proxy_lifecycle_and_interception():
+    proxy = AsyncMITMProxy(host="127.0.0.1", port=18082)
+    assert proxy.is_running is False
+
+    await proxy.start()
+    assert proxy.is_running is True
+
+    # Record simulated transactions
+    proxy.record_transaction(
+        HTTPTransaction(
+            url="http://api.insecure.com/api/v1/data",
+            method="GET",
+            response_status=200,
+        )
+    )
+    assert len(proxy.get_transactions()) == 1
+
+    findings = proxy.audit_captured_traffic()
+    assert len(findings) >= 1
+    assert any(f.cwe_id == "CWE-319" for f in findings)
+
+    await proxy.stop()
+    assert proxy.is_running is False
+
+
+def test_frida_runner_unified_agent_and_session():
+    runner = FridaRunner()
+    unified_script = runner.generate_all_in_one_agent_script()
+    assert "TrustManager" in unified_script
+    assert "File.exists" in unified_script
+    assert "javax.crypto.Cipher" in unified_script
+    assert "Unified Enterprise Runtime" in unified_script
+
+    # Test attach_and_instrument_session fallback behavior
+    result = runner.attach_and_instrument_session(
+        package_name="com.test.app",
+        script_code="console.log('test');",
+    )
+    assert isinstance(result, dict)
+    assert "package_name" in result
+    assert result["package_name"] == "com.test.app"
+
 
 

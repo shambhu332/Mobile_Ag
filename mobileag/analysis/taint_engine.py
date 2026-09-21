@@ -44,6 +44,18 @@ _SOURCE_PATTERNS = [
             r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_().]+\.)?getIntent\s*\("""
         ),
     ),
+    (
+        "CLIPBOARD_SOURCE",
+        re.compile(
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_().]+\.)?(?:getPrimaryClip|getText)\s*\("""
+        ),
+    ),
+    (
+        "SHARED_PREFS_SOURCE",
+        re.compile(
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_().]+\.)?getString\s*\("""
+        ),
+    ),
 ]
 
 # Sink regex patterns
@@ -93,6 +105,24 @@ _SINK_SPECS = [
         "masvs": "MASVS-CODE-4",
         "remediation": "Avoid invoking shell commands with dynamic user arguments. Utilize native Android system APIs.",
     },
+    {
+        "type": "DYNAMIC_CODE_LOADING",
+        "cwe": "CWE-470",
+        "severity": Severity.CRITICAL,
+        "title": "Untrusted Taint Flow to Dynamic Code Loading (DexClassLoader)",
+        "pattern": re.compile(r"""\b(?:new\s+DexClassLoader|new\s+PathClassLoader|DexClassLoader|PathClassLoader)\s*\("""),
+        "masvs": "MASVS-CODE-4",
+        "remediation": "Do not instantiate dynamic class loaders using paths or URLs supplied from untrusted external sources.",
+    },
+    {
+        "type": "UNSAFE_REFLECTION",
+        "cwe": "CWE-470",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Taint Flow to Dynamic Reflection Invocation",
+        "pattern": re.compile(r"""\b([a-zA-Z0-9_]+)\.invoke\s*\("""),
+        "masvs": "MASVS-CODE-4",
+        "remediation": "Avoid invoking methods reflectively based on external or untrusted class/method names.",
+    },
 ]
 
 # Variable assignment pattern: varA = varB ...
@@ -100,7 +130,7 @@ _ASSIGN_RE = re.compile(r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\
 
 # Direct inline source call inside a sink
 _INLINE_SOURCE_RE = re.compile(
-    r"""(?:getStringExtra|getIntExtra|getParcelableExtra|getSerializableExtra|getData|getDataString|getQueryParameter|getIntent)\s*\("""
+    r"""(?:getStringExtra|getIntExtra|getParcelableExtra|getSerializableExtra|getData|getDataString|getQueryParameter|getIntent|getPrimaryClip)\s*\("""
 )
 
 

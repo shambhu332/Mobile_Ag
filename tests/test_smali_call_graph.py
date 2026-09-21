@@ -54,3 +54,86 @@ def test_smali_call_graph_parsing_and_reachability():
         assert "MainActivity" in finding.code_snippet
         assert "loadUrl" in finding.code_snippet
         assert finding.confidence >= 0.9
+
+
+def test_smali_call_graph_reflection_resolution():
+    engine = SmaliCallGraphEngine()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+
+        reflective_smali = """
+.class public Lcom/target/app/ReflectiveLoader;
+.super Landroid/app/Activity;
+
+.method public onCreate(Landroid/os/Bundle;)V
+    .registers 5
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "cmd"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v2}, Lcom/target/app/ReflectiveLoader;->executeReflective(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public static executeReflective(Ljava/lang/String;)V
+    .registers 4
+    const-class v0, Ljava/lang/Runtime;
+    const-string v1, "exec"
+    invoke-virtual {v0, v1}, Ljava/lang/Class;->getMethod(Ljava/lang/String;)Ljava/lang/reflect/Method;
+    move-result-object v2
+    invoke-virtual {v2, v0, p0}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    return-void
+.end method
+"""
+        (tmp_path / "ReflectiveLoader.smali").write_text(reflective_smali)
+        findings = engine.audit_smali_directory(tmp_path)
+        assert len(findings) >= 1
+        cwes = {f.cwe_id for f in findings}
+        assert "CWE-78" in cwes or "CWE-470" in cwes
+
+
+def test_smali_call_graph_synthetic_bridge_resolution():
+    engine = SmaliCallGraphEngine()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+
+        outer_smali = """
+.class public Lcom/target/app/PluginManager;
+.super Ljava/lang/Object;
+
+.method private static loadPluginInternal(Ljava/lang/String;)V
+    .registers 3
+    new-instance v0, Ldalvik/system/DexClassLoader;
+    invoke-direct {v0, p0}, Ldalvik/system/DexClassLoader;-><init>(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method static synthetic access$000(Ljava/lang/String;)V
+    .registers 1
+    invoke-static {p0}, Lcom/target/app/PluginManager;->loadPluginInternal(Ljava/lang/String;)V
+    return-void
+.end method
+"""
+
+        caller_smali = """
+.class public Lcom/target/app/ReceiverActivity;
+.super Landroid/app/Activity;
+
+.method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
+    .registers 4
+    invoke-virtual {p2}, Landroid/content/Intent;->getDataString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lcom/target/app/PluginManager;->access$000(Ljava/lang/String;)V
+    return-void
+.end method
+"""
+        (tmp_path / "PluginManager.smali").write_text(outer_smali)
+        (tmp_path / "ReceiverActivity.smali").write_text(caller_smali)
+
+        findings = engine.audit_smali_directory(tmp_path)
+        assert len(findings) >= 1
+        assert any(f.cwe_id == "CWE-470" for f in findings)
+

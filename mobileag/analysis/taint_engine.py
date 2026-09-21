@@ -13,6 +13,7 @@ until reaching critical sinks:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -287,3 +288,7 @@ class TaintEngine:
                     logger.debug(f"Failed to analyze taint in {file_path}: {e}")
 
         return all_findings
+
+    async def analyze_directory_async(self, decompiled_dir: str | Path) -> list[Finding]:
+        """Asynchronously scan all Java and Kotlin source files in a decompiled APK directory."""
+        return await asyncio.to_thread(self.analyze_directory, str(decompiled_dir))

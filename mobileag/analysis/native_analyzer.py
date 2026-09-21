@@ -16,45 +16,44 @@ class NativeAnalyzer:
         """Initialize the native analyzer with an LLM router and Ghidra path."""
         self.router = router
         self.ghidra_path = ghidra_path
-        self.unsafe_functions = {b"strcpy", b"sprintf", b"gets", b"strcat", b"system"}
+        self.unsafe_functions = {
+            b"strcpy": ("CWE-120", "Unsafe string copy without bounds check"),
+            b"sprintf": ("CWE-120", "Unsafe string formatting without bounds check"),
+            b"gets": ("CWE-120", "Insecure gets function prone to stack buffer overflow"),
+            b"strcat": ("CWE-120", "Unsafe string concatenation"),
+            b"system": ("CWE-78", "Direct system command execution"),
+            b"popen": ("CWE-78", "Process execution via shell pipe"),
+            b"execve": ("CWE-78", "Process replacement command execution"),
+            b"ptrace": ("CWE-489", "Anti-debugging ptrace hook detection"),
+        }
 
     async def _inspect_so_binary(self, so_file: Path, base_path: Path) -> list[Finding]:
-        """Inspect a single .so library using async subprocess."""
+        """Inspect a single .so library using direct binary byte scanning and strings fallback."""
         findings: list[Finding] = []
         try:
-            cmd = ["strings", str(so_file)]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=20.0)
-            
-            if process.returncode == 0 and stdout:
-                rel_path = str(so_file.relative_to(base_path))
-                lib_name = so_file.name
+            # Direct binary inspection (100% portable, no subprocess requirement)
+            raw_data = await asyncio.to_thread(so_file.read_bytes)
+            rel_path = str(so_file.relative_to(base_path)) if so_file.is_relative_to(base_path) else str(so_file)
+            lib_name = so_file.name
 
-                for func in self.unsafe_functions:
-                    if func in stdout:
-                        func_name = func.decode("utf-8", errors="ignore")
-                        cwe = "CWE-120"
-                        score, vector = get_default_cvss_for_cwe(cwe)
-                        findings.append(Finding(
-                            title=f"Unsafe C Function Used in Native Library: {func_name}",
-                            description=f"The native library '{lib_name}' imports or defines the unsafe function '{func_name}', presenting potential buffer overflow hazards.",
-                            severity=Severity.MEDIUM,
-                            cwe_id=cwe,
-                            cvss_score=score,
-                            cvss_vector=vector,
-                            affected_component=lib_name,
-                            detection_method="NativeAnalyzer",
-                            status=FindingStatus.UNVERIFIED,
-                            remediation=f"Replace '{func_name}' with safe, bounds-checked alternatives such as strncpy, snprintf, or C++ std::string equivalents.",
-                            file_path=rel_path
-                        ))
+            for func_bytes, (cwe, desc) in self.unsafe_functions.items():
+                if func_bytes in raw_data:
+                    func_name = func_bytes.decode("utf-8", errors="ignore")
+                    score, vector = get_default_cvss_for_cwe(cwe)
+                    findings.append(Finding(
+                        title=f"Unsafe C Function / Symbol in Native Library: {func_name}",
+                        description=f"The native library '{lib_name}' imports or defines '{func_name}': {desc}.",
+                        severity=Severity.HIGH if cwe == "CWE-78" else Severity.MEDIUM,
+                        cwe_id=cwe,
+                        cvss_score=score,
+                        cvss_vector=vector,
+                        affected_component=lib_name,
+                        detection_method="NativeAnalyzer",
+                        status=FindingStatus.CONFIRMED,
+                        remediation=f"Replace '{func_name}' with safe, bounds-checked alternatives (e.g. strncpy, snprintf, or C++ std::string equivalents).",
+                        file_path=rel_path
+                    ))
 
-        except (asyncio.TimeoutError, FileNotFoundError) as e:
-            logger.debug(f"Strings command timeout or unavailable on {so_file}: {e}")
         except Exception as e:
             logger.warning(f"Error inspecting native binary {so_file}: {e}")
 

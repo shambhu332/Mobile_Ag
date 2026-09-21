@@ -24,18 +24,25 @@ class SecretScanner:
         self.secret_patterns = {
             "Google API Key": re.compile(r"AIza[0-9A-Za-z-_]{35}"),
             "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
+            "GitHub Access Token": re.compile(r"(?:ghp_[0-9a-zA-Z]{36}|github_pat_[0-9a-zA-Z_]{82})"),
+            "Slack Webhook URL": re.compile(r"https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+"),
+            "Stripe Secret Key": re.compile(r"sk_(?:live|test)_[0-9a-zA-Z]{24,}"),
+            "Twilio Account SID": re.compile(r"AC[a-zA-Z0-9]{32}"),
             "OpenAI API Key": re.compile(r"sk-[a-zA-Z0-9]{32,}"),
             "xAI API Key": re.compile(r"xai-[a-zA-Z0-9_-]+"),
             "Firebase URL": re.compile(r"https://[a-zA-Z0-9_-]+\.firebaseio\.com"),
-            "JWT Token": re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")
+            "JWT Token": re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+            "Private RSA/EC Key": re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),
         }
         
         self.crypto_patterns = {
             "ECB Mode": re.compile(r"AES/ECB/PKCS5Padding"),
             "DES Usage": re.compile(r"DES/CBC/PKCS5Padding|SecretKeyFactory\.getInstance\(\"DES\"\)"),
             "RC4 Usage": re.compile(r"Cipher\.getInstance\(\"RC4\"\)"),
+            "Insecure MD5 Hash": re.compile(r"MessageDigest\.getInstance\(\"MD5\"\)"),
+            "Weak SHA-1 Hash": re.compile(r"MessageDigest\.getInstance\(\"SHA-1\"\)"),
             "Hardcoded IV": re.compile(r"IvParameterSpec\([^{]*\{[0-9,\s]+\}\)"),
-            "Static Seed SecureRandom": re.compile(r"SecureRandom\(.*\.getBytes\(\)\)")
+            "Static Seed SecureRandom": re.compile(r"SecureRandom\(.*\.getBytes\(\)\)"),
         }
 
     @staticmethod

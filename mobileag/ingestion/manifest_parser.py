@@ -61,13 +61,21 @@ class ManifestParser:
             else:
                 exported_bool = exported.lower() == "true"
                 
+            meta_data = {}
+            for meta in elem.findall("meta-data"):
+                m_name = self._get_attrib(meta, "name")
+                m_res = self._get_attrib(meta, "resource") or self._get_attrib(meta, "value")
+                if m_name:
+                    meta_data[m_name] = m_res
+
             components.append({
                 "name": name,
                 "type": tag.replace("-alias", ""),
                 "exported": exported_bool,
                 "permission": permission,
                 "taskAffinity": task_affinity,
-                "intent_filters": intent_filters
+                "intent_filters": intent_filters,
+                "meta_data": meta_data,
             })
         return components
 
@@ -101,9 +109,17 @@ class ManifestParser:
         min_sdk = self._get_attrib(uses_sdk, "minSdkVersion") if uses_sdk is not None else ""
         target_sdk = self._get_attrib(uses_sdk, "targetSdkVersion") if uses_sdk is not None else ""
 
-        # Permissions
+        # Permissions requested
         permissions = [self._get_attrib(p, "name") for p in root.findall("uses-permission")]
         permissions = [p for p in permissions if p]
+
+        # Custom permissions declared by the application
+        declared_permissions = []
+        for perm in root.findall("permission"):
+            p_name = self._get_attrib(perm, "name")
+            p_prot = self._get_attrib(perm, "protectionLevel") or "normal"
+            if p_name:
+                declared_permissions.append({"name": p_name, "protectionLevel": p_prot})
 
         app_elem = root.find("application")
         if app_elem is None:
@@ -158,6 +174,7 @@ class ManifestParser:
             "min_sdk": min_sdk,
             "target_sdk": target_sdk,
             "permissions": permissions,
+            "declared_permissions": declared_permissions,
             "application": application_dict,
             "activities": activities,
             "services": services,

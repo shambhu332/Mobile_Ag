@@ -20,8 +20,9 @@ class DependencyScanner:
         self.dep_pattern = re.compile(r"(?:implementation|api|compile)\s+['\"]([^:]+):([^:]+):([^'\"]+)['\"]")
 
     def _sync_find_gradle_dependencies(self, base_path: Path) -> list[tuple[str, str, str, str]]:
-        """Synchronously scan build.gradle files for maven coordinates."""
+        """Synchronously scan build.gradle files and META-INF pom.properties for maven coordinates."""
         dependencies = []
+        # 1. Gradle files
         for file_path in base_path.rglob("build.gradle*"):
             try:
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
@@ -30,6 +31,26 @@ class DependencyScanner:
                     dependencies.append((group, artifact, version, rel_path))
             except Exception as e:
                 logger.error(f"Error reading gradle file {file_path}: {e}")
+
+        # 2. Embedded APK pom.properties (META-INF/maven/**/pom.properties)
+        for pom_prop in base_path.rglob("pom.properties"):
+            try:
+                content = pom_prop.read_text(encoding="utf-8", errors="ignore")
+                group, artifact, version = "", "", ""
+                for line in content.splitlines():
+                    clean = line.strip()
+                    if clean.startswith("groupId="):
+                        group = clean.split("=", 1)[1].strip()
+                    elif clean.startswith("artifactId="):
+                        artifact = clean.split("=", 1)[1].strip()
+                    elif clean.startswith("version="):
+                        version = clean.split("=", 1)[1].strip()
+                if group and artifact and version:
+                    rel_path = str(pom_prop.relative_to(base_path))
+                    dependencies.append((group, artifact, version, rel_path))
+            except Exception as e:
+                logger.debug(f"Error reading pom.properties {pom_prop}: {e}")
+
         return dependencies
 
     async def _query_osv_package(

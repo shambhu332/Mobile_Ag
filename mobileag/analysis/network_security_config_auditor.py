@@ -6,10 +6,14 @@ cleartext traffic overrides, and expired certificate pinning sets.
 """
 
 from datetime import datetime, timezone
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Optional
 import xml.etree.ElementTree as ET
+
+from mobileag.reporting.finding import Finding, Severity, FindingStatus
+from mobileag.reporting.cvss import get_default_cvss_for_cwe
 
 logger = logging.getLogger(__name__)
 
@@ -264,3 +268,46 @@ class NetworkSecurityConfigAuditor:
                 })
 
         return findings
+
+    async def audit_directory_async(
+        self,
+        decompiled_dir: str | Path,
+        manifest_path: Optional[str] = None
+    ) -> list[Finding]:
+        """Locate network_security_config.xml and return standard Finding objects."""
+        config_path = self.locate_config_path(str(decompiled_dir), manifest_path)
+        if not config_path:
+            return []
+
+        raw_findings = await asyncio.to_thread(self.audit_file, config_path)
+        findings: list[Finding] = []
+
+        sev_map = {
+            "Critical": Severity.CRITICAL,
+            "High": Severity.HIGH,
+            "Medium": Severity.MEDIUM,
+            "Low": Severity.LOW,
+        }
+
+        for item in raw_findings:
+            cwe = item["cwe"]
+            score, vector = get_default_cvss_for_cwe(cwe)
+            severity = sev_map.get(item["severity"], Severity.MEDIUM)
+
+            findings.append(Finding(
+                title=item["title"],
+                description=item["description"],
+                severity=severity,
+                cwe_id=cwe,
+                cvss_score=score,
+                cvss_vector=vector,
+                affected_component=Path(item["file_path"]).name,
+                detection_method="NetworkSecurityConfigAuditor",
+                status=FindingStatus.CONFIRMED,
+                remediation=item["remediation"],
+                file_path=item["file_path"],
+                code_snippet=item.get("code_snippet", "")
+            ))
+
+        return findings
+

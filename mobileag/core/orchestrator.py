@@ -17,12 +17,16 @@ from mobileag.ingestion.framework_detector import FrameworkDetector
 from mobileag.ingestion.packer_detector import PackerDetector
 from mobileag.ingestion.obfuscation import ObfuscationAnalyzer
 from mobileag.analysis.api_mapper import APIMapper
+from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.call_graph import SmaliCallGraphEngine
 from mobileag.analysis.code_reviewer import CodeReviewer
 from mobileag.analysis.dependency_scanner import DependencyScanner
 from mobileag.analysis.manifest_auditor import ManifestAuditor
 from mobileag.analysis.native_analyzer import NativeAnalyzer
+from mobileag.analysis.network_security_config_auditor import NetworkSecurityConfigAuditor
+from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.secret_scanner import SecretScanner
+from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.filters.pipeline import FilterPipeline
 from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
@@ -63,6 +67,10 @@ class Orchestrator:
         self._native_analyzer = NativeAnalyzer(self._router, self._settings.GHIDRA_PATH)
         self._dependency_scanner = DependencyScanner(self._router)
         self._call_graph_engine = SmaliCallGraphEngine()
+        self._taint_engine = TaintEngine()
+        self._nsc_auditor = NetworkSecurityConfigAuditor()
+        self._bin_protection = BinaryProtectionAuditor()
+        self._rn_scanner = ReactNativeScanner(self._settings.entropy_threshold)
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -167,9 +175,9 @@ class Orchestrator:
         return state
 
     async def _run_analysis(self, state: ScanState) -> ScanState:
-        """Stage 2: Run all 6 analysis agents in parallel."""
+        """Stage 2: Run all enterprise analysis agents in parallel."""
         state["current_phase"] = "analysis"
-        logger.info("[Stage 2] Analysis — running 6 agents in parallel...")
+        logger.info("[Stage 2] Analysis — running analysis agents in parallel...")
 
         all_findings: list[Finding] = []
 
@@ -185,6 +193,10 @@ class Orchestrator:
             "api_mapping": self._api_mapper.map_apis(state["decompiled_path"]),
             "native": self._native_analyzer.analyze(state["decompiled_path"]),
             "dependencies": self._dependency_scanner.scan(state["decompiled_path"]),
+            "taint": self._taint_engine.analyze_directory_async(state["decompiled_path"]),
+            "nsc": self._nsc_auditor.audit_directory_async(state["decompiled_path"]),
+            "binary_protection": self._bin_protection.audit_directory_async(state["decompiled_path"]),
+            "react_native": self._rn_scanner.scan_directory_async(state["decompiled_path"]),
         }
 
         results = await asyncio.gather(
@@ -207,7 +219,7 @@ class Orchestrator:
                     for ep in endpoints
                 ]
                 all_findings.extend(findings)
-            else:
+            elif isinstance(result, list):
                 all_findings.extend(result)
 
             logger.info("[Stage 2] %s: %d findings",

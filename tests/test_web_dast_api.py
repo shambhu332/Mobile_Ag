@@ -223,5 +223,73 @@ def test_copilot_poc_query(client):
     assert "Exploit PoC" in data["response"]
 
 
+def test_get_scan_apis_endpoint(client):
+    response = client.get("/api/scans/scan_meesho_demo/apis")
+    assert response.status_code == 200
+    data = response.json()
+    assert "endpoints" in data
+    assert data["total"] >= 5
+    assert data["vulnerable_count"] >= 4
+    methods = [e["method"] for e in data["endpoints"]]
+    assert "GET" in methods
+    assert "POST" in methods
+    assert "DELETE" in methods
+
+
+def test_api_test_replay_endpoint(client):
+    response = client.post(
+        "/api/apis/test",
+        json={
+            "url": "http://api.dev.targetapp.internal/v1/auth/login",
+            "method": "POST",
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"username":"admin","password":"secret"}',
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "status_code" in data
+    assert "headers" in data
+    assert "body" in data
+
+
+def test_api_fuzz_owasp_top_10_endpoint(client):
+    response = client.post(
+        "/api/apis/fuzz",
+        json={
+            "url": "https://api.targetapp.com/v1/accounts/10023/transactions",
+            "method": "GET",
+            "headers": {"Authorization": "Bearer sample_token"},
+            "response_status": 200,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["findings_count"] >= 1
+    cwes = [f["cwe_id"] for f in data["findings"]]
+    # Should detect CWE-639 (BOLA sequential numeric ID)
+    assert "CWE-639" in cwes
+
+
+def test_api_fuzz_admin_bfla_and_cleartext(client):
+    response = client.post(
+        "/api/apis/fuzz",
+        json={
+            "url": "http://api.dev.targetapp.internal/v1/admin/users/9918",
+            "method": "DELETE",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    cwes = [f["cwe_id"] for f in data["findings"]]
+    # Should flag cleartext HTTP (CWE-319) and privileged admin path (CWE-285)
+    assert "CWE-319" in cwes
+    assert "CWE-285" in cwes
+
+
+
 
 

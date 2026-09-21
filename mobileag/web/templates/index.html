@@ -94,6 +94,12 @@
           <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
         </button>
 
+        <button onclick="switchView('api')" id="nav-api" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="globe" class="w-4 h-4 text-purple-400"></i>
+          <span>API Security Studio</span>
+          <span id="nav-api-badge" class="ml-auto px-1.5 py-0.2 rounded bg-purple-950/80 text-[10px] font-mono text-purple-300 border border-purple-800">5 APIs</span>
+        </button>
+
 
         <button onclick="switchView('scans')" id="nav-scans" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="history" class="w-4 h-4"></i>
@@ -999,6 +1005,74 @@
     </div>
 
 
+      <!-- =================================================================== -->
+      <!-- VIEW: API SECURITY STUDIO & CATALOG -->
+      <!-- =================================================================== -->
+      <div id="view-api" class="view-panel h-full hidden flex overflow-hidden">
+        
+        <!-- Left: Discovered API Inventory List -->
+        <div class="flex-1 flex flex-col border-r border-borderSubtle bg-appbg overflow-hidden">
+          <!-- Filters & Search Toolbar -->
+          <div class="p-4 border-b border-borderSubtle bg-panel flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 flex-1 max-w-md">
+              <div class="relative w-full">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500"></i>
+                <input type="text" id="api-search-input" oninput="filterApiEndpoints()" placeholder="Search URL, path, host, or OWASP tag..." 
+                  class="w-full bg-card border border-borderSubtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono" />
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <!-- Method Filter Buttons -->
+              <div class="flex items-center gap-1 bg-card p-0.5 rounded-lg border border-borderSubtle text-xs font-mono">
+                <button onclick="setApiMethodFilter('ALL')" id="api-filter-all" class="api-filter-btn px-2.5 py-1 rounded bg-purple-950 text-purple-300 font-medium border border-purple-800">All</button>
+                <button onclick="setApiMethodFilter('GET')" id="api-filter-get" class="api-filter-btn px-2 py-1 rounded text-emerald-400 hover:bg-slate-800">GET</button>
+                <button onclick="setApiMethodFilter('POST')" id="api-filter-post" class="api-filter-btn px-2 py-1 rounded text-sky-400 hover:bg-slate-800">POST</button>
+                <button onclick="setApiMethodFilter('DELETE')" id="api-filter-delete" class="api-filter-btn px-2 py-1 rounded text-rose-400 hover:bg-slate-800">DELETE</button>
+              </div>
+
+              <!-- Status Filter -->
+              <select id="api-status-filter" onchange="filterApiEndpoints()" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-purple-500">
+                <option value="ALL">All Endpoints</option>
+                <option value="VULNERABLE">Vulnerable Only</option>
+                <option value="SECURE">Secure Only</option>
+              </select>
+
+              <button onclick="fuzzAllApiEndpoints()" id="btn-audit-all-apis" class="px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 text-xs font-mono flex items-center gap-1.5 transition">
+                <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Audit All</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Discovered APIs List -->
+          <div id="api-endpoints-list" class="flex-1 overflow-y-auto p-4 space-y-2.5">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Right: Interactive API Security Studio Workbench -->
+        <div id="api-workbench-drawer" class="w-[580px] xl:w-[680px] bg-panel flex flex-col shrink-0 overflow-y-auto p-5 border-l border-borderSubtle">
+          <div class="flex items-center justify-between border-b border-borderSubtle pb-3 mb-4">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-white tracking-wider uppercase font-mono">🌐 API Security Studio & Replay</h3>
+            </div>
+            <span id="api-detail-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">SELECT ENDPOINT</span>
+          </div>
+
+          <div id="api-workbench-content" class="space-y-4 text-xs">
+            <div class="text-slate-400 text-center py-20 font-mono text-xs">
+              <i data-lucide="globe" class="w-8 h-8 mx-auto text-purple-500/60 mb-2"></i>
+              <p class="text-slate-300 font-medium">Select an API endpoint from the inventory</p>
+              <p class="text-slate-500 text-[11px] mt-1">Replay requests, run OWASP API Top 10 fuzzing (BOLA/IDOR, PII, BFLA), and copy cURL commands.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+
     <!-- =================================================================== -->
     <!-- 3. COPILOT SLIDE-OVER DRAWER -->
     <!-- =================================================================== -->
@@ -1186,6 +1260,7 @@
 
       if (viewId === 'dast') loadDastView();
       if (viewId === 'taint') loadTaintView();
+      if (viewId === 'api') loadApiView();
       if (viewId === 'agents') loadAgentsView();
       if (viewId === 'scans') loadScansView();
       if (viewId === 'settings') loadSettingsView();
@@ -3485,6 +3560,596 @@ public class DiagnosticHandler {
       return text.replace(/[&<>"']/g, m => map[m]);
     }
 
+    // =====================================================================
+    // API SECURITY STUDIO & OWASP FUZZING LOGIC
+    // =====================================================================
+    let currentApiEndpoints = [];
+    let selectedApiId = null;
+    let currentApiMethodFilter = 'ALL';
+    let currentApiSubTab = 'owasp';
+
+    async function loadApiView() {
+      const scanId = (currentScan && currentScan.scan_id) ? currentScan.scan_id : 'scan_meesho_demo';
+      try {
+        const res = await fetch(`/api/scans/${scanId}/apis`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        currentApiEndpoints = data.endpoints || [];
+        
+        // Update sidebar badge
+        const badge = document.getElementById('nav-api-badge');
+        if (badge) badge.textContent = `${currentApiEndpoints.length} APIs`;
+
+        renderApiInventory();
+        if (!selectedApiId && currentApiEndpoints.length > 0) {
+          selectApiEndpoint(currentApiEndpoints[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load API endpoints:', err);
+        showToast('Error loading API endpoints inventory');
+      }
+    }
+
+    function setApiMethodFilter(method) {
+      currentApiMethodFilter = method;
+      document.querySelectorAll('.api-filter-btn').forEach(btn => {
+        btn.classList.remove('bg-purple-950', 'text-purple-300', 'border', 'border-purple-800');
+        btn.classList.add('text-slate-400');
+      });
+      const activeBtn = document.getElementById(`api-filter-${method.toLowerCase()}`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-purple-950', 'text-purple-300', 'border', 'border-purple-800');
+        activeBtn.classList.remove('text-slate-400');
+      }
+      filterApiEndpoints();
+    }
+
+    function filterApiEndpoints() {
+      const q = (document.getElementById('api-search-input')?.value || '').toLowerCase().trim();
+      const statusFilter = document.getElementById('api-status-filter')?.value || 'ALL';
+
+      const filtered = currentApiEndpoints.filter(ep => {
+        if (currentApiMethodFilter !== 'ALL' && ep.method.toUpperCase() !== currentApiMethodFilter) return false;
+        if (statusFilter !== 'ALL' && ep.status !== statusFilter) return false;
+        if (!q) return true;
+        return (
+          (ep.url && ep.url.toLowerCase().includes(q)) ||
+          (ep.path && ep.path.toLowerCase().includes(q)) ||
+          (ep.host && ep.host.toLowerCase().includes(q)) ||
+          (ep.owasp_api && ep.owasp_api.toLowerCase().includes(q)) ||
+          (ep.source && ep.source.toLowerCase().includes(q))
+        );
+      });
+
+      renderApiInventory(filtered);
+    }
+
+    function getMethodBadgeClass(method) {
+      const m = (method || 'GET').toUpperCase();
+      switch (m) {
+        case 'GET': return 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80';
+        case 'POST': return 'bg-sky-950/80 text-sky-300 border-sky-800/80';
+        case 'PUT': return 'bg-amber-950/80 text-amber-300 border-amber-800/80';
+        case 'DELETE': return 'bg-rose-950/80 text-rose-300 border-rose-800/80';
+        case 'PATCH': return 'bg-purple-950/80 text-purple-300 border-purple-800/80';
+        default: return 'bg-slate-800 text-slate-300 border-slate-700';
+      }
+    }
+
+    function renderApiInventory(list = currentApiEndpoints) {
+      const container = document.getElementById('api-endpoints-list');
+      if (!container) return;
+
+      if (!list || list.length === 0) {
+        container.innerHTML = `
+          <div class="p-8 text-center text-slate-500 font-mono text-xs">
+            <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+            No API endpoints match the selected filter criteria.
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = list.map(ep => {
+        const isSelected = selectedApiId === ep.id;
+        const methodBadge = getMethodBadgeClass(ep.method);
+        const isVuln = ep.status === 'VULNERABLE';
+        const statusBadge = isVuln
+          ? `<span class="px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 font-mono text-[10px]">Vulnerable</span>`
+          : `<span class="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-mono text-[10px]">Secure</span>`;
+
+        return `
+          <div onclick="selectApiEndpoint('${ep.id}')" class="p-3 rounded-lg border transition cursor-pointer ${isSelected ? 'bg-purple-950/20 border-purple-500/60 shadow-lg' : 'bg-card border-borderSubtle hover:border-slate-700'} space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] border ${methodBadge}">${escapeHtml(ep.method)}</span>
+                <span class="font-mono text-xs font-semibold text-white truncate max-w-xs md:max-w-md" title="${escapeHtml(ep.url)}">${escapeHtml(ep.path || ep.url)}</span>
+              </div>
+              <div>${statusBadge}</div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span class="truncate max-w-[220px] text-slate-300"><i data-lucide="server" class="w-3 h-3 inline mr-1 text-slate-500"></i>${escapeHtml(ep.host || 'api.target')}</span>
+              <span class="text-purple-300/80 truncate max-w-[200px]"><i data-lucide="lock" class="w-3 h-3 inline mr-1 text-slate-500"></i>${escapeHtml(ep.auth_type || 'None')}</span>
+            </div>
+
+            <div class="pt-1.5 border-t border-borderSubtle/50 flex items-center justify-between text-[10px] font-mono">
+              <span class="text-slate-500 truncate max-w-[260px]">${escapeHtml(ep.source || 'Decompiled Bytecode')}</span>
+              <span class="${isVuln ? 'text-amber-400 font-semibold' : 'text-slate-400'}">${escapeHtml(ep.owasp_api || 'Verified Endpoint')}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function selectApiEndpoint(apiId) {
+      selectedApiId = apiId;
+      renderApiInventory();
+
+      const ep = currentApiEndpoints.find(e => e.id === apiId);
+      if (!ep) return;
+
+      const badge = document.getElementById('api-detail-status-badge');
+      if (badge) {
+        if (ep.status === 'VULNERABLE') {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-800';
+          badge.textContent = 'OWASP FLAW DETECTED';
+        } else {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800';
+          badge.textContent = 'SECURE GATEWAY';
+        }
+      }
+
+      renderApiWorkbench(ep);
+    }
+
+    function renderApiWorkbench(ep) {
+      const container = document.getElementById('api-workbench-content');
+      if (!container) return;
+
+      const methodBadge = getMethodBadgeClass(ep.method);
+      const isVuln = ep.status === 'VULNERABLE';
+
+      container.innerHTML = `
+        <!-- Endpoint Header Card -->
+        <div class="bg-card p-3.5 rounded-lg border border-borderSubtle space-y-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-[11px] border ${methodBadge}">${escapeHtml(ep.method)}</span>
+              <span class="font-mono text-xs text-white font-semibold truncate select-all" title="${escapeHtml(ep.url)}">${escapeHtml(ep.url)}</span>
+            </div>
+            <button onclick="copyApiCurl('${ep.id}')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-mono flex items-center gap-1 border border-slate-700 shrink-0 transition" title="Copy cURL Command">
+              <i data-lucide="terminal" class="w-3.5 h-3.5 text-sky-400"></i>
+              <span>cURL</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-[11px] font-mono pt-2 border-t border-borderSubtle">
+            <div>
+              <span class="text-slate-500 block">Host:</span>
+              <span class="text-slate-300 truncate block">${escapeHtml(ep.host || 'N/A')}</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block">Authentication:</span>
+              <span class="text-purple-300 truncate block">${escapeHtml(ep.auth_type || 'None')}</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block">Source Trace:</span>
+              <span class="text-slate-300 truncate block">${escapeHtml(ep.source || 'Retrofit')}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons Toolbar -->
+        <div class="flex items-center gap-2">
+          <button onclick="sendApiReplayRequest('${ep.id}')" id="btn-replay-req" class="flex-1 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center justify-center gap-2 shadow-lg transition">
+            <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            <span>Send / Replay Request</span>
+          </button>
+
+          <button onclick="runApiFuzzing('${ep.id}')" id="btn-fuzz-api" class="flex-1 py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs font-mono flex items-center justify-center gap-2 shadow-lg transition">
+            <i data-lucide="zap" class="w-3.5 h-3.5 fill-current text-amber-300"></i>
+            <span>Run OWASP Top 10 Fuzzing</span>
+          </button>
+        </div>
+
+        <!-- Studio Sub-Tabs Nav -->
+        <div class="border-b border-borderSubtle flex items-center gap-1 text-xs font-mono">
+          <button onclick="switchApiSubTab('owasp')" id="api-subtab-btn-owasp" class="api-subtab-btn px-3 py-1.5 rounded-t-lg bg-purple-950 text-purple-300 border-t border-x border-purple-800 font-semibold flex items-center gap-1.5">
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>OWASP Analysis</span>
+          </button>
+          <button onclick="switchApiSubTab('request')" id="api-subtab-btn-request" class="api-subtab-btn px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="send" class="w-3.5 h-3.5 text-sky-400"></i>
+            <span>Request & cURL</span>
+          </button>
+          <button onclick="switchApiSubTab('response')" id="api-subtab-btn-response" class="api-subtab-btn px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="radio" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>Response Preview</span>
+          </button>
+          <button onclick="switchApiSubTab('remediation')" id="api-subtab-btn-remediation" class="api-subtab-btn px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-teal-400"></i>
+            <span>Remediation</span>
+          </button>
+        </div>
+
+        <!-- Subtab 1: OWASP API Analysis -->
+        <div id="api-pane-owasp" class="api-tab-pane space-y-3">
+          <div class="p-3.5 rounded-lg border ${isVuln ? 'bg-rose-950/30 border-rose-900/60' : 'bg-emerald-950/30 border-emerald-900/60'} space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-xs font-bold ${isVuln ? 'text-rose-300' : 'text-emerald-300'}">${escapeHtml(ep.owasp_api || 'API Gateway')}</span>
+              <span class="font-mono text-[10px] px-1.5 py-0.5 rounded ${isVuln ? 'bg-rose-900 text-rose-200' : 'bg-emerald-900 text-emerald-200'}">${escapeHtml(ep.cwe || 'CWE-Verified')}</span>
+            </div>
+            <p class="text-slate-300 text-xs leading-relaxed font-sans">${escapeHtml(ep.description || 'Endpoint verified against security policies.')}</p>
+          </div>
+
+          <!-- Parameters Audit -->
+          ${ep.parameters && ep.parameters.length > 0 ? `
+            <div class="space-y-1.5">
+              <div class="text-[11px] font-mono text-slate-400 font-semibold">Extracted Parameters & Risk Classification:</div>
+              <div class="bg-card rounded-lg border border-borderSubtle overflow-hidden">
+                <table class="w-full text-left font-mono text-[11px]">
+                  <thead class="bg-slate-900/80 text-slate-400 border-b border-borderSubtle">
+                    <tr>
+                      <th class="p-2">Name</th>
+                      <th class="p-2">Location</th>
+                      <th class="p-2">Sample</th>
+                      <th class="p-2">Risk Tag</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-borderSubtle/50 text-slate-300">
+                    ${ep.parameters.map(p => `
+                      <tr>
+                        <td class="p-2 text-sky-300 font-bold">${escapeHtml(p.name)}</td>
+                        <td class="p-2 text-slate-400">${escapeHtml(p.type)}</td>
+                        <td class="p-2 text-amber-300">${escapeHtml(p.sample || 'N/A')}</td>
+                        <td class="p-2"><span class="px-1 py-0.2 rounded bg-amber-950 text-amber-300 text-[10px]">${escapeHtml(p.risk || 'Standard')}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Live OWASP Fuzzing Output Box -->
+          <div id="api-live-fuzz-results" class="space-y-2 pt-2 border-t border-borderSubtle">
+            <div class="flex items-center justify-between text-[11px] font-mono">
+              <span class="text-slate-400">Autonomous Fuzzing Audit:</span>
+              <span id="api-fuzz-status-text" class="text-purple-400">Ready to execute</span>
+            </div>
+            <div class="p-3 bg-card/60 rounded-lg border border-borderSubtle font-mono text-xs text-slate-400 space-y-1.5">
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>TLS/SSL Transport Encryption Check</span></div>
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>BOLA / IDOR Sequential Identifier Probing</span></div>
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>PII & Response Payload Leakage Audit (SSN, Passwords, Keys)</span></div>
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>BFLA Client Privileged Route Escalation Check</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 2: Request & cURL Inspector -->
+        <div id="api-pane-request" class="api-tab-pane hidden space-y-3">
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <select id="api-req-method" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500">
+                <option value="GET" ${ep.method === 'GET' ? 'selected' : ''}>GET</option>
+                <option value="POST" ${ep.method === 'POST' ? 'selected' : ''}>POST</option>
+                <option value="PUT" ${ep.method === 'PUT' ? 'selected' : ''}>PUT</option>
+                <option value="DELETE" ${ep.method === 'DELETE' ? 'selected' : ''}>DELETE</option>
+                <option value="PATCH" ${ep.method === 'PATCH' ? 'selected' : ''}>PATCH</option>
+              </select>
+              <input type="text" id="api-req-url" value="${escapeHtml(ep.url)}" class="flex-1 bg-card border border-borderSubtle rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500" />
+            </div>
+
+            <!-- Headers Textarea -->
+            <div>
+              <label class="block text-[11px] font-mono text-slate-400 mb-1">Request Headers (JSON or Raw):</label>
+              <textarea id="api-req-headers" rows="3" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-sky-300 focus:outline-none focus:border-sky-500">${escapeHtml(ep.auth_type === 'Bearer Token' ? '{\n  "Authorization": "Bearer mock_token_for_audit",\n  "Accept": "application/json"\n}' : '{\n  "Content-Type": "application/json"\n}')}</textarea>
+            </div>
+
+            <!-- Body Textarea -->
+            <div>
+              <label class="block text-[11px] font-mono text-slate-400 mb-1">Request Body (JSON / Form):</label>
+              <textarea id="api-req-body" rows="4" placeholder="{}" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-emerald-300 focus:outline-none focus:border-sky-500">${escapeHtml(ep.method === 'POST' ? '{\n  "username": "admin",\n  "query": "{ products { id } }"\n}' : '')}</textarea>
+            </div>
+
+            <!-- Pre-generated cURL Command Box -->
+            <div>
+              <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1">
+                <span>Reproducible cURL Command:</span>
+                <button onclick="copyApiCurl('${ep.id}')" class="text-sky-400 hover:underline">Copy</button>
+              </div>
+              <pre class="p-3 bg-slate-950 rounded-lg border border-slate-800 text-[11px] font-mono text-amber-300 overflow-x-auto whitespace-pre-wrap">${escapeHtml(ep.curl_cmd || `curl -X ${ep.method} "${ep.url}"`)}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 3: Response Preview -->
+        <div id="api-pane-response" class="api-tab-pane hidden space-y-3">
+          <div class="flex items-center justify-between bg-card p-2.5 rounded-lg border border-borderSubtle font-mono text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-400">Status:</span>
+              <span id="api-resp-status-badge" class="px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">200 OK</span>
+            </div>
+            <div class="flex items-center gap-3 text-[11px]">
+              <span id="api-resp-mode-badge" class="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800">SIMULATED PAYLOAD</span>
+              <span id="api-resp-duration" class="text-slate-400">12 ms</span>
+            </div>
+          </div>
+
+          <!-- Response Headers -->
+          <div>
+            <div class="text-[11px] font-mono text-slate-400 mb-1">Response Headers:</div>
+            <pre id="api-resp-headers-view" class="p-2.5 bg-slate-900 rounded-lg border border-borderSubtle font-mono text-[11px] text-slate-300 overflow-x-auto">content-type: application/json&#10;x-server: mobileag-sandbox/2.2&#10;cache-control: no-store</pre>
+          </div>
+
+          <!-- Response Body -->
+          <div>
+            <div class="text-[11px] font-mono text-slate-400 mb-1">Response Body:</div>
+            <pre id="api-resp-body-view" class="p-3 bg-slate-950 rounded-lg border border-slate-800 font-mono text-xs text-emerald-300 overflow-x-auto whitespace-pre-wrap max-h-60">${escapeHtml(ep.sample_response || '{\n  "status": "success"\n}')}</pre>
+          </div>
+        </div>
+
+        <!-- Subtab 4: Defensive Remediation -->
+        <div id="api-pane-remediation" class="api-tab-pane hidden space-y-3 font-mono text-xs">
+          <div class="p-3 rounded-lg bg-card border border-borderSubtle space-y-2">
+            <div class="font-bold text-emerald-400 font-sans text-xs">🛡️ Backend Architecture Hardening:</div>
+            <ul class="list-disc pl-4 space-y-1 text-slate-300 text-[11px] font-sans">
+              <li><strong>Enforce Object-Level RBAC:</strong> Verify requesting user identity against the database row ownership, never relying solely on client path IDs.</li>
+              <li><strong>Migrate to Non-Sequential IDs:</strong> Replace predictable sequential integers with cryptographically secure UUID v4 strings.</li>
+              <li><strong>Data Serialization Filters:</strong> Exclude PII, internal roles, and password hashes from API responses using DTO projection filters.</li>
+            </ul>
+          </div>
+
+          <div class="space-y-1">
+            <div class="text-[11px] font-mono text-slate-400">Mobile Client Defensive Guard (OkHttp / Retrofit Kotlin):</div>
+            <pre class="p-3 bg-slate-950 rounded-lg border border-slate-800 text-[11px] font-mono text-sky-300 overflow-x-auto whitespace-pre-wrap">val certPinner = CertificatePinner.Builder()
+    .add("${ep.host || "api.targetapp.com"}", "sha256/k2v657xUM4Ivng6GeDiRC6afkiUjOGKqUFPG9NVSX68=")
+    .build()
+
+val okHttpClient = OkHttpClient.Builder()
+    .certificatePinner(certPinner)
+    .addInterceptor { chain ->
+        val req = chain.request().newBuilder()
+            .header("Cache-Control", "no-store")
+            .header("X-Client-Platform", "Android-Native")
+            .build()
+        chain.proceed(req)
+    }
+    .build()</pre>
+          </div>
+        </div>
+      `;
+
+      lucide.createIcons();
+    }
+
+    function switchApiSubTab(tab) {
+      currentApiSubTab = tab;
+      document.querySelectorAll('.api-tab-pane').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.api-subtab-btn').forEach(btn => {
+        btn.classList.remove('bg-purple-950', 'text-purple-300', 'border-t', 'border-x', 'border-purple-800', 'font-semibold');
+        btn.classList.add('text-slate-400');
+      });
+
+      const targetPane = document.getElementById(`api-pane-${tab}`);
+      if (targetPane) targetPane.classList.remove('hidden');
+
+      const targetBtn = document.getElementById(`api-subtab-btn-${tab}`);
+      if (targetBtn) {
+        targetBtn.classList.add('bg-purple-950', 'text-purple-300', 'border-t', 'border-x', 'border-purple-800', 'font-semibold');
+        targetBtn.classList.remove('text-slate-400');
+      }
+
+      lucide.createIcons();
+    }
+
+    async function sendApiReplayRequest(apiId) {
+      const ep = currentApiEndpoints.find(e => e.id === apiId);
+      if (!ep) return;
+
+      const btn = document.getElementById('btn-replay-req');
+      const originalHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Sending...</span>`;
+        lucide.createIcons();
+      }
+
+      const url = document.getElementById('api-req-url')?.value || ep.url;
+      const method = document.getElementById('api-req-method')?.value || ep.method;
+      let headers = {};
+      try {
+        const rawHeaders = document.getElementById('api-req-headers')?.value;
+        if (rawHeaders) headers = JSON.parse(rawHeaders);
+      } catch (e) {
+        headers = { "Authorization": "Bearer mock_token_for_audit" };
+      }
+      const body = document.getElementById('api-req-body')?.value || undefined;
+
+      try {
+        const res = await fetch('/api/apis/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, method, headers, body, timeout: 4.0 }),
+        });
+        const data = await res.json();
+
+        // Switch to Response tab and update values
+        switchApiSubTab('response');
+
+        const statusBadge = document.getElementById('api-resp-status-badge');
+        if (statusBadge) {
+          statusBadge.textContent = `${data.status_code || 200} ${data.status_code === 200 ? 'OK' : 'RESPONSE'}`;
+          statusBadge.className = data.status_code >= 400
+            ? 'px-2 py-0.5 rounded font-bold bg-rose-950 text-rose-300 border border-rose-800'
+            : 'px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800';
+        }
+
+        const modeBadge = document.getElementById('api-resp-mode-badge');
+        if (modeBadge) {
+          modeBadge.textContent = data.mode === 'live' ? 'LIVE NETWORK' : 'SIMULATED SANDBOX';
+          modeBadge.className = data.mode === 'live'
+            ? 'px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800'
+            : 'px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800';
+        }
+
+        const durBadge = document.getElementById('api-resp-duration');
+        if (durBadge) durBadge.textContent = `${data.duration_ms || 12} ms`;
+
+        const headersView = document.getElementById('api-resp-headers-view');
+        if (headersView) headersView.textContent = JSON.stringify(data.headers || {}, null, 2);
+
+        const bodyView = document.getElementById('api-resp-body-view');
+        if (bodyView) {
+          try {
+            const parsed = JSON.parse(data.body);
+            bodyView.textContent = JSON.stringify(parsed, null, 2);
+          } catch (e) {
+            bodyView.textContent = data.body || '(Empty Response)';
+          }
+        }
+
+        showToast(`Request executed: HTTP ${data.status_code || 200}`);
+      } catch (err) {
+        console.error('Request replay failed:', err);
+        showToast('API replay failed: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    async function runApiFuzzing(apiId) {
+      const ep = currentApiEndpoints.find(e => e.id === apiId);
+      if (!ep) return;
+
+      const btn = document.getElementById('btn-fuzz-api');
+      const originalHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Fuzzing...</span>`;
+        lucide.createIcons();
+      }
+
+      switchApiSubTab('owasp');
+      const resultsContainer = document.getElementById('api-live-fuzz-results');
+      const statusText = document.getElementById('api-fuzz-status-text');
+      if (statusText) statusText.textContent = 'Auditing OWASP API Top 10 rules...';
+
+      try {
+        const res = await fetch('/api/apis/fuzz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: ep.url,
+            method: ep.method,
+            headers: ep.auth_type === 'Bearer Token' ? { "Authorization": "Bearer mock_token_for_audit" } : {},
+            response_status: 200,
+            response_body: ep.sample_response,
+          }),
+        });
+        const data = await res.json();
+
+        if (statusText) {
+          statusText.textContent = `Completed (${data.findings_count} security issues detected)`;
+          statusText.className = data.findings_count > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold';
+        }
+
+        if (resultsContainer) {
+          resultsContainer.innerHTML = `
+            <div class="flex items-center justify-between text-[11px] font-mono">
+              <span class="text-slate-400">Autonomous Fuzzing Audit:</span>
+              <span class="${data.findings_count > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}">${data.findings_count} Flaws Confirmed</span>
+            </div>
+            ${data.findings.length > 0 ? data.findings.map(f => `
+              <div class="p-3 bg-rose-950/20 border border-rose-900/60 rounded-lg space-y-1 text-xs">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-rose-300 font-mono">${escapeHtml(f.title)}</span>
+                  <span class="px-1.5 py-0.2 rounded bg-rose-900 text-rose-200 text-[10px] font-mono font-bold">${escapeHtml(f.cwe_id || 'CWE')}</span>
+                </div>
+                <p class="text-slate-300 text-[11px] font-sans leading-relaxed">${escapeHtml(f.description)}</p>
+                ${f.remediation ? `
+                  <div class="pt-1 text-[10px] font-mono text-emerald-400"><span class="font-bold">Fix:</span> ${escapeHtml(f.remediation)}</div>
+                ` : ''}
+              </div>
+            `).join('') : `
+              <div class="p-3 bg-emerald-950/20 border border-emerald-900/60 rounded-lg text-xs font-mono text-emerald-300 flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                <span>No OWASP API Top 10 vulnerabilities detected on this endpoint.</span>
+              </div>
+            `}
+          `;
+          lucide.createIcons();
+        }
+
+        showToast(`OWASP API Audit completed: ${data.findings_count} flaws identified`);
+      } catch (err) {
+        console.error('Fuzzing error:', err);
+        showToast('Fuzzing failed: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    async function fuzzAllApiEndpoints() {
+      const btn = document.getElementById('btn-audit-all-apis');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Auditing...</span>`;
+      }
+
+      showToast('Starting autonomous OWASP API Top 10 assessment on all endpoints...');
+      let totalFlaws = 0;
+      for (const ep of currentApiEndpoints) {
+        try {
+          const res = await fetch('/api/apis/fuzz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: ep.url,
+              method: ep.method,
+              headers: ep.auth_type === 'Bearer Token' ? { "Authorization": "Bearer mock_token_for_audit" } : {},
+              response_body: ep.sample_response,
+            }),
+          });
+          const data = await res.json();
+          totalFlaws += (data.findings_count || 0);
+        } catch (e) {
+          console.warn('Endpoint fuzzing check failed for', ep.url, e);
+        }
+      }
+
+      showToast(`Audit complete: ${totalFlaws} OWASP API flaws evaluated across ${currentApiEndpoints.length} endpoints.`);
+      if (selectedApiId) selectApiEndpoint(selectedApiId);
+
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i><span>Audit All</span>`;
+        lucide.createIcons();
+      }
+    }
+
+    function copyApiCurl(apiId) {
+      const ep = currentApiEndpoints.find(e => e.id === apiId);
+      if (!ep) return;
+      const cmd = ep.curl_cmd || `curl -X ${ep.method} "${ep.url}"`;
+      navigator.clipboard.writeText(cmd).then(() => {
+        showToast('cURL command copied to clipboard!');
+      }).catch(() => {
+        showToast('Failed to copy to clipboard');
+      });
+    }
 
     // Close export dropdown on click outside
     window.addEventListener('click', (e) => {

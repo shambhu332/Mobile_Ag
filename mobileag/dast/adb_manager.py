@@ -184,3 +184,15 @@ class ADBManager:
         if code == 0 and stdout.startswith(b"\x89PNG"):
             return stdout
         return None
+
+    async def execute_shell(self, serial: str, command: str) -> dict[str, Any]:
+        """Execute an arbitrary adb shell command on target device."""
+        cmd_parts = ["-s", serial, "shell"] + command.split() if isinstance(command, str) else ["-s", serial, "shell", str(command)]
+        code, stdout, stderr = await self._exec_cmd(cmd_parts, timeout=10.0)
+        out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
+        return {
+            "status": "success" if code == 0 else "failed",
+            "output": out_str or "(Command executed with no output)",
+            "exit_code": code,
+        }
+

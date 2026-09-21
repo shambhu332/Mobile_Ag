@@ -196,4 +196,32 @@ def test_dast_frida_unified_endpoint(client):
     assert "Unified Enterprise Runtime" in data["script"]
 
 
+def test_dast_execute_adb_endpoint(client):
+    response = client.post(
+        "/api/dast/execute_adb",
+        json={
+            "serial": "emulator-5554",
+            "command": "echo 'POC_VERIFIED'",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "output" in data
+
+
+def test_copilot_poc_query(client):
+    response = client.post(
+        "/api/copilot",
+        json={
+            "prompt": "Give me a step by step PoC for exported activity",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "Exploit PoC" in data["response"]
+
+
+
 

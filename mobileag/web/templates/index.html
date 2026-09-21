@@ -170,12 +170,15 @@
             <span>Export Report</span>
             <i data-lucide="chevron-down" class="w-3 h-3"></i>
           </button>
-          <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-40 bg-panel border border-borderSubtle rounded-lg shadow-xl z-30 py-1 text-xs font-mono">
+          <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-44 bg-panel border border-borderSubtle rounded-lg shadow-xl z-30 py-1 text-xs font-mono">
             <button onclick="exportReportJSON()" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
               <i data-lucide="file-json" class="w-3.5 h-3.5 text-sky-400"></i> JSON Report
             </button>
             <button onclick="exportReportMarkdown()" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
               <i data-lucide="file-text" class="w-3.5 h-3.5 text-emerald-400"></i> Markdown Report
+            </button>
+            <button onclick="exportReportSARIF()" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-purple-400"></i> SARIF v2.1.0 (CI/CD)
             </button>
           </div>
         </div>
@@ -1778,8 +1781,8 @@
 
     async function uploadApkFile(file, autoRunAfterUpload = false) {
       if (!file) return;
-      if (!file.name.toLowerCase().endsWith('.apk') && !file.name.toLowerCase().endsWith('.zip')) {
-        showToast('Please upload an .apk file', 'error');
+      if (!file.name.toLowerCase().endsWith('.apk') && !file.name.toLowerCase().endsWith('.ipa') && !file.name.toLowerCase().endsWith('.zip')) {
+        showToast('Please upload an .apk or .ipa file', 'error');
         return;
       }
 
@@ -1884,7 +1887,7 @@
     window.addEventListener('drop', (e) => {
       if (!e.defaultPrevented && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const file = e.dataTransfer.files[0];
-        if (file.name.toLowerCase().endsWith('.apk') || file.name.toLowerCase().endsWith('.zip')) {
+        if (file.name.toLowerCase().endsWith('.apk') || file.name.toLowerCase().endsWith('.ipa') || file.name.toLowerCase().endsWith('.zip')) {
           e.preventDefault();
           uploadApkFile(file, true);
         }
@@ -1919,6 +1922,21 @@
       const blob = new Blob([md], { type: 'text/markdown' });
       downloadBlob(blob, `mobileag_report_${currentScan.scan_id || 'export'}.md`);
       showToast('Markdown report exported successfully', 'success');
+    }
+
+    async function exportReportSARIF() {
+      toggleExportMenu();
+      if (!currentScan) return;
+      try {
+        const scanId = currentScan.scan_id || 'scan_meesho_demo';
+        const res = await fetch(`/api/scans/${scanId}/sarif`);
+        const sarifData = await res.json();
+        const blob = new Blob([JSON.stringify(sarifData, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, `mobileag_report_${scanId}.sarif`);
+        showToast('SARIF v2.1.0 exported successfully', 'success');
+      } catch (err) {
+        showToast('Error exporting SARIF report', 'error');
+      }
     }
 
     function downloadBlob(blob, filename) {

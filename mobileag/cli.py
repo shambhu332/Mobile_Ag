@@ -21,36 +21,127 @@ def main():
 
 
 @main.command()
-@click.option("--apk", required=True, help="Path to target APK file", type=click.Path(exists=True))
+@click.option("--apk", "--app", "app_path", required=True, help="Path to target APK or IPA file", type=click.Path(exists=True))
 @click.option("--output", default="./output", help="Output directory for reports", type=click.Path())
-def scan(apk: str, output: str):
-    """Run a full security analysis on an APK."""
-    console.print(Panel.fit(f"[bold blue]MobileAg Security Scan[/]\nTarget: {apk}", border_style="blue"))
-    
+@click.option("--format", "report_format", default="markdown", type=click.Choice(["markdown", "json", "sarif"], case_sensitive=False), help="Report output format")
+@click.option("--offline", is_flag=True, help="Enforce deterministic offline analysis (no cloud LLM API calls)")
+def scan(app_path: str, output: str, report_format: str, offline: bool):
+    """Run a full security analysis on an Android APK or iOS IPA package."""
+    is_ios = app_path.lower().endswith(".ipa")
+    platform_name = "iOS IPA" if is_ios else "Android APK"
+
+    console.print(Panel.fit(
+        f"[bold cyan]MobileAg Enterprise Security Scan[/]\n"
+        f"Target: [bold white]{app_path}[/]\n"
+        f"Platform: [bold green]{platform_name}[/]\n"
+        f"Format: [bold magenta]{report_format.upper()}[/]",
+        border_style="cyan"
+    ))
+
+    # If iOS IPA package
+    if is_ios:
+        from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer
+        from mobileag.reporting.sarif_exporter import SARIFExporter
+        import json
+
+        analyzer = IOSSecurityAnalyzer()
+        out_dir = Path(output)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        console.print("[bold yellow][*][/] Running iOS static security audit (Info.plist, ATS, Mach-O flags)...")
+        results = analyzer.audit_ipa(app_path, out_dir / "ios_extract")
+        findings = results.get("findings", [])
+
+        console.print(f"\n[bold green]Scan Complete![/] Found {len(findings)} iOS security findings.")
+        for f in findings:
+            sev_color = "red" if f.severity.value in ("CRITICAL", "HIGH") else "yellow"
+            console.print(f" • [{sev_color}][{f.severity.value}][/] {f.title} ({f.cwe_id})")
+
+        if report_format.lower() == "sarif":
+            sarif_file = out_dir / "report_ios.sarif"
+            SARIFExporter.export_to_file(findings, sarif_file, results.get("app_name", "ios_target"))
+            console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {sarif_file}")
+        elif report_format.lower() == "json":
+            json_file = out_dir / "report_ios.json"
+            json_file.write_text(json.dumps([f.model_dump() for f in findings], indent=2))
+            console.print(f"\n[bold green]JSON Report saved to:[/] {json_file}")
+        return
+
+    # Android APK Scan
     settings = get_settings()
-    if not settings.enabled_providers:
-        console.print("[bold red]Error:[/] No LLM providers configured. Set API keys in .env")
-        sys.exit(1)
-        
+    if not settings.enabled_providers or offline:
+        console.print("[bold yellow]Offline Mode Active:[/] Running deterministic Smali bytecode call graph, AST heuristics, and rule engine (no cloud LLM required).")
+    else:
+        console.print(f"[bold green]LLM Hybrid Mode Active:[/] Configured providers: {', '.join(settings.enabled_providers)}")
+
     orchestrator = Orchestrator(settings)
-    
+
     try:
         # Run the async scan
-        state = asyncio.run(orchestrator.scan(apk, output_dir=output))
-        
-        if state["errors"]:
+        state = asyncio.run(orchestrator.scan(app_path, output_dir=output))
+
+        if state.get("errors"):
             console.print("[bold yellow]Scan completed with warnings:[/]")
             for err in state["errors"]:
                 console.print(f" - {err}")
-                
-        console.print(f"\n[bold green]Scan Complete![/] Report saved to: {state.get('report_path')}")
-        
+
+        if report_format.lower() == "sarif" and state.get("sarif_path"):
+            console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {state.get('sarif_path')}")
+        else:
+            console.print(f"\n[bold green]Scan Complete![/] Report saved to: {state.get('report_path')}")
+
     except KeyboardInterrupt:
         console.print("\n[bold red]Scan aborted by user.[/]")
         sys.exit(1)
     except Exception as e:
         console.print(f"\n[bold red]Fatal error during scan:[/] {e}")
         sys.exit(1)
+
+
+@main.command()
+@click.option("--ipa", required=True, help="Path to target iOS IPA file", type=click.Path(exists=True))
+@click.option("--output", default="./output/ios", help="Output directory for reports", type=click.Path())
+@click.option("--format", "report_format", default="markdown", type=click.Choice(["markdown", "json", "sarif"], case_sensitive=False))
+def ios(ipa: str, output: str, report_format: str):
+    """Run static security analysis on an iOS IPA application package."""
+    from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer
+    from mobileag.reporting.sarif_exporter import SARIFExporter
+    import json
+
+    console.print(Panel.fit(
+        f"[bold cyan]MobileAg iOS Security Audit[/]\n"
+        f"IPA: [bold white]{ipa}[/]\n"
+        f"Format: [bold magenta]{report_format.upper()}[/]",
+        border_style="cyan"
+    ))
+
+    analyzer = IOSSecurityAnalyzer()
+    out_dir = Path(output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    results = analyzer.audit_ipa(ipa, out_dir / "extract")
+    findings = results.get("findings", [])
+
+    console.print(f"\n[bold green]Scan Complete![/] Found {len(findings)} iOS security findings.")
+    for f in findings:
+        sev_color = "red" if f.severity.value in ("CRITICAL", "HIGH") else "yellow"
+        console.print(f" • [{sev_color}][{f.severity.value}][/] {f.title} ({f.cwe_id})")
+
+    if report_format.lower() == "sarif":
+        sarif_file = out_dir / "report_ios.sarif"
+        SARIFExporter.export_to_file(findings, sarif_file, results.get("app_name", "ios_target"))
+        console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {sarif_file}")
+    elif report_format.lower() == "json":
+        json_file = out_dir / "report_ios.json"
+        json_file.write_text(json.dumps([f.model_dump() for f in findings], indent=2))
+        console.print(f"\n[bold green]JSON Report saved to:[/] {json_file}")
+    else:
+        md_file = out_dir / "report_ios.md"
+        md_content = f"# iOS Security Audit Report: {results.get('app_name', 'App')}\n\n"
+        for f in findings:
+            md_content += f"## [{f.severity.value}] {f.title} ({f.cwe_id})\n- Description: {f.description}\n- File: {f.file_path}\n- Remediation: {f.remediation}\n\n"
+        md_file.write_text(md_content)
+        console.print(f"\n[bold green]Markdown Report saved to:[/] {md_file}")
 
 
 @main.command()

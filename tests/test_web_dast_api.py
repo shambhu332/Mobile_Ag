@@ -135,7 +135,7 @@ def test_apk_upload_invalid_extension(client):
         files={"file": ("payload.exe", b"MZNotAnApk", "application/octet-stream")}
     )
     assert response.status_code == 400
-    assert "Only .apk or .zip" in response.json()["detail"]
+    assert "Only .apk, .ipa, or .zip" in response.json()["detail"]
 
 
 def test_scan_run_autonomous_endpoint(client):

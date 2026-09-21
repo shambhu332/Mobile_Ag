@@ -16,16 +16,18 @@ from mobileag.ingestion.manifest_parser import ManifestParser
 from mobileag.ingestion.framework_detector import FrameworkDetector
 from mobileag.ingestion.packer_detector import PackerDetector
 from mobileag.ingestion.obfuscation import ObfuscationAnalyzer
-from mobileag.analysis.manifest_auditor import ManifestAuditor
-from mobileag.analysis.secret_scanner import SecretScanner
-from mobileag.analysis.code_reviewer import CodeReviewer
 from mobileag.analysis.api_mapper import APIMapper
-from mobileag.analysis.native_analyzer import NativeAnalyzer
+from mobileag.analysis.call_graph import SmaliCallGraphEngine
+from mobileag.analysis.code_reviewer import CodeReviewer
 from mobileag.analysis.dependency_scanner import DependencyScanner
+from mobileag.analysis.manifest_auditor import ManifestAuditor
+from mobileag.analysis.native_analyzer import NativeAnalyzer
+from mobileag.analysis.secret_scanner import SecretScanner
 from mobileag.filters.pipeline import FilterPipeline
 from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
 from mobileag.reporting.finding import Finding
+from mobileag.reporting.sarif_exporter import SARIFExporter
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class Orchestrator:
         self._api_mapper = APIMapper(self._router)
         self._native_analyzer = NativeAnalyzer(self._router, self._settings.GHIDRA_PATH)
         self._dependency_scanner = DependencyScanner(self._router)
+        self._call_graph_engine = SmaliCallGraphEngine()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -211,6 +214,14 @@ class Orchestrator:
                         name,
                         len(result) if not isinstance(result, tuple) else len(result[1]))
 
+        # Deterministic Smali Call Graph reachability audit
+        try:
+            smali_findings = self._call_graph_engine.audit_smali_directory(state["decompiled_path"])
+            all_findings.extend(smali_findings)
+            logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
+        except Exception as e:
+            logger.warning("[Stage 2] Smali Call Graph audit warning: %s", e)
+
         state["raw_findings"] = [f.model_dump() for f in all_findings]
         logger.info("[Stage 2] Done — %d raw findings total", len(all_findings))
         return state
@@ -290,3 +301,17 @@ class Orchestrator:
             fp = poc_dir / item["filename"]
             fp.write_text(item["poc_guide"])
             logger.info("Saved PoC guide: %s", fp)
+
+        # Save OASIS SARIF v2.1.0 report for CI/CD integration
+        try:
+            sarif_path = output / f"report_{state['scan_id']}.sarif"
+            SARIFExporter.export_to_file(
+                findings=state.get("filtered_findings", []),
+                output_path=sarif_path,
+                target_name=state.get("package_name", "mobile_target"),
+                scan_id=state.get("scan_id", "scan-001"),
+            )
+            state["sarif_path"] = str(sarif_path)
+            logger.info("Saved SARIF report: %s", sarif_path)
+        except Exception as exc:
+            logger.warning("Failed exporting SARIF: %s", exc)

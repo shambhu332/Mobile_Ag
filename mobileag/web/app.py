@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from config.settings import get_settings
+from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.dast import (
     ADBManager,
@@ -33,6 +34,7 @@ from mobileag.dast import (
 )
 from mobileag.knowledge.neo4j_graph import AttackGraph
 from mobileag.reporting.finding import FindingStatus, Severity
+from mobileag.reporting.sarif_exporter import SARIFExporter
 
 logger = logging.getLogger(__name__)
 
@@ -421,6 +423,15 @@ async def get_scan_graph(scan_id: str) -> dict[str, Any]:
         "scan_id": scan_id,
         "graph": scan.get("attack_surface_graph", {"nodes": [], "edges": []}),
     }
+
+
+@app.get("/api/scans/{scan_id}/sarif")
+async def get_scan_sarif(scan_id: str) -> dict[str, Any]:
+    """Export scan findings in standard OASIS SARIF v2.1.0 format."""
+    scan = await get_scan_details(scan_id)
+    findings = scan.get("findings", [])
+    target_name = scan.get("package_name") or scan.get("app_name", "target_app")
+    return SARIFExporter.generate_sarif(findings, target_name=target_name, scan_id=scan_id)
 
 
 class FeedbackRequest(BaseModel):
@@ -1052,8 +1063,8 @@ async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: Background
 async def upload_apk(file: UploadFile = File(...)) -> dict[str, Any]:
     """Upload an APK file to the local server for automated security scanning."""
     filename = file.filename or "target.apk"
-    if not (filename.lower().endswith(".apk") or filename.lower().endswith(".zip")):
-        raise HTTPException(status_code=400, detail="Only .apk or .zip application archives are supported.")
+    if not (filename.lower().endswith(".apk") or filename.lower().endswith(".ipa") or filename.lower().endswith(".zip")):
+        raise HTTPException(status_code=400, detail="Only .apk, .ipa, or .zip application archives are supported.")
     
     target_path = UPLOAD_DIR / filename
     content = await file.read()

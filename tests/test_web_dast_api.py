@@ -115,3 +115,48 @@ def test_dast_providers_endpoint(client):
         assert len(data["findings"]) == 1
         assert data["findings"][0]["cwe_id"] == "CWE-926"
 
+
+def test_apk_upload_endpoint(client):
+    apk_content = b"PK\x03\x04MockAPKFileContentForTesting"
+    response = client.post(
+        "/api/upload/apk",
+        files={"file": ("test_upload_sample.apk", apk_content, "application/vnd.android.package-archive")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["filename"] == "test_upload_sample.apk"
+    assert "file_path" in data
+
+
+def test_apk_upload_invalid_extension(client):
+    response = client.post(
+        "/api/upload/apk",
+        files={"file": ("payload.exe", b"MZNotAnApk", "application/octet-stream")}
+    )
+    assert response.status_code == 400
+    assert "Only .apk or .zip" in response.json()["detail"]
+
+
+def test_scan_run_autonomous_endpoint(client):
+    response = client.post(
+        "/api/scans/run",
+        json={
+            "apk_path": "/tmp/test_target.apk",
+            "auto_dast": True,
+            "auto_taint": True,
+            "bypass_root": True,
+            "bypass_ssl": True,
+            "serial": "emulator-5554"
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "initiated"
+    assert data["auto_dast"] is True
+    assert data["auto_taint"] is True
+    assert data["bypass_root"] is True
+    assert data["bypass_ssl"] is True
+    assert "scan_id" in data
+
+

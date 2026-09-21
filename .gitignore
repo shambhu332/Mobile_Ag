@@ -25,6 +25,8 @@ dist/
 
 # Output & Temp directories
 output/
+uploads/*
+!uploads/.gitkeep
 tmp/
 *.log
 *.db

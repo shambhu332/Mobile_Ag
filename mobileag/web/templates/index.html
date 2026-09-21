@@ -1399,6 +1399,29 @@
       }
     }
 
+    async function submitTriageVerdict(findingId, verdict) {
+      try {
+        await fetch(`/api/findings/${findingId}/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verdict })
+        });
+        
+        const df = dastFindings.find(item => item.id === findingId);
+        if (df) df.status = verdict;
+
+        if (currentScan && currentScan.findings) {
+          const sf = currentScan.findings.find(item => item.id === findingId);
+          if (sf) sf.status = verdict;
+        }
+
+        renderDastFindings();
+        showToast(`DAST Triage updated: ${verdict}`, 'success');
+      } catch (err) {
+        showToast('Error recording triage verdict', 'error');
+      }
+    }
+
     function copySnippet(encodedCode) {
       const text = decodeURIComponent(encodedCode);
       navigator.clipboard.writeText(text);
@@ -2353,6 +2376,8 @@
           </div>
         `;
       }).join('');
+      lucide.createIcons();
+    }
 
     // =========================================================================
     // Advanced DAST Extensions: DeepLink Matrix, Memory Forensics, UI Crawler, Frida
@@ -2655,6 +2680,13 @@ public class DiagnosticHandler {
 
     function loadTaintView() {
       const input = document.getElementById('taint-source-input');
+      const lineCounter = document.getElementById('taint-line-count');
+      if (input && !input.dataset.listenerBound) {
+        input.dataset.listenerBound = 'true';
+        input.addEventListener('input', () => {
+          if (lineCounter) lineCounter.textContent = input.value.split('\n').length;
+        });
+      }
       if (input && !input.value.trim()) {
         loadSelectedTaintSample('uxss');
       }
@@ -2665,6 +2697,8 @@ public class DiagnosticHandler {
       const input = document.getElementById('taint-source-input');
       const lineCounter = document.getElementById('taint-line-count');
       const type = overrideType || (selector ? selector.value : 'uxss');
+
+      if (selector && overrideType) selector.value = overrideType;
 
       if (type === 'clear') {
         if (input) input.value = '';

@@ -16,6 +16,7 @@ from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
 @pytest.mark.asyncio
 async def test_adb_manager_availability():
     mgr = ADBManager()
+    mgr._exec_cmd = AsyncMock(return_value=(0,b"Android Debug Bridge version 1.0.41",b""))
     is_avail = await mgr.is_adb_available()
     assert is_avail is True
 
@@ -228,8 +229,9 @@ def test_traffic_auditor_owasp_api_top10():
 
 
 @pytest.mark.asyncio
-async def test_async_mitm_proxy_lifecycle_and_interception():
-    proxy = AsyncMITMProxy(host="127.0.0.1", port=18082)
+async def test_async_mitm_proxy_lifecycle_and_interception(monkeypatch):
+    monkeypatch.setenv("MOBILEAG_PROXY_TOKEN", "synthetic-test-token")
+    proxy = AsyncMITMProxy(host="127.0.0.1", port=0)
     assert proxy.is_running is False
 
     await proxy.start()

@@ -49,7 +49,7 @@ class NativeAnalyzer:
                         cvss_vector=vector,
                         affected_component=lib_name,
                         detection_method="NativeAnalyzer",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation=f"Replace '{func_name}' with safe, bounds-checked alternatives (e.g. strncpy, snprintf, or C++ std::string equivalents).",
                         file_path=rel_path
                     ))

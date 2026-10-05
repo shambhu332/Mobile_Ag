@@ -303,7 +303,7 @@ class NetworkSecurityConfigAuditor:
                 cvss_vector=vector,
                 affected_component=Path(item["file_path"]).name,
                 detection_method="NetworkSecurityConfigAuditor",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation=item["remediation"],
                 file_path=item["file_path"],
                 code_snippet=item.get("code_snippet", "")

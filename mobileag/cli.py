@@ -65,10 +65,18 @@ def scan(app_path: str, output: str, report_format: str, offline: bool):
             json_file = out_dir / "report_ios.json"
             json_file.write_text(json.dumps([f.model_dump() for f in findings], indent=2))
             console.print(f"\n[bold green]JSON Report saved to:[/] {json_file}")
+        else:
+            from mobileag.core.state import create_initial_state
+            from mobileag.reporting.report_engine import ReportEngine
+            state = create_initial_state("ios", app_path, str(out_dir))
+            state["package_name"] = results.get("app_name", "ios_target")
+            state["filtered_findings"] = [f.model_dump(mode="json") for f in findings]
+            asyncio.run(ReportEngine().generate_reports(state))
+            console.print(f"Report saved to: {state['report_path']}")
         return
 
     # Android APK Scan
-    settings = get_settings()
+    settings = get_settings().model_copy(update={"offline": offline or get_settings().offline})
     if not settings.enabled_providers or offline:
         console.print("[bold yellow]Offline Mode Active:[/] Running deterministic Smali bytecode call graph, AST heuristics, and rule engine (no cloud LLM required).")
     else:
@@ -84,11 +92,13 @@ def scan(app_path: str, output: str, report_format: str, offline: bool):
             console.print("[bold yellow]Scan completed with warnings:[/]")
             for err in state["errors"]:
                 console.print(f" - {err}")
+            raise click.ClickException("Scan failed or incomplete; inspect errors above")
 
         if report_format.lower() == "sarif" and state.get("sarif_path"):
             console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {state.get('sarif_path')}")
         else:
-            console.print(f"\n[bold green]Scan Complete![/] Report saved to: {state.get('report_path')}")
+            report_key = "json_report_path" if report_format.lower() == "json" else "report_path"
+            console.print(f"\n[bold green]Scan Complete![/] Report saved to: {state.get(report_key)}")
 
     except KeyboardInterrupt:
         console.print("\n[bold red]Scan aborted by user.[/]")

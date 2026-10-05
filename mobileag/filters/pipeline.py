@@ -26,7 +26,7 @@ class FilterPipeline:
         4. Historical — were similar past findings TP or FP?
         5. Confidence — aggregate all scores into final confidence
 
-    Only findings that pass the confidence threshold are confirmed.
+    Only findings that pass the confidence threshold remain unverified review candidates.
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class FilterPipeline:
             decompiled_path: Root of decompiled source tree.
 
         Returns:
-            List of confirmed findings that passed all filters.
+            List of ranked candidate findings that passed all filters.
         """
         logger.info("Starting filter pipeline for %d findings", len(findings))
         confirmed: list[Finding] = []
@@ -74,6 +74,8 @@ class FilterPipeline:
 
             # Layer 1: Reachability
             try:
+                if not self._settings.enable_reachability_filter:
+                    raise ValueError("Reachability disabled by operator")
                 score, reason = await self._reachability.check(
                     finding_title=finding.title,
                     affected_component=finding.affected_component,
@@ -104,6 +106,8 @@ class FilterPipeline:
 
             # Layer 3: Consensus vote
             try:
+                if not self._settings.enable_consensus_voting or self._settings.offline:
+                    raise ValueError("Consensus disabled or offline")
                 score, reason, votes = await self._consensus.check(
                     finding_title=finding.title,
                     finding_description=finding.description,
@@ -139,14 +143,14 @@ class FilterPipeline:
             finding.confidence = final_confidence
 
             if final_confidence >= self._threshold:
-                finding.status = FindingStatus.CONFIRMED
+                finding.status = FindingStatus.UNVERIFIED
                 confirmed.append(finding)
                 logger.info(
-                    "✅ CONFIRMED: %s (confidence: %.1f%%) — %s",
+                    "CANDIDATE: %s (confidence: %.1f%%) — %s",
                     finding.title, final_confidence * 100, finding.cwe_id,
                 )
             else:
-                finding.status = FindingStatus.FALSE_POSITIVE
+                finding.status = FindingStatus.UNVERIFIED
                 finding.false_positive_reasons = [
                     f"{k}: {v}" for k, v in filter_reasons.items()
                 ]
@@ -156,7 +160,7 @@ class FilterPipeline:
                 )
 
         logger.info(
-            "Filter pipeline complete: %d/%d findings confirmed",
+            "Filter pipeline complete: %d/%d findings retained",
             len(confirmed), len(findings),
         )
         return confirmed

@@ -63,7 +63,7 @@ class TrafficAuditor:
                     line_number=1,
                     code_snippet=f"{tx.method} {tx.url}",
                     detection_method="TrafficAuditor (Dynamic)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Migrate all endpoint URLs to HTTPS and enforce TLS 1.3.",
                 ))
 
@@ -93,7 +93,7 @@ class TrafficAuditor:
                         line_number=1,
                         code_snippet=f"GET {tx.url}",
                         detection_method="TrafficAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Transmit sensitive authentication tokens in HTTP request headers (Authorization: Bearer <token>) or in encrypted POST bodies.",
                     ))
 
@@ -122,7 +122,7 @@ class TrafficAuditor:
                     line_number=1,
                     code_snippet=f"HTTP {tx.response_status}\nCache-Control: {resp_headers.get('cache-control', 'MISSING')}",
                     detection_method="TrafficAuditor (Dynamic)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Include `Cache-Control: no-store, no-cache` in all sensitive authentication and user data API responses.",
                 ))
 
@@ -150,7 +150,7 @@ class TrafficAuditor:
                     line_number=1,
                     code_snippet=f"{tx.method} {parsed.path}",
                     detection_method="TrafficAuditor (Dynamic)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Migrate from predictable integer IDs to non-sequential UUIDs (v4) and enforce backend authorization checks.",
                 ))
 
@@ -188,7 +188,7 @@ class TrafficAuditor:
                         line_number=1,
                         code_snippet=f"Payload matches sensitive patterns: {', '.join(leaks)}",
                         detection_method="TrafficAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Filter sensitive attributes at the serialization layer before returning API responses.",
                     ))
 
@@ -214,7 +214,7 @@ class TrafficAuditor:
                         line_number=1,
                         code_snippet=f"Response headers missing Strict-Transport-Security",
                         detection_method="TrafficAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Add `Strict-Transport-Security: max-age=31536000; includeSubDomains` header.",
                     ))
 
@@ -242,7 +242,7 @@ class TrafficAuditor:
                     line_number=1,
                     code_snippet="Access-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true",
                     detection_method="TrafficAuditor (Dynamic)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Do not combine wildcard origins with Allow-Credentials. Whitelist specific trusted origins.",
                 ))
 

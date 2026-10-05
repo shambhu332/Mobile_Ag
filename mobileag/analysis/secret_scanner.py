@@ -150,7 +150,7 @@ class SecretScanner:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt
                 )
-                is_real = validation.success and "REAL" in validation.content.upper()
+                is_real = not validation.success or validation.content.strip().upper() != "DUMMY"
             except Exception as e:
                 logger.warning(f"LLM validation failed for secret: {e}")
                 is_real = True  # Fallback to keeping candidate for filter pipeline
@@ -171,7 +171,7 @@ class SecretScanner:
                     remediation="Extract sensitive credentials to secure remote vaults or Android Keystore backed by hardware security.",
                     file_path=item["file_path"],
                     line_number=item["line_num"],
-                    code_snippet=item["line"]
+                    code_snippet="[REDACTED credential; inspect the original file at the recorded line]"
                 ))
 
         logger.info(f"Secret scan completed: {len(findings)} findings.")

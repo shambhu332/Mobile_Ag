@@ -107,6 +107,13 @@ class Finding(BaseModel):
 
         return data
 
+    @model_validator(mode="after")
+    def redact_evidence(self):
+        from mobileag.security.privacy import redact
+        for name in ("title", "description", "code_snippet", "metadata"):
+            object.__setattr__(self, name, redact(getattr(self, name)))
+        return self
+
     def to_report_dict(self) -> dict[str, Any]:
         """Convert to a clean dict suitable for report templates."""
         return {

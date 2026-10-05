@@ -215,13 +215,17 @@ class IntentFuzzer:
         # 2. APK Installation (if path supplied)
         if apk_path:
             install_res = await self.adb.install_apk(serial, apk_path, grant_permissions=True)
+            if install_res.get("status") != "success":
+                suite_report["status"] = "failed"
+                suite_report["error"] = "APK installation failed; no tests executed"
+                return suite_report
             suite_report["stages"].append({
                 "stage": "APK Installation",
                 "result": install_res.get("status"),
                 "details": install_res.get("output"),
             })
 
-        target_activities = activities or [f"{package_name}.MainActivity"]
+        target_activities = activities if activities is not None else [f"{package_name}.MainActivity"]
         target_deeplinks = deeplinks or []
         target_authorities = authorities or []
 

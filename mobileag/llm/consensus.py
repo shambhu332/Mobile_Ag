@@ -139,9 +139,14 @@ Analyze the code above and respond with a JSON verdict."""
 
             data = json.loads(content)
 
+            if not isinstance(data, dict) or type(data.get("vulnerable")) is not bool:
+                return None
+            confidence = data.get("confidence", 0.5)
+            if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+                return None
             return VoteDetail(
                 provider=provider,
-                vulnerable=bool(data.get("vulnerable", False)),
+                vulnerable=data["vulnerable"],
                 confidence=float(data.get("confidence", 0.5)),
                 reasoning=str(data.get("reasoning", "")),
                 cwe=str(data.get("cwe", "N/A")),

@@ -107,7 +107,7 @@ class FeedbackEngine:
                     
                     for p in points:
                         if p.payload.get("is_true_positive") is not None:
-                            f.write(json.dumps(p.payload) + '\\n')
+                            f.write(json.dumps(p.payload) + '\n')
                             
                     if offset is None:
                         break

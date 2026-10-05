@@ -92,7 +92,7 @@ class ReactNativeScanner:
             for match in pattern.finditer(content):
                 val = match.group(0)
                 offset = match.start()
-                snippet = self.format_bundle_snippet(content, match.start(), match.end())
+                snippet = "[REDACTED credential; inspect the bundle at the recorded offset]"
 
                 findings.append({
                     "issue_id": f"RN-SECRET-{name.replace(' ', '-').upper()}",

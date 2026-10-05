@@ -66,8 +66,8 @@ class IOSSecurityAnalyzer:
             raise FileNotFoundError(f"IPA archive not found: {ipa_path}")
 
         out_p.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(ipa_p, "r") as zf:
-            zf.extractall(out_p)
+        from mobileag.security.archives import extract_archive
+        extract_archive(ipa_p, out_p)
 
         payload_dir = out_p / "Payload"
         if not payload_dir.exists():
@@ -79,8 +79,14 @@ class IOSSecurityAnalyzer:
 
         app_dir = app_dirs[0]
         app_name = app_dir.stem
-        binary_path = app_dir / app_name
         info_plist_path = app_dir / "Info.plist"
+        with info_plist_path.open("rb") as fp:
+            executable = plistlib.load(fp).get("CFBundleExecutable", app_name)
+        if not isinstance(executable, str) or Path(executable).name != executable or executable in {".", ".."}:
+            raise ValueError("Invalid CFBundleExecutable")
+        binary_path = app_dir / executable
+        if not binary_path.is_file():
+            raise ValueError("Declared IPA executable is missing")
 
         return {
             "app_dir": str(app_dir),
@@ -126,7 +132,7 @@ class IOSSecurityAnalyzer:
                         file_path=str(p_path),
                         code_snippet="<key>NSAllowsArbitraryLoads</key>\n<true/>",
                         remediation="Remove NSAllowsArbitraryLoads or enforce domain-specific exemptions with strict TLS 1.3 requirements.",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         confidence=1.0,
                     )
                 )
@@ -149,7 +155,7 @@ class IOSSecurityAnalyzer:
                         file_path=str(p_path),
                         code_snippet="<key>NSAllowsArbitraryLoadsInWebContent</key>\n<true/>",
                         remediation="Restrict WebViews to loading strictly secure HTTPS domains.",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         confidence=1.0,
                     )
                 )
@@ -183,7 +189,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(p_path),
                     code_snippet=f"<key>CFBundleURLSchemes</key>\n<array>\n" + "\n".join([f"  <string>{s}</string>" for s in schemes_found]) + "\n</array>",
                     remediation="Validate URL parameters strictly; verify sourceApplication or migrate to iOS Universal Links.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.9,
                 )
             )
@@ -210,7 +216,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(p_path),
                     code_snippet="<key>UIFileSharingEnabled</key>\n<true/>",
                     remediation="Disable UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace unless user file export is strictly required.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=1.0,
                 )
             )
@@ -250,7 +256,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Mach-O symbol reference: kSecAttrAccessibleAlways",
                     remediation="Migrate to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` or `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.95,
                 )
             )
@@ -274,7 +280,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Mach-O symbol reference: kCCAlgorithmDES / kCCAlgorithm3DES",
                     remediation="Use AES-GCM (kCCAlgorithmAES) with a 256-bit key via CryptoKit or CommonCrypto.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.95,
                 )
             )
@@ -297,7 +303,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Mach-O symbol reference: kCCAlgorithmRC4",
                     remediation="Replace RC4 with AES-GCM or ChaCha20-Poly1305.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.95,
                 )
             )
@@ -320,7 +326,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Mach-O symbol reference: CC_MD5",
                     remediation="Upgrade to SHA-256 (CC_SHA256) or SHA-3 via Apple CryptoKit.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.9,
                 )
             )
@@ -345,7 +351,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Symbol reference: [UIPasteboard generalPasteboard]",
                     remediation="Enforce local-only clipboard options (UIPasteboardOptionLocalOnly) or set an expirationDate.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.85,
                 )
             )
@@ -411,7 +417,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Mach-O flags: MH_PIE flag missing (0x00200000 not set)",
                     remediation="Compile with `-fPIE -pie` compiler and linker flags in Xcode Build Settings.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=1.0,
                 )
             )
@@ -435,7 +441,7 @@ class IOSSecurityAnalyzer:
                     file_path=str(b_path),
                     code_snippet="Symbol inspection: ___stack_chk_fail symbol missing in binary",
                     remediation="Enable Stack Protectors (-fstack-protector-strong) in Xcode Build Settings.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=1.0,
                 )
             )

@@ -151,9 +151,9 @@ class MemoryForensicsAuditor:
                         affected_component=f"PID:{pid}",
                         file_path=f"/proc/{pid}/mem",
                         line_number=1,
-                        code_snippet=line[:120].strip(),
+                        code_snippet="[REDACTED memory excerpt]",
                         detection_method="MemoryForensicsAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation=(
                             "Store credentials and tokens in mutable `char[]` or `byte[]` arrays. "
                             "Explicitly wipe memory buffers with `Arrays.fill(buffer, (byte) 0)` immediately after use."

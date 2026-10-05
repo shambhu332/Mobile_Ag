@@ -7,7 +7,7 @@ class ScanState(TypedDict):
     """Complete state object passed through the LangGraph pipeline.
 
     Each agent reads from and writes to specific fields in this state.
-    LangGraph persists this to PostgreSQL for crash recovery.
+    The orchestrator persists a JSON snapshot in the scan output directory.
     """
 
     # ── Scan Identity ──
@@ -18,6 +18,11 @@ class ScanState(TypedDict):
 
     # ── Ingestion Results ──
     manifest_data: dict[str, Any]
+    resource_path: str
+    smali_path: str
+    coverage: dict[str, Any]
+    json_report_path: str
+    sarif_path: str
     decompiled_path: str
     framework_info: dict[str, Any]
     obfuscation_info: dict[str, Any]
@@ -58,6 +63,11 @@ def create_initial_state(
         output_dir=output_dir,
         manifest_data={},
         decompiled_path="",
+        resource_path="",
+        smali_path="",
+        coverage={},
+        json_report_path="",
+        sarif_path="",
         framework_info={},
         obfuscation_info={},
         components=[],

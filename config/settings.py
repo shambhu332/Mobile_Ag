@@ -1,6 +1,7 @@
 """Central configuration loaded from environment variables."""
 
 import os
+import shutil
 from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
@@ -19,18 +20,24 @@ class Settings(BaseSettings):
     # ── Database Configuration ──
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "password"
+    NEO4J_PASSWORD: str = ""
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
+    QDRANT_API_KEY: Optional[str] = None
     POSTGRES_URI: str = "postgresql://user:pass@localhost:5432/mobileag"
 
     # ── External Tool Paths ──
-    JADX_PATH: str = "/usr/local/bin/jadx"
-    APKTOOL_PATH: str = "/usr/local/bin/apktool"
+    JADX_PATH: str = shutil.which("jadx") or "/usr/local/bin/jadx"
+    APKTOOL_PATH: str = shutil.which("apktool") or "/usr/local/bin/apktool"
     GHIDRA_PATH: str = "/opt/ghidra"
 
     # ── Output ──
     OUTPUT_DIR: str = "./output"
+
+    offline: bool = False
+    enable_deep_taint: bool = True
+    enable_reachability_filter: bool = True
+    enable_consensus_voting: bool = True
 
     # ── Analysis Thresholds ──
     confidence_threshold: float = 0.6
@@ -38,11 +45,13 @@ class Settings(BaseSettings):
     consensus_min_votes: int = 2
     entropy_threshold: float = 4.5
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property
     def enabled_providers(self) -> list[str]:
         """Return list of LLM providers that have API keys configured."""
+        if self.offline:
+            return []
         providers = []
         if self.GEMINI_API_KEY:
             providers.append("gemini")

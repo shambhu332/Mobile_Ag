@@ -51,12 +51,12 @@ class ProviderAuditor:
             findings.append(Finding(
                 title=f"Exported Content Provider Leak: {uri}",
                 description=(
-                    f"The Content Provider at `{uri}` is exported without caller permission guards. "
-                    f"External applications can query and extract records directly.\n\n"
+                    f"The Content Provider at `{uri}` returned data to the ADB shell caller. "
+                    f"Ordinary-app access and intended permissions remain unverified.\n\n"
                     f"Data returned on unauthenticated query:\n`{snippet}`"
                 ),
                 severity=Severity.HIGH,
-                confidence=1.0,
+                confidence=0.5,
                 cwe_id=cwe,
                 cvss_score=score,
                 cvss_vector=vector,
@@ -66,7 +66,7 @@ class ProviderAuditor:
                 line_number=1,
                 code_snippet=snippet,
                 detection_method="ProviderAuditor (Dynamic)",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation=(
                     "Set `android:exported=\"false\"` if external access is unneeded, or protect with "
                     "`android:readPermission` requiring `signature` protectionLevel."
@@ -87,7 +87,7 @@ class ProviderAuditor:
                 description=(
                     f"The Content Provider query selection logic leaked internal SQLite database exception details "
                     f"when provided an injected query argument:\n`{sqli_combined[:250]}`\n\n"
-                    "This indicates unparameterized query concatenation in ContentProvider.query()."
+                    "This is an error-disclosure lead; SQL injection and authorization impact are unverified."
                 ),
                 severity=Severity.HIGH,
                 confidence=0.90,
@@ -100,7 +100,7 @@ class ProviderAuditor:
                 line_number=1,
                 code_snippet=sqli_combined[:200],
                 detection_method="ProviderAuditor (Dynamic)",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation="Use parameterized queries with SQLiteQueryBuilder and bind selectionArgs instead of string concatenation.",
             ))
 

@@ -47,6 +47,8 @@ class LLMRouter:
 
     def _initialize_providers(self) -> None:
         """Build provider instances from available API keys."""
+        if self._settings.offline:
+            return
         configs = get_provider_configs(self._settings)
 
         for config_name, config in configs.items():

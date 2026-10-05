@@ -6,6 +6,14 @@ import asyncio
 import json
 import logging
 import os
+from dotenv import load_dotenv
+load_dotenv(override=False)
+import secrets
+import uuid
+from mobileag.web.security import SecurityMiddleware, authorized, check_device
+from mobileag.security.archives import validate_archive, MAX_UPLOAD
+from mobileag.security.network import scoped_request
+from mobileag.security.privacy import redact
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +25,7 @@ from pydantic import BaseModel
 import httpx
 
 from config.settings import get_settings
+from mobileag.core.orchestrator import Orchestrator
 from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.dast import (
@@ -64,9 +73,10 @@ intent_fuzzer = IntentFuzzer(
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-OUTPUT_DIR = REPO_ROOT / "output"
+DATA_ROOT = Path(os.environ.get("MOBILEAG_DATA_DIR", Path.cwd())).resolve()
+OUTPUT_DIR = DATA_ROOT / "output"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-UPLOAD_DIR = REPO_ROOT / "uploads"
+UPLOAD_DIR = DATA_ROOT / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
@@ -75,18 +85,20 @@ app = FastAPI(
     version="2.2.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
+app.add_middleware(SecurityMiddleware, owner=app)
 
 # Global in-memory data store for scans and runtime settings
 DEMO_SCAN_CACHE: Optional[dict[str, Any]] = None
 ACTIVE_SCANS: dict[str, dict[str, Any]] = {}
-attack_graph = AttackGraph()
+_db_settings = get_settings()
+attack_graph = AttackGraph(_db_settings.NEO4J_URI, _db_settings.NEO4J_USER, _db_settings.NEO4J_PASSWORD)
+RUNTIME_FINDINGS: list[dict[str, Any]] = []
+DAST_JOBS: set[str] = set()
+
+def remember_findings(findings):
+    RUNTIME_FINDINGS.extend(redact(findings))
+    del RUNTIME_FINDINGS[:-1000]
 
 RUNTIME_SETTINGS = {
     "llm_primary_provider": "gemini_pro",
@@ -123,7 +135,7 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         for connection in list(self.active_connections):
             try:
-                await connection.send_json(message)
+                await asyncio.wait_for(connection.send_json(redact(message)), timeout=2)
             except Exception:
                 self.disconnect(connection)
 
@@ -134,7 +146,19 @@ manager = ConnectionManager()
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time agent execution stream and live telemetry."""
-    await manager.connect(websocket)
+    if len(manager.active_connections) >= 32:
+        await websocket.close(code=1013)
+        return
+    await websocket.accept()
+    try:
+        auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+        if not isinstance(auth, dict) or not authorized(auth.get("token"), app.state.auth_token):
+            await websocket.close(code=1008)
+            return
+    except Exception:
+        await websocket.close(code=1008)
+        return
+    manager.active_connections.append(websocket)
     try:
         await websocket.send_json({
             "type": "connection_established",
@@ -436,7 +460,7 @@ def find_latest_reports() -> list[dict[str, Any]]:
     if not OUTPUT_DIR.exists():
         return scans
 
-    for report_file in OUTPUT_DIR.glob("**/report_*.json"):
+    for report_file in list(OUTPUT_DIR.glob("*/dashboard.json"))[-100:]:
         try:
             data = json.loads(report_file.read_text())
             scans.append(data)
@@ -490,8 +514,8 @@ async def list_scans() -> list[dict[str, Any]]:
     """List all available scans (past & current)."""
     reports = find_latest_reports()
     if not reports:
-        return [get_initial_demo_scan()]
-    return reports
+        return list(ACTIVE_SCANS.values())
+    return list(ACTIVE_SCANS.values()) + [r for r in reports if r.get("scan_id") not in ACTIVE_SCANS]
 
 
 @app.get("/api/scans/{scan_id}")
@@ -505,8 +529,11 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
         if r.get("scan_id") == scan_id:
             return r
 
-    if scan_id == "scan_meesho_demo" or not reports:
-        return get_initial_demo_scan()
+    if scan_id == "scan_meesho_demo" and os.environ.get("MOBILEAG_DEMO_MODE") == "1":
+        demo = get_initial_demo_scan()
+        demo["demo"] = True
+        demo["status"] = "demo"
+        return demo
 
     raise HTTPException(status_code=404, detail="Scan not found")
 
@@ -546,14 +573,8 @@ async def get_scan_sarif(scan_id: str) -> dict[str, Any]:
 @app.get("/api/scans/{scan_id}/apis")
 async def get_scan_apis(scan_id: str) -> dict[str, Any]:
     """Retrieve all discovered REST & GraphQL API endpoints for the specified scan."""
-    try:
-        scan = await get_scan_details(scan_id)
-        apis = scan.get("api_endpoints", [])
-    except HTTPException:
-        apis = []
-
-    if not apis:
-        apis = get_initial_demo_scan().get("api_endpoints", [])
+    scan = await get_scan_details(scan_id)
+    apis = scan.get("api_endpoints", [])
 
     return {
         "scan_id": scan_id,
@@ -573,26 +594,29 @@ async def submit_feedback(finding_id: str, feedback: FeedbackRequest) -> dict[st
     """Submit analyst triage verdict and update finding status in memory."""
     logger.info("Feedback recorded for %s: %s", finding_id, feedback.verdict)
     
-    # Update in demo cache if present
-    demo = get_initial_demo_scan()
-    for f in demo.get("findings", []):
+    if feedback.verdict not in {"CONFIRMED", "FALSE_POSITIVE", "DUPLICATE", "UNVERIFIED"}:
+        raise HTTPException(422, "Invalid finding status")
+    if feedback.verdict == "CONFIRMED" and not feedback.notes:
+        raise HTTPException(422, "Confirmation requires validation evidence in notes")
+    for f in RUNTIME_FINDINGS:
         if f.get("id") == finding_id:
             f["status"] = feedback.verdict
-            break
+            f["validation_notes"] = redact(feedback.notes or "")
 
     # Update in active scans
     for scan in ACTIVE_SCANS.values():
         for f in scan.get("findings", []):
             if f.get("id") == finding_id:
                 f["status"] = feedback.verdict
+                f["validation_notes"] = redact(feedback.notes or "")
                 break
 
     return {
         "status": "success",
         "finding_id": finding_id,
         "verdict": feedback.verdict,
-        "confidence_adjustment": 0.15 if feedback.verdict == "CONFIRMED" else -0.3,
-        "synced_to_vector_store": True,
+        "confidence_adjustment": 0.0,
+        "synced_to_vector_store": False,
     }
 
 
@@ -876,6 +900,19 @@ async def get_settings_config() -> dict[str, Any]:
 @app.post("/api/settings")
 async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
     """Update dashboard configuration in-memory."""
+    supported = {"entropy_threshold", "enable_deep_taint", "enable_reachability_filter", "enable_consensus_voting", "offline"}
+    if set(settings) - supported:
+        raise HTTPException(422, "Unsupported runtime setting; configure provider/database credentials in the environment")
+    try:
+        merged = {**RUNTIME_SETTINGS, **settings}
+        if not 0 <= float(merged["entropy_threshold"]) <= 8:
+            raise ValueError()
+        if any(type(v) is not bool for k,v in settings.items() if k != "entropy_threshold"):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Invalid runtime settings")
+    if "entropy_threshold" in settings:
+        settings["entropy_threshold"] = float(settings["entropy_threshold"])
     RUNTIME_SETTINGS.update(settings)
     return {"status": "success", "settings": RUNTIME_SETTINGS}
 
@@ -1030,7 +1067,15 @@ async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
 @app.post("/api/dast/install")
 async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
     """Install an APK onto the target device with auto-granted runtime permissions."""
-    res = await adb_manager.install_apk(req.serial, req.apk_path, req.grant_permissions)
+    path = Path(req.apk_path).resolve()
+    if not path.is_relative_to(UPLOAD_DIR.resolve()):
+        raise HTTPException(400, "Install an archive uploaded to this dashboard")
+    try:
+        if validate_archive(path) != "android":
+            raise ValueError("Expected Android APK")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions)
     return res
 
 
@@ -1099,10 +1144,7 @@ async def capture_dast_screenshot(req: DeviceActionRequest) -> dict[str, Any]:
 async def audit_dast_storage(req: StorageAuditRequest) -> dict[str, Any]:
     """Audit local sandbox storage (SharedPreferences, SQLite DBs, and cache) post-execution."""
     report = await storage_auditor.audit_all_storage(req.serial, req.package_name)
-    demo = get_initial_demo_scan()
-    for f in report.get("findings", []):
-        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
-            demo["findings"].append(f)
+    remember_findings(report.get("findings", []))
     return {"status": "success", "report": report}
 
 
@@ -1111,10 +1153,7 @@ async def audit_dast_providers(req: ProviderAuditRequest) -> dict[str, Any]:
     """Audit exported Content Providers for unauthorized access and SQL syntax leakage."""
     results, findings = await provider_auditor.audit_providers(req.serial, req.package_name, req.authorities)
     f_dicts = [f.to_dict() for f in findings]
-    demo = get_initial_demo_scan()
-    for f in f_dicts:
-        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
-            demo["findings"].append(f)
+    remember_findings(f_dicts)
     return {"status": "success", "results": results, "findings": f_dicts}
 
 
@@ -1123,10 +1162,7 @@ async def audit_dast_deeplinks(req: DeepLinkAuditRequest) -> dict[str, Any]:
     """Audit and fuzz deep links / custom schemes for OAuth theft, file access, and UXSS."""
     results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links)
     f_dicts = [f.to_dict() for f in findings]
-    demo = get_initial_demo_scan()
-    for f in f_dicts:
-        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
-            demo["findings"].append(f)
+    remember_findings(f_dicts)
     return {"status": "success", "results": results, "findings": f_dicts}
 
 
@@ -1134,10 +1170,7 @@ async def audit_dast_deeplinks(req: DeepLinkAuditRequest) -> dict[str, Any]:
 async def audit_dast_memory(req: MemoryAuditRequest) -> dict[str, Any]:
     """Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."""
     report = await memory_auditor.run_memory_audit(req.serial, req.package_name)
-    demo = get_initial_demo_scan()
-    for f in report.get("findings", []):
-        if not any(existing.get("title") == f.get("title") for existing in demo.setdefault("findings", [])):
-            demo["findings"].append(f)
+    remember_findings(report.get("findings", []))
     return {"status": "success", "report": report}
 
 
@@ -1160,7 +1193,7 @@ async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
     else:
         script = frida_runner.generate_unpinning_script()
     res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
-    return {"status": "success", "result": res, "script": script}
+    return {"status": res.get("status", "error"), "result": res, "script": script}
 
 
 @app.post("/api/dast/traffic/audit")
@@ -1197,53 +1230,17 @@ async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
 
 @app.post("/api/apis/test")
 async def test_api_endpoint(req: ApiTestRequest) -> dict[str, Any]:
-    """Replay or probe an API endpoint live, with simulated fallback for offline/isolated sandbox environments."""
-    url = req.url.strip()
-    method = req.method.strip().upper()
-    headers = req.headers or {}
-    body = req.body
-
-    start_time = datetime.now()
+    """Replay a request only within the operator-configured scope."""
     try:
-        async with httpx.AsyncClient(verify=False, timeout=req.timeout, follow_redirects=True) as client:
-            resp = await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                content=body.encode("utf-8") if body else None,
-            )
-            duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            return {
-                "status": "success",
-                "mode": "live",
-                "reachable": True,
-                "status_code": resp.status_code,
-                "headers": dict(resp.headers),
-                "body": resp.text[:4096],
-                "duration_ms": duration_ms,
-            }
-    except Exception as exc:
-        # Fallback to demo/simulated payload if host is unreachable (e.g. staging .internal domain or offline testbed)
-        duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-        demo_endpoints = get_initial_demo_scan().get("api_endpoints", [])
-        matched = next((e for e in demo_endpoints if e.get("url") == url or url in e.get("url", "")), None)
-        
-        simulated_body = matched.get("sample_response", '{"status": "offline_probe", "error": "Endpoint unreachable"}') if matched else '{"status": "offline_probe", "error": "Host unreachable"}'
-        simulated_headers = {
-            "content-type": "application/json",
-            "server": "MobileAg-Simulated-Gateway/1.0",
-            "x-audit-simulation": "active",
-        }
-        return {
-            "status": "simulated",
-            "mode": "simulated",
-            "reachable": False,
-            "error": f"Target host unreachable ({type(exc).__name__}). Using simulated sandbox response.",
-            "status_code": 200 if matched else 503,
-            "headers": simulated_headers,
-            "body": simulated_body,
-            "duration_ms": max(duration_ms, 12),
-        }
+        result = await scoped_request(req.url.strip(), req.method.upper(), req.headers,
+                                      req.body.encode() if req.body else None, req.timeout)
+        return {"status":"success", "mode":"live", "reachable":True, **redact(result)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception:
+        raise HTTPException(502, "Target request failed; no simulated result was generated")
 
 
 @app.post("/api/apis/fuzz")
@@ -1254,15 +1251,6 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
     req_headers = req.headers or {}
     resp_headers = req.response_headers or {}
     resp_body = req.response_body
-
-    # If response body wasn't provided, inspect cached demo endpoints for matching sample payload
-    if not resp_body:
-        demo_endpoints = get_initial_demo_scan().get("api_endpoints", [])
-        matched = next((e for e in demo_endpoints if e.get("url") == url or url in e.get("url", "")), None)
-        if matched:
-            resp_body = matched.get("sample_response")
-            if not resp_headers:
-                resp_headers = {"content-type": "application/json"}
 
     tx = HTTPTransaction(
         url=url,
@@ -1276,59 +1264,9 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
 
     findings = traffic_auditor.audit_transactions([tx])
 
-    # Extra OWASP API Top 10 rule: API5 - Broken Function Level Authorization (BFLA)
-    if any(adm in url.lower() for adm in ("/admin/", "/superuser/", "/root/", "/manage/")):
-        has_admin_cwe = any(f.cwe_id == "CWE-285" for f in findings)
-        if not has_admin_cwe:
-            cwe = "CWE-285"
-            score, vector = get_default_cvss_for_cwe(cwe)
-            findings.append(Finding(
-                title=f"Privileged Administrative API Route Exposed in Mobile Client: {url}",
-                description=(
-                    f"The mobile client references the administrative route `{url}` (OWASP API5:2023 - Broken Function Level Authorization).\n\n"
-                    "Administrative APIs must never be reachable by standard mobile user roles."
-                ),
-                severity=Severity.HIGH,
-                confidence=0.9,
-                cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
-                owasp_masvs="MASVS-NETWORK-2",
-                affected_component="API Gateway / Admin Service",
-                file_path=url,
-                line_number=1,
-                code_snippet=f"{method} {url}",
-                detection_method="OWASP API Top 10 Fuzzer",
-                status=FindingStatus.CONFIRMED,
-                remediation="Enforce strict role-based access control (RBAC) on the server and remove privileged routes from mobile binaries.",
-            ))
-
-    # Extra OWASP API Top 10 rule: API2 - Broken Authentication (Missing Authorization Header on sensitive paths)
-    if any(p in url.lower() for p in ("/v1/", "/account", "/users", "/profile", "/order", "/payment")):
-        auth_keys = [k.lower() for k in req_headers.keys()]
-        if "authorization" not in auth_keys and "x-api-key" not in auth_keys:
-            cwe = "CWE-306"
-            score, vector = get_default_cvss_for_cwe(cwe)
-            findings.append(Finding(
-                title=f"Missing Authorization Header on Protected Route: {url}",
-                description=(
-                    f"The protected endpoint `{url}` was requested without an `Authorization` or `X-API-Key` header "
-                    "(OWASP API2:2023 - Broken Authentication)."
-                ),
-                severity=Severity.MEDIUM,
-                confidence=0.85,
-                cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
-                owasp_masvs="MASVS-AUTH-1",
-                affected_component="Authentication Filter",
-                file_path=url,
-                line_number=1,
-                code_snippet=f"{method} {url}",
-                detection_method="OWASP API Top 10 Fuzzer",
-                status=FindingStatus.CONFIRMED,
-                remediation="Require valid cryptographically verified JWT/Bearer tokens on all protected API paths.",
-            ))
+    # Request paths and absent headers alone cannot establish an authorization bypass.
+    for finding in findings:
+        finding.status = FindingStatus.UNVERIFIED
 
     f_dicts = [f.to_dict() for f in findings]
     return {
@@ -1461,10 +1399,9 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             findings.append(Finding(**mf))
 
     # Append to active findings
-    demo = get_initial_demo_scan()
     for f in findings:
         f_dict = f.to_dict()
-        demo.setdefault("findings", []).append(f_dict)
+        remember_findings([f_dict])
         await manager.broadcast({
             "type": "dast_finding",
             "finding": f_dict,
@@ -1489,7 +1426,17 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
 @app.post("/api/dast/fuzz")
 async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     """Trigger dynamic activity intent fuzzing and crash monitoring."""
-    background_tasks.add_task(run_dast_background_task, req)
+    if req.serial in DAST_JOBS or len(DAST_JOBS) >= 2:
+        raise HTTPException(429, "Device job concurrency limit reached")
+    DAST_JOBS.add(req.serial)
+    async def bounded_job():
+        try:
+            await asyncio.wait_for(run_dast_background_task(req), timeout=180)
+        except Exception as exc:
+            await manager.broadcast({"type":"dast_progress", "stage":"DAST failed", "message":str(exc), "progress":100})
+        finally:
+            DAST_JOBS.discard(req.serial)
+    background_tasks.add_task(bounded_job)
     return {
         "status": "initiated",
         "device": req.serial,
@@ -1500,180 +1447,145 @@ async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: Background
 
 @app.post("/api/upload/apk")
 async def upload_apk(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Upload an APK file to the local server for automated security scanning."""
+    """Store a validated application archive using an exclusive opaque identifier."""
     filename = file.filename or "target.apk"
-    if not (filename.lower().endswith(".apk") or filename.lower().endswith(".ipa") or filename.lower().endswith(".zip")):
-        raise HTTPException(status_code=400, detail="Only .apk, .ipa, or .zip application archives are supported.")
-    
-    target_path = UPLOAD_DIR / filename
-    content = await file.read()
-    target_path.write_bytes(content)
-    file_size_mb = round(len(content) / (1024 * 1024), 2)
-    logger.info("Uploaded APK %s (%.2f MB) to %s", filename, file_size_mb, target_path)
-    
-    return {
-        "status": "success",
-        "filename": filename,
-        "file_path": str(target_path.resolve()),
-        "size_mb": file_size_mb,
-        "message": f"Successfully uploaded {filename} ({file_size_mb} MB)",
-    }
+    if Path(filename).name != filename or "\\" in filename or filename in {".", ".."}:
+        raise HTTPException(400, "Invalid upload filename")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".apk", ".ipa", ".zip"}:
+        raise HTTPException(400, "Only .apk, .ipa, or .zip application archives are supported.")
+    existing = [p for p in UPLOAD_DIR.iterdir() if p.is_file()]
+    if len(existing) >= 100 or sum(p.stat().st_size for p in existing) + MAX_UPLOAD > 1024 * 1024 * 1024:
+        raise HTTPException(429, "Upload storage quota reached; archive or remove old uploads locally")
+    target_path = UPLOAD_DIR / (uuid.uuid4().hex + suffix)
+    total = 0
+    try:
+        with target_path.open("xb") as output:
+            while chunk := await file.read(65536):
+                total += len(chunk)
+                if total > MAX_UPLOAD:
+                    raise HTTPException(413, "Upload size limit exceeded")
+                output.write(chunk)
+        platform = await asyncio.to_thread(validate_archive, target_path)
+    except Exception as exc:
+        target_path.unlink(missing_ok=True)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(400, str(exc))
+    finally:
+        await file.close()
+    return {"status":"success", "filename":filename, "file_path":str(target_path.resolve()),
+            "size_mb":round(total / (1024*1024),2), "platform":platform}
 
 
 class RunScanRequest(BaseModel):
     apk_path: str
-    output_dir: Optional[str] = "./output"
-    auto_dast: bool = True
+    output_dir: Optional[str] = None
+    auto_dast: bool = False
     auto_taint: bool = True
-    bypass_root: bool = True
-    bypass_ssl: bool = True
+    bypass_root: bool = False
+    bypass_ssl: bool = False
     serial: Optional[str] = None
 
 
 async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[RunScanRequest] = None) -> None:
-    """Stream live agent phases over WebSocket demonstrating real-time SAST, Taint, and Autonomous DAST."""
-    auto_dast = req.auto_dast if req else True
-    auto_taint = req.auto_taint if req else True
-    bypass_root = req.bypass_root if req else True
-    bypass_ssl = req.bypass_ssl if req else True
-    target_serial = req.serial if req else None
-
-    # Base SAST Pipeline
-    stages: list[tuple[str, str, int, Optional[dict[str, Any]]]] = [
-        ("APK Extraction", "Decompiling DEX and resources via JADX / APKTool...", 10, None),
-        ("Manifest Auditor", "Analyzing exported activities, services, intent filters...", 22, {
-            "id": f"find-{scan_id}-1",
-            "title": "CWE-926: Exported Activity Detected Without Permission",
-            "severity": "CRITICAL",
-            "cwe_id": "CWE-926",
-            "cvss_score": 8.4,
-            "affected_component": f"{apk_name}.RouterActivity",
-            "code_snippet": '<activity android:name=".RouterActivity" android:exported="true" />',
-            "description": "Component is exported and callable by any app without signature permissions.",
-            "remediation": "Set android:exported='false' or apply permission guard.",
-        }),
-        ("Secret Scanner", "Calculating Shannon entropy across strings and resources...", 35, {
-            "id": f"find-{scan_id}-2",
-            "title": "CWE-798: High-Entropy API Token Detected",
-            "severity": "HIGH",
-            "cwe_id": "CWE-798",
-            "cvss_score": 7.4,
-            "affected_component": "res/values/strings.xml",
-            "code_snippet": '<string name="api_token">AIzaSyMockTokenKeyForAudit42</string>',
-            "description": "Found high-entropy token matching known credential patterns.",
-            "remediation": "Store sensitive keys securely in KeyStore or backend service.",
-        }),
-        ("Binary ELF Auditor", "Inspecting native libraries for NX, PIE, RELRO, and Canaries...", 48, {
-            "id": f"find-{scan_id}-3",
-            "title": "CWE-119: Missing Stack Canary in Native Library",
-            "severity": "MEDIUM",
-            "cwe_id": "CWE-119",
-            "cvss_score": 6.2,
-            "affected_component": "lib/arm64-v8a/libnativecore.so",
-            "code_snippet": "Missing __stack_chk_fail symbol in .dynsym",
-            "description": "The compiled native library is vulnerable to stack overflow attacks due to missing stack protectors.",
-            "remediation": "Recompile with -fstack-protector-strong flag.",
-        }),
-    ]
-
-    # Dynamic Taint Engine Stage
-    if auto_taint:
-        stages.append(
-            ("Taint Engine Analysis", "Tracing inter-procedural source-to-sink dataflows across bytecode...", 60, {
-                "id": f"find-{scan_id}-taint-1",
-                "title": "CWE-749: Untrusted Intent Source Flows to WebView Sink (UXSS)",
-                "severity": "CRITICAL",
-                "cwe_id": "CWE-749",
-                "cvss_score": 8.8,
-                "affected_component": f"{apk_name}.WebActivity",
-                "code_snippet": 'Source: getIntent().getStringExtra("url")\\nSink: webView.loadUrl(url)\\nSanitized: false',
-                "description": "Unsanitized external Intent data flows directly into WebView sink without scheme validation or origin checking.",
-                "remediation": "Validate Uri scheme against https:// and match host against an allowlist before calling loadUrl.",
-            })
-        )
-
-    # Autonomous Dynamic DAST Stage (Self Root Bypass, Self SSL Pinning Bypass, Fuzzing, Memory Forensics)
-    if auto_dast:
-        devices = await adb_manager.list_devices() if await adb_manager.is_adb_available() else []
-        active_serial = target_serial or (devices[0].serial if devices else None)
-        
-        if active_serial:
-            device_desc = f"device {active_serial}"
-            stages.append(("DAST Provisioning", f"Provisioning target on {device_desc} (auto-installing APK)...", 68, None))
-            if bypass_root:
-                stages.append(("Self Root Bypass", "Deploying autonomous Frida root detection bypass hooks (Java & native probes)...", 75, None))
-            if bypass_ssl:
-                stages.append(("Self SSL Pinning Bypass", "Deploying autonomous Frida SSL unpinning hooks (OkHttp3 & TrustManager)...", 82, None))
-            stages.extend([
-                ("DeepLink & Intent Fuzzing", "Autonomous fuzzing of exported activities and registered deep link schemes...", 88, None),
-                ("Volatile Memory Forensics", "Auditing live process heap RAM for unencrypted credentials (CWE-316)...", 92, {
-                    "id": f"find-{scan_id}-dast-mem",
-                    "title": "CWE-316: Decrypted Sensitive Token Lingers in Volatile Process Heap",
-                    "severity": "HIGH",
-                    "cwe_id": "CWE-316",
-                    "cvss_score": 7.5,
-                    "affected_component": "Runtime Process Heap / RAM",
-                    "code_snippet": "Memory pattern match: bearer eyJhbGciOi... at 0x7f884210",
-                    "description": "Decrypted authentication bearer token detected persisting in volatile process RAM heap without zeroing.",
-                    "remediation": "Zero out sensitive byte arrays immediately after use; avoid keeping credentials in persistent heap objects.",
-                }),
-                ("Autonomous UI Crawler", "Autonomous crawler exploring activities, clickable elements, and deep views...", 95, None),
-            ])
+    """Run real analysis and publish only canonical final results, never simulated findings."""
+    scan = ACTIVE_SCANS[scan_id]
+    try:
+        if req is None:
+            raise ValueError("Missing scan request")
+        platform = await asyncio.to_thread(validate_archive, req.apk_path)
+        setting_names = {"entropy_threshold", "enable_deep_taint", "enable_reachability_filter", "enable_consensus_voting", "offline"}
+        updates = {k:v for k,v in RUNTIME_SETTINGS.items() if k in setting_names}
+        updates["enable_deep_taint"] = req.auto_taint and updates.get("enable_deep_taint", True)
+        settings = get_settings().model_copy(update=updates)
+        async def progress(stage, message, pct, finding=None):
+            scan["progress"] = min(pct,99)
+            # Raw findings stay out of the final-results UI.
+            await manager.broadcast({"type":"agent_progress", "scan_id":scan_id,
+                                     "stage":stage, "message":message, "progress":scan["progress"]})
+        if platform == "ios":
+            result = await asyncio.to_thread(IOSSecurityAnalyzer().audit_ipa, req.apk_path,
+                                            Path(req.output_dir) / scan_id / "ios_extract")
+            from mobileag.core.state import create_initial_state
+            from mobileag.reporting.report_engine import ReportEngine
+            state = create_initial_state(scan_id, req.apk_path, str(Path(req.output_dir) / scan_id))
+            state["package_name"] = result["app_name"]
+            state["filtered_findings"] = [f.model_dump(mode="json") for f in result["findings"]]
+            for f in state["filtered_findings"]:
+                f["status"] = "UNVERIFIED"
+            await ReportEngine().generate_reports(state)
+            SARIFExporter.export_to_file(state["filtered_findings"], Path(state["output_dir"]) / f"report_{scan_id}.sarif")
         else:
-            stages.append(
-                ("Autonomous DAST Bridge", "No active ADB device/emulator detected. SAST & Taint audit completed. Connect an emulator anytime to run live DAST.", 85, None)
-            )
-
-    stages.extend([
-        ("Multi-Model Consensus", "Eliminating false positives via multi-model vote...", 98, None),
-        ("Scan Complete", "Scan completed successfully. Consolidated SAST, Taint & DAST report compiled.", 100, None),
-    ])
-
-    for stage_name, message, pct, finding in stages:
-        await asyncio.sleep(1.2)
-        event: dict[str, Any] = {
-            "type": "agent_progress",
-            "scan_id": scan_id,
-            "stage": stage_name,
-            "message": message,
-            "progress": pct,
-            "timestamp": datetime.now().isoformat(),
-        }
-        if finding:
-            event["finding"] = finding
-            event["graph_node"] = {
-                "id": finding["id"],
-                "label": f"{finding['cwe_id']}\\n(CVSS {finding['cvss_score']})",
-                "group": "vuln",
-                "shape": "square",
-                "size": 22,
-                "color": "#ef4444" if finding["severity"] == "CRITICAL" else "#f97316",
-            }
-            event["graph_edge"] = {
-                "from": "app",
-                "to": finding["id"],
-                "label": "triggers",
-            }
-            if scan_id in ACTIVE_SCANS:
-                ACTIVE_SCANS[scan_id]["findings"].append(finding)
-                ACTIVE_SCANS[scan_id]["stats"]["total"] += 1
-                sev_key = finding["severity"].lower()
-                if sev_key in ACTIVE_SCANS[scan_id]["stats"]:
-                    ACTIVE_SCANS[scan_id]["stats"][sev_key] += 1
-
-        if scan_id in ACTIVE_SCANS:
-            ACTIVE_SCANS[scan_id]["progress"] = pct
-            if pct == 100:
-                ACTIVE_SCANS[scan_id]["status"] = "completed"
-
-        await manager.broadcast(event)
+            state = await Orchestrator(settings).scan(req.apk_path, output_dir=req.output_dir,
+                                                       scan_id=scan_id, progress_callback=progress)
+        if state.get("errors"):
+            raise RuntimeError("; ".join(state["errors"]))
+        scan["package_name"] = state.get("package_name", apk_name)
+        scan["findings"] = redact(state.get("filtered_findings", []))
+        scan["components"] = state.get("components", [])
+        scan["deep_links"] = state.get("deep_links", [])
+        scan["api_endpoints"] = state.get("api_endpoints", [])
+        scan["coverage"] = state.get("coverage", {})
+        scan["framework"] = state.get("framework_info", {}).get("framework", platform)
+        if req.auto_dast:
+            if platform != "android" or not check_device(req.serial):
+                raise ValueError("DAST requires an explicitly scoped Android device")
+            if req.bypass_root or req.bypass_ssl:
+                raise ValueError("Automatic bypass is unsupported; use the explicit Frida workbench and verify its result")
+            activities = [c["name"] for c in scan["components"] if c.get("type") == "activity" and c.get("exported")]
+            links = [d["uri"] for d in scan["deep_links"] if d.get("uri")]
+            dynamic = await intent_fuzzer.run_full_dast_suite(serial=req.serial, package_name=scan["package_name"],
+                apk_path=req.apk_path, activities=activities, deeplinks=links, audit_storage=False, audit_memory=False)
+            if dynamic.get("status") != "completed":
+                raise RuntimeError("DAST failed or incomplete")
+            scan["findings"].extend(redact(dynamic.get("findings", [])))
+        scan["stats"] = {level:sum(f.get("severity", "").lower() == level for f in scan["findings"])
+                         for level in ("critical","high","medium","low","info")}
+        scan["stats"]["total"] = len(scan["findings"])
+        from mobileag.reporting.report_engine import ReportEngine
+        state.update(scan_id=scan_id, output_dir=str(Path(req.output_dir) / scan_id),
+                     filtered_findings=scan["findings"], package_name=scan["package_name"])
+        await ReportEngine().generate_reports(state)
+        SARIFExporter.export_to_file(scan["findings"], Path(state["output_dir"]) / f"report_{scan_id}.sarif")
+        scan["status"], scan["progress"] = "completed", 100
+    except Exception as exc:
+        scan["status"], scan["progress"], scan["errors"] = "error", 100, [str(exc)]
+    finally:
+        # Persist restart-visible dashboard state atomically.
+        destination = OUTPUT_DIR / scan_id
+        destination.mkdir(parents=True, exist_ok=True)
+        temporary = destination / "dashboard.tmp"
+        temporary.write_text(json.dumps(redact(scan), indent=2, default=str))
+        temporary.replace(destination / "dashboard.json")
+        await manager.broadcast({"type":"scan_complete", "scan_id":scan_id, "status":scan["status"], "progress":100})
 
 
 @app.post("/api/scans/run")
 async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     """Trigger a new asynchronous security scan with live WebSocket telemetry."""
-    apk_file = Path(request.apk_path)
-    scan_id = f"scan_{apk_file.stem}_{int(datetime.now().timestamp())}"
+    apk_file = Path(request.apk_path).resolve()
+    if not apk_file.is_relative_to(UPLOAD_DIR.resolve()):
+        raise HTTPException(400, "Select an archive uploaded to this dashboard")
+    try:
+        platform = await asyncio.to_thread(validate_archive, apk_file)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if request.auto_dast and (platform != "android" or not check_device(request.serial)):
+        raise HTTPException(403, "DAST requires an explicit authorized Android device")
+    if request.bypass_root or request.bypass_ssl:
+        raise HTTPException(422, "Automatic bypass is unsupported; use explicit Frida validation")
+    output = Path(request.output_dir or OUTPUT_DIR).resolve()
+    if not output.is_relative_to(OUTPUT_DIR.resolve()):
+        raise HTTPException(400, "Output must remain under the configured output directory")
+    request.output_dir = str(output)
+    if sum(s.get("status") == "running" for s in ACTIVE_SCANS.values()) >= 2:
+        raise HTTPException(429, "Scan concurrency limit reached")
+    if len(ACTIVE_SCANS) >= 100:
+        completed = next((k for k,v in ACTIVE_SCANS.items() if v.get("status") != "running"), None)
+        if completed:
+            del ACTIVE_SCANS[completed]
+    scan_id = "scan_" + uuid.uuid4().hex
     
     scan_obj = {
         "scan_id": scan_id,
@@ -1685,8 +1597,12 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
         "progress": 5,
         "framework": "Native (Java/Kotlin)",
         "obfuscation_level": "Assessing...",
-        "stats": {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0, "masvs_score": 0},
+        "stats": {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0},
         "findings": [],
+        "agent_telemetry": [],
+        "api_endpoints": [],
+        "components": [],
+        "deep_links": [],
         "attack_surface_graph": {
             "nodes": [{"id": "app", "label": f"{apk_file.stem}\\n(v1.0)", "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"}],
             "edges": [],
@@ -1717,7 +1633,11 @@ def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     print(f"[*] Neo4j Status:     {'Connected' if attack_graph._connected else 'Embedded Fallback'}")
     print(f"[*] Web Interface:    http://{host}:{port}")
     print(f"=======================================================\n")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get("MOBILEAG_API_TOKEN"):
+        raise ValueError("Remote binding requires a configured MOBILEAG_API_TOKEN and allowed host")
+    if not os.environ.get("MOBILEAG_API_TOKEN"):
+        print(f"Session access token (paste into dashboard): {app.state.auth_token}")
+    uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 
 
 if __name__ == "__main__":

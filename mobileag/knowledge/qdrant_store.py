@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class PatternMemory:
     """Manages Qdrant vector store for historical findings and verdicts."""
     
-    def __init__(self, host: str = "localhost", port: int = 6333, collection_name: str = "mobileag_findings"):
+    def __init__(self, host: str = "localhost", port: int = 6333, collection_name: str = "mobileag_findings", api_key: Optional[str] = None):
         self.host = host
         self.port = port
         self.collection_name = collection_name
@@ -28,7 +28,7 @@ class PatternMemory:
         
         if QDRANT_AVAILABLE:
             try:
-                self.client = AsyncQdrantClient(host=host, port=port)
+                self.client = AsyncQdrantClient(host=host, port=port, api_key=api_key)
                 self._connected = True
             except Exception as e:
                 logger.warning(f"Failed to connect to Qdrant at {host}:{port}: {e}")
@@ -68,7 +68,7 @@ class PatternMemory:
         payload = {
             "finding_id": finding.id,
             "title": finding.title,
-            "cwe": finding.cwe,
+            "cwe": finding.cwe_id,
             "severity": finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity),
             "verdict": "UNKNOWN",  # Will be updated by feedback loop
             "is_true_positive": None
@@ -94,13 +94,13 @@ class PatternMemory:
             return []
 
         try:
-            results = await self.client.search(
+            response = await self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=embedding,
+                query=embedding,
                 limit=limit,
                 score_threshold=score_threshold
             )
-            return [{"id": hit.id, "score": hit.score, "payload": hit.payload} for hit in results]
+            return [{"id": hit.id, "score": hit.score, "payload": hit.payload} for hit in response.points]
         except Exception as e:
             logger.error(f"Failed to search Qdrant: {e}")
             return []

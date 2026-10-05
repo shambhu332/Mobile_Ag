@@ -206,7 +206,7 @@ Java.perform(function () {
                     line_number=1,
                     code_snippet=line.strip(),
                     detection_method="FridaRunner (Dynamic Runtime)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Migrate to `AES/GCM/NoPadding` with a securely generated 96-bit random IV.",
                 ))
 
@@ -231,7 +231,7 @@ Java.perform(function () {
                     line_number=1,
                     code_snippet=line.strip(),
                     detection_method="FridaRunner (Dynamic Runtime)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Generate a fresh random IV per encryption operation using `new SecureRandom().nextBytes(iv)`.",
                 ))
 
@@ -245,24 +245,46 @@ Java.perform(function () {
         duration: float = 6.0,
     ) -> dict[str, Any]:
         """Deploy and execute a Frida script against the package using root shell or frida CLI."""
-        server_alive = await self.is_frida_server_running(serial)
+        if not HAS_NATIVE_FRIDA or frida is None:
+            return {"status": "unavailable", "message": "Install the frida extra and run a matching server on the selected test device"}
+        import asyncio
+        import threading
+        import secrets
+        if not 0 < duration <= 30:
+            raise ValueError("Instrumentation duration must be between 0 and 30 seconds")
+        marker = secrets.token_hex(16)
 
-        # Write script to temporary device location
-        script_path = f"/data/local/tmp/mobileag_{package_name}_hook.js"
-        # Escaping for remote echo
-        escaped_script = script_code.replace("'", "'\\''")
-        await self.adb._exec_cmd(
-            ["-s", serial, "shell", f"su -c 'echo \"{escaped_script}\" > {script_path}'"],
-            timeout=5.0,
-        )
-
-        return {
-            "status": "deployed" if server_alive else "script_generated",
-            "frida_server_running": server_alive,
-            "script_path": script_path,
-            "package_name": package_name,
-            "script_length": len(script_code),
-        }
+        def execute():
+            session = script = None
+            ready = threading.Event()
+            errors = []
+            def on_message(message, data):
+                if message.get("type") == "send" and message.get("payload") == marker:
+                    ready.set()
+                elif message.get("type") == "error":
+                    errors.append(message.get("description", "Frida script error"))
+            try:
+                device = frida.get_device(serial, timeout=2)
+                session = device.attach(package_name)
+                # Acknowledge after Java's queued initialization callbacks, not just file transfer.
+                acknowledgment = "\nJava.perform(function(){ send(" + repr(marker) + "); });"
+                script = session.create_script(script_code + acknowledgment)
+                script.on("message", on_message)
+                script.load()
+                if not ready.wait(duration) or errors:
+                    return {"status": "error", "message": "Hook initialization not acknowledged", "errors": errors}
+                return {"status": "executed", "package_name": package_name, "serial": serial,
+                        "message": "Script initialization acknowledged; session detached after validation", "persistent": False}
+            except Exception as exc:
+                return {"status": "error", "message": str(exc), "package_name": package_name}
+            finally:
+                if script is not None:
+                    try: script.unload()
+                    except Exception: pass
+                if session is not None:
+                    try: session.detach()
+                    except Exception: pass
+        return await asyncio.to_thread(execute)
 
     def generate_all_in_one_agent_script(self) -> str:
         """Combine SSL unpinning, root/emulator cloaking, and crypto monitoring into a single unified hook."""
@@ -279,6 +301,7 @@ console.log("[MobileAg-Frida] Unified Dynamic Instrumentation Suite Active.");
         package_name: str,
         script_code: str,
         on_message: Optional[Callable[[dict, bytes | None], None]] = None,
+        serial: Optional[str] = None,
     ) -> dict[str, Any]:
         """Attach to running app via native Python Frida RPC or return diagnostics if unavailable."""
         if not HAS_NATIVE_FRIDA or frida is None:
@@ -290,11 +313,9 @@ console.log("[MobileAg-Frida] Unified Dynamic Instrumentation Suite Active.");
             }
 
         try:
-            device = None
-            try:
-                device = frida.get_usb_device(timeout=2)
-            except Exception:
-                device = frida.get_remote_device()
+            if not serial:
+                raise ValueError("An explicit authorized device serial is required")
+            device = frida.get_device(serial, timeout=2)
 
             session = device.attach(package_name)
             script = session.create_script(script_code)

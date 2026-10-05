@@ -67,9 +67,9 @@ class SARIFExporter:
                 f_cvss = f.get("cvss_score", 5.0)
                 f_masvs = f.get("owasp_masvs", "MASVS")
                 f_file = f.get("file_path", "AndroidManifest.xml")
-                f_line = f.get("line_number", 1)
-                f_snippet = f.get("code_snippet", "")
-                f_remediation = f.get("remediation", "")
+                f_line = f.get("line_number") or 1
+                f_snippet = f.get("code_snippet") or ""
+                f_remediation = f.get("remediation") or ""
 
             sarif_level = cls.severity_to_sarif_level(f_sev)
 
@@ -92,6 +92,12 @@ class SARIFExporter:
                 }
 
             # Build result
+            line_val = 1
+            try:
+                line_val = max(1, int(f_line)) if f_line is not None else 1
+            except (ValueError, TypeError):
+                line_val = 1
+
             result_item: dict[str, Any] = {
                 "ruleId": f_id,
                 "level": sarif_level,
@@ -104,7 +110,7 @@ class SARIFExporter:
                                 "uriBaseId": "%SRCROOT%",
                             },
                             "region": {
-                                "startLine": max(1, int(f_line)),
+                                "startLine": line_val,
                                 "snippet": {"text": f_snippet},
                             },
                         }

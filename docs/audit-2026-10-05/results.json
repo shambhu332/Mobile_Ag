@@ -1,0 +1,70 @@
+{
+  "upload_traversal": {
+    "http": 200,
+    "outside_created": true
+  },
+  "unauthenticated_device_dispatch": {
+    "http": 200,
+    "dispatched": 1,
+    "cors_origin": "https://untrusted.example"
+  },
+  "missing_apk_simulation": {
+    "status": "completed",
+    "findings": 3
+  },
+  "forbidden_api_confirmed": [
+    {
+      "cwe": "CWE-524",
+      "status": "CONFIRMED"
+    },
+    {
+      "cwe": "CWE-16",
+      "status": "CONFIRMED"
+    },
+    {
+      "cwe": "CWE-285",
+      "status": "CONFIRMED"
+    },
+    {
+      "cwe": "CWE-306",
+      "status": "CONFIRMED"
+    }
+  ],
+  "offline_provider_retained": {
+    "exit": 0,
+    "providers": [
+      "openai"
+    ]
+  },
+  "report_generation": {
+    "files": [
+      "report_synthetic.sarif",
+      "poc_guides",
+      "frida_scripts"
+    ],
+    "report_path": ""
+  },
+  "dashboard_final_filter_ignored": [
+    "raw"
+  ],
+  "ipa_executable_missed": true,
+  "taint_inline_missed": 0,
+  "taint_overwrite_false_positive": 1,
+  "frida_claim_without_attachment": {
+    "status": "deployed",
+    "commands": [
+      [
+        "-s",
+        "synthetic",
+        "shell",
+        "su -c 'ps -A | grep -i frida'"
+      ],
+      [
+        "-s",
+        "synthetic",
+        "shell",
+        "su -c 'echo \"console.log(\"test\");\" > /data/local/tmp/mobileag_synthetic.app_hook.js'"
+      ]
+    ]
+  }
+}

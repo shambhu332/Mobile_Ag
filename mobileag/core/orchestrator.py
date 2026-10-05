@@ -3,6 +3,9 @@
 import asyncio
 import logging
 import uuid
+import json
+from mobileag.security.privacy import redact
+from mobileag.reporting.report_engine import ReportEngine
 from pathlib import Path
 from typing import Optional, Any
 
@@ -30,7 +33,7 @@ from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.filters.pipeline import FilterPipeline
 from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
-from mobileag.reporting.finding import Finding
+from mobileag.reporting.finding import Finding, FindingStatus
 from mobileag.reporting.sarif_exporter import SARIFExporter
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ class Orchestrator:
         1. Ingestion — APK extraction, manifest parsing, framework/packer detection
         2. Analysis — 6 parallel agents scan for vulnerabilities
         3. Filtering — 5-layer false positive elimination
-        4. Generation — Frida scripts + PoC guides for confirmed findings
+        4. Generation — Frida scripts + PoC guides for candidate findings
         5. Reporting — Final report assembly
     """
 
@@ -83,48 +86,89 @@ class Orchestrator:
         self._frida_generator = FridaGenerator(self._router)
         self._poc_generator = PoCGenerator(self._router)
 
-    async def scan(self, apk_path: str, output_dir: Optional[str] = None) -> ScanState:
+    async def scan(
+        self,
+        apk_path: str,
+        output_dir: Optional[str] = None,
+        scan_id: Optional[str] = None,
+        progress_callback: Optional[Any] = None,
+    ) -> ScanState:
         """Run a full security scan on an APK.
 
         Args:
             apk_path: Path to the APK file.
             output_dir: Directory for scan output (default from settings).
+            scan_id: Optional pre-assigned scan ID.
+            progress_callback: Optional async callback taking (stage, message, progress_pct, finding).
 
         Returns:
             Complete ScanState with all findings and generated outputs.
         """
-        scan_id = str(uuid.uuid4())[:8]
+        sid = scan_id or str(uuid.uuid4())[:8]
         output = output_dir or self._settings.OUTPUT_DIR
-        output_path = Path(output) / scan_id
+        output_path = Path(output) / sid
         output_path.mkdir(parents=True, exist_ok=True)
 
-        state = create_initial_state(scan_id, apk_path, str(output_path))
-        logger.info("Starting scan %s on %s", scan_id, apk_path)
+        state = create_initial_state(sid, apk_path, str(output_path))
+        logger.info("Starting scan %s on %s", sid, apk_path)
+
+        async def _notify(stage: str, msg: str, pct: int, finding: Optional[dict[str, Any]] = None) -> None:
+            if progress_callback:
+                try:
+                    res = progress_callback(stage, msg, pct, finding)
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception as cb_err:
+                    logger.debug("Progress callback error: %s", cb_err)
+
+        await _notify("APK Extraction", "Decompiling DEX and resources via JADX / APKTool...", 10)
 
         # === Stage 1: Ingestion ===
         state = await self._run_ingestion(state)
 
-        if not state["decompiled_path"]:
+        if not state["decompiled_path"] or state["errors"]:
             state["errors"].append("Ingestion failed — cannot continue scan")
             logger.error("Ingestion failed for %s", apk_path)
+            await _notify("Ingestion Error", "Failed to decompile APK resources.", 100)
+            state["current_phase"] = "failed"
             return state
 
+        pkg = state.get("package_name") or "UnknownApp"
+        framework = state.get("framework_info", {}).get("framework", "Native")
+        await _notify("Ingestion Complete", f"Parsed manifest for {pkg} (Framework: {framework})", 25)
+
         # === Stage 2: Analysis ===
+        await _notify("Static Analysis", "Running 10 parallel SAST engines (Taint, Secrets, Keystore, Call Graph, ELF)...", 40)
         state = await self._run_analysis(state)
 
+        raw_count = len(state.get("raw_findings", []))
+        await _notify("SAST Completed", f"Discovered {raw_count} raw potential security findings", 75)
+
+        # Broadcast each discovered raw finding if callback is present
+        if progress_callback and state.get("raw_findings"):
+            for f in state["raw_findings"][:15]:  # stream preview
+                await _notify("Finding Discovered", f.get("title", "Security Finding"), 78, f)
+
         # === Stage 3: Filtering ===
+        await _notify("5-Layer Filter", "Eliminating false positives through reachability and consensus verification...", 85)
         state = await self._run_filtering(state)
 
+        confirmed_count = len(state.get("filtered_findings", []))
+        await _notify("Filtering Complete", f"Retained {confirmed_count} review candidates", 92)
+
         # === Stage 4: Generation ===
+        await _notify("Generators", "Synthesizing Frida hooks and Markdown PoC guides...", 95)
         state = await self._run_generation(state)
 
         # === Stage 5: Save outputs ===
         await self._save_outputs(state)
 
-        state["current_phase"] = "complete"
+        state["current_phase"] = "partial" if state["errors"] else "complete"
+        (output_path / "state.json").write_text(json.dumps(redact(state), indent=2, default=str))
+        await _notify("Scan Complete", f"Scan {sid} complete: {confirmed_count} candidate findings.", 98)
         logger.info(
-            "Scan %s complete: %d confirmed findings",
-            scan_id, len(state["filtered_findings"]),
+            "Scan %s complete: %d candidate findings",
+            sid, len(state["filtered_findings"]),
         )
         return state
 
@@ -138,6 +182,15 @@ class Orchestrator:
                 state["apk_path"], state["output_dir"]
             )
             state["decompiled_path"] = extraction.get("jadx_dir", "")
+            state["resource_path"] = extraction.get("apktool_dir", "")
+            state["smali_path"] = extraction.get("apktool_dir", "")
+            state["coverage"] = {
+                "java_files": len(list(Path(state["decompiled_path"]).rglob("*.java"))) if state["decompiled_path"] else 0,
+                "smali_files": len(list(Path(state["smali_path"]).rglob("*.smali"))) if state["smali_path"] else 0,
+                "resources": bool(state["resource_path"]),
+                "dependency_lookup": "skipped_offline" if self._settings.offline else "enabled",
+                "historical_learning": "not_configured",
+            }
             state["package_name"] = extraction.get("package_name", "")
 
             # Parse manifest
@@ -150,7 +203,7 @@ class Orchestrator:
 
             # Detect framework
             state["framework_info"] = self._framework_detector.detect(
-                state["decompiled_path"]
+                state["resource_path"]
             )
 
             # Detect packer
@@ -186,17 +239,17 @@ class Orchestrator:
             "manifest": self._manifest_auditor.audit(
                 state["manifest_data"], state["package_name"]
             ),
-            "secrets": self._secret_scanner.scan(state["decompiled_path"]),
+            "secrets": self._secret_scanner.scan(state["output_dir"]),
             "code_review": self._code_reviewer.review(
                 state["decompiled_path"], state["manifest_data"]
             ),
             "api_mapping": self._api_mapper.map_apis(state["decompiled_path"]),
-            "native": self._native_analyzer.analyze(state["decompiled_path"]),
-            "dependencies": self._dependency_scanner.scan(state["decompiled_path"]),
-            "taint": self._taint_engine.analyze_directory_async(state["decompiled_path"]),
-            "nsc": self._nsc_auditor.audit_directory_async(state["decompiled_path"]),
-            "binary_protection": self._bin_protection.audit_directory_async(state["decompiled_path"]),
-            "react_native": self._rn_scanner.scan_directory_async(state["decompiled_path"]),
+            "native": self._native_analyzer.analyze(state["resource_path"]),
+            "dependencies": self._dependency_scanner.scan(state["resource_path"]),
+            "taint": self._taint_engine.analyze_directory_async(state["decompiled_path"]) if self._settings.enable_deep_taint else asyncio.sleep(0, result=[]),
+            "nsc": self._nsc_auditor.audit_directory_async(state["resource_path"]),
+            "binary_protection": self._bin_protection.audit_directory_async(state["resource_path"]),
+            "react_native": self._rn_scanner.scan_directory_async(state["resource_path"]),
         }
 
         results = await asyncio.gather(
@@ -228,13 +281,15 @@ class Orchestrator:
 
         # Deterministic Smali Call Graph reachability audit
         try:
-            smali_findings = self._call_graph_engine.audit_smali_directory(state["decompiled_path"])
+            smali_findings = self._call_graph_engine.audit_smali_directory(state["smali_path"])
             all_findings.extend(smali_findings)
             logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
         except Exception as e:
             logger.warning("[Stage 2] Smali Call Graph audit warning: %s", e)
 
-        state["raw_findings"] = [f.model_dump() for f in all_findings]
+        for finding in all_findings:
+            finding.status = FindingStatus.UNVERIFIED
+        state["raw_findings"] = redact([f.model_dump(mode="json") for f in all_findings])
         logger.info("[Stage 2] Done — %d raw findings total", len(all_findings))
         return state
 
@@ -253,7 +308,7 @@ class Orchestrator:
 
         state["filtered_findings"] = [f.model_dump() for f in confirmed]
         logger.info(
-            "[Stage 3] Done — %d/%d findings confirmed",
+            "[Stage 3] Done — %d/%d findings retained",
             len(confirmed), len(raw_findings),
         )
         return state
@@ -297,21 +352,22 @@ class Orchestrator:
     async def _save_outputs(self, state: ScanState) -> None:
         """Save generated Frida scripts and PoC guides to disk."""
         output = Path(state["output_dir"])
+        await ReportEngine().generate_reports(state)
 
         # Save Frida scripts
         frida_dir = output / "frida_scripts"
         frida_dir.mkdir(exist_ok=True)
         for item in state.get("generated_frida_scripts", []):
-            fp = frida_dir / item["filename"]
-            fp.write_text(item["script"])
+            fp = frida_dir / Path(item["filename"]).name
+            fp.write_text(redact(item["script"]))
             logger.info("Saved Frida script: %s", fp)
 
         # Save PoC guides
         poc_dir = output / "poc_guides"
         poc_dir.mkdir(exist_ok=True)
         for item in state.get("generated_poc_guides", []):
-            fp = poc_dir / item["filename"]
-            fp.write_text(item["poc_guide"])
+            fp = poc_dir / Path(item["filename"]).name
+            fp.write_text(redact(item["poc_guide"]))
             logger.info("Saved PoC guide: %s", fp)
 
         # Save OASIS SARIF v2.1.0 report for CI/CD integration

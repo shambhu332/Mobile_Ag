@@ -1,0 +1,13 @@
+{
+  "qdrant_store_exception": "AttributeError: 'Finding' object has no attribute 'cwe'",
+  "string_false_vote": true,
+  "analysis_root_smali_count": 0,
+  "parser_deep_link": {
+    "component": ".Main",
+    "scheme": "test",
+    "host": "route",
+    "path": ""
+  },
+  "worker_deep_link_value": "",
+  "wheel_returncode": 1
+}

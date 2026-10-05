@@ -24,7 +24,7 @@ from mobileag.web.app import app
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer " + app.state.auth_token})
 
 
 # =============================================================================
@@ -66,8 +66,7 @@ async def test_frida_runner_execution():
     assert is_running is True
 
     res = await runner.execute_script_payload("emulator-5554", "com.test.app", "console.log('test');")
-    assert res["status"] == "deployed"
-    assert res["package_name"] == "com.test.app"
+    assert res["status"] == "unavailable"  # ADB file writes are not instrumentation.
 
 
 # =============================================================================
@@ -297,7 +296,7 @@ def test_web_crawl_endpoint(client):
 def test_web_frida_endpoint(client):
     with patch("mobileag.web.app.frida_runner.execute_script_payload") as mock_frida:
         mock_frida.return_value = {
-            "status": "deployed",
+            "status": "executed",
             "frida_server_running": True,
             "script_path": "/data/local/tmp/test.js",
         }
@@ -308,7 +307,7 @@ def test_web_frida_endpoint(client):
         })
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "success"
+        assert data["status"] == "executed"
         assert "javax.crypto.Cipher" in data["script"]
 
 

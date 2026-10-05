@@ -411,7 +411,7 @@ class SmaliCallGraphEngine:
                     line_number=p.line_number,
                     code_snippet=f"Inter-Procedural Smali Call Chain:\n{snippet}",
                     remediation=f"Sanitize and validate untrusted input before forwarding across call chain to {p.sink_method}.",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     confidence=0.96
                 )
             )

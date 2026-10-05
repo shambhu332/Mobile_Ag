@@ -153,6 +153,7 @@ class ManifestParser:
                     if d.get("scheme"):
                         deep_links.append({
                             "component": comp["name"],
+                            "uri": f"{d.get('scheme')}://{d.get('host') or ''}{d.get('path') or d.get('pathPrefix') or ''}",
                             "scheme": d.get("scheme"),
                             "host": d.get("host"),
                             "path": d.get("path") or d.get("pathPrefix") or d.get("pathPattern")

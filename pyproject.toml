@@ -1,3 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mobileag*", "config*"]
+
+[tool.setuptools.package-data]
+mobileag = ["web/templates/*.html", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "build"]
+frida = ["frida"]
+
 [project]
 name = "mobileag"
 version = "0.1.0"
@@ -21,8 +35,13 @@ dependencies = [
     "python-dotenv",
     "aiohttp",
     "httpx",
+    "h11",
     "weasyprint",
     "pydantic-settings",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pyelftools",
 ]
 
 [project.scripts]

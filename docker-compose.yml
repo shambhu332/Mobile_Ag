@@ -5,10 +5,10 @@ services:
     image: neo4j:5.12.0
     container_name: mobileag_neo4j
     ports:
-      - "7474:7474"  # HTTP UI
-      - "7687:7687"  # Bolt protocol
+      - "127.0.0.1:7474:7474"  # HTTP UI
+      - "127.0.0.1:7687:7687"  # Bolt protocol
     environment:
-      - NEO4J_AUTH=neo4j/password
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD}
     volumes:
       - neo4j_data:/data
     restart: unless-stopped
@@ -16,9 +16,11 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.6.1
     container_name: mobileag_qdrant
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Set QDRANT_API_KEY}
     ports:
-      - "6333:6333"  # REST API
-      - "6334:6334"  # gRPC API
+      - "127.0.0.1:6333:6333"  # REST API
+      - "127.0.0.1:6334:6334"  # gRPC API
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped

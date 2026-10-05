@@ -77,7 +77,7 @@ class StorageAuditor:
                     matched_term = key_match.group(0) if key_match else token_match.group(0)
 
                     # Mask preview
-                    masked = line[:60] + "..." if len(line) > 60 else line
+                    masked = "[REDACTED preference value]"
 
                     findings.append(Finding(
                         title=f"Cleartext Secret in SharedPreferences: {xml_file} [{matched_term}]",
@@ -95,9 +95,9 @@ class StorageAuditor:
                         affected_component=f"shared_prefs/{xml_file}",
                         file_path=file_path,
                         line_number=line_idx,
-                        code_snippet=line.strip(),
+                        code_snippet="[REDACTED preference value]",
                         detection_method="StorageAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation=(
                             "Migrate all sensitive SharedPreferences to AndroidX EncryptedSharedPreferences "
                             "using MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)."
@@ -153,7 +153,7 @@ class StorageAuditor:
                     line_number=1,
                     code_snippet=f"SQLite Header: {header}",
                     detection_method="StorageAuditor (Dynamic)",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Encrypt sensitive databases at rest using SQLCipher for Android (net.zetetic:android-database-sqlcipher).",
                 ))
 
@@ -175,7 +175,7 @@ class StorageAuditor:
                 title=f"Sensitive HTTP Response Credentials Cached to Disk: {package_name}",
                 description=(
                     f"HTTP response caching on the device wrote sensitive authorization credentials or secrets to disk:\n"
-                    f"`{grep_out[:200]}...`"
+                    "[REDACTED cache excerpt]"
                 ),
                 severity=Severity.MEDIUM,
                 confidence=0.85,
@@ -186,9 +186,9 @@ class StorageAuditor:
                 affected_component="cache/",
                 file_path=cache_dir,
                 line_number=1,
-                code_snippet=grep_out[:180],
+                code_snippet="[REDACTED cache excerpt]",
                 detection_method="StorageAuditor (Dynamic)",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation="Ensure sensitive backend endpoints return `Cache-Control: no-store` and configure OkHttp cache filters.",
             ))
 

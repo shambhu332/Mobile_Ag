@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict
@@ -21,8 +22,17 @@ class APKExtractor:
             settings: Configuration settings containing tool paths.
         """
         self.settings = settings
-        self.jadx_path = getattr(settings, "JADX_PATH", "jadx")
-        self.apktool_path = getattr(settings, "APKTOOL_PATH", "apktool")
+        configured_jadx = getattr(settings, "JADX_PATH", None)
+        if configured_jadx and Path(configured_jadx).exists():
+            self.jadx_path = configured_jadx
+        else:
+            self.jadx_path = shutil.which("jadx") or "jadx"
+
+        configured_apktool = getattr(settings, "APKTOOL_PATH", None)
+        if configured_apktool and Path(configured_apktool).exists():
+            self.apktool_path = configured_apktool
+        else:
+            self.apktool_path = shutil.which("apktool") or "apktool"
 
     async def extract(self, apk_path: str, output_dir: str) -> Dict[str, Any]:
         """
@@ -47,39 +57,44 @@ class APKExtractor:
         apktool_dir = out_p / "apktool_out"
         jadx_dir = out_p / "jadx_out"
 
-        # Run APKTool
-        logger.info(f"Running APKTool on {apk_path}...")
-        apktool_cmd = [self.apktool_path, "d", str(apk_path), "-o", str(apktool_dir), "-f"]
-        process_apktool = await asyncio.create_subprocess_exec(
-            *apktool_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process_apktool.communicate()
-        if process_apktool.returncode != 0:
-            logger.error(f"APKTool failed: {stderr.decode()}")
-            raise RuntimeError(f"APKTool failed with return code {process_apktool.returncode}")
+        from mobileag.security.archives import validate_archive
+        if validate_archive(apk_p) != "android":
+            raise ValueError("Expected an Android APK archive")
 
-        # Run JADX
-        logger.info(f"Running JADX on {apk_path}...")
-        jadx_cmd = [self.jadx_path, str(apk_path), "-d", str(jadx_dir), "--deobf"]
-        process_jadx = await asyncio.create_subprocess_exec(
-            *jadx_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process_jadx.communicate()
-        if process_jadx.returncode != 0:
-            logger.error(f"JADX failed: {stderr.decode()}")
-            raise RuntimeError(f"JADX failed with return code {process_jadx.returncode}")
+        async def run_tool(command, timeout):
+            process = await asyncio.create_subprocess_exec(
+                *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            try:
+                code = await asyncio.wait_for(process.wait(), timeout)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                process.kill()
+                await process.wait()
+                raise
+            if code != 0:
+                raise RuntimeError(f"{Path(command[0]).name} failed (exit {code}); scan is incomplete")
+
+        await run_tool([self.apktool_path, "d", str(apk_p), "-o", str(apktool_dir), "-f"], 120)
+        await run_tool([self.jadx_path, str(apk_p), "-d", str(jadx_dir), "--no-res", "--show-bad-code", "-j", "4"], 120)
+        if not jadx_dir.is_dir() or not (apktool_dir / "AndroidManifest.xml").is_file():
+            raise RuntimeError("Decompilation output is incomplete")
 
         manifest_path = apktool_dir / "AndroidManifest.xml"
+        if not manifest_path.exists():
+            candidates = [
+                jadx_dir / "resources" / "AndroidManifest.xml",
+                out_p / "AndroidManifest.xml",
+            ]
+            for c in candidates:
+                if c.exists():
+                    manifest_path = c
+                    break
+
         package_name = self._parse_package_name(manifest_path)
 
         return {
-            "apktool_dir": str(apktool_dir),
-            "jadx_dir": str(jadx_dir),
-            "manifest_path": str(manifest_path),
+            "apktool_dir": str(apktool_dir) if apktool_dir.exists() else "",
+            "jadx_dir": str(jadx_dir) if jadx_dir.exists() else "",
+            "manifest_path": str(manifest_path) if manifest_path.exists() else "",
             "package_name": package_name
         }
 

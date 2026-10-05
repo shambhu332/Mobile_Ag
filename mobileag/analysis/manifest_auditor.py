@@ -141,7 +141,7 @@ class ManifestAuditor:
                         cvss_vector=vector,
                         affected_component=name,
                         detection_method="ManifestAuditor",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Set android:exported='false' on all FileProvider declarations and rely on temporary FLAG_GRANT_READ_URI_PERMISSION.",
                         file_path="AndroidManifest.xml"
                     ))
@@ -167,7 +167,7 @@ class ManifestAuditor:
                     cvss_vector=vector,
                     affected_component=f"AndroidManifest.xml/permission/{p_name}",
                     detection_method="ManifestAuditor",
-                    status=FindingStatus.CONFIRMED,
+                    status=FindingStatus.UNVERIFIED,
                     remediation="Elevate custom permissions guarding sensitive components to android:protectionLevel='signature'.",
                     file_path="AndroidManifest.xml"
                 ))
@@ -186,7 +186,7 @@ class ManifestAuditor:
                 cvss_vector=vector,
                 affected_component="AndroidManifest.xml/uses-permission",
                 detection_method="ManifestAuditor",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation="Only request SYSTEM_ALERT_WINDOW if background floating UI is indispensable. Enforce FLAG_SECURE on sensitive activities.",
                 file_path="AndroidManifest.xml"
             ))
@@ -203,7 +203,7 @@ class ManifestAuditor:
                 cvss_vector=vector,
                 affected_component="AndroidManifest.xml/uses-permission",
                 detection_method="ManifestAuditor",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation="Remove REQUEST_INSTALL_PACKAGES and direct users to official app stores instead of in-app self-updating APKs.",
                 file_path="AndroidManifest.xml"
             ))

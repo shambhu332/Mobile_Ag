@@ -101,6 +101,8 @@ class DependencyScanner:
 
     async def scan(self, decompiled_path: str) -> list[Finding]:
         """Parse build files and query OSV for known CVEs in dependencies."""
+        if getattr(self.router, "_settings", None) and self.router._settings.offline is True:
+            return []
         logger.info(f"Starting dependency scan in: {decompiled_path}")
         findings: list[Finding] = []
         base_path = Path(decompiled_path)

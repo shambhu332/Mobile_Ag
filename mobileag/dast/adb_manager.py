@@ -6,6 +6,7 @@ import asyncio
 import logging
 import re
 import shutil
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -32,6 +33,10 @@ class ADBManager:
 
     async def _exec_cmd(self, args: list[str], timeout: float = 3.0) -> tuple[int, bytes, bytes]:
         """Execute an ADB command with strict timeout protection to prevent hanging on offline devices."""
+        if "shell" in args:
+            index = args.index("shell")
+            if len(args[index + 1:]) > 1:
+                args = args[:index + 1] + [shlex.join(args[index + 1:])]
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -187,7 +192,7 @@ class ADBManager:
 
     async def execute_shell(self, serial: str, command: str) -> dict[str, Any]:
         """Execute an arbitrary adb shell command on target device."""
-        cmd_parts = ["-s", serial, "shell"] + command.split() if isinstance(command, str) else ["-s", serial, "shell", str(command)]
+        cmd_parts = ["-s", serial, "shell", str(command)]
         code, stdout, stderr = await self._exec_cmd(cmd_parts, timeout=10.0)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {

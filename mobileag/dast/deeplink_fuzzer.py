@@ -166,7 +166,7 @@ class DeepLinkFuzzer:
                         line_number=1,
                         code_snippet=crash_lines[0].strip(),
                         detection_method="DeepLinkFuzzer (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Wrap deep link intent URI parsing and parameter handling in structured try/catch blocks.",
                     ))
 
@@ -194,7 +194,7 @@ class DeepLinkFuzzer:
                         line_number=1,
                         code_snippet=webview_suspicious[0].strip(),
                         detection_method="DeepLinkFuzzer (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Validate and sanitize incoming deep link URIs using strict domain allowlists before loading in WebViews or resolving files.",
                     ))
 

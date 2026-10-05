@@ -72,7 +72,7 @@ class ReachabilityFilter:
         """
         try:
             proc = await asyncio.create_subprocess_exec(
-                "grep", "-rl", "--include=*.java", "--include=*.kt",
+                "grep", "-Frl", "--include=*.java", "--include=*.kt", "--",
                 class_name, str(source_root),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -80,13 +80,15 @@ class ReachabilityFilter:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
             files = [
                 f for f in stdout.decode(errors="replace").strip().splitlines()
-                if f and f != exclude_file
+                if f and Path(f).resolve() != (source_root / exclude_file).resolve()
             ]
             return len(files)
         except FileNotFoundError:
             # grep not available — fallback
             return await self._python_grep(class_name, source_root, exclude_file)
         except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
             logger.warning("Reachability grep timed out for %s", class_name)
             return 0
 

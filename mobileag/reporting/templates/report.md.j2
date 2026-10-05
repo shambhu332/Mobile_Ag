@@ -10,7 +10,7 @@
 | Obfuscation | {{ app_info.obfuscation_level }} |
 
 ## 2. Executive Summary
-The security analysis identified **{{ stats.total }}** confirmed vulnerabilities:
+The security analysis identified **{{ stats.total }}** review candidates (not validated exploits):
 - 🔴 **CRITICAL:** {{ stats.critical }}
 - 🟠 **HIGH:** {{ stats.high }}
 - 🟡 **MEDIUM:** {{ stats.medium }}
@@ -26,12 +26,13 @@ The security analysis identified **{{ stats.total }}** confirmed vulnerabilities
 
 ---
 
-## 3. Confirmed Vulnerabilities
+## 3. Findings requiring validation
 
 {% for finding in findings %}
 ### {{ loop.index }}. {{ finding.title }}
 **Severity:** {{ finding.severity }} | **CVSS 3.1:** {{ finding.cvss_score }} | **Confidence:** {{ finding.confidence|default('N/A') }}
 
+**Status:** {{ finding.status }}
 **CWE:** {{ finding.cwe_id }}
 **Component:** `{{ finding.affected_component }}`
 {% if finding.file_path %}**Location:** `{{ finding.file_path }}`{% if finding.line_number %}:{{ finding.line_number }}{% endif %}{% endif %}

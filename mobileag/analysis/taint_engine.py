@@ -146,7 +146,7 @@ class TaintTrace:
 
 
 class TaintEngine:
-    """Inter-procedural static source-to-sink taint analysis engine."""
+    """Straight-line source-to-sink review heuristic; not an exploit verifier."""
 
     def __init__(self) -> None:
         pass
@@ -156,116 +156,50 @@ class TaintEngine:
         findings: list[Finding] = []
         lines = content.splitlines()
 
-        traces: list[TaintTrace] = []
-
-        # Step 1: Detect sources
+        # Conservative straight-line heuristic, not a control-flow or inter-procedural proof.
+        bindings: dict[str, TaintTrace] = {}
+        method_start = re.compile(r"(?:public|private|protected|fun|void)\s+.*?\([^;]*\)\s*\{")
         for line_idx, line in enumerate(lines, 1):
-            clean = line.strip()
-            if clean.startswith("//") or clean.startswith("/*") or clean.startswith("*"):
+            if method_start.search(line):
+                bindings.clear()
+            if line.strip().startswith(("//", "/*", "*")):
                 continue
-
-            for src_type, src_pat in _SOURCE_PATTERNS:
-                m = src_pat.search(line)
-                if m:
-                    var_name = m.group(1)
-                    trace = TaintTrace(
-                        source_var=var_name,
-                        source_type=src_type,
-                        source_line=line_idx,
-                        source_snippet=clean,
-                        tainted_vars={var_name},
-                        propagation_steps=[f"L{line_idx}: '{var_name}' initialized from {src_type}"],
-                    )
-                    traces.append(trace)
-
-        if not traces:
-            return findings
-
-        # Step 2: Track variable propagation across statements
-        for line_idx, line in enumerate(lines, 1):
-            clean = line.strip()
-            assign_match = _ASSIGN_RE.search(line)
-            if assign_match:
-                lhs = assign_match.group(1)
-                rhs = assign_match.group(2)
-
-                for trace in traces:
-                    if any(re.search(rf"\b{re.escape(tv)}\b", rhs) for tv in trace.tainted_vars):
-                        if lhs not in trace.tainted_vars:
-                            trace.tainted_vars.add(lhs)
-                            trace.propagation_steps.append(f"L{line_idx}: '{lhs}' tainted by assignment from '{rhs.strip()}'")
-
-        # Step 3: Check for tainted sinks
-        for line_idx, line in enumerate(lines, 1):
-            clean = line.strip()
-            if clean.startswith("//"):
-                continue
-
-            for sink in _SINK_SPECS:
-                sink_match = sink["pattern"].search(line)
-                if sink_match:
-                    sink_context = line[sink_match.start():]
-
-                    # Check trace-propagated variables
-                    matched_trace = None
-                    for trace in traces:
-                        if line_idx < trace.source_line:
-                            continue
-
-                        if any(re.search(rf"\b{re.escape(tv)}\b", sink_context) for tv in trace.tainted_vars):
-                            matched_trace = trace
-                            break
-
-                    if matched_trace:
-                        cwe = sink["cwe"]
-                        score, vector = get_default_cvss_for_cwe(cwe)
-                        chain_str = " -> ".join(matched_trace.propagation_steps)
-
-                        findings.append(Finding(
-                            title=sink["title"],
-                            description=(
-                                f"Taint flow detected from untrusted source `{matched_trace.source_var}` ({matched_trace.source_type}) "
-                                f"at line {matched_trace.source_line} into critical sink `{sink['type']}` at line {line_idx}.\n\n"
-                                f"**Propagation Trace**:\n`{chain_str}`\n\n"
-                                f"Sink Statement: `{clean}`"
-                            ),
-                            severity=sink["severity"],
-                            confidence=0.92,
-                            cwe_id=cwe,
-                            cvss_score=score,
-                            cvss_vector=vector,
-                            owasp_masvs=sink["masvs"],
-                            affected_component=file_path or "UnknownClass",
-                            file_path=file_path,
-                            line_number=line_idx,
-                            code_snippet=clean,
-                            detection_method="TaintEngine (Static Dataflow)",
-                            status=FindingStatus.CONFIRMED,
-                            remediation=sink["remediation"],
-                        ))
-                    elif _INLINE_SOURCE_RE.search(sink_context):
-                        cwe = sink["cwe"]
-                        score, vector = get_default_cvss_for_cwe(cwe)
-                        findings.append(Finding(
-                            title=sink["title"],
-                            description=(
-                                f"Direct inline taint flow detected from untrusted source into critical sink `{sink['type']}` at line {line_idx}.\n\n"
-                                f"Sink Statement: `{clean}`"
-                            ),
-                            severity=sink["severity"],
-                            confidence=0.95,
-                            cwe_id=cwe,
-                            cvss_score=score,
-                            cvss_vector=vector,
-                            owasp_masvs=sink["masvs"],
-                            affected_component=file_path or "UnknownClass",
-                            file_path=file_path,
-                            line_number=line_idx,
-                            code_snippet=clean,
-                            detection_method="TaintEngine (Static Dataflow)",
-                            status=FindingStatus.CONFIRMED,
-                            remediation=sink["remediation"],
-                        ))
+            # Do not split on semicolons inside quoted strings.
+            statements = re.split(r';(?=(?:[^"\\]*"[^"\\]*")*[^"\\]*$)', line)
+            for statement in statements:
+                clean = statement.strip()
+                if not clean:
+                    continue
+                assignment = _ASSIGN_RE.search(clean)
+                if assignment:
+                    lhs, rhs = assignment.group(1), assignment.group(2)
+                    previous = next((t for v,t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", rhs)), None)
+                    bindings.pop(lhs, None)  # Reassignment kills the previous value.
+                    source = next(((kind, pat.search(clean)) for kind,pat in _SOURCE_PATTERNS if pat.search(clean)), None)
+                    if source:
+                        bindings[lhs] = TaintTrace(lhs, source[0], line_idx, clean, {lhs}, [f"L{line_idx}: {lhs} from {source[0]}"])
+                    elif previous:
+                        bindings[lhs] = TaintTrace(previous.source_var, previous.source_type, previous.source_line,
+                            previous.source_snippet, {lhs}, previous.propagation_steps + [f"L{line_idx}: {lhs} assigned"])
+                for sink in _SINK_SPECS:
+                    match = sink["pattern"].search(clean)
+                    if not match:
+                        continue
+                    context = clean[match.end():]
+                    trace = next((t for v,t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", context)), None)
+                    if trace is None and not _INLINE_SOURCE_RE.search(context):
+                        continue
+                    score, vector = get_default_cvss_for_cwe(sink["cwe"])
+                    origin = f"{trace.source_var} ({trace.source_type}), line {trace.source_line}" if trace else "inline input source"
+                    findings.append(Finding(
+                        title=sink["title"], description=f"Potential flow from {origin} to {sink['type']}. "
+                            "Straight-line heuristic only: method calls, branch conditions, sanitization, and external reachability require review.",
+                        severity=sink["severity"], confidence=0.5, cwe_id=sink["cwe"], cvss_score=score,
+                        cvss_vector=vector, owasp_masvs=sink["masvs"], affected_component=file_path or "UnknownClass",
+                        file_path=file_path, line_number=line_idx, code_snippet=clean,
+                        detection_method="TaintEngine (straight-line heuristic)", status=FindingStatus.UNVERIFIED,
+                        remediation=sink["remediation"],
+                    ))
 
         return findings
 

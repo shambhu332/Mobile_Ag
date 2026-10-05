@@ -85,7 +85,7 @@ class LogcatAuditor:
                         line_number=idx + 1,
                         code_snippet=snippet,
                         detection_method="LogcatAuditor (Dynamic)",
-                        status=FindingStatus.CONFIRMED,
+                        status=FindingStatus.UNVERIFIED,
                         remediation="Remove logging calls (Log.d, Log.v, Log.i, println) from production builds using ProGuard/R8 rules: `-assumenosideeffects class android.util.Log { *; }`.",
                     ))
                     break  # One finding per pattern category to avoid log flood
@@ -111,7 +111,7 @@ class LogcatAuditor:
                 line_number=1,
                 code_snippet=crash_snippet,
                 detection_method="LogcatAuditor (Dynamic)",
-                status=FindingStatus.CONFIRMED,
+                status=FindingStatus.UNVERIFIED,
                 remediation="Wrap intent extra parsing and dynamic inputs in defensive try-catch blocks and validate parcelable formats before deserialization.",
             ))
 

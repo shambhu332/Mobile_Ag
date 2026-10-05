@@ -514,7 +514,7 @@
           <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
             <div>
               <label class="block text-slate-300 mb-1">Primary LLM Provider</label>
-              <select id="cfg-llm-primary" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+              <select id="cfg-llm-primary" disabled title="Configure through environment variables" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
                 <option value="gemini_pro">Google Gemini 1.5 Pro</option>
                 <option value="openai">OpenAI GPT-4o</option>
                 <option value="claude">Anthropic Claude 3.5 Sonnet</option>
@@ -524,7 +524,7 @@
 
             <div>
               <label class="block text-slate-300 mb-1">Backup / Consensus LLM Provider</label>
-              <select id="cfg-llm-fallback" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+              <select id="cfg-llm-fallback" disabled title="Configure through environment variables" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
                 <option value="openai">OpenAI GPT-4o</option>
                 <option value="claude">Anthropic Claude 3.5 Sonnet</option>
                 <option value="deepseek">DeepSeek R1 / V3</option>
@@ -539,7 +539,7 @@
 
             <div>
               <label class="block text-slate-300 mb-1">Neo4j Bolt URI</label>
-              <input type="text" id="cfg-neo4j-uri" value="bolt://localhost:7687" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
+              <input type="text" id="cfg-neo4j-uri" disabled title="Configure through environment variables" value="bolt://localhost:7687" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
             </div>
 
             <div class="space-y-2 pt-2 border-t border-borderSubtle">
@@ -1171,16 +1171,16 @@
 
         <div class="space-y-2 pt-2 border-t border-borderSubtle">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="modal-opt-auto-dast" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+            <input type="checkbox" id="modal-opt-auto-dast" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
             <span class="text-slate-200 font-semibold">Autonomous Dynamic DAST (Auto-Install & Live Testing)</span>
           </label>
           <div class="pl-6 space-y-1.5 text-[11px] text-slate-400">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" id="modal-opt-bypass-root" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+              <input type="checkbox" id="modal-opt-bypass-root" disabled title="Use the explicit Frida workbench" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
               <span class="text-slate-300">Self Root Detection Bypass (Frida / Su-Mask hooks)</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" id="modal-opt-bypass-ssl" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+              <input type="checkbox" id="modal-opt-bypass-ssl" disabled title="Use the explicit Frida workbench" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
               <span class="text-slate-300">Self SSL / TLS Pinning Bypass (Frida / OkHttp3 / TrustManager)</span>
             </label>
           </div>
@@ -1212,6 +1212,22 @@
   <!-- 5. JAVASCRIPT CLIENT LOGIC -->
   <!-- ===================================================================== -->
   <script>
+    // Token stays in page memory, never in a URL, cookie, localStorage or report.
+    const accessToken = window.prompt('Paste the MobileAg session token shown in the server terminal:') || '';
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async function(input, options = {}) {
+      const url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
+      const headers = new Headers(options.headers || {});
+      if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
+        headers.set('Authorization', 'Bearer ' + accessToken);
+      }
+      const response = await nativeFetch(input, {...options, headers});
+      if (!response.ok) {
+        const body = await response.clone().json().catch(() => ({}));
+        throw new Error(body.detail || `Request failed (${response.status})`);
+      }
+      return response;
+    };
     let activeView = 'surface';
     let currentScan = null;
     let visNetwork = null;
@@ -1232,7 +1248,7 @@
         type === 'error' ? 'bg-red-950 border-red-800 text-red-300' :
         'bg-slate-900 border-slate-700 text-slate-200'
       }`;
-      toast.innerHTML = `<span>${message}</span>`;
+      toast.textContent = String(message);
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = '0';
@@ -1277,6 +1293,10 @@
         const res = await fetch('/api/scans');
         const list = await res.json();
         currentScan = list[0];
+        if (!currentScan) {
+          renderDashboard({package_name:"Upload an APK or IPA to begin", stats:{total:0}, findings:[]});
+          return;
+        }
         
         // Fetch dynamic graph
         try {
@@ -1312,8 +1332,8 @@
       document.getElementById('kpi-total').textContent = scan.stats.total;
       document.getElementById('kpi-critical-high').textContent = (scan.stats.critical || 0) + (scan.stats.high || 0);
       document.getElementById('kpi-med-low').textContent = (scan.stats.medium || 0) + (scan.stats.low || 0);
-      document.getElementById('kpi-masvs').textContent = (scan.stats.masvs_score || 78) + '%';
-      document.getElementById('kpi-consensus').textContent = (scan.stats.consensus_accuracy || 94.2) + '%';
+      document.getElementById('kpi-masvs').textContent = scan.stats.masvs_score == null ? 'Not assessed' : scan.stats.masvs_score + '%';
+      document.getElementById('kpi-consensus').textContent = scan.stats.consensus_accuracy == null ? 'Not measured' : scan.stats.consensus_accuracy + '%';
       document.getElementById('nav-findings-count').textContent = (scan.findings || []).length;
 
       // Render Modules
@@ -1491,16 +1511,16 @@
         card.innerHTML = `
           <div class="flex items-center justify-between mb-1.5">
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${sevColors[f.severity] || 'border-slate-700 text-slate-400'}">${f.severity}</span>
-              <span class="text-xs font-mono font-bold text-slate-300">${f.cwe_id}</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${sevColors[f.severity] || 'border-slate-700 text-slate-400'}">${escapeHtml(String(f.severity))}</span>
+              <span class="text-xs font-mono font-bold text-slate-300">${escapeHtml(String(f.cwe_id))}</span>
               <span class="text-[11px] font-mono text-slate-400">CVSS ${f.cvss_score}</span>
             </div>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded ${f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">${f.status}</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded ${f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">${escapeHtml(String(f.status))}</span>
           </div>
           <h4 class="text-xs font-semibold text-white mb-1">${escapeHtml(f.title)}</h4>
           <p class="text-[11px] text-slate-400 truncate font-mono">${escapeHtml(f.affected_component || f.file_path)}</p>
           <div class="flex items-center justify-between mt-2 pt-2 border-t border-borderSubtle/60 text-[10px] font-mono text-slate-400">
-            <span class="flex items-center gap-1 text-amber-400 font-semibold"><i data-lucide="zap" class="w-3 h-3"></i> PoC Ready</span>
+            <span class="flex items-center gap-1 text-amber-400 font-semibold"><i data-lucide="zap" class="w-3 h-3"></i> Review guide</span>
             <span class="flex items-center gap-1 text-emerald-400 font-semibold"><i data-lucide="terminal" class="w-3 h-3"></i> 1-Click ADB</span>
             <span class="text-slate-500">${escapeHtml(f.owasp_masvs || 'MASVS')}</span>
           </div>
@@ -1601,7 +1621,7 @@
         const data = await res.json();
         terminal.innerHTML += `\n<span class="text-emerald-400">[+] Output:</span>\n${escapeHtml(data.output || '(No standard output)')}\n`;
         terminal.scrollTop = terminal.scrollHeight;
-        showToast('ADB Verification command executed on device!', 'success');
+        showToast('ADB command finished; inspect evidence before confirming any finding.', 'success');
       } catch (err) {
         terminal.innerHTML += `\n<span class="text-red-400">[-] Execution failed: ${escapeHtml(err.message)}</span>\n`;
         terminal.scrollTop = terminal.scrollHeight;
@@ -1623,7 +1643,7 @@
           body: JSON.stringify({ serial: dev, package_name: pkg, script_type: scriptType || 'unpinning' })
         });
         const data = await res.json();
-        showToast(`Frida hook active: ${data.message || 'Script injected'}`, 'success');
+        showToast(`Frida: ${data.status} — ${data.result?.message || 'Inspect result'}`, data.status === 'executed' ? 'success' : 'error');
       } catch (err) {
         showToast(`Frida deployment error: ${err}`, 'error');
       }
@@ -1636,7 +1656,7 @@
       if (drawer && drawer.classList.contains('translate-y-[520px]')) {
         toggleCopilotDrawer();
       }
-      const prompt = `Analyze ${f.title} (${f.cwe_id}, CVSS ${f.cvss_score}) in component ${f.affected_component}. Provide step-by-step reproduction and secure Kotlin remediation.`;
+      const prompt = `Analyze ${f.title} (${escapeHtml(String(f.cwe_id))}, CVSS ${f.cvss_score}) in component ${f.affected_component}. Provide step-by-step reproduction and secure Kotlin remediation.`;
       askCopilotPrompt(prompt);
     }
 
@@ -1669,7 +1689,7 @@
               f.severity === 'CRITICAL' ? 'bg-red-950 text-red-400 border-red-800' :
               f.severity === 'HIGH' ? 'bg-orange-950 text-orange-400 border-orange-800' :
               'bg-amber-950 text-amber-400 border-amber-800'
-            }">${f.severity}</span>
+            }">${escapeHtml(String(f.severity))}</span>
             <span class="text-xs font-mono text-slate-400 font-semibold">CVSS ${f.cvss_score || 'N/A'}</span>
           </div>
           <h4 class="text-sm font-semibold text-white leading-snug">${escapeHtml(f.title)}</h4>
@@ -1838,7 +1858,7 @@
         const res = await fetch(`/api/findings/${findingId}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict })
+          body: JSON.stringify({ verdict, notes: verdict === 'CONFIRMED' ? window.prompt('Describe the reproduced impact, prerequisites and evidence:') : '' })
         });
         const data = await res.json();
         
@@ -1859,7 +1879,7 @@
         await fetch(`/api/findings/${findingId}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict })
+          body: JSON.stringify({ verdict, notes: verdict === 'CONFIRMED' ? window.prompt('Describe the reproduced impact, prerequisites and evidence:') : '' })
         });
         
         const df = dastFindings.find(item => item.id === findingId);
@@ -1897,12 +1917,12 @@
           const tr = document.createElement('tr');
           tr.className = 'hover:bg-card/50 transition';
           tr.innerHTML = `
-            <td class="py-3 px-4 text-sky-400 font-bold">${s.scan_id}</td>
-            <td class="py-3 px-4">${s.package_name || s.app_name}</td>
-            <td class="py-3 px-4 text-slate-400">${s.created_at || 'Just now'}</td>
+            <td class="py-3 px-4 text-sky-400 font-bold">${escapeHtml(s.scan_id)}</td>
+            <td class="py-3 px-4">${escapeHtml(String(s.package_name || s.app_name))}</td>
+            <td class="py-3 px-4 text-slate-400">${escapeHtml(String(s.created_at || 'Just now'))}</td>
             <td class="py-3 px-4">
               <span class="px-2 py-0.5 rounded text-[10px] ${s.status === 'completed' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-sky-950 text-sky-400 border border-sky-800'}">
-                ${s.status.toUpperCase()}
+                ${escapeHtml(String(s.status.toUpperCase()))}
               </span>
             </td>
             <td class="py-3 px-4">
@@ -2004,10 +2024,7 @@
 
     async function saveSettingsForm() {
       const payload = {
-        llm_primary_provider: document.getElementById('cfg-llm-primary').value,
-        llm_fallback_provider: document.getElementById('cfg-llm-fallback').value,
         entropy_threshold: parseFloat(document.getElementById('cfg-entropy').value),
-        neo4j_uri: document.getElementById('cfg-neo4j-uri').value,
         enable_deep_taint: document.getElementById('cfg-deep-taint').checked,
         enable_reachability_filter: document.getElementById('cfg-reachability').checked,
         enable_consensus_voting: document.getElementById('cfg-consensus').checked,
@@ -2048,7 +2065,7 @@
         ? currentScan.findings.find(item => item.id === selectedFindingId) 
         : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
       if (f) {
-        askCopilotPrompt(`Generate a step-by-step PoC reproduction guide for ${f.title} (${f.cwe_id}) in ${f.affected_component}`);
+        askCopilotPrompt(`Generate a step-by-step PoC reproduction guide for ${f.title} (${escapeHtml(String(f.cwe_id))}) in ${f.affected_component}`);
       } else {
         askCopilotPrompt('Generate step-by-step reproduction PoC for the critical findings in this application');
       }
@@ -2059,7 +2076,7 @@
         ? currentScan.findings.find(item => item.id === selectedFindingId) 
         : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
       if (f) {
-        askCopilotPrompt(`Provide the exact copy-pasteable adb verification command for ${f.title} (${f.cwe_id})`);
+        askCopilotPrompt(`Provide the exact copy-pasteable adb verification command for ${f.title} (${escapeHtml(String(f.cwe_id))})`);
       } else {
         askCopilotPrompt('Give me adb commands to trigger and test exported activities');
       }
@@ -2070,7 +2087,7 @@
         ? currentScan.findings.find(item => item.id === selectedFindingId) 
         : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
       if (f) {
-        askCopilotPrompt(`Write a production-grade Frida hook script to verify or bypass ${f.title} (${f.cwe_id})`);
+        askCopilotPrompt(`Write a production-grade Frida hook script to verify or bypass ${f.title} (${escapeHtml(String(f.cwe_id))})`);
       } else {
         askCopilotPrompt('Generate a universal Frida script for SSL unpinning and root bypass');
       }
@@ -2081,7 +2098,7 @@
         ? currentScan.findings.find(item => item.id === selectedFindingId) 
         : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
       if (f) {
-        askCopilotPrompt(`Show the secure Kotlin / AndroidManifest remediation diff to fix ${f.title} (${f.cwe_id})`);
+        askCopilotPrompt(`Show the secure Kotlin / AndroidManifest remediation diff to fix ${f.title} (${escapeHtml(String(f.cwe_id))})`);
       } else {
         askCopilotPrompt('Show secure coding guidelines for Android exported components and WebViews');
       }
@@ -2092,7 +2109,7 @@
         ? currentScan.findings.find(item => item.id === selectedFindingId) 
         : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
       if (f) {
-        askCopilotPrompt(`Draft a professional HackerOne / Bugcrowd bug bounty submission for ${f.title} (${f.cwe_id}, CVSS ${f.cvss_score}) with steps to reproduce and impact assessment.`);
+        askCopilotPrompt(`Draft a professional HackerOne / Bugcrowd bug bounty submission for ${f.title} (${escapeHtml(String(f.cwe_id))}, CVSS ${f.cvss_score}) with steps to reproduce and impact assessment.`);
       } else {
         askCopilotPrompt('Format the top findings into a professional Bug Bounty submission draft');
       }
@@ -2134,7 +2151,7 @@
 
     function formatMarkdownToHtml(md) {
       // Basic markdown processor
-      return md
+      return escapeHtml(String(md))
         .replace(/^### (.*$)/gim, '<h4 class="font-bold text-white text-xs mb-1">$1</h4>')
         .replace(/\*\*(.*?)\*\*/gim, '<strong class="text-white">$1</strong>')
         .replace(/\*(.*?)\*/gim, '<em class="text-slate-300">$1</em>')
@@ -2243,16 +2260,16 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               apk_path: data.file_path,
-              auto_dast: true,
+              auto_dast: false,
               auto_taint: true,
-              bypass_root: true,
-              bypass_ssl: true,
+              bypass_root: false,
+              bypass_ssl: false,
               serial: dastActiveDevice
             })
           });
           const runData = await runRes.json();
           showToast(`Autonomous pipeline active: ${runData.scan_id}`, 'success');
-          switchView('surface');
+          await loadSpecificScan(runData.scan_id);
         }
       } catch (err) {
         showToast(err.message || 'Upload error', 'error');
@@ -2267,10 +2284,10 @@
         showToast('Please upload or specify target APK path', 'error');
         return;
       }
-      const autoDast = document.getElementById('modal-opt-auto-dast')?.checked ?? true;
+      const autoDast = document.getElementById('modal-opt-auto-dast')?.checked ?? false;
       const autoTaint = document.getElementById('modal-opt-taint')?.checked ?? true;
-      const bypassRoot = document.getElementById('modal-opt-bypass-root')?.checked ?? true;
-      const bypassSsl = document.getElementById('modal-opt-bypass-ssl')?.checked ?? true;
+      const bypassRoot = document.getElementById('modal-opt-bypass-root')?.checked ?? false;
+      const bypassSsl = document.getElementById('modal-opt-bypass-ssl')?.checked ?? false;
 
       closeNewScanModal();
       showToast('Launching autonomous full-spectrum pipeline...', 'info');
@@ -2290,7 +2307,7 @@
         });
         const data = await res.json();
         showToast(`Scan launched: ${data.scan_id}`, 'success');
-        switchView('surface');
+        await loadSpecificScan(data.scan_id);
       } catch (err) {
         showToast('Failed to start scan', 'error');
       }
@@ -2329,7 +2346,7 @@
       if (!currentScan) return;
       let md = `# MobileAg Security Audit Report\n\nTarget: ${currentScan.package_name}\nDate: ${currentScan.created_at}\n\n## Findings\n\n`;
       (currentScan.findings || []).forEach(f => {
-        md += `### [${f.severity}] ${f.title} (${f.cwe_id})\n`;
+        md += `### [${escapeHtml(String(f.severity))}] ${f.title} (${escapeHtml(String(f.cwe_id))})\n`;
         md += `- CVSS Score: ${f.cvss_score}\n`;
         md += `- Affected Component: ${f.affected_component}\n`;
         md += `- Description: ${f.description}\n`;
@@ -2373,6 +2390,7 @@
         wsConnection = new WebSocket(wsUrl);
 
         wsConnection.onopen = function() {
+          wsConnection.send(JSON.stringify({token: accessToken}));
           const wsLabel = document.getElementById('sidebar-ws-status');
           if (wsLabel) wsLabel.textContent = 'Live Connected';
         };
@@ -2380,7 +2398,9 @@
         wsConnection.onmessage = function(event) {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'agent_progress') {
+            if (data.type === 'scan_complete') {
+              if (currentScan && currentScan.scan_id === data.scan_id) loadSpecificScan(data.scan_id);
+            } else if (data.type === 'agent_progress') {
               handleLiveEvent(data);
             } else if (data.type === 'dast_progress' || data.type === 'dast_finding') {
               handleDastLiveEvent(data);
@@ -2410,22 +2430,54 @@
         item.innerHTML = `
           <div class="flex items-center gap-2">
             <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span>
-            <span class="font-mono font-medium text-sky-300 text-xs">${data.stage}</span>
+            <span class="font-mono font-medium text-sky-300 text-xs">${escapeHtml(String(data.stage))}</span>
           </div>
           <div class="flex items-center gap-3">
-            <span class="text-[11px] font-mono text-slate-300">${data.message.substring(0, 36)}...</span>
+            <span class="text-[11px] font-mono text-slate-300">${escapeHtml(String(data.message.substring(0, 36)))}...</span>
             <span class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-sky-950 text-sky-400 border border-sky-800">${data.progress}%</span>
           </div>
         `;
         feed.insertBefore(item, feed.firstChild);
       }
 
+      // App metadata update if supplied
+      if (data.app_info) {
+        if (data.app_info.package_name) {
+          const el = document.getElementById('top-package-name');
+          if (el) el.textContent = data.app_info.package_name;
+          if (currentScan) currentScan.package_name = data.app_info.package_name;
+        }
+        if (data.app_info.framework) {
+          const el = document.getElementById('top-framework');
+          if (el) el.textContent = data.app_info.framework;
+          if (currentScan) currentScan.framework = data.app_info.framework;
+        }
+        if (data.app_info.obfuscation_level) {
+          const el = document.getElementById('top-obfuscation');
+          if (el) el.textContent = data.app_info.obfuscation_level;
+          if (currentScan) currentScan.obfuscation_level = data.app_info.obfuscation_level;
+        }
+      }
+
       // Live finding append
       if (data.finding && currentScan) {
         currentScan.findings = currentScan.findings || [];
-        currentScan.findings.unshift(data.finding);
-        document.getElementById('kpi-total').textContent = (currentScan.findings.length);
-        document.getElementById('nav-findings-count').textContent = currentScan.findings.length;
+        if (!currentScan.findings.some(f => f.id === data.finding.id || f.title === data.finding.title)) {
+          currentScan.findings.unshift(data.finding);
+        }
+        const totalCount = currentScan.findings.length;
+        const kpiTotal = document.getElementById('kpi-total');
+        if (kpiTotal) kpiTotal.textContent = totalCount;
+        const navCount = document.getElementById('nav-findings-count');
+        if (navCount) navCount.textContent = totalCount;
+
+        const critHigh = currentScan.findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH').length;
+        const medLow = currentScan.findings.filter(f => f.severity === 'MEDIUM' || f.severity === 'LOW').length;
+        const critHighEl = document.getElementById('kpi-critical-high');
+        if (critHighEl) critHighEl.textContent = critHigh;
+        const medLowEl = document.getElementById('kpi-med-low');
+        if (medLowEl) medLowEl.textContent = medLow;
+
         if (activeView === 'findings') applyFindingsFilter();
         showToast(`Discovered: ${data.finding.title}`, 'info');
       }
@@ -2547,7 +2599,7 @@
           body: JSON.stringify({ serial: dev, package_name: pkg, script_type: scriptType })
         });
         const data = await res.json();
-        showToast(`Frida ${scriptType} deployed: ${data.message || 'Hook active'}`, 'success');
+        showToast(`Frida ${scriptType}: ${data.status}`, data.status === 'executed' ? 'success' : 'error');
       } catch (err) {
         showToast(`Frida deploy error: ${err}`, 'error');
       }
@@ -2996,14 +3048,14 @@
       if (data.type === 'dast_progress') {
         const statusLabel = document.getElementById('dast-fuzz-status');
         if (statusLabel) {
-          statusLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> [${data.stage}] ${escapeHtml(data.message)}`;
+          statusLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> [${escapeHtml(String(data.stage))}] ${escapeHtml(data.message)}`;
         }
         // Append event to terminal
         const term = document.getElementById('dast-terminal');
         if (term) {
           const div = document.createElement('div');
           div.className = 'text-sky-400 font-mono font-medium';
-          div.textContent = `[*] [${data.stage} ${data.progress}%] ${data.message}`;
+          div.textContent = `[*] [${escapeHtml(String(data.stage))} ${data.progress}%] ${data.message}`;
           term.appendChild(div);
           term.scrollTop = term.scrollHeight;
         }
@@ -3050,7 +3102,7 @@
             <div class="flex items-start justify-between gap-4">
               <div class="space-y-1">
                 <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold border ${sevColor}">${f.severity}</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold border ${sevColor}">${escapeHtml(String(f.severity))}</span>
                   <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 font-semibold">${f.cwe_id || 'CWE'}</span>
                   <span class="text-xs text-slate-400 font-mono">CVSS ${f.cvss_score || 'N/A'}</span>
                   <span class="px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-800 text-[10px] font-mono text-purple-300">Live Dynamic</span>
@@ -3265,7 +3317,7 @@
         activeFridaScriptCode = data.script || '';
 
         previewFridaScript(scriptType, data.script);
-        showToast(`Frida hook [${scriptType}] deployed successfully to /data/local/tmp`, 'success');
+        showToast(`Frida [${scriptType}]: ${data.status}`, data.status === 'executed' ? 'success' : 'error');
         setTimeout(fetchDastLogcat, 1000);
       } catch (e) {
         showToast(`Frida deploy error: ${e}`, 'error');
@@ -3517,7 +3569,7 @@ public class DiagnosticHandler {
             <div class="flex items-start justify-between gap-3">
               <div>
                 <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sevColor}">${f.severity}</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sevColor}">${escapeHtml(String(f.severity))}</span>
                   <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 border border-slate-700">${escapeHtml(f.cwe_id)}</span>
                   ${f.owasp_masvs ? `<span class="px-1.5 py-0.2 rounded bg-sky-950 text-[10px] text-sky-300 border border-sky-800">${escapeHtml(f.owasp_masvs)}</span>` : ''}
                 </div>

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class AttackGraph:
     """Manages the Neo4j attack surface graph."""
     
-    def __init__(self, uri: str = "bolt://localhost:7687", user: str = "neo4j", password: str = "password"):
+    def __init__(self, uri: str = "bolt://localhost:7687", user: str = "neo4j", password: str = ""):
         self.uri = uri
         self.user = user
         self.password = password

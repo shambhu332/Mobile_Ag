@@ -54,12 +54,13 @@ class ReportEngine:
         logger.info("Saved Markdown report to %s", md_path)
         
         state["report_path"] = str(md_path)
+        state["json_report_path"] = str(json_path)
 
     def _prepare_data(self, state: ScanState) -> dict:
         """Extract and format data for reporting."""
         findings = [
             f for f in state.get("filtered_findings", [])
-            if f.get("status") == FindingStatus.CONFIRMED.value
+            if f.get("status") not in {FindingStatus.FALSE_POSITIVE.value, FindingStatus.DUPLICATE.value}
         ]
         
         # Sort by severity

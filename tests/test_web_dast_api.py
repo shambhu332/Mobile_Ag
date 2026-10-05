@@ -207,31 +207,14 @@ def test_dast_execute_adb_endpoint(client):
     assert "output" in data
 
 
-def test_copilot_poc_query(client):
-    response = client.post(
-        "/api/copilot",
-        json={
-            "prompt": "Give me a step by step PoC for exported activity",
-        },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert "Exploit PoC" in data["response"]
+def test_copilot_requires_real_scan(client):
+    assert client.post('/api/copilot', json={'prompt':'Write a PoC'}).status_code == 422
+    assert client.post('/api/copilot', json={'prompt':'Write a PoC', 'scan_id':'absent'}).status_code == 404
 
 
-def test_get_scan_apis_endpoint(client, monkeypatch):
-    monkeypatch.setenv("MOBILEAG_DEMO_MODE", "1")
-    response = client.get("/api/scans/scan_meesho_demo/apis")
-    assert response.status_code == 200
-    data = response.json()
-    assert "endpoints" in data
-    assert data["total"] >= 5
-    assert data["vulnerable_count"] >= 4
-    methods = [e["method"] for e in data["endpoints"]]
-    assert "GET" in methods
-    assert "POST" in methods
-    assert "DELETE" in methods
+def test_get_scan_apis_endpoint(client):
+    # No fabricated demo targets/endpoints in live mode.
+    assert client.get('/api/scans/scan_meesho_demo/apis').status_code == 404
 
 
 def test_api_test_replay_endpoint(client):

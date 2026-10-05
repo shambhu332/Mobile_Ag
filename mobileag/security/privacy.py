@@ -2,6 +2,9 @@
 import re
 
 _PATTERNS = [
+    re.compile(r'\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]+|sk_(?:live|test)_[A-Za-z0-9]{12,}|xai-[A-Za-z0-9_-]+)\b'),
+    re.compile(r'https://hooks\.slack\.com/services/[^\s\"\'<>]+'),
+    re.compile(r'(?i)(?:https?://)[^/\s:@]+:[^/\s@]+@[^\s]+'),
     re.compile(r'(?is)<string\s+name=["\'][^"\']*(?:token|password|secret|key)[^"\']*["\'][^>]*>.*?</string>'),
     re.compile(r'(?i)(Bearer\s+)[A-Za-z0-9_.+/=-]{12,}'),
     re.compile(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'),

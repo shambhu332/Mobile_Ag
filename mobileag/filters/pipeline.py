@@ -26,7 +26,7 @@ class FilterPipeline:
         4. Historical — were similar past findings TP or FP?
         5. Confidence — aggregate all scores into final confidence
 
-    Only findings that pass the confidence threshold remain unverified review candidates.
+    All findings remain unverified review candidates; low heuristic scores never silently discard them.
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class FilterPipeline:
             decompiled_path: Root of decompiled source tree.
 
         Returns:
-            List of ranked candidate findings that passed all filters.
+            All review candidates, ranked by heuristic scores; low scores do not prove a false positive.
         """
         logger.info("Starting filter pipeline for %d findings", len(findings))
         confirmed: list[Finding] = []
@@ -138,6 +138,8 @@ class FilterPipeline:
             # Layer 5: Final confidence scoring
             final_confidence = self._scorer.score(filter_scores, finding.severity.value)
 
+            finding.metadata["filter_reasons"] = filter_reasons
+            finding.metadata["assessment"] = "Heuristic scores, not exploit verification"
             # Update finding
             finding.filter_scores = filter_scores
             finding.confidence = final_confidence
@@ -151,11 +153,13 @@ class FilterPipeline:
                 )
             else:
                 finding.status = FindingStatus.UNVERIFIED
+                finding.metadata["below_confidence_threshold"] = True
+                confirmed.append(finding)  # Never silently discard an unverified candidate.
                 finding.false_positive_reasons = [
                     f"{k}: {v}" for k, v in filter_reasons.items()
                 ]
                 logger.info(
-                    "❌ FILTERED: %s (confidence: %.1f%% < threshold %.1f%%)",
+                    "LOW-CONFIDENCE CANDIDATE RETAINED: %s (confidence: %.1f%% < threshold %.1f%%)",
                     finding.title, final_confidence * 100, self._threshold * 100,
                 )
 

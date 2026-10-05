@@ -1,0 +1,55 @@
+{
+  "baseline": {
+    "raw": 1,
+    "retained": 1,
+    "confidence": 0.643,
+    "scores": {
+      "reachability": 0.95,
+      "sanitizer": 0.68,
+      "consensus": 0.5,
+      "historical": 0.5
+    }
+  },
+  "irrelevant_comment": {
+    "raw": 1,
+    "retained": 0,
+    "confidence": 0.522,
+    "scores": {
+      "reachability": 0.95,
+      "sanitizer": 0.2,
+      "consensus": 0.5,
+      "historical": 0.5
+    }
+  },
+  "context_path_lead": {
+    "outside_root_read": true,
+    "attacker_control_demonstrated": false
+  },
+  "crawler": {
+    "reported_package": "org.example.intended",
+    "foreground_fixture_package": "org.example.unrelated",
+    "device_commands": [
+      [
+        "-s",
+        "synthetic-device",
+        "shell",
+        "input",
+        "tap",
+        "30",
+        "30"
+      ]
+    ],
+    "real_device_commands": 0
+  },
+  "cross_scan_triage": {
+    "status_code": 200,
+    "statuses": {
+      "ios-a": "FALSE_POSITIVE",
+      "ios-b": "FALSE_POSITIVE"
+    }
+  },
+  "traffic_malformed": {
+    "status": 500
+  },
+  "settings_offline_returned": false
+}

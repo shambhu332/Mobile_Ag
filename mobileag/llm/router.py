@@ -10,6 +10,7 @@ from config.llm_config import (
     get_models_for_task,
 )
 from config.settings import Settings
+from mobileag.security.privacy import redact
 from mobileag.llm.providers.base import BaseLLMProvider, LLMResponse
 from mobileag.llm.providers.gemini import GeminiProvider
 from mobileag.llm.providers.openai_gpt import OpenAIProvider
@@ -53,7 +54,7 @@ class LLMRouter:
 
         for config_name, config in configs.items():
             provider_cls = _PROVIDER_CLASSES.get(config_name)
-            if provider_cls and config.api_key:
+            if provider_cls and config.api_key and config_name in self._settings.approved_llm_providers:
                 try:
                     self._providers[config_name] = provider_cls(
                         api_key=config.api_key,
@@ -66,7 +67,7 @@ class LLMRouter:
                     logger.warning("Failed to init provider %s: %s", config_name, e)
 
         if not self._providers:
-            logger.error("No LLM providers available! Set at least one API key in .env")
+            logger.error("No approved configured LLM providers available; review offline mode, keys and approved_llm_providers")
 
     def get_available_providers(self) -> list[str]:
         """Return names of all initialized providers."""
@@ -133,8 +134,8 @@ class LLMRouter:
             )
 
             response = await provider.generate(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+                system_prompt=redact(system_prompt),
+                user_prompt=redact(user_prompt),
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
@@ -184,7 +185,7 @@ class LLMRouter:
             return [LLMResponse.from_error("router", "none", "No providers available")]
 
         tasks = [
-            provider.generate(system_prompt, user_prompt, temperature)
+            provider.generate(redact(system_prompt), redact(user_prompt), temperature)
             for provider in providers
         ]
 

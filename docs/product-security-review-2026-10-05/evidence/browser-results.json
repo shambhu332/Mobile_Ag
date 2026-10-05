@@ -1,0 +1,171 @@
+{
+  "browser": "155.0.8059.12",
+  "page_errors": [],
+  "failed_requests": [],
+  "initial_title": "MobileAg \u2014 Enterprise Mobile AppSec Testing Platform",
+  "libraries": {
+    "vis": "object",
+    "lucide": "object",
+    "Chart": "function",
+    "tailwind": "object"
+  },
+  "console": [
+    {
+      "type": "warning",
+      "text": "cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "warning",
+      "text": "Error fetching DAST devices: Error: Request failed (500)\n    at window.fetch (http://127.0.0.1:18764/:1227:15)\n    at async refreshDastDevices (http://127.0.0.1:18764/:2527:21)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load scan: TypeError: Cannot set properties of null (setting 'textContent')\n    at renderDashboard (http://127.0.0.1:18764/:1329:62)\n    at loadInitialScan (http://127.0.0.1:18764/:1316:9)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "warning",
+      "text": "Error fetching DAST devices: Error: Request failed (500)\n    at window.fetch (http://127.0.0.1:18764/:1227:15)\n    at async refreshDastDevices (http://127.0.0.1:18764/:2527:21)\n    at async loadDastView (http://127.0.0.1:18764/:2521:7)"
+    }
+  ],
+  "dashboard_render": {
+    "error": "TypeError: Cannot set properties of null (setting 'textContent')",
+    "missingObfuscationElement": true,
+    "actualFindings": 1,
+    "displayedFindings": "21",
+    "displayedMasvs": "78%"
+  },
+  "semantic_counts": {
+    "dialogs": 0,
+    "liveRegions": 0,
+    "inlineHandlers": 69,
+    "unlabelledInputs": [
+      "header-device-select",
+      "quick-file-input-surface",
+      "findings-search-input",
+      "status-filter-select",
+      "cfg-llm-primary",
+      "cfg-llm-fallback",
+      "cfg-entropy",
+      "cfg-neo4j-uri",
+      "dast-tcp-input",
+      "dast-input-package",
+      "dast-input-activity",
+      "dast-input-deeplink",
+      "dast-input-apk",
+      "dast-input-authority",
+      "dast-log-filter",
+      "taint-sample-selector",
+      "taint-file-path",
+      "taint-source-input",
+      "api-search-input",
+      "api-status-filter",
+      "copilot-chat-input",
+      "modal-file-picker",
+      "modal-apk-input",
+      "modal-provider-select"
+    ]
+  },
+  "xss": {
+    "benign_control_executions": 0,
+    "handler": "copySnippet('class%20Example%20%7B%20String%20marker%20%3D%20%22'-window.auditXssProbe(1)-'%22%3B%20Object%20c%20%3D%20Cipher.getInstance(%22AES%2FECB%2FPKCS5Padding%22)%3B%20%7D')",
+    "marker_executions": 1,
+    "authenticated_read_status": 200,
+    "finding_status": "UNVERIFIED"
+  },
+  "proof_text": "CAPTURED EXPLOITATION PROOF\nVERIFIED EVIDENCE\n\n            [RUNTIME TELEMETRY VERIFICATION]\nTarget: Example\nCWE: CWE-327 (CVSS 5.9)\nBytecode Reachability: VERIFIED\nStatus: SINK_REACHED\n          \n\nEvidence gathered via static call graph reachability or live dynamic runtime monitoring on connected testbed.",
+  "agent_action_requests": [],
+  "screens": {
+    "surface": {
+      "visibleControls": 26,
+      "smallTargets": 6,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "findings": {
+      "visibleControls": 37,
+      "smallTargets": 6,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "scans": {
+      "visibleControls": 25,
+      "smallTargets": 6,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "agents": {
+      "visibleControls": 31,
+      "smallTargets": 6,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "settings": {
+      "visibleControls": 30,
+      "smallTargets": 9,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "dast": {
+      "visibleControls": 54,
+      "smallTargets": 10,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "taint": {
+      "visibleControls": 26,
+      "smallTargets": 7,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    "api": {
+      "visibleControls": 29,
+      "smallTargets": 6,
+      "scrollWidth": 1440,
+      "viewport": 1440
+    }
+  },
+  "narrow": {
+    "viewport": 390,
+    "scrollWidth": 390,
+    "bodyOverflow": "hidden",
+    "main": [
+      {
+        "x": 240,
+        "width": 150
+      }
+    ],
+    "offscreenButtons": 9
+  },
+  "requests": [
+    "http://127.0.0.1:18764/",
+    "https://cdn.tailwindcss.com/",
+    "https://unpkg.com/vis-network/standalone/umd/vis-network.min.js",
+    "https://cdn.jsdelivr.net/npm/chart.js",
+    "https://unpkg.com/lucide@latest",
+    "https://cdn.tailwindcss.com/3.4.17",
+    "https://unpkg.com/vis-network@10.1.2/standalone/umd/vis-network.min.js",
+    "https://unpkg.com/lucide@1.52.0/dist/umd/lucide.min.js",
+    "http://127.0.0.1:18764/api/scans",
+    "http://127.0.0.1:18764/api/graph/status",
+    "http://127.0.0.1:18764/api/dast/devices",
+    "http://127.0.0.1:18764/api/scans/scan_synthetic_review/graph",
+    "http://127.0.0.1:18764/api/status",
+    "http://127.0.0.1:18764/api/scans",
+    "http://127.0.0.1:18764/api/agents",
+    "http://127.0.0.1:18764/api/settings",
+    "http://127.0.0.1:18764/api/dast/devices",
+    "http://127.0.0.1:18764/api/scans/scan_synthetic_review/apis"
+  ]
+}

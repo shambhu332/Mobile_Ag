@@ -1,0 +1,256 @@
+* Creating isolated environment: venv+pip...
+* Installing packages in isolated environment:
+  - setuptools>=68
+  - wheel
+* Getting build dependencies for wheel...
+running egg_info
+writing mobileag.egg-info/PKG-INFO
+writing dependency_links to mobileag.egg-info/dependency_links.txt
+writing entry points to mobileag.egg-info/entry_points.txt
+writing requirements to mobileag.egg-info/requires.txt
+writing top-level names to mobileag.egg-info/top_level.txt
+reading manifest file 'mobileag.egg-info/SOURCES.txt'
+writing manifest file 'mobileag.egg-info/SOURCES.txt'
+* Installed build dependency versions:
+  - setuptools==84.0.0
+  - wheel==0.48.0
+* Building wheel...
+running bdist_wheel
+running build
+running build_py
+running egg_info
+writing mobileag.egg-info/PKG-INFO
+writing dependency_links to mobileag.egg-info/dependency_links.txt
+writing entry points to mobileag.egg-info/entry_points.txt
+writing requirements to mobileag.egg-info/requires.txt
+writing top-level names to mobileag.egg-info/top_level.txt
+reading manifest file 'mobileag.egg-info/SOURCES.txt'
+writing manifest file 'mobileag.egg-info/SOURCES.txt'
+copying mobileag/web/static/theme.js -> build/lib/mobileag/web/static
+copying mobileag/web/static/dashboard.js -> build/lib/mobileag/web/static
+installing to build/bdist.linux-x86_64/wheel
+running install
+running install_lib
+creating build/bdist.linux-x86_64/wheel
+creating build/bdist.linux-x86_64/wheel/config
+copying build/lib/config/__init__.py -> build/bdist.linux-x86_64/wheel/./config
+copying build/lib/config/llm_config.py -> build/bdist.linux-x86_64/wheel/./config
+copying build/lib/config/settings.py -> build/bdist.linux-x86_64/wheel/./config
+creating build/bdist.linux-x86_64/wheel/mobileag
+copying build/lib/mobileag/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag
+copying build/lib/mobileag/cli.py -> build/bdist.linux-x86_64/wheel/./mobileag
+creating build/bdist.linux-x86_64/wheel/mobileag/core
+copying build/lib/mobileag/core/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/core
+copying build/lib/mobileag/core/state.py -> build/bdist.linux-x86_64/wheel/./mobileag/core
+copying build/lib/mobileag/core/orchestrator.py -> build/bdist.linux-x86_64/wheel/./mobileag/core
+creating build/bdist.linux-x86_64/wheel/mobileag/llm
+copying build/lib/mobileag/llm/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm
+copying build/lib/mobileag/llm/consensus.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm
+copying build/lib/mobileag/llm/fallback.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm
+creating build/bdist.linux-x86_64/wheel/mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/base.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/gemini.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/openai_gpt.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/deepseek.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/grok.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/providers/claude.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm/providers
+copying build/lib/mobileag/llm/router.py -> build/bdist.linux-x86_64/wheel/./mobileag/llm
+creating build/bdist.linux-x86_64/wheel/mobileag/reporting
+copying build/lib/mobileag/reporting/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+copying build/lib/mobileag/reporting/cvss.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+copying build/lib/mobileag/reporting/report_engine.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+copying build/lib/mobileag/reporting/masvs.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+copying build/lib/mobileag/reporting/finding.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+copying build/lib/mobileag/reporting/sarif_exporter.py -> build/bdist.linux-x86_64/wheel/./mobileag/reporting
+creating build/bdist.linux-x86_64/wheel/mobileag/reporting/templates
+copying build/lib/mobileag/reporting/templates/report.md.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/reporting/templates
+creating build/bdist.linux-x86_64/wheel/mobileag/ingestion
+copying build/lib/mobileag/ingestion/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+copying build/lib/mobileag/ingestion/apk_extractor.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+copying build/lib/mobileag/ingestion/manifest_parser.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+copying build/lib/mobileag/ingestion/framework_detector.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+copying build/lib/mobileag/ingestion/packer_detector.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+copying build/lib/mobileag/ingestion/obfuscation.py -> build/bdist.linux-x86_64/wheel/./mobileag/ingestion
+creating build/bdist.linux-x86_64/wheel/mobileag/analysis
+copying build/lib/mobileag/analysis/manifest_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/secret_scanner.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/code_reviewer.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/api_mapper.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/native_analyzer.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/dependency_scanner.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/network_security_config_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/binary_protection_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/react_native_scanner.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/taint_engine.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/call_graph.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+copying build/lib/mobileag/analysis/ios_analyzer.py -> build/bdist.linux-x86_64/wheel/./mobileag/analysis
+creating build/bdist.linux-x86_64/wheel/mobileag/filters
+copying build/lib/mobileag/filters/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/reachability.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/sanitizer_check.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/consensus_vote.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/historical_match.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/confidence.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+copying build/lib/mobileag/filters/pipeline.py -> build/bdist.linux-x86_64/wheel/./mobileag/filters
+creating build/bdist.linux-x86_64/wheel/mobileag/generators
+copying build/lib/mobileag/generators/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/generators
+copying build/lib/mobileag/generators/frida_generator.py -> build/bdist.linux-x86_64/wheel/./mobileag/generators
+copying build/lib/mobileag/generators/poc_generator.py -> build/bdist.linux-x86_64/wheel/./mobileag/generators
+creating build/bdist.linux-x86_64/wheel/mobileag/generators/templates
+creating build/bdist.linux-x86_64/wheel/mobileag/generators/templates/frida
+copying build/lib/mobileag/generators/templates/frida/ssl_pinning.js.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/frida
+copying build/lib/mobileag/generators/templates/frida/method_hook.js.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/frida
+copying build/lib/mobileag/generators/templates/frida/string_decrypt.js.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/frida
+copying build/lib/mobileag/generators/templates/frida/native_jni.js.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/frida
+creating build/bdist.linux-x86_64/wheel/mobileag/generators/templates/poc
+copying build/lib/mobileag/generators/templates/poc/content_provider.md.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/poc
+copying build/lib/mobileag/generators/templates/poc/deep_link.md.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/poc
+copying build/lib/mobileag/generators/templates/poc/bola_idor.md.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/poc
+copying build/lib/mobileag/generators/templates/poc/exported_component.md.j2 -> build/bdist.linux-x86_64/wheel/./mobileag/generators/templates/poc
+creating build/bdist.linux-x86_64/wheel/mobileag/knowledge
+copying build/lib/mobileag/knowledge/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/knowledge
+copying build/lib/mobileag/knowledge/schemas.py -> build/bdist.linux-x86_64/wheel/./mobileag/knowledge
+copying build/lib/mobileag/knowledge/neo4j_graph.py -> build/bdist.linux-x86_64/wheel/./mobileag/knowledge
+copying build/lib/mobileag/knowledge/qdrant_store.py -> build/bdist.linux-x86_64/wheel/./mobileag/knowledge
+copying build/lib/mobileag/knowledge/feedback.py -> build/bdist.linux-x86_64/wheel/./mobileag/knowledge
+creating build/bdist.linux-x86_64/wheel/mobileag/diffing
+copying build/lib/mobileag/diffing/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/diffing
+copying build/lib/mobileag/diffing/version_diff.py -> build/bdist.linux-x86_64/wheel/./mobileag/diffing
+creating build/bdist.linux-x86_64/wheel/mobileag/web
+copying build/lib/mobileag/web/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/web
+copying build/lib/mobileag/web/security.py -> build/bdist.linux-x86_64/wheel/./mobileag/web
+copying build/lib/mobileag/web/repository.py -> build/bdist.linux-x86_64/wheel/./mobileag/web
+creating build/bdist.linux-x86_64/wheel/mobileag/web/templates
+copying build/lib/mobileag/web/templates/index.html -> build/bdist.linux-x86_64/wheel/./mobileag/web/templates
+creating build/bdist.linux-x86_64/wheel/mobileag/web/static
+copying build/lib/mobileag/web/static/theme.js -> build/bdist.linux-x86_64/wheel/./mobileag/web/static
+copying build/lib/mobileag/web/static/dashboard.js -> build/bdist.linux-x86_64/wheel/./mobileag/web/static
+copying build/lib/mobileag/web/app.py -> build/bdist.linux-x86_64/wheel/./mobileag/web
+creating build/bdist.linux-x86_64/wheel/mobileag/dast
+copying build/lib/mobileag/dast/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/adb_manager.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/logcat_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/traffic_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/intent_fuzzer.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/storage_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/provider_auditor.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/frida_runner.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/deeplink_fuzzer.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/ui_crawler.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/memory_forensics.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+copying build/lib/mobileag/dast/mitm_proxy.py -> build/bdist.linux-x86_64/wheel/./mobileag/dast
+creating build/bdist.linux-x86_64/wheel/mobileag/security
+copying build/lib/mobileag/security/__init__.py -> build/bdist.linux-x86_64/wheel/./mobileag/security
+copying build/lib/mobileag/security/archives.py -> build/bdist.linux-x86_64/wheel/./mobileag/security
+copying build/lib/mobileag/security/privacy.py -> build/bdist.linux-x86_64/wheel/./mobileag/security
+copying build/lib/mobileag/security/network.py -> build/bdist.linux-x86_64/wheel/./mobileag/security
+creating build/bdist.linux-x86_64/wheel/mobileag/data
+copying build/lib/mobileag/data/masvs_mapping.json -> build/bdist.linux-x86_64/wheel/./mobileag/data
+running install_egg_info
+Copying mobileag.egg-info to build/bdist.linux-x86_64/wheel/./mobileag-0.1.0-py3.14.egg-info
+running install_scripts
+creating build/bdist.linux-x86_64/wheel/mobileag-0.1.0.dist-info/WHEEL
+creating '/tmp/mobileag-publication-wheel/.tmp-d62ezyat/mobileag-0.1.0-py3-none-any.whl' and adding 'build/bdist.linux-x86_64/wheel' to it
+adding 'config/__init__.py'
+adding 'config/llm_config.py'
+adding 'config/settings.py'
+adding 'mobileag/__init__.py'
+adding 'mobileag/cli.py'
+adding 'mobileag/analysis/__init__.py'
+adding 'mobileag/analysis/api_mapper.py'
+adding 'mobileag/analysis/binary_protection_auditor.py'
+adding 'mobileag/analysis/call_graph.py'
+adding 'mobileag/analysis/code_reviewer.py'
+adding 'mobileag/analysis/dependency_scanner.py'
+adding 'mobileag/analysis/ios_analyzer.py'
+adding 'mobileag/analysis/manifest_auditor.py'
+adding 'mobileag/analysis/native_analyzer.py'
+adding 'mobileag/analysis/network_security_config_auditor.py'
+adding 'mobileag/analysis/react_native_scanner.py'
+adding 'mobileag/analysis/secret_scanner.py'
+adding 'mobileag/analysis/taint_engine.py'
+adding 'mobileag/core/__init__.py'
+adding 'mobileag/core/orchestrator.py'
+adding 'mobileag/core/state.py'
+adding 'mobileag/dast/__init__.py'
+adding 'mobileag/dast/adb_manager.py'
+adding 'mobileag/dast/deeplink_fuzzer.py'
+adding 'mobileag/dast/frida_runner.py'
+adding 'mobileag/dast/intent_fuzzer.py'
+adding 'mobileag/dast/logcat_auditor.py'
+adding 'mobileag/dast/memory_forensics.py'
+adding 'mobileag/dast/mitm_proxy.py'
+adding 'mobileag/dast/provider_auditor.py'
+adding 'mobileag/dast/storage_auditor.py'
+adding 'mobileag/dast/traffic_auditor.py'
+adding 'mobileag/dast/ui_crawler.py'
+adding 'mobileag/data/masvs_mapping.json'
+adding 'mobileag/diffing/__init__.py'
+adding 'mobileag/diffing/version_diff.py'
+adding 'mobileag/filters/__init__.py'
+adding 'mobileag/filters/confidence.py'
+adding 'mobileag/filters/consensus_vote.py'
+adding 'mobileag/filters/historical_match.py'
+adding 'mobileag/filters/pipeline.py'
+adding 'mobileag/filters/reachability.py'
+adding 'mobileag/filters/sanitizer_check.py'
+adding 'mobileag/generators/__init__.py'
+adding 'mobileag/generators/frida_generator.py'
+adding 'mobileag/generators/poc_generator.py'
+adding 'mobileag/generators/templates/frida/method_hook.js.j2'
+adding 'mobileag/generators/templates/frida/native_jni.js.j2'
+adding 'mobileag/generators/templates/frida/ssl_pinning.js.j2'
+adding 'mobileag/generators/templates/frida/string_decrypt.js.j2'
+adding 'mobileag/generators/templates/poc/bola_idor.md.j2'
+adding 'mobileag/generators/templates/poc/content_provider.md.j2'
+adding 'mobileag/generators/templates/poc/deep_link.md.j2'
+adding 'mobileag/generators/templates/poc/exported_component.md.j2'
+adding 'mobileag/ingestion/__init__.py'
+adding 'mobileag/ingestion/apk_extractor.py'
+adding 'mobileag/ingestion/framework_detector.py'
+adding 'mobileag/ingestion/manifest_parser.py'
+adding 'mobileag/ingestion/obfuscation.py'
+adding 'mobileag/ingestion/packer_detector.py'
+adding 'mobileag/knowledge/__init__.py'
+adding 'mobileag/knowledge/feedback.py'
+adding 'mobileag/knowledge/neo4j_graph.py'
+adding 'mobileag/knowledge/qdrant_store.py'
+adding 'mobileag/knowledge/schemas.py'
+adding 'mobileag/llm/__init__.py'
+adding 'mobileag/llm/consensus.py'
+adding 'mobileag/llm/fallback.py'
+adding 'mobileag/llm/router.py'
+adding 'mobileag/llm/providers/__init__.py'
+adding 'mobileag/llm/providers/base.py'
+adding 'mobileag/llm/providers/claude.py'
+adding 'mobileag/llm/providers/deepseek.py'
+adding 'mobileag/llm/providers/gemini.py'
+adding 'mobileag/llm/providers/grok.py'
+adding 'mobileag/llm/providers/openai_gpt.py'
+adding 'mobileag/reporting/__init__.py'
+adding 'mobileag/reporting/cvss.py'
+adding 'mobileag/reporting/finding.py'
+adding 'mobileag/reporting/masvs.py'
+adding 'mobileag/reporting/report_engine.py'
+adding 'mobileag/reporting/sarif_exporter.py'
+adding 'mobileag/reporting/templates/report.md.j2'
+adding 'mobileag/security/__init__.py'
+adding 'mobileag/security/archives.py'
+adding 'mobileag/security/network.py'
+adding 'mobileag/security/privacy.py'
+adding 'mobileag/web/__init__.py'
+adding 'mobileag/web/app.py'
+adding 'mobileag/web/repository.py'
+adding 'mobileag/web/security.py'
+adding 'mobileag/web/static/dashboard.js'
+adding 'mobileag/web/static/theme.js'
+adding 'mobileag/web/templates/index.html'
+adding 'mobileag-0.1.0.dist-info/METADATA'
+adding 'mobileag-0.1.0.dist-info/WHEEL'
+adding 'mobileag-0.1.0.dist-info/entry_points.txt'
+adding 'mobileag-0.1.0.dist-info/top_level.txt'
+adding 'mobileag-0.1.0.dist-info/RECORD'
+removing build/bdist.linux-x86_64/wheel
+Successfully built mobileag-0.1.0-py3-none-any.whl

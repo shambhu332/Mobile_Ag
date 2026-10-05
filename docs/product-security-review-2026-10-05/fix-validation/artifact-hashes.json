@@ -1,0 +1,12 @@
+{
+  "browser-results.json": "94228e03efd7a6c6f0c9a96bf1120ce480daf1327a0f6cd4d56fac4eb1902ab3",
+  "fixed-desktop.png": "9aa2fa935d02ade8551f7edd4d2c28f790585d24d500e734cdd3c13dc9783607",
+  "fixed-narrow.png": "53f071d23412c87cb5cb9420cd8c520c09d43fcf1787f33cded96ce2bd076b77",
+  "installed-wheel.json": "29bbc2a143f6ebd280609006193ab3c4f00280ac3dccd1ae5ae33785051b2ecd",
+  "publication-validation.json": "125ffcb1e7a8dadc74751ab0c8e418d5980dd618de59f909a5a1aa395738409f",
+  "pytest-before-publication.txt": "035ecadcd1bc2c30a57de0b3e978cbd7412eef2a4f80c14dd70b2da02cccfe66",
+  "pytest.txt": "e76b0fddcd78c204c4de11a7a12de3a1e83f4a4a0c7058c9d013cbbc146378cf",
+  "source-hashes.json": "4d502d5e1b8600069d93e027580ddc12fabf94c70398dd3b22f34e09a0b604b0",
+  "wheel-build-before-publication.txt": "f64909c4137381e0ddd803816b364ca685c4adcc7c1a7535623ddb9105152062",
+  "wheel-build.txt": "99c96db17027ac024809353b35dac0c3cd15662aed95120495078fd808169de1"
+}

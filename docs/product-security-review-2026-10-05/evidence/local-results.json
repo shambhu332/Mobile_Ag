@@ -1,0 +1,128 @@
+{
+  "fixture_root": "/tmp/mobileag-product-review-2vuwz5ok",
+  "privacy": {
+    "candidate_secret_in_provider_prompt": true,
+    "provider_call_count": 1,
+    "real_network_calls": 0
+  },
+  "controls": {
+    "anonymous_status": 401,
+    "authenticated_status": 200,
+    "foreign_origin": 403,
+    "outside_device_scope": 403,
+    "outside_url_scope": 403,
+    "dashboard_security_headers": {}
+  },
+  "persisted_feedback": {
+    "post_code": 200,
+    "post": {
+      "status": "success",
+      "finding_id": "synthetic-finding",
+      "verdict": "CONFIRMED",
+      "confidence_adjustment": 0.0,
+      "synced_to_vector_store": false
+    },
+    "get_status": "UNVERIFIED"
+  },
+  "unknown_feedback": {
+    "status_code": 200,
+    "result": {
+      "status": "success",
+      "finding_id": "nonexistent",
+      "verdict": "FALSE_POSITIVE",
+      "confidence_adjustment": 0.0,
+      "synced_to_vector_store": false
+    }
+  },
+  "copilot": {
+    "status_code": 200,
+    "response": {
+      "status": "success",
+      "query": "Write a bounty report",
+      "response": "### \ud83d\udcc4 Bug Bounty Submission Draft (HackerOne / Bugcrowd)\n\n**Title**: Improper Access Control allows unauthorized access to internal navigation via exported `DeepLinkRouterActivity`\n**Severity**: High (CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N - 8.4)\n**Weakness**: CWE-926 (Improper Export of Android Application Components)\n\n**Summary**:\nThe `DeepLinkRouterActivity` is declared with `android:exported=\"true\"` and handles custom deep-links without checking caller package identity or requiring a signature permission. A malicious application installed on the same device can issue crafted intents to bypass authentication.\n\n**Steps to Reproduce**:\n1. Install target application version 14.8.2.\n2. Execute `adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=evil.com\" --ez admin_override true`.\n3. Observe that internal administrative state is reachable without login credentials.\n\n**Impact**:\nPrivilege escalation and unauthorized session takeover from any non-privileged third-party app.",
+      "timestamp": "11:19:32"
+    }
+  },
+  "agents": [
+    {
+      "id": "manifest_auditor",
+      "name": "Manifest Auditor",
+      "category": "Manifest & IPC",
+      "status": "IDLE",
+      "last_runtime": "1.2s",
+      "findings_count": 4,
+      "masvs": "MASVS-PLATFORM",
+      "description": "Parses AndroidManifest.xml for unpermissioned exported activities, services, receivers, and debug flags."
+    },
+    {
+      "id": "secret_scanner",
+      "name": "Secret & Token Scanner",
+      "category": "Data Protection",
+      "status": "IDLE",
+      "last_runtime": "3.8s",
+      "findings_count": 3,
+      "masvs": "MASVS-CRYPTO",
+      "description": "Calculates Shannon entropy across decompiled strings, code, and resources to flag hardcoded credentials."
+    },
+    {
+      "id": "code_reviewer",
+      "name": "AST Code Reviewer",
+      "category": "Static Code Analysis",
+      "status": "IDLE",
+      "last_runtime": "8.4s",
+      "findings_count": 5,
+      "masvs": "MASVS-CODE",
+      "description": "Contextual AST analysis of PendingIntent mutability, Intent redirection trampolines, and TrustManagers."
+    },
+    {
+      "id": "binary_auditor",
+      "name": "Binary ELF Auditor",
+      "category": "Native Security",
+      "status": "IDLE",
+      "last_runtime": "0.9s",
+      "findings_count": 2,
+      "masvs": "MASVS-RESILIENCE",
+      "description": "Uses pyelftools to verify NX bit, Full/Partial RELRO, Stack Canaries, and PIE in compiled .so libraries."
+    },
+    {
+      "id": "netsec_auditor",
+      "name": "Network Config Auditor",
+      "category": "Transport Security",
+      "status": "IDLE",
+      "last_runtime": "0.4s",
+      "findings_count": 2,
+      "masvs": "MASVS-NETWORK",
+      "description": "Audits network_security_config.xml for cleartext traffic overrides and custom user CA trust anchors."
+    },
+    {
+      "id": "react_native_scanner",
+      "name": "React Native Scanner",
+      "category": "Cross-Platform",
+      "status": "IDLE",
+      "last_runtime": "1.1s",
+      "findings_count": 1,
+      "masvs": "MASVS-STORAGE",
+      "description": "Parses index.android.bundle for embedded JavaScript endpoints, credentials, and exposed bridge routes."
+    },
+    {
+      "id": "dependency_scanner",
+      "name": "Dependency CVE Scanner",
+      "category": "SCA & Third-Party",
+      "status": "IDLE",
+      "last_runtime": "1.5s",
+      "findings_count": 2,
+      "masvs": "MASVS-CODE",
+      "description": "Queries Google OSV API for known published CVEs against extracted build.gradle dependencies."
+    },
+    {
+      "id": "consensus_filter",
+      "name": "Multi-Model Consensus",
+      "category": "False-Positive Elimination",
+      "status": "IDLE",
+      "last_runtime": "4.2s",
+      "findings_count": 0,
+      "masvs": "VERIFICATION",
+      "description": "Runs multi-LLM voting pass across high-confidence candidates to eliminate static false positives."
+    }
+  ]
+}

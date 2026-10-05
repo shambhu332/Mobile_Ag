@@ -1,0 +1,9 @@
+{
+  "imported_from": "/tmp/mobileag-installed-wheel-JKgUvQ/site/mobileag/web/app.py",
+  "dashboard": 200,
+  "public_javascript_assets": 200,
+  "anonymous_settings": 401,
+  "authenticated_settings": 200,
+  "offline_default": true,
+  "cli_help": 0
+}

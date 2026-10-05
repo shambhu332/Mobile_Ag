@@ -33,7 +33,20 @@ class SecurityMiddleware:
     async def __call__(self, scope, receive, send):
         if scope['type'] not in ('http', 'websocket'):
             return await self.app(scope, receive, send)
-        request = Request(scope) if scope['type'] == 'http' else None
+        if scope['type'] == 'http':
+            original_send = send
+            async def secure_send(message):
+                if message['type'] == 'http.response.start':
+                    message = dict(message)
+                    message['headers'] = list(message.get('headers', [])) + [
+                        (b'x-content-type-options', b'nosniff'),
+                        (b'x-frame-options', b'DENY'),
+                        (b'referrer-policy', b'no-referrer'),
+                        (b'cache-control', b'no-store'),
+                        (b'content-security-policy',
+                         b"default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")]
+                await original_send(message)
+            send = secure_send
         headers = dict((k.decode().lower(), v.decode()) for k,v in scope['headers'])
         host = headers.get('host', '')
         hostname = urlsplit('http://' + host).hostname
@@ -42,7 +55,7 @@ class SecurityMiddleware:
         status = 403
         if hostname not in allowed or not origin_allowed(headers.get('origin'), host):
             error = 'Host or Origin not allowed'
-        elif scope['type'] == 'http' and scope['path'] != '/':
+        elif scope['type'] == 'http' and scope['path'] not in {'/', '/static/dashboard.js', '/static/theme.js'}:
             if not authorized(headers.get('authorization', '').removeprefix('Bearer '), self.owner.state.auth_token):
                 error, status = 'Bearer authentication required', 401
         if error:

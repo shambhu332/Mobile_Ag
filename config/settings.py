@@ -10,7 +10,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     """MobileAg platform configuration."""
 
-    # ── LLM API Keys (all optional — works with minimum 1) ──
+    # ── LLM API Keys (all optional — explicit approval required for cloud use) ──
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     DEEPSEEK_API_KEY: Optional[str] = None
@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     # ── Output ──
     OUTPUT_DIR: str = "./output"
 
-    offline: bool = False
+    offline: bool = True
+    approved_llm_providers: list[str] = Field(default_factory=list)
     enable_deep_taint: bool = True
     enable_reachability_filter: bool = True
     enable_consensus_voting: bool = True
@@ -52,18 +53,13 @@ class Settings(BaseSettings):
         """Return list of LLM providers that have API keys configured."""
         if self.offline:
             return []
-        providers = []
-        if self.GEMINI_API_KEY:
-            providers.append("gemini")
-        if self.OPENAI_API_KEY:
-            providers.append("openai")
-        if self.DEEPSEEK_API_KEY:
-            providers.append("deepseek")
-        if self.XAI_API_KEY:
-            providers.append("grok")
-        if self.ANTHROPIC_API_KEY:
-            providers.append("claude")
-        return providers
+        available = {
+            'gemini_flash': self.GEMINI_API_KEY, 'gemini_pro': self.GEMINI_API_KEY,
+            'openai': self.OPENAI_API_KEY, 'deepseek': self.DEEPSEEK_API_KEY,
+            'grok': self.XAI_API_KEY, 'claude': self.ANTHROPIC_API_KEY,
+        }
+        return [name for name, key in available.items() if key and name in self.approved_llm_providers]
+
 
 
 def get_settings() -> Settings:

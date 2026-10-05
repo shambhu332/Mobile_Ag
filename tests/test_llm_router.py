@@ -10,6 +10,8 @@ from mobileag.llm.providers.base import LLMResponse, BaseLLMProvider
 def mock_settings():
     """Provide a settings object with dummy API keys."""
     return Settings(
+        _env_file=None, offline=False,
+        approved_llm_providers=['openai', 'gemini_pro', 'gemini_flash'],
         GEMINI_API_KEY="dummy_gemini_key",
         OPENAI_API_KEY="dummy_openai_key",
         DEEPSEEK_API_KEY=None,

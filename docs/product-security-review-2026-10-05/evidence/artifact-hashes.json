@@ -1,0 +1,29 @@
+{
+  "created_utc": "2026-10-05T12:16:19.159630+00:00",
+  "sha256": {
+    "API_MATRIX.md": "8e5609e96574b227c5b39352fc4301af465edc6d9c16ea4461ed774327174b02",
+    "ARCHITECTURE_AND_ROADMAP.md": "1726af9973466016ae820b07cd3076f28a804a340ccbb04e182b6c4edac056ca",
+    "ATTACK_SURFACE.md": "fa5d9dfa89051506588ae37e70b0dfa934905a6a4198c88ae4865ec2c4cb5a4b",
+    "README.md": "4c3d7a4e835788c1f23450eb03d478c17766026026caf50ecca06a5ab3c9b596",
+    "SECURITY_FINDINGS.md": "5ef607b38734d921aba1049a062b8184abbec540ce09d5ecacf77905965edd95",
+    "UI_UX_REVIEW.md": "bc985e3ccfeaecf0d243929e2ec502a65396e77873913636e6b8494bb8786745",
+    "evidence/README.md": "2a6386242a99ef94012b08fee361bbe4795a59f6a233dd847358658c43fe8bd1",
+    "evidence/analysis-results.json": "b114643d48125042105583035d77a358067d43722d900e7c6e1f855bbf804de1",
+    "evidence/analysis_probe.py": "168681bea2b258c4046c5197aaa919d4a37a0b59214ad6c61c5da46c283f9a16",
+    "evidence/browser-results.json": "a855845f1d466bb4325079a5b2983905f0a0a58bd5e7375e9e9edbd3f1af5683",
+    "evidence/browser_probe.py": "fb0b122a54dbd2cc1da62ad2e9f5b591eb3f04896e05b0506d67becbe6b127fa",
+    "evidence/dependency-osv.json": "95cb255111037df0bb5cfe2ad53f045eb3b60d4f0bcf0e44807eede265e7f77e",
+    "evidence/dependency_probe.py": "163527a824fb1da435224909496bf38cfffe3add7e4748f639095625456d61d4",
+    "evidence/desktop.png": "a6eebcdcffd0433d99d9f8f80661911c8d04387dcc0228770a6f032942c3746a",
+    "evidence/local-results.json": "e4f299bbb5a4f1c236f31c0a6b7d55ebcbef9c85a0a665e031db6d00e2be0d3c",
+    "evidence/local_probe.py": "bc8e9539a562fec1adae5b615c64e9fec71a5557b14f687d062f0daf5441c8dd",
+    "evidence/narrow390.png": "858325445f61f44e72cabd446e5ae9921441634a0b8fe756468860fc75236f93",
+    "evidence/proof-without-runtime.png": "9d92856425cd28b1afba38187631cf864292c570917ba3019510b2e41b30875c",
+    "evidence/pytest.txt": "60bd3625b5b7bed5b53b8fc6c6f675e7b5406c8fe0f7fb067477629a62c2d9e5",
+    "evidence/python-dependencies.json": "93bb7be12f9a6beabfe79d5af48e6f135f19691383e63aa072f74b9e0c6e332a",
+    "evidence/routes.json": "370bf410d4815cb3ee483fcfca9d577a22ffc6cdae771f23d56a609616438198",
+    "evidence/secret-pattern-locations.json": "c4ea7540d38ea0a328452968ade52d7e97f3e63cdb1f2d6641278263b0b7ef3a",
+    "evidence/source-snapshot.json": "5059b8d55e67900d666cbf6bd0572b31aa675a0d51fa691c2e47d751abe275a4",
+    "evidence/synthetic-finding.json": "80427e84d625d87043740e819776079f18112ea10d6478df91136cdee7ffc41e"
+  }
+}

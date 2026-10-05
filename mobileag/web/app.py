@@ -9,6 +9,12 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=False)
 import secrets
+import re
+import hashlib
+import shutil
+import time
+from mobileag import __version__
+from mobileag.web.repository import ScanRepository, private_write
 import uuid
 from mobileag.web.security import SecurityMiddleware, authorized, check_device
 from mobileag.security.archives import validate_archive, MAX_UPLOAD
@@ -16,12 +22,13 @@ from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
+from fastapi import BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 import httpx
 
 from config.settings import get_settings
@@ -81,12 +88,13 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title="MobileAg — AppSec Dashboard",
-    description="Autonomous Mobile Security Intelligence & Analyst Workspace",
-    version="2.2.0",
+    description="Local, scoped mobile security research workbench",
+    version=__version__,
 )
 
 app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
 app.add_middleware(SecurityMiddleware, owner=app)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # Global in-memory data store for scans and runtime settings
 DEMO_SCAN_CACHE: Optional[dict[str, Any]] = None
@@ -100,17 +108,7 @@ def remember_findings(findings):
     RUNTIME_FINDINGS.extend(redact(findings))
     del RUNTIME_FINDINGS[:-1000]
 
-RUNTIME_SETTINGS = {
-    "llm_primary_provider": "gemini_pro",
-    "llm_fallback_provider": "openai",
-    "entropy_threshold": 4.5,
-    "enable_deep_taint": True,
-    "enable_reachability_filter": True,
-    "enable_consensus_voting": True,
-    "neo4j_uri": "bolt://localhost:7687",
-    "qdrant_host": "localhost",
-    "qdrant_port": 6333,
-}
+RUNTIME_SETTINGS: dict[str, Any] = {}
 
 
 # =============================================================================
@@ -180,293 +178,51 @@ async def websocket_telemetry(websocket: WebSocket) -> None:
 # =============================================================================
 # Demo & Scan Data Utilities
 # =============================================================================
-def get_initial_demo_scan() -> dict[str, Any]:
-    """Return realistic, high-fidelity AppSec scan data for initial visualization."""
-    global DEMO_SCAN_CACHE
-    if DEMO_SCAN_CACHE is not None:
-        return DEMO_SCAN_CACHE
+def get_initial_demo_scan():
+    raise HTTPException(404, "Demo results are not available in the live workbench")
 
-    DEMO_SCAN_CACHE = {
-        "scan_id": "scan_meesho_demo",
-        "app_name": "Target Mobile App",
-        "package_name": "com.target.mobile.app",
-        "version": "14.8.2",
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "status": "completed",
-        "framework": "Native (Java/Kotlin)",
-        "obfuscation_level": "Moderate (R8 / ProGuard)",
-        "stats": {
-            "critical": 2,
-            "high": 4,
-            "medium": 7,
-            "low": 5,
-            "info": 3,
-            "total": 21,
-            "masvs_score": 78,
-            "consensus_accuracy": 94.2,
-        },
-        "masvs_compliance": {
-            "Storage & Privacy": 72,
-            "Cryptography": 85,
-            "Authentication": 65,
-            "Network Security": 80,
-            "Platform Interaction": 60,
-            "Code Quality": 90,
-            "Resilience": 75,
-        },
-        "agent_telemetry": [
-            {"name": "Manifest Auditor", "status": "completed", "duration": "1.2s", "findings": 4, "state": "success"},
-            {"name": "Secret Scanner", "status": "completed", "duration": "3.8s", "findings": 3, "state": "success"},
-            {"name": "Binary Protection (ELF)", "status": "completed", "duration": "0.9s", "findings": 2, "state": "success"},
-            {"name": "Network Config Auditor", "status": "completed", "duration": "0.4s", "findings": 2, "state": "success"},
-            {"name": "Code Reviewer (AST)", "status": "completed", "duration": "8.4s", "findings": 5, "state": "success"},
-            {"name": "API Route Mapper", "status": "completed", "duration": "2.1s", "findings": 3, "state": "success"},
-            {"name": "Dependency CVE Scanner", "status": "completed", "duration": "1.5s", "findings": 2, "state": "success"},
-            {"name": "Multi-Model Consensus", "status": "completed", "duration": "4.2s", "findings": 0, "state": "success"},
-        ],
-        "findings": [
-            {
-                "id": "find-001",
-                "title": "CWE-926: Exported Activity Without Permission Guard",
-                "severity": "CRITICAL",
-                "confidence": 0.95,
-                "cwe_id": "CWE-926",
-                "cvss_score": 8.4,
-                "cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-                "owasp_masvs": "MASVS-PLATFORM-1",
-                "affected_component": "com.target.mobile.app.activity.DeepLinkRouterActivity",
-                "file_path": "AndroidManifest.xml",
-                "line_number": 42,
-                "code_snippet": '<activity android:name=".activity.DeepLinkRouterActivity"\n          android:exported="true">\n    <intent-filter>\n        <action android:name="android.intent.action.VIEW"/>\n        <category android:name="android.intent.category.DEFAULT"/>\n        <category android:name="android.intent.category.BROWSABLE"/>\n        <data android:scheme="targetapp" android:host="auth"/>\n    </intent-filter>\n</activity>',
-                "description": "The Activity is exported without any permission requirement or intent verification, allowing any 3rd-party application installed on the device to invoke sensitive internal routing logic.",
-                "remediation": "Set android:exported=\"false\" if external invocation is not required, or enforce a signature-level permission (android:protectionLevel=\"signature\").",
-                "status": "CONFIRMED",
-                "poc_guide": "### Proof of Concept: Exported Activity Privilege Escalation\n\n#### Prerequisites\n- Connected Android device or emulator with ADB authorized\n- Target application (`com.target.mobile.app`) installed\n\n#### Steps to Reproduce\n1. Verify exported state via package manager dump:\n   `adb shell dumpsys package com.target.mobile.app | grep -A 8 DeepLinkRouterActivity`\n2. Issue crafted intent bypassing authentication to access internal router:\n   `adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=attacker.com\" --ez \"admin_override\" true`\n3. Observe Activity launching without security challenge or signature verification.\n\n#### Expected Result\nTarget Activity accepts invocation from unprivileged shell/app context and navigates to internal view.\n\n#### Security Impact\nAttackers can bypass application PIN/biometric authentication gates and manipulate internal session state.",
-                "adb_command": "am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=attacker.com\" --ez \"admin_override\" true",
-                "frida_script": "// Frida Hook: Intercept Intent parameters received by DeepLinkRouterActivity\nJava.perform(function () {\n    var DeepLinkRouterActivity = Java.use('com.target.mobile.app.activity.DeepLinkRouterActivity');\n    DeepLinkRouterActivity.onCreate.overload('android.os.Bundle').implementation = function (bundle) {\n        console.log('[+] Intercepted launch of DeepLinkRouterActivity!');\n        var intent = this.getIntent();\n        if (intent) {\n            console.log('[*] Action: ' + intent.getAction());\n            console.log('[*] Data URI: ' + intent.getDataString());\n            var extras = intent.getExtras();\n            if (extras) {\n                console.log('[*] Extras: ' + extras.toString());\n            }\n        }\n        return this.onCreate(bundle);\n    };\n});",
-                "proof_evidence": "[LOGCAT CAPTURE - ActivityTaskManager]\nSTART u0 {act=android.intent.action.VIEW dat=targetapp://auth?redirect=attacker.com cmp=com.target.mobile.app/.activity.DeepLinkRouterActivity (has extras)} from uid 2000\n[+] ActivityRecord{7a9b1c2 u0 com.target.mobile.app/.activity.DeepLinkRouterActivity t42} displayed: +42ms\n[+] Internal Router accepted payload: admin_override=true (Auth state bypassed)",
-            },
-            {
-                "id": "find-002",
-                "title": "CWE-319: Cleartext Traffic Permitted in Network Security Config",
-                "severity": "HIGH",
-                "confidence": 0.92,
-                "cwe_id": "CWE-319",
-                "cvss_score": 7.5,
-                "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-                "owasp_masvs": "MASVS-NETWORK-1",
-                "affected_component": "res/xml/network_security_config.xml",
-                "file_path": "res/xml/network_security_config.xml",
-                "line_number": 8,
-                "code_snippet": '<domain-config cleartextTrafficPermitted="true">\n    <domain includeSubdomains="true">api.dev.targetapp.internal</domain>\n    <domain includeSubdomains="true">cdn-staging.targetapp.com</domain>\n</domain-config>',
-                "description": "The network security configuration explicitly permits unencrypted HTTP traffic to internal and staging domains, enabling Man-in-the-Middle (MitM) credential interception and API response tampering.",
-                "remediation": "Remove cleartextTrafficPermitted=\"true\" from production builds using build-type resource overlays.",
-                "status": "CONFIRMED",
-                "poc_guide": "### Proof of Concept: Cleartext HTTP Interception (MitM)\n\n#### Prerequisites\n- Android test device connected via Wi-Fi with proxy or tcpdump\n- Target application configured to communicate with staging backend\n\n#### Steps to Reproduce\n1. Configure device proxy settings:\n   `adb shell settings put global http_proxy 127.0.0.1:8080`\n2. Trigger staging network call or inspect network config:\n   `adb shell curl -v \"http://api.dev.targetapp.internal/api/v1/config\"`\n3. Capture network traffic passing in cleartext over port 80.\n\n#### Expected Result\nUnencrypted HTTP requests and responses containing session tokens transmitted without TLS encapsulation.",
-                "adb_command": "curl -s -i \"http://api.dev.targetapp.internal/api/v1/config\" || echo 'Cleartext HTTP allowed per network_security_config.xml'",
-                "frida_script": "// Frida Hook: Detect and log cleartext HTTP traffic\nJava.perform(function () {\n    var RealCall = Java.use('okhttp3.RealCall');\n    RealCall.execute.implementation = function () {\n        var req = this.request();\n        var url = req.url().toString();\n        if (url.startsWith('http://')) {\n            console.log('[!] CLEARTEXT HTTP Request Detected: ' + url);\n        }\n        return this.execute();\n    };\n});",
-                "proof_evidence": "[CAPTURED HTTP TRANSACTION - Port 80 (Cleartext)]\nGET /api/v1/config HTTP/1.1\nHost: api.dev.targetapp.internal\nAuthorization: Bearer mock_session_jwt_leaked_in_cleartext\nUser-Agent: TargetApp/14.8.2 (Android 14)\n\nHTTP/1.1 200 OK\nContent-Type: application/json\n{\"status\":\"active\",\"internal_staging_db\":\"mongodb://10.0.0.4:27017/staging\"}",
-            },
-            {
-                "id": "find-003",
-                "title": "CWE-749: Insecure WebView Configuration (JavaScript Bridge Exposed)",
-                "severity": "HIGH",
-                "confidence": 0.88,
-                "cwe_id": "CWE-749",
-                "cvss_score": 7.8,
-                "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N",
-                "owasp_masvs": "MASVS-PLATFORM-2",
-                "affected_component": "com.target.mobile.app.views.CustomWebViewActivity",
-                "file_path": "com/target/mobile/app/views/CustomWebViewActivity.java",
-                "line_number": 89,
-                "code_snippet": "webSettings.setJavaScriptEnabled(true);\nwebSettings.setAllowFileAccessFromFileURLs(true);\nwebView.addJavascriptInterface(new NativeInterfaceBridge(this), \"AndroidBridge\");\nwebView.loadUrl(getIntent().getStringExtra(\"target_url\"));",
-                "description": "WebView loads an untrusted URL supplied via Intent extra while exposing a JavaScript interface and enabling file access from file URLs, permitting arbitrary local file exfiltration and cross-context script execution.",
-                "remediation": "Validate URLs against a strict whitelist before loading; disable setAllowFileAccessFromFileURLs and restrict bridge methods.",
-                "status": "CONFIRMED",
-                "poc_guide": "### Proof of Concept: WebView Arbitrary File Exfiltration\n\n#### Prerequisites\n- Android test device with ADB shell access\n\n#### Steps to Reproduce\n1. Launch `CustomWebViewActivity` with `target_url` pointing to local shared preferences:\n   `adb shell am start -n com.target.mobile.app/.views.CustomWebViewActivity --es \"target_url\" \"file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\"`\n2. Monitor Logcat or bridge responses for reflected file contents.\n\n#### Expected Result\nWebView renders local protected application storage files and exposes the `AndroidBridge` interface to arbitrary web contexts.",
-                "adb_command": "am start -n com.target.mobile.app/.views.CustomWebViewActivity --es \"target_url\" \"file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\"",
-                "frida_script": "// Frida Hook: Intercept WebView loadUrl and JS interfaces\nJava.perform(function () {\n    var WebView = Java.use('android.webkit.WebView');\n    WebView.loadUrl.overload('java.lang.String').implementation = function (url) {\n        console.log('[*] WebView.loadUrl() target: ' + url);\n        return this.loadUrl(url);\n    };\n    WebView.addJavascriptInterface.implementation = function (obj, name) {\n        console.log('[!] JavaScriptInterface Registered: ' + name + ' -> ' + obj.$className);\n        return this.addJavascriptInterface(obj, name);\n    };\n});",
-                "proof_evidence": "[WEBVIEW RUNTIME FORENSICS]\nLoaded URI: file:///data/data/com.target.mobile.app/shared_prefs/user_session.xml\nDescriptor: fd=52 (READ_ONLY)\nJS Interface Exfiltration: <map><string name=\"auth_token\">eyJhbGciOi...</string></map>\nBridge method 'AndroidBridge.postMessage' triggered successfully",
-            },
-            {
-                "id": "find-004",
-                "title": "CWE-119: Missing Stack Canary in Native ELF Library",
-                "severity": "MEDIUM",
-                "confidence": 1.0,
-                "cwe_id": "CWE-119",
-                "cvss_score": 6.2,
-                "cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
-                "owasp_masvs": "MASVS-CODE-4",
-                "affected_component": "lib/arm64-v8a/libcryptocore.so",
-                "file_path": "lib/arm64-v8a/libcryptocore.so",
-                "line_number": 1,
-                "code_snippet": "Symbol table inspection: missing __stack_chk_fail symbol\nNX Bit: ENABLED\nRELRO: FULL\nPIE: ENABLED",
-                "description": "The compiled shared library `libcryptocore.so` does not contain stack protector guards (__stack_chk_fail), significantly elevating the exploitability of native buffer overflows.",
-                "remediation": "Recompile native code with `-fstack-protector-strong` or `-fstack-protector-all` compiler flags in CMakeLists.txt / Android.mk.",
-                "status": "CONFIRMED",
-                "poc_guide": "### Proof of Concept: Native Stack Canary Verification\n\n#### Prerequisites\n- Host Linux environment or target device shell with `readelf`\n\n#### Steps to Reproduce\n1. Inspect `.dynsym` table of `libcryptocore.so`:\n   `readelf -s libcryptocore.so | grep __stack_chk`\n2. Note absence of canary check symbols.\n\n#### Expected Result\nNo reference to `__stack_chk_fail` or `__stack_chk_guard`, confirming missing compiler stack protections.",
-                "adb_command": "dumpsys meminfo com.target.mobile.app | grep -i cryptocore || echo 'Native library libcryptocore.so loaded without __stack_chk_fail'",
-                "frida_script": "// Frida Hook: Native module security audit\nvar mod = Process.findModuleByName('libcryptocore.so');\nif (mod) {\n    console.log('[+] Native module libcryptocore.so loaded at base: ' + mod.base);\n    var canary = mod.findExportByName('__stack_chk_fail');\n    console.log('[*] Stack Canary check: ' + (canary ? 'PRESENT' : 'MISSING (VULNERABLE)'));\n}",
-                "proof_evidence": "[ELF BINARY AUDIT]\nFile: lib/arm64-v8a/libcryptocore.so\nArchitecture: AArch64 (64-bit ARM)\nPIE: YES | NX: YES | RELRO: FULL\nStack Canary (__stack_chk_fail): MISSING (Compiler flag -fstack-protector omitted)",
-            },
-            {
-                "id": "find-005",
-                "title": "CWE-798: High-Entropy Hardcoded Private API Key",
-                "severity": "HIGH",
-                "confidence": 0.94,
-                "cwe_id": "CWE-798",
-                "cvss_score": 7.4,
-                "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-                "owasp_masvs": "MASVS-CRYPTO-1",
-                "affected_component": "com.target.mobile.app.network.ApiClient",
-                "file_path": "com/target/mobile/app/network/ApiClient.java",
-                "line_number": 31,
-                "code_snippet": 'private static final String FIREBASE_API_KEY = "AIzaSyD-mockExampleApiKeySafeForAudit42";\nprivate static final String AWS_SECRET_TOKEN = "AKIAIOSFODNN7EXAMPLE";',
-                "description": "Sensitive credentials and third-party API service tokens are hardcoded as static string constants directly inside client bytecode.",
-                "remediation": "Store secrets securely backend-side or utilize short-lived STS / OAuth tokens retrieved dynamically post-authentication.",
-                "status": "CONFIRMED",
-                "poc_guide": "### Proof of Concept: Hardcoded Credential Validation\n\n#### Prerequisites\n- `curl` or HTTP API testing tool\n\n#### Steps to Reproduce\n1. Extract hardcoded API key from disassembled bytecode:\n   `grep -rn \"AIzaSy\" smali/`\n2. Test API key authorization against service endpoint:\n   `curl -s \"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyD-mockExampleApiKeySafeForAudit42\"`\n3. Verify cloud identity service recognizes key.\n\n#### Expected Result\nAPI service responds with credential validation, proving real-world accessibility.",
-                "adb_command": "echo 'AIzaSyD-mockExampleApiKeySafeForAudit42 verified in com/target/mobile/app/network/ApiClient.class'",
-                "frida_script": "// Frida Hook: Intercept ApiClient initialization to monitor API keys in memory\nJava.perform(function () {\n    var ApiClient = Java.use('com.target.mobile.app.network.ApiClient');\n    console.log('[*] ApiClient class accessed');\n    console.log('[+] Leaked Firebase Key: ' + ApiClient.FIREBASE_API_KEY.value);\n});",
-                "proof_evidence": "[ENTROPY & SCANNER AUDIT]\nFile: com/target/mobile/app/network/ApiClient.java:31\nPattern: Google/Firebase API Key (AIzaSy[0-9A-Za-z_-]{33})\nCalculated Shannon Entropy: 4.84 bits/byte (Threshold > 4.5)\nVerification: Key present as public static constant string pool item",
-            },
-        ],
-        "attack_surface_graph": {
-            "nodes": [
-                {"id": "app", "label": "Target App\n(v14.8.2)", "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"},
-                {"id": "act1", "label": "DeepLinkRouter\n(Exported: True)", "group": "activity", "shape": "dot", "size": 22, "color": "#ef4444"},
-                {"id": "act2", "label": "CustomWebView\n(UXSS Sink)", "group": "activity", "shape": "dot", "size": 20, "color": "#f97316"},
-                {"id": "act3", "label": "MainActivity\n(Exported: True)", "group": "activity", "shape": "dot", "size": 18, "color": "#10b981"},
-                {"id": "srv1", "label": "SyncService\n(Background)", "group": "service", "shape": "dot", "size": 16, "color": "#8b5cf6"},
-                {"id": "deep1", "label": "targetapp://auth\n(Custom Scheme)", "group": "deeplink", "shape": "dot", "size": 18, "color": "#ef4444"},
-                {"id": "api1", "label": "api.dev.targetapp.internal\n(Cleartext HTTP)", "group": "api", "shape": "dot", "size": 20, "color": "#f97316"},
-                {"id": "api2", "label": "api.targetapp.com/v1\n(HTTPS / TLS)", "group": "api", "shape": "dot", "size": 18, "color": "#10b981"},
-                {"id": "sec1", "label": "Firebase Key\n(Hardcoded)", "group": "secret", "shape": "dot", "size": 18, "color": "#f97316"},
-                {"id": "so1", "label": "libcryptocore.so\n(No Canary)", "group": "native", "shape": "dot", "size": 18, "color": "#eab308"},
-                {"id": "cwe1", "label": "CWE-926\n(CVSS 8.4)", "group": "vuln", "shape": "square", "size": 24, "color": "#ef4444"},
-                {"id": "cwe2", "label": "CWE-319\n(CVSS 7.5)", "group": "vuln", "shape": "square", "size": 22, "color": "#f97316"},
-                {"id": "cwe3", "label": "CWE-749\n(CVSS 7.8)", "group": "vuln", "shape": "square", "size": 22, "color": "#f97316"},
-            ],
-            "edges": [
-                {"from": "app", "to": "act1", "label": "declares"},
-                {"from": "app", "to": "act2", "label": "declares"},
-                {"from": "app", "to": "act3", "label": "declares"},
-                {"from": "app", "to": "srv1", "label": "declares"},
-                {"from": "act1", "to": "deep1", "label": "filters"},
-                {"from": "deep1", "to": "act2", "label": "redirects"},
-                {"from": "act2", "to": "cwe3", "label": "triggers"},
-                {"from": "act1", "to": "cwe1", "label": "triggers"},
-                {"from": "app", "to": "api1", "label": "calls"},
-                {"from": "app", "to": "api2", "label": "calls"},
-                {"from": "api1", "to": "cwe2", "label": "violates"},
-                {"from": "app", "to": "sec1", "label": "contains"},
-                {"from": "app", "to": "so1", "label": "links"},
-            ],
-        },
-        "api_endpoints": [
-            {
-                "id": "api-001",
-                "method": "GET",
-                "url": "https://api.targetapp.com/v1/accounts/10023/transactions",
-                "host": "api.targetapp.com",
-                "path": "/v1/accounts/{id}/transactions",
-                "auth_type": "Bearer Token",
-                "parameters": [{"name": "id", "type": "path", "sample": "10023", "risk": "BOLA / IDOR"}],
-                "source": "Retrofit (AccountService.kt)",
-                "status": "VULNERABLE",
-                "owasp_api": "API1:2023 - Broken Object Level Authorization",
-                "cwe": "CWE-639",
-                "description": "Endpoint accepts sequential numeric account ID in path without checking whether requesting token owns the account resource.",
-                "sample_request": "GET /v1/accounts/10023/transactions HTTP/1.1\nHost: api.targetapp.com\nAuthorization: Bearer mock_token_for_audit\nAccept: application/json",
-                "sample_response": '{\n  "account_id": 10023,\n  "owner": "John Doe",\n  "balance": 4820.50,\n  "transactions": [\n    {"id": "tx_01", "amount": -150.00, "merchant": "Uber"}\n  ]\n}',
-                "curl_cmd": 'curl -X GET "https://api.targetapp.com/v1/accounts/10023/transactions" \\\n  -H "Authorization: Bearer <auth_token>" \\\n  -H "Accept: application/json"',
-            },
-            {
-                "id": "api-002",
-                "method": "POST",
-                "url": "http://api.dev.targetapp.internal/v1/auth/login",
-                "host": "api.dev.targetapp.internal",
-                "path": "/v1/auth/login",
-                "auth_type": "None (Public)",
-                "parameters": [{"name": "username", "type": "body"}, {"name": "password", "type": "body"}],
-                "source": "Network Security Config & Bytecode (AuthClient.java)",
-                "status": "VULNERABLE",
-                "owasp_api": "API8:2023 - Security Misconfiguration (Cleartext HTTP / Staging)",
-                "cwe": "CWE-319",
-                "description": "Unencrypted HTTP communication permitted to internal development/staging domain over port 80, enabling MitM credential harvesting.",
-                "sample_request": 'POST /v1/auth/login HTTP/1.1\nHost: api.dev.targetapp.internal\nContent-Type: application/json\n\n{"username":"admin","password":"dev_password_123"}',
-                "sample_response": '{\n  "status": "success",\n  "session_token": "dev_session_tok_42",\n  "debug_db": "mongodb://10.0.0.4:27017"\n}',
-                "curl_cmd": 'curl -X POST "http://api.dev.targetapp.internal/v1/auth/login" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"admin","password":"dev_password_123"}\'',
-            },
-            {
-                "id": "api-003",
-                "method": "GET",
-                "url": "https://api.targetapp.com/v1/users/profile",
-                "host": "api.targetapp.com",
-                "path": "/v1/users/profile",
-                "auth_type": "Bearer Token",
-                "parameters": [],
-                "source": "Retrofit (UserService.kt)",
-                "status": "VULNERABLE",
-                "owasp_api": "API3:2023 - Broken Object Property Level Authorization (PII Exposure)",
-                "cwe": "CWE-359",
-                "description": "API response payload returns excessive sensitive user PII including SSN, internal database roles, and bcrypt password hashes.",
-                "sample_request": "GET /v1/users/profile HTTP/1.1\nHost: api.targetapp.com\nAuthorization: Bearer mock_token_for_audit",
-                "sample_response": '{\n  "user_id": "usr_9921",\n  "email": "user@example.com",\n  "ssn": "123-45-6789",\n  "internal_role": "superadmin",\n  "password_hash": "$2b$12$e8Y7z9..."\n}',
-                "curl_cmd": 'curl -X GET "https://api.targetapp.com/v1/users/profile" \\\n  -H "Authorization: Bearer <auth_token>"',
-            },
-            {
-                "id": "api-004",
-                "method": "DELETE",
-                "url": "https://api.targetapp.com/v1/admin/users/9918",
-                "host": "api.targetapp.com",
-                "path": "/v1/admin/users/{id}",
-                "auth_type": "Bearer Token",
-                "parameters": [{"name": "id", "type": "path", "sample": "9918"}],
-                "source": "Retrofit (AdminService.kt - Privileged Route in Mobile Client)",
-                "status": "VULNERABLE",
-                "owasp_api": "API5:2023 - Broken Function Level Authorization (BFLA)",
-                "cwe": "CWE-285",
-                "description": "Privileged administrative user deletion endpoint referenced directly inside client APK without server-side role gating.",
-                "sample_request": "DELETE /v1/admin/users/9918 HTTP/1.1\nHost: api.targetapp.com\nAuthorization: Bearer mock_token_for_audit",
-                "sample_response": '{\n  "status": "deleted",\n  "user_id": 9918\n}',
-                "curl_cmd": 'curl -X DELETE "https://api.targetapp.com/v1/admin/users/9918" \\\n  -H "Authorization: Bearer <auth_token>"',
-            },
-            {
-                "id": "api-005",
-                "method": "POST",
-                "url": "https://api.targetapp.com/graphql",
-                "host": "api.targetapp.com",
-                "path": "/graphql",
-                "auth_type": "API Key (Header)",
-                "parameters": [{"name": "query", "type": "body"}],
-                "source": "Apollo GraphQL Client (CatalogService.java)",
-                "status": "SECURE",
-                "owasp_api": "GraphQL Gateway",
-                "cwe": "N/A",
-                "description": "Standard GraphQL catalog query gateway enforced over TLS with rate limiting headers present.",
-                "sample_request": 'POST /graphql HTTP/1.1\nHost: api.targetapp.com\nX-API-Key: target_mobile_v1\nContent-Type: application/json\n\n{"query":"query { products { id name price } }"}',
-                "sample_response": '{\n  "data": {\n    "products": [{"id":"1","name":"Product A","price":29.99}]\n  }\n}',
-                "curl_cmd": 'curl -X POST "https://api.targetapp.com/graphql" \\\n  -H "X-API-Key: target_mobile_v1" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"query":"{ products { id name } }"}\'',
-            },
-        ],
-    }
-    return DEMO_SCAN_CACHE
+
+
+def validate_scan_id(scan_id: str) -> None:
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', scan_id):
+        raise HTTPException(400, 'Invalid scan identifier')
+
+
+def repository() -> ScanRepository:
+    return ScanRepository(OUTPUT_DIR)
+
+
+def repository_import_legacy() -> None:
+    repo = repository()
+    for file in OUTPUT_DIR.glob('*/dashboard.json'):
+        sid = file.parent.name
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', sid) or repo.get(sid):
+            continue
+        if not file.resolve().is_relative_to(OUTPUT_DIR.resolve()) or file.stat().st_size > 16*1024*1024:
+            continue
+        try:
+            document = json.loads(file.read_text())
+            if isinstance(document, dict) and document.get('scan_id') == sid:
+                repo.save(document)
+        except (ValueError, OSError):
+            logger.warning('Could not import legacy scan %s', sid)
+
+
+def effective_runtime_settings() -> dict[str, Any]:
+    names = {'entropy_threshold', 'enable_deep_taint', 'enable_reachability_filter',
+             'enable_consensus_voting', 'offline'}
+    settings = get_settings()
+    values = {name: getattr(settings, name) for name in names}
+    values.update({k:v for k,v in repository().get_settings().items() if k in names})
+    values.update({k:v for k,v in RUNTIME_SETTINGS.items() if k in names})
+    values['approved_llm_providers'] = settings.approved_llm_providers
+    return values
 
 
 def find_latest_reports() -> list[dict[str, Any]]:
-    """Scan output directory for generated reports."""
-    scans = []
-    if not OUTPUT_DIR.exists():
-        return scans
+    repository_import_legacy()
+    return repository().page(0, 100)[0]
 
-    for report_file in list(OUTPUT_DIR.glob("*/dashboard.json"))[-100:]:
-        try:
-            data = json.loads(report_file.read_text())
-            scans.append(data)
-        except Exception as e:
-            logger.warning("Could not read report %s: %e", report_file, e)
-    return scans
 
 
 # =============================================================================
@@ -487,8 +243,8 @@ async def get_system_status() -> dict[str, Any]:
     settings = get_settings()
     return {
         "status": "online",
-        "engine": "MobileAg Enterprise SAST",
-        "version": "2.2.0",
+        "engine": "MobileAg static review heuristics",
+        "version": __version__,
         "timestamp": datetime.now().isoformat(),
         "configured_llm_providers": settings.enabled_providers,
         "active_scans_count": len(ACTIVE_SCANS),
@@ -510,32 +266,42 @@ async def get_graph_status() -> dict[str, Any]:
 
 
 @app.get("/api/scans")
-async def list_scans() -> list[dict[str, Any]]:
-    """List all available scans (past & current)."""
-    reports = find_latest_reports()
-    if not reports:
-        return list(ACTIVE_SCANS.values())
-    return list(ACTIVE_SCANS.values()) + [r for r in reports if r.get("scan_id") not in ACTIVE_SCANS]
+async def list_scans(offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100),
+                     summaries: bool = False):
+    snapshots = list(ACTIVE_SCANS.values())
+    def read():
+        repository_import_legacy()
+        for scan in snapshots:
+            repository().save(scan)
+        rows, total = repository().page(offset, limit)
+        if summaries:
+            rows = [{k:s.get(k) for k in ('scan_id','app_name','package_name','version','created_at','status','progress','stats','revision','artifact_sha256','coverage','errors')} for s in rows]
+            return {'items': rows, 'total': total, 'offset': offset, 'limit': limit}
+        return rows  # Bounded compatibility mode; new UI always requests summaries.
+    return await asyncio.to_thread(read)
+
 
 
 @app.get("/api/scans/{scan_id}")
 async def get_scan_details(scan_id: str) -> dict[str, Any]:
-    """Retrieve full scan details, attack surface graph, and findings."""
-    if scan_id in ACTIVE_SCANS:
-        return ACTIVE_SCANS[scan_id]
+    validate_scan_id(scan_id)
+    if scan_id in ACTIVE_SCANS and ACTIVE_SCANS[scan_id].get('status') == 'running':
+        return redact(ACTIVE_SCANS[scan_id])
+    def read():
+        repo = repository()
+        scan = repo.get(scan_id)
+        if not scan:
+            file = OUTPUT_DIR / scan_id / 'dashboard.json'
+            if file.is_file() and file.resolve().is_relative_to(OUTPUT_DIR.resolve()) and file.stat().st_size <= 16*1024*1024:
+                document = json.loads(file.read_text())
+                if isinstance(document, dict) and document.get('scan_id') == scan_id:
+                    scan = repo.save(document)
+        return scan
+    scan = await asyncio.to_thread(read)
+    if scan is None:
+        raise HTTPException(404, 'Scan not found')
+    return redact(scan)
 
-    reports = find_latest_reports()
-    for r in reports:
-        if r.get("scan_id") == scan_id:
-            return r
-
-    if scan_id == "scan_meesho_demo" and os.environ.get("MOBILEAG_DEMO_MODE") == "1":
-        demo = get_initial_demo_scan()
-        demo["demo"] = True
-        demo["status"] = "demo"
-        return demo
-
-    raise HTTPException(status_code=404, detail="Scan not found")
 
 
 @app.get("/api/scans/{scan_id}/graph")
@@ -580,341 +346,117 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
         "scan_id": scan_id,
         "endpoints": apis,
         "total": len(apis),
-        "vulnerable_count": len([e for e in apis if e.get("status") == "VULNERABLE"]),
+        "vulnerable_count": 0,
+        "candidate_count": len([e for e in apis if e.get("status") == "VULNERABLE"]),
+        "assessment": "Discovered routes are unverified; no server authorization proof",
     }
 
 
 class FeedbackRequest(BaseModel):
-    verdict: str  # CONFIRMED / FALSE_POSITIVE / DUPLICATE
-    notes: Optional[str] = None
+    verdict: Literal['CONFIRMED', 'FALSE_POSITIVE', 'DUPLICATE', 'UNVERIFIED']
+    notes: str = Field(default='', max_length=10000)
+    revision: Optional[int] = Field(default=None, ge=0)
+
 
 
 @app.post("/api/findings/{finding_id}/feedback")
 async def submit_feedback(finding_id: str, feedback: FeedbackRequest) -> dict[str, Any]:
-    """Submit analyst triage verdict and update finding status in memory."""
-    logger.info("Feedback recorded for %s: %s", finding_id, feedback.verdict)
-    
-    if feedback.verdict not in {"CONFIRMED", "FALSE_POSITIVE", "DUPLICATE", "UNVERIFIED"}:
-        raise HTTPException(422, "Invalid finding status")
-    if feedback.verdict == "CONFIRMED" and not feedback.notes:
-        raise HTTPException(422, "Confirmation requires validation evidence in notes")
-    for f in RUNTIME_FINDINGS:
-        if f.get("id") == finding_id:
-            f["status"] = feedback.verdict
-            f["validation_notes"] = redact(feedback.notes or "")
+    # Compatibility endpoint: never silently fan out across scans or runtime rings.
+    if feedback.verdict == 'CONFIRMED' and not feedback.notes.strip():
+        raise HTTPException(422, 'Confirmation requires observed validation evidence')
+    raise HTTPException(409, 'Scan identity is required; use /api/scans/{scan_id}/findings/{finding_id}/feedback')
 
-    # Update in active scans
-    for scan in ACTIVE_SCANS.values():
-        for f in scan.get("findings", []):
-            if f.get("id") == finding_id:
-                f["status"] = feedback.verdict
-                f["validation_notes"] = redact(feedback.notes or "")
-                break
 
-    return {
-        "status": "success",
-        "finding_id": finding_id,
-        "verdict": feedback.verdict,
-        "confidence_adjustment": 0.0,
-        "synced_to_vector_store": False,
-    }
+@app.post('/api/scans/{scan_id}/findings/{finding_id}/feedback')
+async def submit_scan_feedback(scan_id: str, finding_id: str, feedback: FeedbackRequest):
+    validate_scan_id(scan_id)
+    if feedback.verdict == 'CONFIRMED' and not feedback.notes.strip():
+        raise HTTPException(422, 'Confirmation requires observed validation evidence')
+    await get_scan_details(scan_id)  # Import legacy documents on first access.
+    try:
+        scan = await asyncio.to_thread(repository().triage, scan_id, finding_id,
+                                      feedback.verdict, feedback.notes, feedback.revision)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    if scan_id in ACTIVE_SCANS:
+        ACTIVE_SCANS[scan_id] = scan
+    return {'status': 'saved', 'scan_id': scan_id, 'finding_id': finding_id,
+            'revision': scan['revision'], 'verdict': feedback.verdict,
+            'persistence': 'local_sqlite'}
+
+
+@app.get('/api/scans/{scan_id}/decisions')
+async def scan_decisions(scan_id: str):
+    await get_scan_details(scan_id)
+    return {'scan_id': scan_id, 'decisions': await asyncio.to_thread(repository().history, scan_id)}
 
 
 class CopilotRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(max_length=10000)
     scan_id: Optional[str] = None
 
 
 @app.post("/api/copilot")
 async def query_copilot(req: CopilotRequest) -> dict[str, Any]:
-    """Analyze security findings and generate contextual explanations / remediation code."""
-    p = req.prompt.lower().strip()
-    
-    if "poc" in p or "reproduce" in p or "step" in p:
-        response_text = (
-            "### ⚡ Exploit PoC Reproduction Guide\n\n"
-            "**Target Vulnerability**: CWE-926 (Unprotected Exported Activity)\n"
-            "**Component**: `com.target.mobile.app.activity.DeepLinkRouterActivity`\n\n"
-            "#### Prerequisites:\n"
-            "- Rooted or non-rooted Android 10+ device with ADB enabled\n"
-            "- Target application installed: `adb install target.apk`\n\n"
-            "#### Steps to Reproduce:\n"
-            "1. **Confirm Exported State**:\n"
-            "   ```bash\n"
-            "   adb shell dumpsys package com.target.mobile.app | grep -A 8 DeepLinkRouterActivity\n"
-            "   ```\n"
-            "2. **Dispatch Crafted Intent Payload**:\n"
-            "   ```bash\n"
-            "   adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity \\\n"
-            "       -d \"targetapp://auth?redirect=attacker.com\" \\\n"
-            "       --ez \"admin_override\" true\n"
-            "   ```\n"
-            "3. **Inspect Execution Proof in Logcat**:\n"
-            "   ```bash\n"
-            "   adb logcat -s ActivityTaskManager:I DeepLinkRouterActivity:D\n"
-            "   ```\n\n"
-            "**Observed Result**: Activity bypasses authentication gate and executes internal administrative routing logic without restriction."
-        )
-    elif "adb" in p or "command" in p:
-        response_text = (
-            "### 💻 1-Click ADB Verification Command\n\n"
-            "To verify the active finding directly on your connected device:\n\n"
-            "```bash\n"
-            "# 1. Launch target component with bypass parameters\n"
-            "adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity \\\n"
-            "    -d \"targetapp://auth?redirect=attacker.com\" \\\n"
-            "    --ez \"admin_override\" true\n"
-            "\n"
-            "# 2. Dump local storage to verify access\n"
-            "adb shell run-as com.target.mobile.app ls -la shared_prefs/\n"
-            "```\n\n"
-            "*Tip: You can also click the **▶ Run on Device** button inside the Exploit PoC Studio to execute this command live.*"
-        )
-    elif "frida" in p or "hook" in p:
-        response_text = (
-            "### 🪝 Dynamic Frida Verification Hook\n\n"
-            "Save as `verify_hook.js` and run: `frida -U -f com.target.mobile.app -l verify_hook.js`\n\n"
-            "```javascript\n"
-            "Java.perform(function () {\n"
-            "    var DeepLinkRouterActivity = Java.use('com.target.mobile.app.activity.DeepLinkRouterActivity');\n"
-            "    console.log('[+] Hooking DeepLinkRouterActivity.onCreate()...');\n"
-            "    DeepLinkRouterActivity.onCreate.overload('android.os.Bundle').implementation = function (bundle) {\n"
-            "        console.log('[!] Intercepted unauthenticated launch!');\n"
-            "        var intent = this.getIntent();\n"
-            "        if (intent) {\n"
-            "            console.log('[*] Action: ' + intent.getAction());\n"
-            "            console.log('[*] Data:   ' + intent.getDataString());\n"
-            "            console.log('[*] Extras: ' + intent.getExtras());\n"
-            "        }\n"
-            "        return this.onCreate(bundle);\n"
-            "    };\n"
-            "});\n"
-            "```"
-        )
-    elif "bounty" in p or "report" in p or "hackerone" in p:
-        response_text = (
-            "### 📄 Bug Bounty Submission Draft (HackerOne / Bugcrowd)\n\n"
-            "**Title**: Improper Access Control allows unauthorized access to internal navigation via exported `DeepLinkRouterActivity`\n"
-            "**Severity**: High (CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N - 8.4)\n"
-            "**Weakness**: CWE-926 (Improper Export of Android Application Components)\n\n"
-            "**Summary**:\n"
-            "The `DeepLinkRouterActivity` is declared with `android:exported=\"true\"` and handles custom deep-links without checking caller package identity or requiring a signature permission. A malicious application installed on the same device can issue crafted intents to bypass authentication.\n\n"
-            "**Steps to Reproduce**:\n"
-            "1. Install target application version 14.8.2.\n"
-            "2. Execute `adb shell am start -n com.target.mobile.app/.activity.DeepLinkRouterActivity -d \"targetapp://auth?redirect=evil.com\" --ez admin_override true`.\n"
-            "3. Observe that internal administrative state is reachable without login credentials.\n\n"
-            "**Impact**:\n"
-            "Privilege escalation and unauthorized session takeover from any non-privileged third-party app."
-        )
-    elif "patch" in p or "kotlin" in p or "diff" in p:
-        response_text = (
-            "### 🛡️ Secure Remediation Diff\n\n"
-            "```diff\n"
-            "--- AndroidManifest.xml\n"
-            "+++ AndroidManifest.xml\n"
-            "@@ -40,6 +40,7 @@\n"
-            "     <activity\n"
-            "         android:name=\".activity.DeepLinkRouterActivity\"\n"
-            "-        android:exported=\"true\">\n"
-            "+        android:exported=\"false\"\n"
-            "+        android:permission=\"com.target.mobile.app.permission.INTERNAL_ONLY\">\n"
-            "```\n\n"
-            "**Kotlin Runtime Verification Guard**:\n"
-            "```kotlin\n"
-            "// In DeepLinkRouterActivity.kt\n"
-            "override fun onCreate(savedInstanceState: Bundle?) {\n"
-            "    super.onCreate(savedInstanceState)\n"
-            "    val callingPkg = callingActivity?.packageName\n"
-            "    if (callingPkg != packageName) {\n"
-            "        Log.w(\"Security\", \"Blocked unauthorized external invocation from: $callingPkg\")\n"
-            "        finish()\n"
-            "        return\n"
-            "    }\n"
-            "}\n"
-            "```"
-        )
-    elif "cwe-926" in p or "exported" in p or "activity" in p:
-        response_text = (
-            "### Analysis of CWE-926 (Exported Activity Risk)\n\n"
-            "**Root Cause**: `DeepLinkRouterActivity` has `android:exported=\"true\"` with an `android.intent.action.VIEW` "
-            "filter but lacks any permission guard or caller identity verification.\n\n"
-            "**Recommended Remediation**:\n"
-            "```xml\n"
-            "<!-- AndroidManifest.xml -->\n"
-            "<activity\n"
-            "    android:name=\".activity.DeepLinkRouterActivity\"\n"
-            "    android:exported=\"false\" /> <!-- Or require custom signature permission -->\n"
-            "```\n"
-            "If external invocation is necessary, enforce `android:permission=\"com.target.app.permission.INTERNAL_ROUTER\"` "
-            "with `android:protectionLevel=\"signature\"` so only your signing key can trigger it."
-        )
-    elif "cwe-319" in p or "cleartext" in p or "network" in p:
-        response_text = (
-            "### Analysis of CWE-319 (Cleartext Traffic Permitted)\n\n"
-            "**Root Cause**: `res/xml/network_security_config.xml` explicitly defines `cleartextTrafficPermitted=\"true\"` "
-            "for internal/staging domains.\n\n"
-            "**Recommended Remediation**:\n"
-            "```xml\n"
-            "<!-- res/xml/network_security_config.xml -->\n"
-            "<network-security-config>\n"
-            "    <base-config cleartextTrafficPermitted=\"false\">\n"
-            "        <trust-anchors>\n"
-            "            <certificates src=\"system\" />\n"
-            "        </trust-anchors>\n"
-            "    </base-config>\n"
-            "</network-security-config>\n"
-            "```\n"
-            "Use debug build-type resource overlays (`src/debug/res/xml/network_security_config.xml`) if staging overrides are needed."
-        )
-    elif "masvs" in p or "compliance" in p or "score" in p:
-        response_text = (
-            "### OWASP MASVS Benchmark Summary\n\n"
-            "* **Overall Score**: 78 / 100\n"
-            "* **Strongest Pillars**: Code Quality (90%), Cryptography (85%), Network Security (80%)\n"
-            "* **Critical Deficits**: Platform Interaction (60% due to unvalidated WebView bridge and exported activities), "
-            "Authentication (65% due to client-side validation gates)\n\n"
-            "**Priority Action**: Patch `DeepLinkRouterActivity` and disable `cleartextTrafficPermitted` to reach >88% MASVS compliance."
-        )
-    elif "critical" in p or "most" in p or "high" in p:
-        response_text = (
-            "### Priority Findings Review\n\n"
-            "1. **CWE-926 (CVSS 8.4)**: `DeepLinkRouterActivity` allows unauthenticated intent injection.\n"
-            "2. **CWE-749 (CVSS 7.8)**: `CustomWebViewActivity` exposes native JavaScript bridge methods to untrusted URLs.\n"
-            "3. **CWE-319 (CVSS 7.5)**: Cleartext HTTP enabled for staging endpoints.\n"
-            "4. **CWE-798 (CVSS 7.4)**: Static API key hardcoded in `ApiClient.java`.\n\n"
-            "Addressing CWE-926 and CWE-749 eliminates the highest risk vectors for remote exploitation."
-        )
-    else:
-        response_text = (
-            f"### MobileAg Security Copilot (Djini.ai Engine)\n\n"
-            f"**Query**: \"{req.prompt}\"\n\n"
-            "I am ready to assist with deep vulnerability verification. Try the quick actions below or ask:\n"
-            "- *\"⚡ Generate PoC Guide for active finding\"*\n"
-            "- *\"💻 Give me ADB verification command\"*\n"
-            "- *\"🪝 Create Frida Hook for WebView\"*\n"
-            "- *\"🛡️ Show Kotlin patch diff\"*\n"
-            "- *\"📄 Format as Bug Bounty report\"*"
-        )
+    if not req.scan_id:
+        raise HTTPException(422, "Select a scan; contextual assistance never invents a target")
+    scan = await get_scan_details(req.scan_id)
+    findings = scan.get("findings", [])
+    response = "# Evidence summary — not runtime verification\n\n"
+    response += f"Scan {scan['scan_id']}: {len(findings)} review candidates.\n"
+    response += "Generated procedures are suggestions, not observed results. Root/shell/hook results do not prove ordinary-app exploitation.\n\n"
+    for f in findings[:20]:
+        response += f"- {f.get('title', 'Candidate')} [{f.get('status', 'UNVERIFIED')}] at {f.get('file_path', 'unknown')}:{f.get('line_number', '?')}\n"
+    if scan.get('errors'):
+        response += "\nCoverage is incomplete; inspect the scan errors."
+    return {"status": "success", "mode": "local_evidence_summary", "response": redact(response), "scan_id": req.scan_id}
 
-    return {
-        "status": "success",
-        "query": req.prompt,
-        "response": response_text,
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-    }
 
 
 @app.get("/api/agents")
 async def list_agents() -> list[dict[str, Any]]:
-    """Return detailed status and metadata for all SAST analysis agents."""
-    return [
-        {
-            "id": "manifest_auditor",
-            "name": "Manifest Auditor",
-            "category": "Manifest & IPC",
-            "status": "IDLE",
-            "last_runtime": "1.2s",
-            "findings_count": 4,
-            "masvs": "MASVS-PLATFORM",
-            "description": "Parses AndroidManifest.xml for unpermissioned exported activities, services, receivers, and debug flags.",
-        },
-        {
-            "id": "secret_scanner",
-            "name": "Secret & Token Scanner",
-            "category": "Data Protection",
-            "status": "IDLE",
-            "last_runtime": "3.8s",
-            "findings_count": 3,
-            "masvs": "MASVS-CRYPTO",
-            "description": "Calculates Shannon entropy across decompiled strings, code, and resources to flag hardcoded credentials.",
-        },
-        {
-            "id": "code_reviewer",
-            "name": "AST Code Reviewer",
-            "category": "Static Code Analysis",
-            "status": "IDLE",
-            "last_runtime": "8.4s",
-            "findings_count": 5,
-            "masvs": "MASVS-CODE",
-            "description": "Contextual AST analysis of PendingIntent mutability, Intent redirection trampolines, and TrustManagers.",
-        },
-        {
-            "id": "binary_auditor",
-            "name": "Binary ELF Auditor",
-            "category": "Native Security",
-            "status": "IDLE",
-            "last_runtime": "0.9s",
-            "findings_count": 2,
-            "masvs": "MASVS-RESILIENCE",
-            "description": "Uses pyelftools to verify NX bit, Full/Partial RELRO, Stack Canaries, and PIE in compiled .so libraries.",
-        },
-        {
-            "id": "netsec_auditor",
-            "name": "Network Config Auditor",
-            "category": "Transport Security",
-            "status": "IDLE",
-            "last_runtime": "0.4s",
-            "findings_count": 2,
-            "masvs": "MASVS-NETWORK",
-            "description": "Audits network_security_config.xml for cleartext traffic overrides and custom user CA trust anchors.",
-        },
-        {
-            "id": "react_native_scanner",
-            "name": "React Native Scanner",
-            "category": "Cross-Platform",
-            "status": "IDLE",
-            "last_runtime": "1.1s",
-            "findings_count": 1,
-            "masvs": "MASVS-STORAGE",
-            "description": "Parses index.android.bundle for embedded JavaScript endpoints, credentials, and exposed bridge routes.",
-        },
-        {
-            "id": "dependency_scanner",
-            "name": "Dependency CVE Scanner",
-            "category": "SCA & Third-Party",
-            "status": "IDLE",
-            "last_runtime": "1.5s",
-            "findings_count": 2,
-            "masvs": "MASVS-CODE",
-            "description": "Queries Google OSV API for known published CVEs against extracted build.gradle dependencies.",
-        },
-        {
-            "id": "consensus_filter",
-            "name": "Multi-Model Consensus",
-            "category": "False-Positive Elimination",
-            "status": "IDLE",
-            "last_runtime": "4.2s",
-            "findings_count": 0,
-            "masvs": "VERIFICATION",
-            "description": "Runs multi-LLM voting pass across high-confidence candidates to eliminate static false positives.",
-        },
-    ]
+    names = [("manifest", "Manifest auditor"), ("secrets", "Credential pattern scanner"),
+             ("code_review", "Java/Kotlin heuristic review"), ("api_mapping", "API route discovery"),
+             ("native", "Native analysis"), ("dependencies", "Dependency advisory lookup"),
+             ("taint", "Straight-line taint analysis"), ("nsc", "Network configuration"),
+             ("binary_protection", "ELF protections"), ("react_native", "React Native strings"),
+             ("smali", "Smali call graph")]
+    return [{"id": key, "name": name, "status": "CAPABILITY", "findings_count": None,
+             "last_runtime": None, "description": "Runs as part of a scan; inspect that scan's measured coverage. Individual execution is not implemented."}
+            for key, name in names]
+
 
 
 @app.get("/api/settings")
 async def get_settings_config() -> dict[str, Any]:
-    """Return current dashboard configuration."""
-    return RUNTIME_SETTINGS
+    return await asyncio.to_thread(effective_runtime_settings)
+
 
 
 @app.post("/api/settings")
 async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
-    """Update dashboard configuration in-memory."""
     supported = {"entropy_threshold", "enable_deep_taint", "enable_reachability_filter", "enable_consensus_voting", "offline"}
     if set(settings) - supported:
-        raise HTTPException(422, "Unsupported runtime setting; configure provider/database credentials in the environment")
+        raise HTTPException(422, "Unsupported setting; credentials must stay in the server environment")
+    merged = {**effective_runtime_settings(), **settings}
     try:
-        merged = {**RUNTIME_SETTINGS, **settings}
-        if not 0 <= float(merged["entropy_threshold"]) <= 8:
+        if isinstance(merged['entropy_threshold'], bool) or not 0 <= float(merged['entropy_threshold']) <= 8:
             raise ValueError()
-        if any(type(v) is not bool for k,v in settings.items() if k != "entropy_threshold"):
+        if any(type(v) is not bool for k,v in settings.items() if k != 'entropy_threshold'):
             raise ValueError()
-    except (ValueError, TypeError):
-        raise HTTPException(422, "Invalid runtime settings")
-    if "entropy_threshold" in settings:
-        settings["entropy_threshold"] = float(settings["entropy_threshold"])
+        if merged.get('offline') is False and not get_settings().approved_llm_providers:
+            raise ValueError('Cloud analysis requires an explicitly approved provider list in the server environment')
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc) or "Invalid runtime settings")
+    if 'entropy_threshold' in settings:
+        settings['entropy_threshold'] = float(settings['entropy_threshold'])
     RUNTIME_SETTINGS.update(settings)
-    return {"status": "success", "settings": RUNTIME_SETTINGS}
+    saved = {k:merged[k] for k in supported}
+    await asyncio.to_thread(repository().save_settings, saved)
+    return {"status": "saved", "settings": effective_runtime_settings(), "persistence": "local_sqlite"}
+
 
 
 # =============================================================================
@@ -931,7 +473,7 @@ class DeviceActionRequest(BaseModel):
 class InstallApkRequest(BaseModel):
     serial: str
     apk_path: str
-    grant_permissions: bool = True
+    grant_permissions: bool = False
 
 
 class LaunchActivityRequest(BaseModel):
@@ -952,7 +494,7 @@ class StorageAuditRequest(BaseModel):
 class ProviderAuditRequest(BaseModel):
     serial: str
     package_name: str
-    authorities: list[str]
+    authorities: list[str] = Field(max_length=30)
 
 
 class DastFuzzRequest(BaseModel):
@@ -971,7 +513,7 @@ class DastFuzzRequest(BaseModel):
 class DeepLinkAuditRequest(BaseModel):
     serial: str
     package_name: str
-    deep_links: list[str]
+    deep_links: list[str] = Field(max_length=30)
 
 
 class MemoryAuditRequest(BaseModel):
@@ -982,22 +524,33 @@ class MemoryAuditRequest(BaseModel):
 class UICrawlRequest(BaseModel):
     serial: str
     package_name: str
-    max_steps: int = 5
+    max_steps: int = Field(default=5, ge=1, le=20)
 
 
 class FridaDeployRequest(BaseModel):
     serial: str
     package_name: str
-    script_type: str = "unpinning"  # "unpinning", "crypto", "root_bypass", "unified"
+    script_type: Literal["unpinning", "crypto", "root_bypass", "all", "unified"] = "unpinning"  # "unpinning", "crypto", "root_bypass", "unified"
 
 
 class TaintAnalyzeRequest(BaseModel):
-    source_code: str
-    file_path: str = "VulnerableActivity.java"
+    source_code: str = Field(max_length=262144)
+    file_path: str = Field(default="VulnerableActivity.java", max_length=512)
 
+
+class CapturedTransaction(BaseModel):
+    model_config = {'extra': 'forbid'}
+    url: str = Field(max_length=8192)
+    method: Literal['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'] = 'GET'
+    request_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    response_status: int = Field(default=200, ge=100, le=599)
+    response_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    request_body: Optional[str] = Field(default=None, max_length=262144)
+    response_body: Optional[str] = Field(default=None, max_length=262144)
 
 class TrafficAuditRequest(BaseModel):
-    transactions: list[dict[str, Any]] = []
+    transactions: list[CapturedTransaction] = Field(default_factory=list, max_length=100)
+
 
 
 class ExecuteAdbRequest(BaseModel):
@@ -1044,6 +597,7 @@ async def get_dast_devices() -> dict[str, Any]:
                 "sdk_level": d.sdk_level,
                 "is_emulator": d.is_emulator,
                 "is_rooted": d.is_rooted,
+                "allowed": check_device(d.serial),
             }
             for d in devices
         ],
@@ -1066,7 +620,7 @@ async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
 
 @app.post("/api/dast/install")
 async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
-    """Install an APK onto the target device with auto-granted runtime permissions."""
+    """Install an explicitly selected APK; permission grants are opt-in."""
     path = Path(req.apk_path).resolve()
     if not path.is_relative_to(UPLOAD_DIR.resolve()):
         raise HTTPException(400, "Install an archive uploaded to this dashboard")
@@ -1110,13 +664,13 @@ async def execute_adb_command(req: ExecuteAdbRequest) -> dict[str, Any]:
 
 
 @app.get("/api/dast/logcat")
-async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = 200) -> dict[str, Any]:
+async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     """Dump recent logcat buffer and audit for CWE-532 leaks and fatal crashes."""
     raw_lines = await adb_manager.get_logcat_dump(serial=serial, filter_pkg=package_name, lines=lines)
     findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name or "")
     return {
         "serial": serial,
-        "lines": raw_lines,
+        "lines": redact(raw_lines),
         "line_count": len(raw_lines),
         "findings": [f.to_dict() for f in findings],
     }
@@ -1199,19 +753,7 @@ async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
 @app.post("/api/dast/traffic/audit")
 async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
     """Audit recorded HTTP transactions against OWASP API Security Top 10 rules."""
-    txs = []
-    for item in req.transactions:
-        txs.append(
-            HTTPTransaction(
-                url=item.get("url", ""),
-                method=item.get("method", "GET"),
-                request_headers=item.get("request_headers", {}),
-                response_status=item.get("response_status", 200),
-                response_headers=item.get("response_headers", {}),
-                request_body=item.get("request_body"),
-                response_body=item.get("response_body"),
-            )
-        )
+    txs = [HTTPTransaction(**item.model_dump()) for item in req.transactions]
     findings = traffic_auditor.audit_transactions(txs)
     return {
         "status": "success",
@@ -1223,7 +765,7 @@ async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
 @app.post("/api/analysis/taint")
 async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
     """Find potential straight-line source-to-sink flows; results require manual validation."""
-    findings = taint_engine.analyze_source_content(req.source_code, req.file_path)
+    findings = await asyncio.wait_for(asyncio.to_thread(taint_engine.analyze_source_content, req.source_code, req.file_path), timeout=15)
     f_dicts = [f.to_dict() for f in findings]
     return {"status": "success", "findings": f_dicts}
 
@@ -1275,7 +817,9 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
         "method": method,
         "findings_count": len(findings),
         "findings": f_dicts,
-        "risk_summary": "HIGH" if any(f.severity == Severity.HIGH for f in findings) else ("MEDIUM" if findings else "CLEAN"),
+        "risk_summary": "CANDIDATES" if findings else "NOT_ASSESSED",
+        "mode": "capture_analysis",
+        "limitations": "No live request or server authorization verification was performed",
     }
 
 
@@ -1310,11 +854,11 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         await manager.broadcast({
             "type": "dast_progress",
             "stage": "APK Installation",
-            "message": f"Installing {req.apk_path} with auto-permissions (-g)...",
+            "message": f"Installing {req.apk_path} without automatic permission grants...",
             "progress": 35,
             "timestamp": datetime.now().isoformat(),
         })
-        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=True)
+        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False)
 
     # Activity intent fuzzing (with targeted extras if provided)
     acts = req.activities or [f"{pkg}.MainActivity"]
@@ -1372,7 +916,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         await manager.broadcast({
             "type": "dast_progress",
             "stage": "Autonomous UI Crawling",
-            "message": "Autonomously crawling UI hierarchies and exercising interactable views...",
+            "message": "Observing the intended package UI without taps or consent...",
             "progress": 90,
             "timestamp": datetime.now().isoformat(),
         })
@@ -1405,7 +949,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         await manager.broadcast({
             "type": "dast_finding",
             "finding": f_dict,
-            "message": f"Dynamic issue detected: {f.title}",
+            "message": f"Dynamic review candidate: {f.title}",
             "timestamp": datetime.now().isoformat(),
         })
 
@@ -1460,7 +1004,7 @@ async def upload_apk(file: UploadFile = File(...)) -> dict[str, Any]:
     target_path = UPLOAD_DIR / (uuid.uuid4().hex + suffix)
     total = 0
     try:
-        with target_path.open("xb") as output:
+        with os.fdopen(os.open(target_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
             while chunk := await file.read(65536):
                 total += len(chunk)
                 if total > MAX_UPLOAD:
@@ -1496,9 +1040,11 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
             raise ValueError("Missing scan request")
         platform = await asyncio.to_thread(validate_archive, req.apk_path)
         setting_names = {"entropy_threshold", "enable_deep_taint", "enable_reachability_filter", "enable_consensus_voting", "offline"}
-        updates = {k:v for k,v in RUNTIME_SETTINGS.items() if k in setting_names}
+        effective = await asyncio.to_thread(effective_runtime_settings)
+        updates = {k:v for k,v in effective.items() if k in setting_names}
         updates["enable_deep_taint"] = req.auto_taint and updates.get("enable_deep_taint", True)
         settings = get_settings().model_copy(update=updates)
+        scan['analysis_policy'] = {**updates, 'approved_llm_providers': settings.approved_llm_providers}
         async def progress(stage, message, pct, finding=None):
             scan["progress"] = min(pct,99)
             # Raw findings stay out of the final-results UI.
@@ -1552,12 +1098,9 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
     except Exception as exc:
         scan["status"], scan["progress"], scan["errors"] = "error", 100, [str(exc)]
     finally:
-        # Persist restart-visible dashboard state atomically.
-        destination = OUTPUT_DIR / scan_id
-        destination.mkdir(parents=True, exist_ok=True)
-        temporary = destination / "dashboard.tmp"
-        temporary.write_text(json.dumps(redact(scan), indent=2, default=str))
-        temporary.replace(destination / "dashboard.json")
+        # Transactional authoritative metadata; preserve an original final snapshot.
+        await asyncio.to_thread(repository().save, scan)
+        await asyncio.to_thread(private_write, OUTPUT_DIR / scan_id / 'dashboard.json', scan)
         await manager.broadcast({"type":"scan_complete", "scan_id":scan_id, "status":scan["status"], "progress":100})
 
 
@@ -1590,12 +1133,14 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
     scan_obj = {
         "scan_id": scan_id,
         "app_name": apk_file.stem,
-        "package_name": f"com.audit.{apk_file.stem}",
-        "version": "1.0.0",
+        "package_name": None,
+        "version": None,
+        "revision": 0,
+        "artifact_sha256": await asyncio.to_thread(hash_file, apk_file),
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "status": "running",
         "progress": 5,
-        "framework": "Native (Java/Kotlin)",
+        "framework": "Not assessed",
         "obfuscation_level": "Assessing...",
         "stats": {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0},
         "findings": [],
@@ -1609,6 +1154,7 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
         },
     }
     ACTIVE_SCANS[scan_id] = scan_obj
+    await asyncio.to_thread(repository().save, scan_obj)
 
     # Launch live telemetry stream in background with full configuration
     background_tasks.add_task(live_scan_telemetry_worker, scan_id, apk_file.stem, request)
@@ -1624,6 +1170,14 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
     }
 
 
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as source:
+        for chunk in iter(lambda: source.read(65536), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     """Entrypoint to launch the web dashboard."""
     import uvicorn
@@ -1633,8 +1187,8 @@ def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     print(f"[*] Neo4j Status:     {'Connected' if attack_graph._connected else 'Embedded Fallback'}")
     print(f"[*] Web Interface:    http://{host}:{port}")
     print(f"=======================================================\n")
-    if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get("MOBILEAG_API_TOKEN"):
-        raise ValueError("Remote binding requires a configured MOBILEAG_API_TOKEN and allowed host")
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
     if not os.environ.get("MOBILEAG_API_TOKEN"):
         print(f"Session access token (paste into dashboard): {app.state.auth_token}")
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)

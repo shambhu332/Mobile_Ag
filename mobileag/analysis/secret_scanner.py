@@ -140,27 +140,16 @@ class SecretScanner:
             masked = self._mask_secret(item["val"])
             logger.debug(f"Candidate secret found: {item['name']} ({masked}) in {item['file_path']}")
             
-            # Sandboxed verification prompt
-            system_prompt = "You are a secure code analysis assistant. Evaluate if a string candidate is a genuine hardcoded credential or a test/dummy placeholder. Reply only 'REAL' or 'DUMMY'."
-            user_prompt = f"Evaluate the following secret candidate token:\n<candidate_secret>\n{item['val']}\n</candidate_secret>"
-            
-            try:
-                validation = await self.router.route(
-                    TaskType.CODE_REVIEW,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt
-                )
-                is_real = not validation.success or validation.content.strip().upper() != "DUMMY"
-            except Exception as e:
-                logger.warning(f"LLM validation failed for secret: {e}")
-                is_real = True  # Fallback to keeping candidate for filter pipeline
-            
+            # Never send candidate credential bytes to a model. Keep a local
+            # review candidate; pattern presence does not prove a live secret.
+            is_real = True
+
             if is_real:
                 cwe = "CWE-798"
                 score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Hardcoded {item['name']}",
-                    description=f"A hardcoded {item['name']} was identified in the application source code.",
+                    description=f"A {item['name']} pattern was identified; credential validity and secrecy require analyst review.",
                     severity=Severity.CRITICAL,
                     cwe_id=cwe,
                     cvss_score=score,

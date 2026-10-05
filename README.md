@@ -32,7 +32,7 @@ python -m mobileag.cli scan --apk owned.apk --offline --format json
 python -m mobileag.cli ios --ipa owned.ipa --format markdown
 ```
 
-`--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false` and configure provider keys only if transmitting source for cloud review is permitted. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
+`--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. The dashboard shows the effective Offline/Cloud policy; supported settings persist locally in SQLite and new scans record their effective policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
 
 ### Authorized dynamic testing
 
@@ -44,7 +44,7 @@ export MOBILEAG_ALLOWED_DEVICES=emulator-5554
 export MOBILEAG_ALLOWED_CONNECT=127.0.0.1:5555
 ```
 
-Choose the device explicitly. Drag-and-drop defaults to static analysis. CLI dynamic testing uses `--package` (not `--pkg`):
+Choose an explicitly authorized device; the dashboard never selects the first device automatically. UI observation is read-only and blocks unrelated packages/system dialogs; it never accepts consent, fills credentials or taps controls. Drag-and-drop defaults to static analysis. CLI dynamic testing uses `--package` (not `--pkg`):
 
 ```bash
 python -m mobileag.cli dast --serial emulator-5554 --package com.example.owned \
@@ -65,9 +65,9 @@ Configure strong `NEO4J_PASSWORD` and `QDRANT_API_KEY` before `docker compose up
 
 ## Evidence and limitations
 
-Automated findings are **UNVERIFIED review candidates**, not proven vulnerabilities. Taint detection is a straight-line heuristic, not a complete inter-procedural engine. Symbol presence, exported components, URL paths, shell-readable data and LLM votes do not prove exploitation. Confirmation requires analyst evidence.
+Automated findings are **UNVERIFIED review candidates**, not proven vulnerabilities. Taint detection is a straight-line heuristic, not a complete inter-procedural engine. Symbol presence, exported components, URL paths, shell-readable data and LLM votes do not prove exploitation. Confirmation requires analyst evidence. Dashboard triage is scan-scoped, revision-checked and saved transactionally in local SQLite; legacy original report files are preserved. The legacy unscoped feedback endpoint rejects requests rather than guessing the target scan.
 
-The current behavior supersedes the historical capability descriptions above and older architecture/session notes. See [fix status and validation](docs/audit-2026-10-05/FIX_STATUS.md) and the [original review](docs/audit-2026-10-05/REVIEW.md).
+The current behavior supersedes the historical capability descriptions above and older architecture/session notes. See [fix status and validation](docs/audit-2026-10-05/FIX_STATUS.md) and the [original review](docs/audit-2026-10-05/REVIEW.md). The subsequent product review and its fixes are tracked in [current product-fix status](docs/product-security-review-2026-10-05/FIX_STATUS.md).
 
 ## Tests
 
@@ -76,3 +76,13 @@ python -m pytest -q
 ```
 
 Tests isolate real device operations and provider credentials. Use synthetic data and controlled loopback targets when adding regressions.
+
+### Browser regression (optional)
+
+Install Playwright in a separate test environment and use an installed Chromium executable:
+
+```bash
+python tests/browser_product_regression.py --server-python /path/to/project/venv/bin/python --chromium /path/to/chromium
+```
+
+This starts and cleans up an isolated loopback server with synthetic source/findings, mocked device/database integration and no cloud model calls. Dashboard CDN assets may be fetched; the page's real CSP is not bypassed.

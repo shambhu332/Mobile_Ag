@@ -122,12 +122,10 @@ class SanitizerFilter:
         if not file_path:
             return ""
 
-        fp = Path(file_path)
-        if not fp.exists():
-            # Try relative to decompiled_path
-            fp = Path(decompiled_path) / file_path
-            if not fp.exists():
-                return ""
+        root = Path(decompiled_path).resolve()
+        fp = (root / file_path).resolve()
+        if not fp.is_relative_to(root) or not fp.is_file():
+            return ""
 
         try:
             lines = fp.read_text(errors="replace").splitlines()
@@ -144,20 +142,9 @@ class SanitizerFilter:
 
     def _pattern_check(self, code_context: str, cwe: str) -> tuple[float, str]:
         """Quick pattern-based sanitization detection."""
-        found_patterns: list[str] = []
-        for pattern in _SANITIZER_PATTERNS:
-            if pattern in code_context:
-                found_patterns.append(pattern)
-
-        if not found_patterns:
-            return 0.8, "No sanitization patterns detected"
-
-        if len(found_patterns) >= 3:
-            return 0.2, f"Multiple sanitization patterns found: {', '.join(found_patterns[:5])}"
-        elif len(found_patterns) >= 1:
-            return 0.5, f"Some sanitization present: {', '.join(found_patterns)}"
-
-        return 0.7, "Weak sanitization signals"
+        # Lexical neighbors (including comments, '?' or Base64) are not
+        # proof that the relevant untrusted value is protected on every path.
+        return 0.5, "Unknown: lexical patterns do not establish sanitization"
 
     async def _llm_check(
         self,

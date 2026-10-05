@@ -1,0 +1,470 @@
+{
+  "routes": [
+    {
+      "path": "/ws/telemetry",
+      "method": "WEBSOCKET",
+      "handler": "websocket_telemetry",
+      "line": 147,
+      "args": {
+        "websocket": "WebSocket"
+      },
+      "purpose": "WebSocket endpoint for real-time agent execution stream and live telemetry."
+    },
+    {
+      "path": "/",
+      "method": "GET",
+      "handler": "get_dashboard",
+      "line": 476,
+      "args": {},
+      "purpose": "Serve the single-page MobileAg Enterprise Dashboard."
+    },
+    {
+      "path": "/api/status",
+      "method": "GET",
+      "handler": "get_system_status",
+      "line": 485,
+      "args": {},
+      "purpose": "Return framework readiness, Neo4j connectivity, and configuration."
+    },
+    {
+      "path": "/api/graph/status",
+      "method": "GET",
+      "handler": "get_graph_status",
+      "line": 502,
+      "args": {},
+      "purpose": "Check Neo4j graph database connectivity status."
+    },
+    {
+      "path": "/api/scans",
+      "method": "GET",
+      "handler": "list_scans",
+      "line": 513,
+      "args": {},
+      "purpose": "List all available scans (past & current)."
+    },
+    {
+      "path": "/api/scans/{scan_id}",
+      "method": "GET",
+      "handler": "get_scan_details",
+      "line": 522,
+      "args": {
+        "scan_id": "str"
+      },
+      "purpose": "Retrieve full scan details, attack surface graph, and findings."
+    },
+    {
+      "path": "/api/scans/{scan_id}/graph",
+      "method": "GET",
+      "handler": "get_scan_graph",
+      "line": 542,
+      "args": {
+        "scan_id": "str"
+      },
+      "purpose": "Retrieve graph topology, dynamically querying Neo4j if available, or falling back to embedded data."
+    },
+    {
+      "path": "/api/scans/{scan_id}/sarif",
+      "method": "GET",
+      "handler": "get_scan_sarif",
+      "line": 565,
+      "args": {
+        "scan_id": "str"
+      },
+      "purpose": "Export scan findings in standard OASIS SARIF v2.1.0 format."
+    },
+    {
+      "path": "/api/scans/{scan_id}/apis",
+      "method": "GET",
+      "handler": "get_scan_apis",
+      "line": 574,
+      "args": {
+        "scan_id": "str"
+      },
+      "purpose": "Retrieve all discovered REST & GraphQL API endpoints for the specified scan."
+    },
+    {
+      "path": "/api/findings/{finding_id}/feedback",
+      "method": "POST",
+      "handler": "submit_feedback",
+      "line": 593,
+      "args": {
+        "finding_id": "str",
+        "feedback": "FeedbackRequest"
+      },
+      "purpose": "Submit analyst triage verdict and update finding status in memory."
+    },
+    {
+      "path": "/api/copilot",
+      "method": "POST",
+      "handler": "query_copilot",
+      "line": 629,
+      "args": {
+        "req": "CopilotRequest"
+      },
+      "purpose": "Analyze security findings and generate contextual explanations / remediation code."
+    },
+    {
+      "path": "/api/agents",
+      "method": "GET",
+      "handler": "list_agents",
+      "line": 808,
+      "args": {},
+      "purpose": "Return detailed status and metadata for all SAST analysis agents."
+    },
+    {
+      "path": "/api/settings",
+      "method": "GET",
+      "handler": "get_settings_config",
+      "line": 895,
+      "args": {},
+      "purpose": "Return current dashboard configuration."
+    },
+    {
+      "path": "/api/settings",
+      "method": "POST",
+      "handler": "update_settings_config",
+      "line": 901,
+      "args": {
+        "settings": "dict[str, Any]"
+      },
+      "purpose": "Update dashboard configuration in-memory."
+    },
+    {
+      "path": "/api/dast/devices",
+      "method": "GET",
+      "handler": "get_dast_devices",
+      "line": 1030,
+      "args": {},
+      "purpose": "List connected Android devices, emulators, and verify root shell status."
+    },
+    {
+      "path": "/api/dast/connect",
+      "method": "POST",
+      "handler": "connect_dast_device",
+      "line": 1054,
+      "args": {
+        "req": "DeviceConnectRequest"
+      },
+      "purpose": "Connect to a local or remote emulator/device over TCP/IP."
+    },
+    {
+      "path": "/api/dast/root",
+      "method": "POST",
+      "handler": "restart_dast_root",
+      "line": 1061,
+      "args": {
+        "req": "DeviceActionRequest"
+      },
+      "purpose": "Restart adbd with root privileges on the selected device."
+    },
+    {
+      "path": "/api/dast/install",
+      "method": "POST",
+      "handler": "install_dast_apk",
+      "line": 1068,
+      "args": {
+        "req": "InstallApkRequest"
+      },
+      "purpose": "Install an APK onto the target device with auto-granted runtime permissions."
+    },
+    {
+      "path": "/api/dast/launch",
+      "method": "POST",
+      "handler": "launch_dast_activity",
+      "line": 1083,
+      "args": {
+        "req": "LaunchActivityRequest"
+      },
+      "purpose": "Launch an Android component or exported activity via am start."
+    },
+    {
+      "path": "/api/dast/deeplink",
+      "method": "POST",
+      "handler": "dispatch_dast_deeplink",
+      "line": 1090,
+      "args": {
+        "req": "DispatchDeeplinkRequest"
+      },
+      "purpose": "Dispatch a custom URI scheme or deep-link to the target device."
+    },
+    {
+      "path": "/api/dast/execute_adb",
+      "method": "POST",
+      "handler": "execute_adb_command",
+      "line": 1106,
+      "args": {
+        "req": "ExecuteAdbRequest"
+      },
+      "purpose": "Execute an ADB shell command directly on the connected BYOD device."
+    },
+    {
+      "path": "/api/dast/logcat",
+      "method": "GET",
+      "handler": "get_dast_logcat",
+      "line": 1113,
+      "args": {
+        "serial": "str",
+        "package_name": "Optional[str]",
+        "lines": "int"
+      },
+      "purpose": "Dump recent logcat buffer and audit for CWE-532 leaks and fatal crashes."
+    },
+    {
+      "path": "/api/dast/logcat/clear",
+      "method": "POST",
+      "handler": "clear_dast_logcat",
+      "line": 1126,
+      "args": {
+        "req": "DeviceActionRequest"
+      },
+      "purpose": "Clear device logcat buffer."
+    },
+    {
+      "path": "/api/dast/screenshot",
+      "method": "POST",
+      "handler": "capture_dast_screenshot",
+      "line": 1133,
+      "args": {
+        "req": "DeviceActionRequest"
+      },
+      "purpose": "Capture a live screenshot of the device screen."
+    },
+    {
+      "path": "/api/dast/storage",
+      "method": "POST",
+      "handler": "audit_dast_storage",
+      "line": 1144,
+      "args": {
+        "req": "StorageAuditRequest"
+      },
+      "purpose": "Audit local sandbox storage (SharedPreferences, SQLite DBs, and cache) post-execution."
+    },
+    {
+      "path": "/api/dast/providers",
+      "method": "POST",
+      "handler": "audit_dast_providers",
+      "line": 1152,
+      "args": {
+        "req": "ProviderAuditRequest"
+      },
+      "purpose": "Audit exported Content Providers for unauthorized access and SQL syntax leakage."
+    },
+    {
+      "path": "/api/dast/deeplinks",
+      "method": "POST",
+      "handler": "audit_dast_deeplinks",
+      "line": 1161,
+      "args": {
+        "req": "DeepLinkAuditRequest"
+      },
+      "purpose": "Audit and fuzz deep links / custom schemes for OAuth theft, file access, and UXSS."
+    },
+    {
+      "path": "/api/dast/memory",
+      "method": "POST",
+      "handler": "audit_dast_memory",
+      "line": 1170,
+      "args": {
+        "req": "MemoryAuditRequest"
+      },
+      "purpose": "Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."
+    },
+    {
+      "path": "/api/dast/crawl",
+      "method": "POST",
+      "handler": "crawl_dast_ui",
+      "line": 1178,
+      "args": {
+        "req": "UICrawlRequest"
+      },
+      "purpose": "Autonomously navigate UI views with UIAutomator to expand dynamic coverage."
+    },
+    {
+      "path": "/api/dast/frida",
+      "method": "POST",
+      "handler": "deploy_dast_frida",
+      "line": 1185,
+      "args": {
+        "req": "FridaDeployRequest"
+      },
+      "purpose": "Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass, unified)."
+    },
+    {
+      "path": "/api/dast/traffic/audit",
+      "method": "POST",
+      "handler": "audit_dast_traffic",
+      "line": 1200,
+      "args": {
+        "req": "TrafficAuditRequest"
+      },
+      "purpose": "Audit recorded HTTP transactions against OWASP API Security Top 10 rules."
+    },
+    {
+      "path": "/api/analysis/taint",
+      "method": "POST",
+      "handler": "analyze_taint",
+      "line": 1224,
+      "args": {
+        "req": "TaintAnalyzeRequest"
+      },
+      "purpose": "Find potential straight-line source-to-sink flows; results require manual validation."
+    },
+    {
+      "path": "/api/apis/test",
+      "method": "POST",
+      "handler": "test_api_endpoint",
+      "line": 1232,
+      "args": {
+        "req": "ApiTestRequest"
+      },
+      "purpose": "Replay a request only within the operator-configured scope."
+    },
+    {
+      "path": "/api/apis/fuzz",
+      "method": "POST",
+      "handler": "fuzz_api_endpoint",
+      "line": 1247,
+      "args": {
+        "req": "ApiFuzzRequest"
+      },
+      "purpose": "Run an autonomous OWASP API Security Top 10 (2023) audit on the given endpoint."
+    },
+    {
+      "path": "/api/dast/fuzz",
+      "method": "POST",
+      "handler": "trigger_dast_fuzzer",
+      "line": 1427,
+      "args": {
+        "req": "DastFuzzRequest",
+        "background_tasks": "BackgroundTasks"
+      },
+      "purpose": "Trigger dynamic activity intent fuzzing and crash monitoring."
+    },
+    {
+      "path": "/api/upload/apk",
+      "method": "POST",
+      "handler": "upload_apk",
+      "line": 1449,
+      "args": {
+        "file": "UploadFile"
+      },
+      "purpose": "Store a validated application archive using an exclusive opaque identifier."
+    },
+    {
+      "path": "/api/scans/run",
+      "method": "POST",
+      "handler": "trigger_scan",
+      "line": 1565,
+      "args": {
+        "request": "RunScanRequest",
+        "background_tasks": "BackgroundTasks"
+      },
+      "purpose": "Trigger a new asynchronous security scan with live WebSocket telemetry."
+    }
+  ],
+  "models": {
+    "FeedbackRequest": {
+      "verdict": "str",
+      "notes": "Optional[str] = None"
+    },
+    "CopilotRequest": {
+      "prompt": "str",
+      "scan_id": "Optional[str] = None"
+    },
+    "DeviceConnectRequest": {
+      "host_port": "str = '127.0.0.1:5555'"
+    },
+    "DeviceActionRequest": {
+      "serial": "str"
+    },
+    "InstallApkRequest": {
+      "serial": "str",
+      "apk_path": "str",
+      "grant_permissions": "bool = True"
+    },
+    "LaunchActivityRequest": {
+      "serial": "str",
+      "component": "str"
+    },
+    "DispatchDeeplinkRequest": {
+      "serial": "str",
+      "uri": "str"
+    },
+    "StorageAuditRequest": {
+      "serial": "str",
+      "package_name": "str"
+    },
+    "ProviderAuditRequest": {
+      "serial": "str",
+      "package_name": "str",
+      "authorities": "list[str]"
+    },
+    "DastFuzzRequest": {
+      "serial": "str",
+      "package_name": "str",
+      "apk_path": "Optional[str] = None",
+      "activities": "Optional[list[str]] = None",
+      "deeplinks": "Optional[list[str]] = None",
+      "authorities": "Optional[list[str]] = None",
+      "targeted_extras": "Optional[dict[str, list[str]]] = None",
+      "audit_storage": "bool = True",
+      "audit_memory": "bool = False",
+      "crawl_ui": "bool = False"
+    },
+    "DeepLinkAuditRequest": {
+      "serial": "str",
+      "package_name": "str",
+      "deep_links": "list[str]"
+    },
+    "MemoryAuditRequest": {
+      "serial": "str",
+      "package_name": "str"
+    },
+    "UICrawlRequest": {
+      "serial": "str",
+      "package_name": "str",
+      "max_steps": "int = 5"
+    },
+    "FridaDeployRequest": {
+      "serial": "str",
+      "package_name": "str",
+      "script_type": "str = 'unpinning'"
+    },
+    "TaintAnalyzeRequest": {
+      "source_code": "str",
+      "file_path": "str = 'VulnerableActivity.java'"
+    },
+    "TrafficAuditRequest": {
+      "transactions": "list[dict[str, Any]] = []"
+    },
+    "ExecuteAdbRequest": {
+      "serial": "str",
+      "command": "str"
+    },
+    "ApiTestRequest": {
+      "url": "str",
+      "method": "str = 'GET'",
+      "headers": "Optional[dict[str, str]] = None",
+      "body": "Optional[str] = None",
+      "timeout": "float = 4.0"
+    },
+    "ApiFuzzRequest": {
+      "url": "str",
+      "method": "str = 'GET'",
+      "headers": "Optional[dict[str, str]] = None",
+      "body": "Optional[str] = None",
+      "response_status": "int = 200",
+      "response_headers": "Optional[dict[str, str]] = None",
+      "response_body": "Optional[str] = None"
+    },
+    "RunScanRequest": {
+      "apk_path": "str",
+      "output_dir": "Optional[str] = None",
+      "auto_dast": "bool = False",
+      "auto_taint": "bool = True",
+      "bypass_root": "bool = False",
+      "bypass_ssl": "bool = False",
+      "serial": "Optional[str] = None"
+    }
+  }
+}

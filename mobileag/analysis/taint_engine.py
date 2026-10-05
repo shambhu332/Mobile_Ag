@@ -1,7 +1,7 @@
-"""Inter-procedural Source-to-Sink Taint & Dataflow Tracking Engine.
+"""Straight-line Source-to-Sink Review Heuristic.
 
 Traces untrusted input data flows (Intent extras, Deep Links, Content Resolvers)
-through variable assignments, transformations, and inter-procedural calls
+through sequential variable assignments; inter-procedural and control-flow analysis are not implemented. Candidate flows are checked
 until reaching critical sinks:
 1. WebViews (loadUrl / evaluateJavascript) -> CWE-749 / CWE-79 (UXSS)
 2. Databases (rawQuery / execSQL) -> CWE-89 (SQL Injection)

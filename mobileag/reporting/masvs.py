@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MASVS_FILE = Path(__file__).parent.parent.parent / "data" / "masvs_mapping.json"
+_MASVS_FILE = Path(__file__).parent.parent / "data" / "masvs_mapping.json"
 
 _masvs_data = {}
 

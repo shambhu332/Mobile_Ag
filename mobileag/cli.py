@@ -305,7 +305,7 @@ def dast(package: str, serial: str | None, apk: str | None, activities: str | No
 @click.option("--src", required=True, help="Path to decompiled source directory (Java/Kotlin)", type=click.Path(exists=True))
 @click.option("--output", default="./output/taint", help="Output directory for taint analysis report", type=click.Path())
 def taint(src: str, output: str):
-    """Run inter-procedural static source-to-sink taint analysis."""
+    """Find potential straight-line source-to-sink flows for manual review."""
     import json
     from mobileag.analysis import TaintEngine
 

@@ -1222,7 +1222,7 @@ async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
 
 @app.post("/api/analysis/taint")
 async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
-    """Perform inter-procedural static source-to-sink taint analysis on supplied code."""
+    """Find potential straight-line source-to-sink flows; results require manual validation."""
     findings = taint_engine.analyze_source_content(req.source_code, req.file_path)
     f_dicts = [f.to_dict() for f in findings]
     return {"status": "success", "findings": f_dicts}

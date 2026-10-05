@@ -1,0 +1,7 @@
+Python 3.14.7; isolated virtualenv with declared runtime/test dependencies.
+Final full suite: 119 passed, 1 warning in 25.96s.
+Wheel rebuilt and reinstalled successfully with MASVS data and templates.
+Installed wheel smoke: dashboard HTTP 200; anonymous API HTTP 401; authenticated API HTTP 200.
+CLI entry point: mobileag --help succeeds outside the checkout.
+Python compileall, node --check and git diff --check passed.
+No real Android device, cloud provider, or deployed database was used for these checks.

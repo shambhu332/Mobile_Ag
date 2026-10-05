@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 include = ["mobileag*", "config*"]
 
 [tool.setuptools.package-data]
-mobileag = ["web/templates/*.html", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
+mobileag = ["data/*.json", "web/templates/*.html", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "build"]

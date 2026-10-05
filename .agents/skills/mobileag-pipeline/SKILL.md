@@ -1,37 +1,39 @@
 ---
 name: mobileag-pipeline
-description: >-
-  Operational runbook and testing procedures for MobileAg automated mobile security scanning.
-  Use when running the web dashboard, executing automated drag-and-drop SAST/DAST scans,
-  connecting ADB emulators for Frida instrumentation, or validating the 79-test test suite.
+description: Run and test the MobileAg dashboard and authorized mobile-analysis pipeline.
 ---
 
-# MobileAg Automated Scanning Pipeline Runbook
+# MobileAg runbook
 
-## 1. Running the Web Application
-Launch the dashboard server with live WebSocket telemetry:
+## Start locally
+
 ```bash
 python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
-- Web UI: `http://127.0.0.1:8080`
-- Telemetry endpoint: `ws://127.0.0.1:8080/ws/telemetry`
 
-## 2. Automated Drag-and-Drop Workflow
-- Dragging any `.apk` onto the browser window triggers `uploadApkFile(file, true)` in `index.html`.
-- Uploads to `POST /api/upload/apk` saving in `./uploads/`.
-- Automatically calls `POST /api/scans/run` with `auto_dast: true`, `auto_taint: true`, `bypass_root: true`, `bypass_ssl: true`.
-- Automatically redirects to the attack surface view (`surface`) and streams real-time telemetry over WebSockets.
+Open the printed URL and paste the session token printed in the terminal. API routes require bearer authentication; WebSockets authenticate with an initial JSON token message. Do not put tokens in URLs or durable evidence.
 
-## 3. Dynamic Analysis (DAST) & Frida Instrumentation
-- Verify device connection: `adb devices`.
-- MobileAg auto-detects rooted emulators (AVD, Genymotion, Corellium) and deploys:
-  - Universal SSL/TLS unpinning (`frida_runner.generate_unpinning_script()`)
-  - Anti-root & emulator detection cloaking (`frida_runner.generate_root_bypass_script()`)
-  - Activity & Deep Link fuzzing (`intent_fuzzer.run_full_dast_suite()`)
-- If no device is connected, the pipeline gracefully degrades to complete SAST & Taint analysis without hanging.
+## Scanning
 
-## 4. Test Suite Execution
-Always verify changes across the full 79-test suite:
+Upload an APK/IPA through the dashboard. Uploads have opaque names, ZIP validation and size limits. Drag-and-drop starts static analysis, not automatic device selection or bypass hooks. Missing files are errors, never demo scans.
+
+`python -m mobileag.cli scan --apk owned.apk --offline --output ./output` enforces no LLM/OSV networking for that scan. Install JADX and APKTool for Android decompilation. Failures are reported as incomplete scans rather than successful clean results.
+
+## Explicit dynamic scope
+
+- Set `MOBILEAG_ALLOWED_DEVICES` to exact authorized serials before starting the server.
+- Remote ADB connection targets also need `MOBILEAG_ALLOWED_CONNECT`.
+- Explicitly select the device; never choose the first connected device implicitly.
+- Frida requires the optional native dependency, matching device server and an already running app. Workbench execution verifies initialization and then detaches; it does not leave persistent hooks or prove an exploit.
+- Automatic root/SSL bypass flags are rejected. Root/shell diagnostics are not ordinary-app exploitation proof.
+- API replay requires exact `MOBILEAG_ALLOWED_ORIGINS`; private destinations additionally require `MOBILEAG_ALLOW_PRIVATE_TARGETS=1`. Redirects are not followed.
+
+## Tests
+
 ```bash
-pytest
+python -m pytest -q
 ```
+
+Run the full suite after changes. Device commands and providers must be mocked; use synthetic files and researcher-controlled loopback listeners. Regression tests live in `tests/test_security_regressions.py`. Do not weaken negative controls to restore old misleading success statuses.
+
+See `docs/audit-2026-10-05/FIX_STATUS.md` for validation and limitations. The archived pre-fix scripts/results describe the old working tree, not current behavior.

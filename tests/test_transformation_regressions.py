@@ -192,3 +192,9 @@ async def test_launch_rejects_zero_exit_android_error():
     manager = ADBManager()
     manager._exec_cmd = AsyncMock(return_value=(0, b'Error type 3\nError: Activity class does not exist.', b''))
     assert (await manager.launch_activity('owned-device', 'org.example/.Main'))['status'] == 'failed'
+
+def test_dependency_constraints_have_no_local_artifact_references():
+    from pathlib import Path
+    snapshot = (Path(__file__).resolve().parents[1]/'requirements/validated-python314.txt').read_text()
+    assert 'file:' not in snapshot and ' @ ' not in snapshot
+    assert not any(line.lower().startswith('mobileag') for line in snapshot.splitlines() if not line.startswith('#'))

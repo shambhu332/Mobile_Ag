@@ -60,7 +60,7 @@
             headerRootBadge.innerHTML = '● Root diagnostic';
           } else if (activeDev) {
             headerRootBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700';
-            headerRootBadge.innerHTML = '○ Unrooted (Shell)';
+            headerRootBadge.innerHTML = '○ Root shell not observed';
           } else {
             headerRootBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-slate-500 border border-slate-800';
             headerRootBadge.innerHTML = 'No Device';
@@ -107,7 +107,7 @@
           <div class="p-4 rounded-lg bg-card/60 border border-dashed border-borderSubtle text-center text-slate-400 space-y-2">
             <i data-lucide="smartphone" class="w-6 h-6 mx-auto text-slate-600"></i>
             <p class="text-xs text-slate-300 font-medium">No Android Devices / Emulators Detected</p>
-            <p class="text-[11px] text-slate-500">Start your rooted emulator (AVD, Genymotion, or Corellium) and click below or connect via TCP.</p>
+            <p class="text-[11px] text-slate-500">Start your explicitly authorized device or emulator (AVD, Genymotion, or Corellium) and click below or connect via TCP.</p>
             <div class="pt-2">
               <button data-onclick="static93" class="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-mono">
                 Connect 127.0.0.1:5555
@@ -125,7 +125,7 @@
           ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700 text-[10px] font-mono text-emerald-300 font-semibold flex items-center gap-1">
                <span class="w-1 h-1 rounded-full bg-emerald-400"></span> # ROOT (uid=0)
              </span>`
-          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400">Shell (non-root)</span>`;
+          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400">Root shell not observed</span>`;
 
         return `
           <div ${bindAction('click', () => selectDastDevice(dev.serial))} class="p-3 rounded-lg border cursor-pointer transition ${

@@ -70,3 +70,13 @@ brokered cloud web scans remain unsupported, not UI-only fixes.
 Reproduce using the opt-in scripts documented in the main README. Unit pytest
 uses mocks for all device/provider operations; no `TESTING` authorization bypass
 is present in production. Do not run device checks without exact explicit scope.
+
+## Remote CI portability correction
+
+The first GitHub run (`37342596827`, commit `2b9ade8`) failed during dependency
+resolution: the environment snapshot contained a MobileAg wheel URL under a
+local `/tmp` path. That self-package reference was removed; regression coverage
+now rejects local artifact references in dependency constraints. Local resolver
+dry-run succeeds. The follow-up full suite passes **164 tests**. Root-status UI
+now says “Root shell not observed,” not a claim that a device is unrooted.
+Remote CI must still be evaluated for the corrected revision.

@@ -50,7 +50,6 @@ langsmith==0.14.4
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 mdurl==0.1.2
-mobileag @ file:///tmp/mobileag-validation-MBvgb8Pq/wheels/mobileag-0.1.0-py3-none-any.whl#sha256=6c75d057bb0a5aaf8de4c4019517ae12decb9d00381ce161e8827e28db45bb6b
 multidict==6.9.1
 neo4j==6.3.1
 numpy==2.5.3

@@ -8,19 +8,19 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class Severity(str, Enum):
-    """Vulnerability severity levels aligned with bug bounty P-ratings."""
-    CRITICAL = "CRITICAL"  # P1
-    HIGH = "HIGH"          # P2
-    MEDIUM = "MEDIUM"      # P3
-    LOW = "LOW"            # P4
-    INFO = "INFO"          # P5 / Informational
+    """Candidate review severity; not bounty eligibility or a program priority score."""
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INFO = "INFO"
 
 
 class FindingStatus(str, Enum):
     """Lifecycle status of a finding."""
     UNVERIFIED = "UNVERIFIED"        # Just discovered, not yet validated
-    CONFIRMED = "CONFIRMED"          # Passed consensus + filter checks
-    FALSE_POSITIVE = "FALSE_POSITIVE"  # Marked as FP by filters or user feedback
+    CONFIRMED = "CONFIRMED"          # Analyst recorded reproduced impact and validation evidence
+    FALSE_POSITIVE = "FALSE_POSITIVE"  # Analyst decision with scan-scoped history
     DUPLICATE = "DUPLICATE"          # Duplicate of another finding
     OPEN = "UNVERIFIED"              # Alias for backward compatibility
 

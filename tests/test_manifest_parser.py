@@ -57,3 +57,33 @@ def test_manifest_parser(dummy_manifest):
     provider = next(c for c in components if c["name"] == ".DataProvider")
     assert provider["exported"] is True
     assert provider["type"] == "provider"
+
+def test_apktool_sdk_version_metadata(tmp_path):
+    path = tmp_path / 'AndroidManifest.xml'
+    path.write_text('<manifest package="org.example.fixture"><application/></manifest>')
+    (tmp_path / 'apktool.yml').write_text('sdkInfo:\n  minSdkVersion: 23\n  targetSdkVersion: 35\nversionInfo:\n  versionCode: 1\n  versionName: "1.0-synthetic"\n')
+    parsed = ManifestParser().parse(str(path))
+    assert (parsed['version_name'], parsed['version_code'], parsed['min_sdk'], parsed['target_sdk']) == ('1.0-synthetic', '1', '23', '35')
+    (tmp_path / 'apktool.yml').write_text('versionInfo:\n  versionName: !!python/object/apply:os.system [bad]\n  versionCode: &alias 7\n')
+    assert ManifestParser().parse(str(path))['version_name'] is None
+
+
+@pytest.mark.asyncio
+async def test_exported_component_is_review_not_proven_vulnerability():
+    from mobileag.analysis.manifest_auditor import ManifestAuditor
+    from mobileag.reporting.finding import Severity, FindingStatus
+    auditor = ManifestAuditor(None)
+    findings = await auditor.audit({'application': {'allowBackup': False}, 'components': [{'name': '.Main', 'type': 'activity', 'exported': True}]}, 'org.example.fixture')
+    exposure = next(f for f in findings if 'Exported' in f.title)
+    assert exposure.severity == Severity.INFO and exposure.status == FindingStatus.UNVERIFIED
+    assert exposure.cvss_score == 0 and not exposure.cvss_vector
+
+@pytest.mark.parametrize('target,exported,cleartext', [('16', True, True), ('27', False, True), ('35', False, False), ('', None, None)])
+def test_android_sdk_defaults_and_inherited_permissions(tmp_path, target, exported, cleartext):
+    path = tmp_path/'AndroidManifest.xml'
+    sdk = f'<uses-sdk android:targetSdkVersion="{target}"/>' if target else ''
+    path.write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android">{sdk}<application android:permission="org.example.GUARD"><provider android:name=".Provider"/></application></manifest>')
+    parsed = ManifestParser().parse(str(path))
+    assert parsed['providers'][0]['exported'] is exported
+    assert parsed['providers'][0]['permission'] == 'org.example.GUARD'
+    assert parsed['application']['usesCleartextTraffic'] is cleartext

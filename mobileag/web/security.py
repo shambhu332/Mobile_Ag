@@ -2,6 +2,7 @@
 import hmac
 import os
 import re
+import time
 from urllib.parse import urlsplit
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -44,7 +45,7 @@ class SecurityMiddleware:
                         (b'referrer-policy', b'no-referrer'),
                         (b'cache-control', b'no-store'),
                         (b'content-security-policy',
-                         b"default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")]
+                         b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")]
                 await original_send(message)
             send = secure_send
         headers = dict((k.decode().lower(), v.decode()) for k,v in scope['headers'])
@@ -55,8 +56,8 @@ class SecurityMiddleware:
         status = 403
         if hostname not in allowed or not origin_allowed(headers.get('origin'), host):
             error = 'Host or Origin not allowed'
-        elif scope['type'] == 'http' and scope['path'] not in {'/', '/static/dashboard.js', '/static/theme.js'}:
-            if not authorized(headers.get('authorization', '').removeprefix('Bearer '), self.owner.state.auth_token):
+        elif scope['type'] == 'http' and scope['path'] != '/' and not scope['path'].startswith('/static/'):
+            if time.monotonic() >= getattr(self.owner.state,'session_deadline',float('inf')) or not authorized(headers.get('authorization', '').removeprefix('Bearer '), self.owner.state.auth_token):
                 error, status = 'Bearer authentication required', 401
         if error:
             if scope['type'] == 'websocket':
@@ -96,6 +97,11 @@ class SecurityMiddleware:
                     permitted = check_device(data.get('serial'))
                 if not permitted:
                     return await JSONResponse({'detail':'Device is outside configured scope'}, status_code=403)(scope, receive, send)
+                from mobileag.web.policy import check_action
+                policy = self.owner.state.scope_repository().get_policy()
+                action = path.removeprefix('/api/dast/')
+                if not check_action(policy, action, data):
+                    return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')
                 if package and not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package):
                     raise ValueError('Invalid package name')

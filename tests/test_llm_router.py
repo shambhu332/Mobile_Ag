@@ -7,8 +7,13 @@ from mobileag.llm.providers.base import LLMResponse, BaseLLMProvider
 
 
 @pytest.fixture
-def mock_settings():
+def mock_settings(monkeypatch):
     """Provide a settings object with dummy API keys."""
+    # Router logic is tested with adapters, not real SDK constructors or keys.
+    monkeypatch.setattr('mobileag.llm.router._PROVIDER_CLASSES', {
+        name: MagicMock(return_value=MagicMock(spec=BaseLLMProvider))
+        for name in ['openai','gemini_pro','gemini_flash','claude','deepseek','grok']
+    })
     return Settings(
         _env_file=None, offline=False,
         approved_llm_providers=['openai', 'gemini_pro', 'gemini_flash'],

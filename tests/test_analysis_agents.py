@@ -50,7 +50,10 @@ async def test_manifest_auditor(mock_router):
         assert isinstance(f, Finding)
         assert f.status == FindingStatus.UNVERIFIED
         assert f.cwe_id.startswith("CWE-")
-        assert f.cvss_score > 0.0
+        if f.severity == Severity.INFO:
+            assert f.cvss_score == 0.0
+        else:
+            assert f.cvss_score > 0.0
 
 
 @pytest.mark.asyncio

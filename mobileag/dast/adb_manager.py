@@ -89,7 +89,11 @@ class ADBManager:
         model = await self._getprop(serial, "ro.product.model") or "Android Device"
         version = await self._getprop(serial, "ro.build.version.release") or "Unknown"
         sdk = await self._getprop(serial, "ro.build.version.sdk") or "Unknown"
-        is_emu = "emulator" in serial or "goldfish" in model.lower() or "sdk" in model.lower()
+        hardware = await self._getprop(serial, "ro.hardware")
+        qemu = await self._getprop(serial, "ro.kernel.qemu")
+        is_emu = (qemu == "1" or "emulator" in serial or
+                  any(marker in hardware.lower() for marker in ("goldfish", "ranchu", "vbox")) or
+                  "goldfish" in model.lower() or "sdk" in model.lower())
         is_root = await self._check_root(serial)
 
         return ConnectedDevice(
@@ -109,13 +113,15 @@ class ADBManager:
         return ""
 
     async def _check_root(self, serial: str) -> bool:
-        """Check if root shell is accessible via su or adb root."""
+        """Observe the current ADB shell identity without invoking su or changing adbd.
+
+        False means root was not observed, not that no escalation is possible.
+        """
         code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "id"], timeout=2.0)
         if code == 0 and b"uid=0(root)" in stdout:
             return True
 
-        code_su, stdout_su, _ = await self._exec_cmd(["-s", serial, "shell", "su -c 'id'"], timeout=2.0)
-        return code_su == 0 and b"uid=0(root)" in stdout_su
+        return False
 
     async def connect_device(self, host_port: str) -> dict[str, Any]:
         """Connect to a remote or local emulator/device via TCP (e.g. 127.0.0.1:5555)."""
@@ -158,10 +164,10 @@ class ADBManager:
     async def launch_activity(self, serial: str, component: str) -> dict[str, Any]:
         """Launch an activity component (e.g. 'com.app/.MainActivity') via am start."""
         cmd = ["-s", serial, "shell", "am", "start", "-W", "-n", component]
-        code, stdout, stderr = await self._exec_cmd(cmd, timeout=5.0)
+        code, stdout, stderr = await self._exec_cmd(cmd, timeout=15.0)
         output = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {
-            "status": "success" if code == 0 else "failed",
+            "status": "success" if code == 0 and not any(marker in output for marker in ("Error:", "Error type", "Exception", "Status: timeout")) else "failed",
             "output": output,
             "component": component
         }

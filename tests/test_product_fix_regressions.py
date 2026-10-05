@@ -202,5 +202,5 @@ def test_provider_status_matches_effective_approval():
 def test_unknown_field_content_does_not_reintroduce_inline_js():
     from re import search
     root=Path(web.__file__).parent
-    for path in [root/'templates'/'index.html',root/'static'/'dashboard.js']:
+    for path in [root/'templates'/'index.html',*list((root/'static').glob('*.js'))]:
         assert search(r'(?<!data-)\bon(?:click|change|input|keydown|drop|dragover|dragleave)\s*=',path.read_text()) is None

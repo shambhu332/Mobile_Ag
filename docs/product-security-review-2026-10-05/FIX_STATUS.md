@@ -1,3 +1,5 @@
+> Subsequent implementation: see [current transformation status](TRANSFORMATION_STATUS.md) and its separate validation evidence. The results below describe the earlier `e0af87a` fix pass, not the latest working tree.
+
 # Product-review fix status — 2026-10-05
 
 This is an **implementation update**, not a change to the historical review baseline `56d2febcb204e2a156d61677eac6197ea2543bd0`. The original findings, source snapshot and reproduction outputs remain preserved. The project owner subsequently requested publication of these fixes and evidence to GitHub. The exact published revision is recorded in Git history; validation snapshots retain their original pre-commit state.

@@ -15,14 +15,23 @@ import shutil
 import time
 from mobileag import __version__
 from mobileag.web.repository import ScanRepository, private_write
+from mobileag.web.jobs import isolated_analysis, CANCELLED, PROCESSES
 import uuid
 from mobileag.web.security import SecurityMiddleware, authorized, check_device
 from mobileag.security.archives import validate_archive, MAX_UPLOAD
 from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Literal
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    await recover_interrupted_jobs()
+    yield
+    CANCELLED.update(PROCESSES)
 
 from fastapi import BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +41,11 @@ from pydantic import BaseModel, Field
 import httpx
 
 from config.settings import get_settings
-from mobileag.core.orchestrator import Orchestrator
+def Orchestrator(settings):
+    # Compatibility injection boundary for unit tests; production static work is
+    # isolated and never uses this constructor in the API process.
+    from mobileag.core.orchestrator import Orchestrator as Engine
+    return Engine(settings)
 from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.dast import (
@@ -84,14 +97,16 @@ DATA_ROOT = Path(os.environ.get("MOBILEAG_DATA_DIR", Path.cwd())).resolve()
 OUTPUT_DIR = DATA_ROOT / "output"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 UPLOAD_DIR = DATA_ROOT / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 app = FastAPI(
     title="MobileAg — AppSec Dashboard",
     description="Local, scoped mobile security research workbench",
     version=__version__,
+    lifespan=lifespan,
 )
 
+app.state.session_deadline = time.monotonic() + 8*3600
 app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
 app.add_middleware(SecurityMiddleware, owner=app)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -119,6 +134,8 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self.active_connections: list[WebSocket] = []
+        self.pending = 0
+        self.sessions = {}
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -126,6 +143,7 @@ class ConnectionManager:
         logger.info("WebSocket subscriber connected (%d active)", len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket) -> None:
+        self.sessions.pop(websocket,None)
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
             logger.info("WebSocket subscriber disconnected (%d remaining)", len(self.active_connections))
@@ -133,6 +151,10 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         for connection in list(self.active_connections):
             try:
+                if time.monotonic() >= app.state.session_deadline or not authorized(self.sessions.get(connection),app.state.auth_token):
+                    await connection.close(code=1008)
+                    self.disconnect(connection)
+                    continue
                 await asyncio.wait_for(connection.send_json(redact(message)), timeout=2)
             except Exception:
                 self.disconnect(connection)
@@ -144,19 +166,23 @@ manager = ConnectionManager()
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time agent execution stream and live telemetry."""
-    if len(manager.active_connections) >= 32:
+    if len(manager.active_connections) + manager.pending >= 32:
         await websocket.close(code=1013)
         return
-    await websocket.accept()
+    manager.pending += 1
     try:
+        await websocket.accept()
         auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
-        if not isinstance(auth, dict) or not authorized(auth.get("token"), app.state.auth_token):
+        if time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict) or not authorized(auth.get("token"), app.state.auth_token):
             await websocket.close(code=1008)
             return
     except Exception:
         await websocket.close(code=1008)
         return
+    finally:
+        manager.pending -= 1
     manager.active_connections.append(websocket)
+    manager.sessions[websocket] = auth["token"]
     try:
         await websocket.send_json({
             "type": "connection_established",
@@ -165,13 +191,20 @@ async def websocket_telemetry(websocket: WebSocket) -> None:
             "neo4j_online": attack_graph._connected,
         })
         while True:
-            data = await websocket.receive_text()
+            if time.monotonic() >= app.state.session_deadline or not authorized(auth.get('token'),app.state.auth_token):
+                await websocket.close(code=1008)
+                break
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(),timeout=30)
+            except asyncio.TimeoutError:
+                continue
             if data == "ping":
                 await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        logger.warning("WebSocket error: %s", e)
+        logger.warning("WebSocket disconnected")
+    finally:
         manager.disconnect(websocket)
 
 
@@ -192,11 +225,13 @@ def repository() -> ScanRepository:
     return ScanRepository(OUTPUT_DIR)
 
 
+app.state.scope_repository = repository
+
 def repository_import_legacy() -> None:
     repo = repository()
     for file in OUTPUT_DIR.glob('*/dashboard.json'):
         sid = file.parent.name
-        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', sid) or repo.get(sid):
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', sid) or repo.get(sid) or repo.purged(sid):
             continue
         if not file.resolve().is_relative_to(OUTPUT_DIR.resolve()) or file.stat().st_size > 16*1024*1024:
             continue
@@ -216,6 +251,8 @@ def effective_runtime_settings() -> dict[str, Any]:
     values.update({k:v for k,v in repository().get_settings().items() if k in names})
     values.update({k:v for k,v in RUNTIME_SETTINGS.items() if k in names})
     values['approved_llm_providers'] = settings.approved_llm_providers
+    values['offline'] = True
+    values['web_cloud_supported'] = False
     return values
 
 
@@ -228,6 +265,40 @@ def find_latest_reports() -> list[dict[str, Any]]:
 # =============================================================================
 # REST Endpoints
 # =============================================================================
+async def recover_interrupted_jobs():
+    def recover():
+        repo = repository()
+        with repo.connection() as db:
+            rows = db.execute("SELECT document FROM scans WHERE status IN ('running','queued','cancelling')").fetchall()
+        for row in rows:
+            scan = json.loads(row[0])
+            scan.update(status='interrupted', errors=['Server restarted; retry explicitly. No device action was resumed'])
+            repo.save(scan)
+    await asyncio.to_thread(recover)
+
+
+@app.post("/api/scans/{scan_id}/cancel")
+async def cancel_scan(scan_id: str):
+    validate_scan_id(scan_id)
+    scan = ACTIVE_SCANS.get(scan_id)
+    if not scan or scan.get('status') != 'running':
+        raise HTTPException(409, 'Only an active job can be cancelled')
+    CANCELLED.add(scan_id)
+    return {'status':'cancellation_requested','scan_id':scan_id}
+
+
+@app.post("/api/scans/{scan_id}/retry")
+async def retry_scan(scan_id: str, background_tasks: BackgroundTasks):
+    scan = await get_scan_details(scan_id)
+    if scan.get('status') not in {'error','partial','cancelled','interrupted'}:
+        raise HTTPException(409, 'Only an incomplete job can be retried')
+    request = scan.get('request', {})
+    path = Path(request.get('apk_path', ''))
+    if not path.is_file() or hash_file(path) != scan.get('artifact_sha256'):
+        raise HTTPException(409, 'Original archive is unavailable or changed; upload it again')
+    return await trigger_scan(RunScanRequest(**request),background_tasks)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard() -> HTMLResponse:
     """Serve the single-page MobileAg Enterprise Dashboard."""
@@ -252,6 +323,32 @@ async def get_system_status() -> dict[str, Any]:
         "neo4j_connected": attack_graph._connected,
         "neo4j_uri": attack_graph.uri,
     }
+
+
+@app.get("/api/readiness")
+async def get_readiness():
+    from mobileag.web.jobs import sandbox_command, resource_command, manager_environment
+    import sys
+    def probe():
+        import subprocess
+        # Same mount/network namespace as production, with harmless /usr/bin/true.
+        # No device, upload parser, model or external target is contacted.
+        try:
+            command = sandbox_command(OUTPUT_DIR.resolve(), Path(__file__).resolve())
+            command = command[:-3]+['/usr/bin/true']
+            result = subprocess.run(resource_command(command,'readiness-'+uuid.uuid4().hex), env=manager_environment(),capture_output=True,timeout=5)
+            return result.returncode == 0
+        except Exception:
+            return False
+    OUTPUT_DIR.mkdir(parents=True,exist_ok=True,mode=0o700)
+    isolated = await asyncio.to_thread(probe)
+    jar = Path(os.environ.get('MOBILEAG_SANDBOX_APKTOOL_JAR','/snap/apktool/current/apktool.jar'))
+    return {'local_operator_only':True,'sandbox_probe':isolated,
+            'android_tools':{'jadx':Path('/usr/bin/jadx').is_file(),'apktool':Path('/usr/bin/apktool').is_file() or jar.is_file()},
+            'aggregate_worker_limits':{'memory':'3GiB','swap':'512MiB','tasks':128,'cpu':'one core','wall_seconds':360},
+            'web_static_network':'denied', 'cloud_web_worker':'unsupported_without_credential_broker',
+            'python':sys.version.split()[0], 'production_device_validation':'not_performed',
+            'multiuser_deployment':'unsupported', 'offline_ui_assets':True}
 
 
 @app.get("/api/graph/status")
@@ -290,7 +387,7 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     def read():
         repo = repository()
         scan = repo.get(scan_id)
-        if not scan:
+        if not scan and not repo.purged(scan_id):
             file = OUTPUT_DIR / scan_id / 'dashboard.json'
             if file.is_file() and file.resolve().is_relative_to(OUTPUT_DIR.resolve()) and file.stat().st_size <= 16*1024*1024:
                 document = json.loads(file.read_text())
@@ -429,6 +526,82 @@ async def list_agents() -> list[dict[str, Any]]:
 
 
 
+@app.get("/api/scope")
+async def get_scope():
+    from mobileag.web.security import configured_list
+    return {'policy':repository().get_policy(), 'ceilings':{
+        'devices':sorted(configured_list('MOBILEAG_ALLOWED_DEVICES')),
+        'origins':sorted(configured_list('MOBILEAG_ALLOWED_ORIGINS'))},
+        'boundary':'single local operator; shell, root and Frida approval is device-wide'}
+
+
+@app.post("/api/scope")
+async def save_scope(value: dict):
+    from mobileag.web.policy import validate_policy
+    try:
+        policy = validate_policy(value)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc))
+    repository().save_policy(policy)
+    return {'status':'saved','policy':policy}
+
+
+@app.post("/api/session/rotate")
+async def rotate_session():
+    app.state.auth_token = secrets.token_urlsafe(32)
+    app.state.session_deadline = time.monotonic()+8*3600
+    for ws in list(manager.active_connections):
+        await ws.close(code=1008)
+        manager.disconnect(ws)
+    return {'token':app.state.auth_token,'expires_in':8*3600}
+
+
+@app.post("/api/session/logout")
+async def logout_session():
+    app.state.auth_token = secrets.token_urlsafe(32)
+    app.state.session_deadline = time.monotonic()+8*3600
+    for ws in list(manager.active_connections):
+        await ws.close(code=1008)
+        manager.disconnect(ws)
+    print('MobileAg new local session token (after logout): '+app.state.auth_token, flush=True)
+    return {'status':'logged_out','reconnect':'Use the new token displayed in the server terminal'}
+
+
+@app.get("/api/scans/{scan_id}/retention")
+async def retention_preview(scan_id: str):
+    scan = await get_scan_details(scan_id)
+    return {'scan_id':scan_id,'revision':scan.get('revision',0),
+            'confirmation':scan_id, 'artifact_sha256':scan.get('artifact_sha256'),
+            'deletes':['scan output','scan metadata','analyst decisions'],
+            'preserves':['uploaded original archive; may be shared by other scans'],
+            'allowed':scan.get('status') not in {'running','queued','cancelling'}}
+
+
+class PurgeRequest(BaseModel):
+    confirmation: str
+    revision: int
+
+
+@app.post("/api/scans/{scan_id}/purge")
+async def purge_scan(scan_id: str, request: PurgeRequest):
+    scan = await get_scan_details(scan_id)
+    if scan.get('status') in {'running','queued','cancelling'} or request.revision != scan.get('revision',0) or request.confirmation != scan_id:
+        raise HTTPException(409, 'Job active, changed, or confirmation incorrect; preview again')
+    root = OUTPUT_DIR.resolve()
+    directory = OUTPUT_DIR / scan_id
+    if directory.is_symlink() or not directory.resolve().is_relative_to(root):
+        raise HTTPException(409, 'Unsafe evidence path; manual operator review required')
+    # Tombstone prevents preserved legacy snapshots from being re-imported.
+    try:
+        repository().purge(scan_id,scan.get('artifact_sha256'),request.revision)
+    except ValueError as exc:
+        raise HTTPException(409,str(exc))
+    ACTIVE_SCANS.pop(scan_id,None)
+    if directory.exists():
+        await asyncio.to_thread(shutil.rmtree,directory)
+    return {'status':'purged','original_archive':'preserved'}
+
+
 @app.get("/api/settings")
 async def get_settings_config() -> dict[str, Any]:
     return await asyncio.to_thread(effective_runtime_settings)
@@ -446,8 +619,8 @@ async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
             raise ValueError()
         if any(type(v) is not bool for k,v in settings.items() if k != 'entropy_threshold'):
             raise ValueError()
-        if merged.get('offline') is False and not get_settings().approved_llm_providers:
-            raise ValueError('Cloud analysis requires an explicitly approved provider list in the server environment')
+        if merged.get('offline') is False:
+            raise ValueError('Web static workers are offline-only. Cloud execution requires a separate credential broker; use the explicitly approved CLI flow instead')
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc) or "Invalid runtime settings")
     if 'entropy_threshold' in settings:
@@ -483,6 +656,7 @@ class LaunchActivityRequest(BaseModel):
 
 class DispatchDeeplinkRequest(BaseModel):
     serial: str
+    package_name: str
     uri: str
 
 
@@ -501,9 +675,9 @@ class DastFuzzRequest(BaseModel):
     serial: str
     package_name: str
     apk_path: Optional[str] = None
-    activities: Optional[list[str]] = None
-    deeplinks: Optional[list[str]] = None
-    authorities: Optional[list[str]] = None
+    activities: Optional[list[str]] = Field(default=None,max_length=30)
+    deeplinks: Optional[list[str]] = Field(default=None,max_length=30)
+    authorities: Optional[list[str]] = Field(default=None,max_length=30)
     targeted_extras: Optional[dict[str, list[str]]] = None
     audit_storage: bool = True
     audit_memory: bool = False
@@ -645,7 +819,7 @@ async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest) -> dict[str, Any]
     """Dispatch a custom URI scheme or deep-link to the target device."""
     res = await intent_fuzzer.exercise_component(
         serial=req.serial,
-        package_name="",
+        package_name=req.package_name,
         component_name="",
         action="android.intent.action.VIEW",
         data_uri=req.uri,
@@ -773,6 +947,9 @@ async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
 @app.post("/api/apis/test")
 async def test_api_endpoint(req: ApiTestRequest) -> dict[str, Any]:
     """Replay a request only within the operator-configured scope."""
+    from mobileag.web.policy import check_replay
+    if not check_replay(repository().get_policy(), req.url.strip(), req.method.upper()):
+        raise HTTPException(403, 'API request is not approved in the UI scope policy')
     try:
         result = await scoped_request(req.url.strip(), req.method.upper(), req.headers,
                                       req.body.encode() if req.body else None, req.timeout)
@@ -960,7 +1137,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
     await manager.broadcast({
         "type": "dast_progress",
         "stage": "DAST Complete",
-        "message": f"Dynamic assessment completed. Identified {len(findings)} issues ({crashes} crashes, {leaks} storage/log leaks, {provs} IPC/SQL flaws).",
+        "message": f"Dynamic diagnostics completed. Recorded {len(findings)} unverified candidates ({crashes} crash observations, {leaks} storage/log observations, {provs} IPC observations). Privileged device results are not ordinary-app exploit proof.",
         "progress": 100,
         "timestamp": datetime.now().isoformat(),
     })
@@ -1047,28 +1224,26 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan['analysis_policy'] = {**updates, 'approved_llm_providers': settings.approved_llm_providers}
         async def progress(stage, message, pct, finding=None):
             scan["progress"] = min(pct,99)
+            scan.setdefault("events", []).append({"sequence":scan.get("event_sequence",0)+1,"stage":str(stage)[:256],"message":str(redact(message))[:1024],"progress":scan["progress"]})
+            scan["event_sequence"] = scan["events"][-1]["sequence"]
+            del scan["events"][:-100]
+            await asyncio.to_thread(repository().save, scan)
             # Raw findings stay out of the final-results UI.
             await manager.broadcast({"type":"agent_progress", "scan_id":scan_id,
                                      "stage":stage, "message":message, "progress":scan["progress"]})
-        if platform == "ios":
-            result = await asyncio.to_thread(IOSSecurityAnalyzer().audit_ipa, req.apk_path,
-                                            Path(req.output_dir) / scan_id / "ios_extract")
-            from mobileag.core.state import create_initial_state
-            from mobileag.reporting.report_engine import ReportEngine
-            state = create_initial_state(scan_id, req.apk_path, str(Path(req.output_dir) / scan_id))
-            state["package_name"] = result["app_name"]
-            state["filtered_findings"] = [f.model_dump(mode="json") for f in result["findings"]]
-            for f in state["filtered_findings"]:
-                f["status"] = "UNVERIFIED"
-            await ReportEngine().generate_reports(state)
-            SARIFExporter.export_to_file(state["filtered_findings"], Path(state["output_dir"]) / f"report_{scan_id}.sarif")
-        else:
-            state = await Orchestrator(settings).scan(req.apk_path, output_dir=req.output_dir,
-                                                       scan_id=scan_id, progress_callback=progress)
+        # Web uploads are hostile parser inputs: never process them in the API process.
+        # Cloud execution needs a credential broker, not network access in this worker.
+        settings = settings.model_copy(update={'offline':True, 'approved_llm_providers':[]})
+        scan['analysis_policy'].update(offline=True, approved_llm_providers=[], execution='isolated_offline')
+        state = await isolated_analysis(req.apk_path, req.output_dir, scan_id, settings, progress)
         if state.get("errors"):
-            raise RuntimeError("; ".join(state["errors"]))
+            scan["errors"] = ["Static analysis incomplete; review coverage and tool readiness"]
         scan["package_name"] = state.get("package_name", apk_name)
+        scan["version"] = state.get("app_version") or state.get("manifest_data",{}).get("version_name")
+        scan["execution_environment"] = state.get("execution_environment",{})
         scan["findings"] = redact(state.get("filtered_findings", []))
+        for finding in scan["findings"]:
+            finding["status"] = "UNVERIFIED"
         scan["components"] = state.get("components", [])
         scan["deep_links"] = state.get("deep_links", [])
         scan["api_endpoints"] = state.get("api_endpoints", [])
@@ -1094,9 +1269,11 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
                      filtered_findings=scan["findings"], package_name=scan["package_name"])
         await ReportEngine().generate_reports(state)
         SARIFExporter.export_to_file(scan["findings"], Path(state["output_dir"]) / f"report_{scan_id}.sarif")
-        scan["status"], scan["progress"] = "completed", 100
+        scan["status"], scan["progress"] = ("partial" if scan.get("errors") and scan["findings"] else "error" if scan.get("errors") else "completed"), 100
     except Exception as exc:
-        scan["status"], scan["progress"], scan["errors"] = "error", 100, [str(exc)]
+        if isinstance(exc,TimeoutError):
+            exc = RuntimeError("Worker wall-clock budget exceeded; retry after reviewing tool readiness")
+        scan["status"], scan["progress"], scan["errors"] = ("cancelled" if scan_id in CANCELLED or "cancelled" in str(exc) else "error"), 100, ["Analysis incomplete: " + str(redact(str(exc)))[:512]]
     finally:
         # Transactional authoritative metadata; preserve an original final snapshot.
         await asyncio.to_thread(repository().save, scan)
@@ -1114,14 +1291,19 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
         platform = await asyncio.to_thread(validate_archive, apk_file)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    if request.auto_dast:
+        raise HTTPException(422, "Static jobs never execute device actions. Use explicitly scoped diagnostics after reviewing results")
     if request.auto_dast and (platform != "android" or not check_device(request.serial)):
         raise HTTPException(403, "DAST requires an explicit authorized Android device")
     if request.bypass_root or request.bypass_ssl:
         raise HTTPException(422, "Automatic bypass is unsupported; use explicit Frida validation")
     output = Path(request.output_dir or OUTPUT_DIR).resolve()
-    if not output.is_relative_to(OUTPUT_DIR.resolve()):
-        raise HTTPException(400, "Output must remain under the configured output directory")
+    if output != OUTPUT_DIR.resolve():
+        raise HTTPException(400, "Web job outputs use the configured output directory only")
     request.output_dir = str(output)
+    artifact_hash = await asyncio.to_thread(hash_file, apk_file)
+    # Reservation below is synchronous until ACTIVE_SCANS insertion: no await
+    # between capacity check and reservation in the supported single event loop.
     if sum(s.get("status") == "running" for s in ACTIVE_SCANS.values()) >= 2:
         raise HTTPException(429, "Scan concurrency limit reached")
     if len(ACTIVE_SCANS) >= 100:
@@ -1136,8 +1318,9 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
         "package_name": None,
         "version": None,
         "revision": 0,
-        "artifact_sha256": await asyncio.to_thread(hash_file, apk_file),
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "artifact_sha256": artifact_hash,
+        "request": {"apk_path":str(apk_file), "auto_taint":request.auto_taint},
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "running",
         "progress": 5,
         "framework": "Not assessed",
@@ -1149,7 +1332,7 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
         "components": [],
         "deep_links": [],
         "attack_surface_graph": {
-            "nodes": [{"id": "app", "label": f"{apk_file.stem}\\n(v1.0)", "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"}],
+            "nodes": [{"id": "app", "label": apk_file.stem, "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"}],
             "edges": [],
         },
     }

@@ -1,31 +1,19 @@
-"""
-MobileAg Phase 2 Analysis Agents.
+"""Analysis agents loaded on demand; starting the dashboard never loads cloud SDKs."""
+from importlib import import_module
 
-This package contains various specialized agents for static analysis
-of mobile application components, including manifests, code, secrets,
-APIs, native libraries, dependencies, and inter-procedural taint analysis.
-"""
+_MODULES = {
+    'APIMapper':'api_mapper', 'BinaryProtectionAuditor':'binary_protection_auditor',
+    'CodeReviewer':'code_reviewer', 'DependencyScanner':'dependency_scanner',
+    'ManifestAuditor':'manifest_auditor', 'NativeAnalyzer':'native_analyzer',
+    'NetworkSecurityConfigAuditor':'network_security_config_auditor',
+    'ReactNativeScanner':'react_native_scanner', 'SecretScanner':'secret_scanner',
+    'TaintEngine':'taint_engine',
+}
+__all__ = list(_MODULES)
 
-from .api_mapper import APIMapper
-from .binary_protection_auditor import BinaryProtectionAuditor
-from .code_reviewer import CodeReviewer
-from .dependency_scanner import DependencyScanner
-from .manifest_auditor import ManifestAuditor
-from .native_analyzer import NativeAnalyzer
-from .network_security_config_auditor import NetworkSecurityConfigAuditor
-from .react_native_scanner import ReactNativeScanner
-from .secret_scanner import SecretScanner
-from .taint_engine import TaintEngine
-
-__all__ = [
-    "ManifestAuditor",
-    "SecretScanner",
-    "CodeReviewer",
-    "APIMapper",
-    "NativeAnalyzer",
-    "DependencyScanner",
-    "NetworkSecurityConfigAuditor",
-    "BinaryProtectionAuditor",
-    "ReactNativeScanner",
-    "TaintEngine",
-]
+def __getattr__(name):
+    if name not in _MODULES:
+        raise AttributeError(name)
+    value = getattr(import_module('.'+_MODULES[name],__name__),name)
+    globals()[name] = value
+    return value

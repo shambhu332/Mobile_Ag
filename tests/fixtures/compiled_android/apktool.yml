@@ -1,0 +1,13 @@
+version: 3.0.1
+apkFileName: synthetic.apk
+isFrameworkApk: false
+usesFramework:
+  ids:
+  - 1
+sdkInfo:
+  minSdkVersion: 23
+  targetSdkVersion: 35
+versionInfo:
+  versionCode: 1
+  versionName: 1.0-synthetic
+doNotCompress: [resources.arsc]

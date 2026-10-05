@@ -68,8 +68,9 @@ class IntentFuzzer:
         if extra_args:
             cmd_args.extend(extra_args)
 
-        # Clear logcat before execution to isolate runtime trace
-        await self.adb.clear_logcat(serial)
+        # Do not destroy the device-wide log buffer during a diagnostic.
+        if (action or data_uri) and package_name:
+            cmd_args.extend(["-p", package_name])
 
         result: dict[str, Any] = {
             "component": full_comp,

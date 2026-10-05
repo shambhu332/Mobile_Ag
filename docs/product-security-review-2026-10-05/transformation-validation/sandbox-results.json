@@ -1,0 +1,32 @@
+{
+  "namespace": {
+    "home_hidden": true,
+    "passwd_hidden": true,
+    "loopback_only": true,
+    "provider_key_absent": true,
+    "input_readonly": true,
+    "workspace_writable": true
+  },
+  "aggregate_limits": {
+    "CPUQuotaPerSecUSec": "1s",
+    "MemoryMax": "3221225472",
+    "MemorySwapMax": "536870912",
+    "TasksMax": "128"
+  },
+  "python": "3.14.7",
+  "host_os": "Linux-7.2.8-2-cachyos-x86_64-with-glibc2.44",
+  "synthetic_ipa_sha256": "cff45e17888e478ae2a15204dc0c3d941677d87cfc4d80f50c7d875287645f9c",
+  "candidate_count": 1,
+  "candidate_statuses": [
+    "UNVERIFIED"
+  ],
+  "coverage": {
+    "info_plist": "parsed",
+    "binary_format": "mach_o_64",
+    "symbols": "byte_string_heuristic",
+    "entitlements": "not_assessed",
+    "runtime": "not_assessed"
+  },
+  "invalid_apk_incomplete": true,
+  "limits": "Synthetic header/ZIP fixtures, not a compiled production IPA/APK, ordinary-app exploit, or real-device assessment"
+}

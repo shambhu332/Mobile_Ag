@@ -81,7 +81,8 @@ class IOSSecurityAnalyzer:
         app_name = app_dir.stem
         info_plist_path = app_dir / "Info.plist"
         with info_plist_path.open("rb") as fp:
-            executable = plistlib.load(fp).get("CFBundleExecutable", app_name)
+            metadata = plistlib.load(fp)
+            executable = metadata.get("CFBundleExecutable", app_name)
         if not isinstance(executable, str) or Path(executable).name != executable or executable in {".", ".."}:
             raise ValueError("Invalid CFBundleExecutable")
         binary_path = app_dir / executable
@@ -91,6 +92,9 @@ class IOSSecurityAnalyzer:
         return {
             "app_dir": str(app_dir),
             "app_name": app_name,
+            "package_name": metadata.get("CFBundleIdentifier"),
+            "version": metadata.get("CFBundleShortVersionString"),
+            "build": metadata.get("CFBundleVersion"),
             "binary_path": str(binary_path) if binary_path.exists() else None,
             "info_plist_path": str(info_plist_path) if info_plist_path.exists() else None,
         }
@@ -466,8 +470,14 @@ class IOSSecurityAnalyzer:
 
         return {
             "app_name": extracted["app_name"],
+            "package_name": extracted["package_name"],
+            "version": extracted["version"],
+            "build": extracted["build"],
             "platform": "iOS",
             "findings_count": len(all_findings),
+            "coverage": {"info_plist":"parsed", "binary_format":"mach_o_64" if macho_headers.is_macho else "unsupported",
+                         "symbols":"byte_string_heuristic", "entitlements":"not_assessed", "runtime":"not_assessed"},
+            "errors": [] if macho_headers.is_macho else ["Unsupported or truncated executable; binary security was not assessed"],
             "findings": all_findings,
             "macho_security": {
                 "pie_enabled": macho_headers.pie_enabled,

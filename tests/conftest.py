@@ -23,3 +23,15 @@ def isolated_test_environment(monkeypatch, tmp_path):
     uploads=tmp_path/'uploads';uploads.mkdir()
     monkeypatch.setattr(web,'UPLOAD_DIR',uploads)
     monkeypatch.setattr(web,'OUTPUT_DIR',tmp_path/'output')
+
+    # Unit route fixtures use an explicit executor boundary. Real namespace tests
+    # call jobs.isolated_analysis directly; production has no test-mode bypass.
+    async def inline_analysis(artifact, output, sid, settings, progress):
+        from mobileag.security.archives import validate_archive
+        if validate_archive(artifact) == 'ios':
+            result = web.IOSSecurityAnalyzer().audit_ipa(artifact, tmp_path/'ios_extract')
+            return {'package_name':result['app_name'], 'filtered_findings':[f.model_dump(mode='json') for f in result['findings']], 'coverage':result['coverage'],'errors':result['errors']}
+        return await web.Orchestrator(settings).scan(artifact, output_dir=output, scan_id=sid,progress_callback=progress)
+    monkeypatch.setattr(web,'isolated_analysis',inline_analysis)
+    web.repository().save_policy({'devices':['emulator-5554'], 'packages':['org.example','com.example','org.example.synthetic','com.test.app','com.target.testapp','com.target.app'],
+                                 'origins':[], 'methods':['GET'], 'actions':sorted(__import__('mobileag.web.policy',fromlist=['DYNAMIC_ACTIONS']).DYNAMIC_ACTIONS)})

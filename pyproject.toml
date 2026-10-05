@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 include = ["mobileag*", "config*"]
 
 [tool.setuptools.package-data]
-mobileag = ["data/*.json", "web/templates/*.html", "web/static/*.js", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
+mobileag = ["data/*.json", "web/templates/*.html", "web/static/*.js", "web/static/*.css", "web/static/vendor/*", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "build"]
@@ -46,3 +46,7 @@ dependencies = [
 
 [project.scripts]
 mobileag = "mobileag.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".kilo", "node_modules", "output", "uploads", "build", "dist"]

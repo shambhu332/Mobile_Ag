@@ -2,7 +2,7 @@
 
 Run outside pytest (requires Playwright plus a cached Chromium):
   python tests/browser_product_regression.py --server-python /path/to/project/venv/bin/python
-No real device commands or cloud model calls. Public dashboard CDN assets may load.
+No real device commands, cloud model calls, or external runtime assets.
 """
 from __future__ import annotations
 import argparse
@@ -60,6 +60,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--server-python',default=sys.executable)
     parser.add_argument('--chromium',default=str(Path.home()/'.cache/ms-playwright/chromium-1247/chrome-linux64/chrome'))
+    parser.add_argument('--axe',default=None,help='Optional local axe-core/axe.min.js for automated accessibility checks')
     parser.add_argument('--output',default='docs/product-security-review-2026-10-05/fix-validation')
     args=parser.parse_args()
     repo=Path(__file__).resolve().parents[1];out=Path(args.output).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -93,7 +94,17 @@ def main():
                     page.on('console',lambda m:console.append(m.text) if m.type=='error' else None)
                     page.on('request',lambda r:requests.append(r.url))
                     page.on('dialog',lambda d:d.accept('synthetic-local-only') if d.type=='prompt' else d.dismiss())
-                    page.goto(url,wait_until='networkidle',timeout=90000)
+                    page.emulate_media(reduced_motion='reduce')
+                    page.goto(url,wait_until='domcontentloaded',timeout=90000)
+                    page.locator('#session-token').wait_for(state='visible')
+                    keyboard_initial_focus=page.locator('#session-token').evaluate('(e) => e === document.activeElement')
+                    page.keyboard.press('Tab')
+                    keyboard_submit_focus=page.locator('#session-connect button').evaluate('(e) => e === document.activeElement')
+                    page.locator('#session-token').fill('invalid-synthetic-token')
+                    page.locator('#session-connect button').click()
+                    page.locator('#session-connect [role=alert]').wait_for(state='visible')
+                    page.locator('#session-token').fill('synthetic-local-only')
+                    page.locator('#session-token').press('Enter')
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
                     # A block is essential: an expression returning a function can
                     # be invoked by Playwright itself, creating a false marker.
@@ -107,7 +118,7 @@ def main():
                         page.locator('#poc-pane-'+pane+' button').first.click()
                         copied[pane]=page.evaluate('navigator.clipboard.readText()')==expected
                     page.locator('#subtab-btn-proof').click();proof=page.locator('#poc-pane-proof').inner_text()
-                    result={'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
+                    result={'keyboard_connection':{'initial_token_focus':keyboard_initial_focus,'tab_to_submit':keyboard_submit_focus,'enter_submits':not page.locator('#session-connect').evaluate('(e) => e.open')}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
                             'xss_marker_executions':page.evaluate('window.auditXssCount'),'exact_clipboard_copies':copied,
                             'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs':page.locator('#kpi-masvs').inner_text(),
                             'inline_handlers':page.evaluate('() => [...document.querySelectorAll("*")].flatMap(e=>[...e.attributes]).filter(a=>/^on/i.test(a.name)).length'),
@@ -133,15 +144,29 @@ def main():
                     page.set_viewport_size({'width':390,'height':844});page.screenshot(path=str(out/'fixed-narrow.png'))
                     result.update(page_errors=errors,console_errors=console,narrow_scrollwidth=page.evaluate('document.documentElement.scrollWidth'),
                                   api_requests_outside_loopback=[r for r in requests if '/api/' in r and not r.startswith(url)],
+                                  runtime_requests_outside_loopback=[r for r in requests if not r.startswith(url)],
                                   device_operations='Mocked and disabled; no real ADB/Frida commands',cloud_model_calls=0)
+                    result['a11y']={}
+                    if args.axe:
+                        page.evaluate(Path(args.axe).read_text())
+                        for view in ['surface','findings','scans','agents','settings','dast','taint','api']:
+                            page.locator('#nav-'+view).click();page.wait_for_timeout(200)
+                            assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
+                            result['a11y'][view]=[{'id':v['id'],'impact':v['impact'],'count':len(v['nodes']),'nodes':[{'html':n['html'],'failure':n['failureSummary']} for n in v['nodes']]} for v in assessment['violations']]
+                    if args.axe:
+                        assert all(not violations for violations in result['a11y'].values()), result['a11y']
+                    page.set_viewport_size({'width':320,'height':844})
+                    result['small_screen_scrollwidth']=page.evaluate('document.documentElement.scrollWidth')
+                    page.screenshot(path=str(out/'fixed-320px.png'))
                     (out/'browser-results.json').write_text(json.dumps(result,indent=2))
+                    assert all(result['keyboard_connection'].values()) and result['reduced_motion_media']
                     assert result['xss_marker_executions']==result['csp_control_marker_executions']==0
                     assert all(copied.values()) and result['hostile_title_kept_as_text']
                     assert result['inline_handlers']==result['inline_scripts']==0
                     assert result['durable_feedback_status']=='FALSE_POSITIVE'
                     assert result['finding_count']=='1' and result['implicit_device_selection'] is None
                     assert 'SINK_REACHED' not in proof and 'No runtime validation' in proof
-                    assert not errors and not result['api_requests_outside_loopback']
+                    assert not errors and not result['api_requests_outside_loopback'] and not result['runtime_requests_outside_loopback']
                     print(json.dumps(result,indent=2));context.close();browser.close()
             finally:
                 server.terminate()

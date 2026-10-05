@@ -302,7 +302,8 @@ def test_web_ipa_dispatch(client):
         r=client.post('/api/scans/run',json={'apk_path':str(file)})
         assert r.status_code==200
         result=client.get('/api/scans/'+r.json()['scan_id']).json()
-        assert result['status']=='completed'
+        assert result['status']=='error'  # Truncated synthetic executable is not a clean binary audit.
+        assert result['coverage']['binary_format']=='unsupported'
         android.assert_not_called()
 
 def test_request_size_limit(client):

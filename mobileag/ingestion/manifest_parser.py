@@ -1,4 +1,6 @@
 import logging
+import re
+import json
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List
 from pathlib import Path
@@ -45,19 +47,22 @@ class ManifestParser:
             })
         return filters
 
-    def _parse_components(self, app_elem: ET.Element, tag: str) -> List[Dict[str, Any]]:
+    def _parse_components(self, app_elem: ET.Element, tag: str, target_sdk: str = "") -> List[Dict[str, Any]]:
         """Parses app components like activities, services, etc."""
         components = []
         for elem in app_elem.findall(tag):
             name = self._get_attrib(elem, "name")
             exported = self._get_attrib(elem, "exported")
-            permission = self._get_attrib(elem, "permission")
+            permission = self._get_attrib(elem, "permission") or self._get_attrib(app_elem, "permission")
             task_affinity = self._get_attrib(elem, "taskAffinity")
             intent_filters = self._parse_intent_filters(elem)
             
             # Default export logic if not explicitly set
             if not exported:
-                exported_bool = True if intent_filters else False
+                if tag == "provider":
+                    exported_bool = int(target_sdk) < 17 if target_sdk.isdecimal() else None
+                else:
+                    exported_bool = bool(intent_filters)
             else:
                 exported_bool = exported.lower() == "true"
                 
@@ -78,6 +83,44 @@ class ManifestParser:
                 "meta_data": meta_data,
             })
         return components
+
+    @staticmethod
+    def _decoded_metadata(path: Path) -> Dict[str, str]:
+        """Read only bounded, simple APKTool scalar metadata; never load YAML objects.
+
+        APKTool moves SDK/version attributes out of decoded XML. Complex YAML,
+        aliases and malformed values are deliberately not interpreted.
+        """
+        metadata = path.parent / "apktool.yml"
+        if not metadata.is_file() or metadata.is_symlink() or metadata.stat().st_size > 65536:
+            return {}
+        values = {}
+        section = ""
+        for line in metadata.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line and not line[0].isspace():
+                section = line.rstrip(":") if line in ("versionInfo:", "sdkInfo:") else ""
+                continue
+            match = re.fullmatch(r"  (versionName|versionCode|minSdkVersion|targetSdkVersion): ([^\n]{1,256})", line)
+            if not section or not match:
+                continue
+            key, value = match.groups()
+            if (section == "versionInfo") != (key in ("versionName", "versionCode")):
+                continue
+            if value.startswith('"'):
+                try:
+                    value = json.loads(value)
+                except (ValueError, TypeError):
+                    continue
+            elif value.startswith("'") and value.endswith("'"):
+                value = value[1:-1].replace("''", "'")
+            elif not re.fullmatch(r"[A-Za-z0-9_.+-]+", value):
+                continue
+            if not isinstance(value, str) or not value or len(value) > 256:
+                continue
+            if key != "versionName" and not value.isdecimal():
+                continue
+            values[key] = value
+        return values
 
     def parse(self, manifest_path: str) -> Dict[str, Any]:
         """
@@ -104,10 +147,15 @@ class ManifestParser:
 
         package_name = root.attrib.get("package", "")
         
+        decoded_metadata = self._decoded_metadata(path)
+
         # Uses-SDK
         uses_sdk = root.find("uses-sdk")
         min_sdk = self._get_attrib(uses_sdk, "minSdkVersion") if uses_sdk is not None else ""
         target_sdk = self._get_attrib(uses_sdk, "targetSdkVersion") if uses_sdk is not None else ""
+
+        min_sdk = min_sdk or decoded_metadata.get("minSdkVersion", "")
+        target_sdk = target_sdk or decoded_metadata.get("targetSdkVersion", "")
 
         # Permissions requested
         permissions = [self._get_attrib(p, "name") for p in root.findall("uses-permission")]
@@ -134,14 +182,15 @@ class ManifestParser:
         debuggable_bool = debuggable.lower() == "true" if debuggable else False
 
         uses_cleartext = self._get_attrib(app_elem, "usesCleartextTraffic")
-        uses_cleartext_bool = uses_cleartext.lower() == "true" if uses_cleartext else False
+        uses_cleartext_bool = (uses_cleartext.lower() == "true" if uses_cleartext
+                               else int(target_sdk) < 28 if target_sdk.isdecimal() else None)
 
         # Parse components
-        activities = self._parse_components(app_elem, "activity")
-        activities.extend(self._parse_components(app_elem, "activity-alias"))
-        services = self._parse_components(app_elem, "service")
-        receivers = self._parse_components(app_elem, "receiver")
-        providers = self._parse_components(app_elem, "provider")
+        activities = self._parse_components(app_elem, "activity", target_sdk)
+        activities.extend(self._parse_components(app_elem, "activity-alias", target_sdk))
+        services = self._parse_components(app_elem, "service", target_sdk)
+        receivers = self._parse_components(app_elem, "receiver", target_sdk)
+        providers = self._parse_components(app_elem, "provider", target_sdk)
 
         all_components = activities + services + receivers + providers
 
@@ -171,6 +220,8 @@ class ManifestParser:
 
         return {
             "package_name": package_name,
+            "version_name": self._get_attrib(root,"versionName") or decoded_metadata.get("versionName"),
+            "version_code": self._get_attrib(root,"versionCode") or decoded_metadata.get("versionCode"),
             "package": package_name,
             "min_sdk": min_sdk,
             "target_sdk": target_sdk,

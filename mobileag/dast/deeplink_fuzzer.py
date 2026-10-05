@@ -109,10 +109,9 @@ class DeepLinkFuzzer:
         activity_name: str = "",
     ) -> tuple[int, str, list[str]]:
         """Execute a deep link intent on the device and monitor logcat output."""
-        await self.adb.clear_logcat(serial)
 
         # Build am start command
-        cmd = ["-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", target_uri]
+        cmd = ["-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", target_uri, "-p", package_name]
         if activity_name:
             cmd.extend(["-n", f"{package_name}/{activity_name}"])
 

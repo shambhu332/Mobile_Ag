@@ -93,19 +93,21 @@ class ManifestAuditor:
             comp_type = comp.get("type", "component").capitalize()
 
             if exported and not permission:
-                cwe = "CWE-926"
-                score, vector = get_default_cvss_for_cwe(cwe)
+                # Exposure is an attack-surface observation, not proof of a
+                # missing authorization check. Launcher/public components may
+                # intentionally accept callers and require no permission.
                 findings.append(Finding(
-                    title=f"Exported {comp_type} Without Permission: {name}",
-                    description=f"{comp_type} '{name}' is exported to other apps without any permission restrictions.",
-                    severity=Severity.HIGH,
-                    cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    title=f"Review Exported {comp_type}: {name}",
+                    description=f"{comp_type} '{name}' accepts external callers without a manifest permission. "
+                                "This may be intentional (for example a launcher activity). Trace caller-controlled "
+                                "inputs to sensitive operations and verify runtime authorization before claiming a vulnerability.",
+                    severity=Severity.INFO,
+                    cwe_id="CWE-Unknown",
                     affected_component=name,
                     detection_method="ManifestAuditor",
                     status=FindingStatus.UNVERIFIED,
-                    remediation=f"Explicitly set android:exported='false' if external access is not needed, or guard with a custom signature permission.",
+                    remediation="Keep intentionally public entrypoints usable. For private operations, disable export "
+                                "or enforce caller authorization before processing inputs; do not disable launcher access blindly.",
                     file_path="AndroidManifest.xml"
                 ))
 

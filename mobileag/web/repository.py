@@ -48,6 +48,8 @@ class ScanRepository:
                     at TEXT NOT NULL, verdict TEXT NOT NULL, notes TEXT NOT NULL,
                     revision INTEGER NOT NULL, actor TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS policies (id INTEGER PRIMARY KEY, document TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, at TEXT NOT NULL, sha256 TEXT);
                 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, document TEXT NOT NULL);
             ''')
 
@@ -133,3 +135,27 @@ class ScanRepository:
     def save_settings(self, settings):
         with self.connection() as db:
             db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)', (json.dumps(settings),))
+
+    def get_policy(self):
+        with self.connection() as db:
+            row = db.execute('SELECT document FROM policies WHERE id=1').fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_policy(self, policy):
+        with self.connection() as db:
+            db.execute('INSERT OR REPLACE INTO policies VALUES(1,?)',(json.dumps(policy),))
+
+    def purged(self, sid):
+        with self.connection() as db:
+            return bool(db.execute('SELECT 1 FROM tombstones WHERE id=?',(sid,)).fetchone())
+
+    def purge(self, sid, sha256, revision):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT revision,status FROM scans WHERE id=?',(sid,)).fetchone()
+            if not row or row['revision'] != revision or row['status'] in {'running','queued','cancelling'}:
+                raise ValueError('Scan changed; preview again')
+            db.execute('DELETE FROM scans WHERE id=?',(sid,))
+            db.execute('DELETE FROM decisions WHERE scan_id=?',(sid,))
+            db.execute('INSERT OR REPLACE INTO tombstones VALUES(?,?,?)',
+                       (sid,datetime.now(timezone.utc).isoformat(),sha256))

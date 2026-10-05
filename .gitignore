@@ -38,3 +38,5 @@ tmp/
 *.swp
 *.swo
 .DS_Store
+
+assets/node_modules/

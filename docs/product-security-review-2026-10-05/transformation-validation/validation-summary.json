@@ -1,0 +1,16 @@
+{
+  "baseline_commit": "e0af87a7967e2c4ff3fe77bc496d35dad8a66467",
+  "code_status": "tested local modifications; not pushed",
+  "package_version": "0.1.0",
+  "wheel_sha256": "0a9f5428cb8480fcf3c6ab52f5ba36c63d94c079052c715c22ea86bcae5002c9",
+  "python": "3.14.7",
+  "host_os": "Linux 7.2.8-2-cachyos x86_64/glibc2.44",
+  "tests": 155,
+  "browser_fixture_views": 8,
+  "automated_accessibility_violations": 0,
+  "real_device_tests": 0,
+  "remote_ci_run": false,
+  "source_files_hashed": 141,
+  "original_backup": "/tmp/mobileag-transformation-backup-4ML1DG/source.tar",
+  "limits": "See TRANSFORMATION_STATUS.md; no production, whole-codebase or ordinary-app exploit certification"
+}

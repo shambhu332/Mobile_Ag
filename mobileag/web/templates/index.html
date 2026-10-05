@@ -4,20 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>MobileAg — Enterprise Mobile AppSec Testing Platform</title>
+  <title>MobileAg — Local Mobile Security Workbench</title>
 
   <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/dashboard.css" />
+  <link rel="stylesheet" href="/static/accessibility.css" />
+
 
   <!-- Vis.js for Network Topology Graph -->
-  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script type="text/javascript" src="/static/vendor/vis-network.js"></script>
 
   <!-- Chart.js for MASVS Radar & Metrics -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/vendor/chart-js.js"></script>
 
   <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="/static/vendor/lucide.js"></script>
 
   <style>
     /* Professional Developer Tools Scrollbar */
@@ -40,8 +41,9 @@
   </style>
 </head>
 
-<body class="bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased select-none">
+<body class="bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased">
 
+  <a class="skip-link" href="#main-workspace">Skip to workspace</a>
   <!-- ===================================================================== -->
   <!-- 1. NAVIGATION SIDEBAR -->
   <!-- ===================================================================== -->
@@ -60,7 +62,7 @@
       </div>
 
       <!-- Main Navigation Menu -->
-      <nav class="p-3 space-y-1">
+      <nav aria-label="Workspace sections" class="p-3 space-y-1">
         <button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
           <i data-lucide="network" class="w-4 h-4"></i>
           <span>Attack Surface</span>
@@ -137,7 +139,7 @@
   <!-- ===================================================================== -->
   <!-- 2. MAIN VIEW CONTAINER -->
   <!-- ===================================================================== -->
-  <main class="flex-1 flex flex-col overflow-hidden">
+  <main id="main-workspace" tabindex="-1" class="flex-1 flex flex-col overflow-hidden">
 
     <!-- Top Header Bar -->
     <header class="h-16 border-b border-borderSubtle bg-panel/80 px-6 flex items-center justify-between shrink-0">
@@ -536,8 +538,8 @@
 
             <div class="space-y-2 pt-2 border-t border-borderSubtle">
               <label class="flex items-center gap-2">
-                <input type="checkbox" id="cfg-offline" checked />
-                <span>Offline: no LLM or OSV egress (cloud requires server-approved providers)</span>
+                <input type="checkbox" id="cfg-offline" checked disabled />
+                <span>Web static analysis: offline only (no LLM or OSV egress)</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" id="cfg-deep-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
@@ -1042,7 +1044,7 @@
           </div>
 
           <!-- Discovered APIs List -->
-          <div id="api-endpoints-list" class="flex-1 overflow-y-auto p-4 space-y-2.5">
+          <div id="api-endpoints-list" tabindex="0" aria-label="Discovered API endpoints" class="flex-1 overflow-y-auto p-4 space-y-2.5">
             <!-- Dynamically populated -->
           </div>
         </div>
@@ -1163,7 +1165,7 @@
 
         <div class="space-y-2 pt-2 border-t border-borderSubtle">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="modal-opt-auto-dast" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
+            <input type="checkbox" id="modal-opt-auto-dast" disabled title="Static jobs do not execute device actions; review findings before explicitly scoped diagnostics" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
             <span class="text-slate-200 font-semibold">Opt-in device diagnostics (explicit authorized device required)</span>
           </label>
           <div class="pl-6 space-y-1.5 text-[11px] text-slate-400">
@@ -1203,6 +1205,17 @@
   <!-- ===================================================================== -->
   <!-- 5. JAVASCRIPT CLIENT LOGIC -->
   <!-- ===================================================================== -->
-  <script src="/static/dashboard.js"></script>
+  <script src="/static/session-actions.js"></script>
+<script src="/static/workspace.js"></script>
+<script src="/static/findings.js"></script>
+<script src="/static/history-settings.js"></script>
+<script src="/static/copilot.js"></script>
+<script src="/static/uploads-exports.js"></script>
+<script src="/static/telemetry.js"></script>
+<script src="/static/dast.js"></script>
+<script src="/static/taint.js"></script>
+<script src="/static/api.js"></script>
+<script src="/static/dashboard.js"></script>
+  <script src="/static/workflow.js"></script>
 </body>
 </html>

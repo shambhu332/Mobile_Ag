@@ -12,22 +12,16 @@ from config.llm_config import (
 from config.settings import Settings
 from mobileag.security.privacy import redact
 from mobileag.llm.providers.base import BaseLLMProvider, LLMResponse
-from mobileag.llm.providers.gemini import GeminiProvider
-from mobileag.llm.providers.openai_gpt import OpenAIProvider
-from mobileag.llm.providers.deepseek import DeepSeekProvider
-from mobileag.llm.providers.grok import GrokProvider
-from mobileag.llm.providers.claude import ClaudeProvider
-
 logger = logging.getLogger(__name__)
 
 # Maps config name → provider class
-_PROVIDER_CLASSES: dict[str, type[BaseLLMProvider]] = {
-    "gemini_flash": GeminiProvider,
-    "gemini_pro": GeminiProvider,
-    "openai": OpenAIProvider,
-    "deepseek": DeepSeekProvider,
-    "grok": GrokProvider,
-    "claude": ClaudeProvider,
+_PROVIDER_CLASSES = {
+    'gemini_flash':('gemini','GeminiProvider'),
+    'gemini_pro':('gemini','GeminiProvider'),
+    'openai':('openai_gpt','OpenAIProvider'),
+    'deepseek':('deepseek','DeepSeekProvider'),
+    'grok':('grok','GrokProvider'),
+    'claude':('claude','ClaudeProvider'),
 }
 
 
@@ -56,6 +50,9 @@ class LLMRouter:
             provider_cls = _PROVIDER_CLASSES.get(config_name)
             if provider_cls and config.api_key and config_name in self._settings.approved_llm_providers:
                 try:
+                    if isinstance(provider_cls,tuple):
+                        from importlib import import_module
+                        provider_cls = getattr(import_module('mobileag.llm.providers.'+provider_cls[0]),provider_cls[1])
                     self._providers[config_name] = provider_cls(
                         api_key=config.api_key,
                         model=config.model,

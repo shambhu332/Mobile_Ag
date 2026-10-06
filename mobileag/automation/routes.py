@@ -1,5 +1,5 @@
 """Factory-wired router: no importing app globals or auth test-mode switches."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
@@ -46,22 +46,22 @@ def build_router(service,token):
     @router.get('/runs')
     async def runs():return service().store().list()
     @router.post('/runs')
-    async def create(req:CreateRun):return await call(service().create,req,token())
+    async def create(req:CreateRun,request:Request):return await call(service().create,req,token(request))
     @router.get('/runs/{rid}')
     async def get(rid:str):return document(rid)
     @router.post('/runs/{rid}/observe')
-    async def observe(rid:str,req:Revision):return await call(service().observe,rid,req.revision,token())
+    async def observe(rid:str,req:Revision,request:Request):return await call(service().observe,rid,req.revision,token(request))
     @router.post('/runs/{rid}/execute')
-    async def execute(rid:str,req:ExecuteRun):return await call(service().execute,rid,req,token())
+    async def execute(rid:str,req:ExecuteRun,request:Request):return await call(service().execute,rid,req,token(request))
     @router.post('/runs/{rid}/cancel')
     async def cancel(rid:str):
         try:return service().cancel(rid)
         except (KeyError,ValueError):raise HTTPException(409,'Run is unavailable or not active')
     @router.post('/runs/{rid}/captures')
-    async def captures(rid:str,req:ImportCaptures):
+    async def captures(rid:str,req:ImportCaptures,request:Request):
         s=service();doc=document(rid)
         try:
-            s.guard(doc,token())
+            s.guard(doc,token(request))
             if doc['revision']!=req.revision or doc['status'] in {'running','discovering'}:raise Conflict('Run changed or active')
             # Re-import after restart refreshes memory-only URLs without rewriting evidence.
             current={c['id'] for c in doc['captures']}

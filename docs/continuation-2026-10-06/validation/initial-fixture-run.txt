@@ -1,0 +1,246 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+____ test_body_delivered_after_rotation_cannot_mutate_or_start[/api/scope] _____
+
+path = '/api/scope'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7077379940>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Simulate a concurrent local rotation.
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 422 == 401
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_session_boundary_regressions.py:63: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[/api/assessments] __
+
+path = '/api/assessments'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f707737a3f0>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Simulate a concurrent local rotation.
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 422 == 401
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_session_boundary_regressions.py:63: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[/api/automation/runs] _
+
+path = '/api/automation/runs'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f707722e210>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Simulate a concurrent local rotation.
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 422 == 401
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_session_boundary_regressions.py:63: AssertionError
+_____________ test_rotation_during_create_hash_cannot_save_policy ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f70772be9c0>
+
+    @pytest.mark.asyncio
+    async def test_rotation_during_create_hash_cannot_save_policy(monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        token = web.app.state.auth_token
+        original = asyncio.to_thread
+    
+        async def rotate_at_hash(fn, *args, **kwargs):
+            if fn is service.hash_file:
+                monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', rotate_at_hash)
+        try:
+>           with pytest.raises(PermissionError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'PermissionError'>
+
+tests/test_session_boundary_regressions.py:84: Failed
+_____ test_cancel_or_rotation_during_pre_static_hash_blocks_worker[cancel] _____
+
+boundary = 'cancel'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f70772bfac0>
+
+    @pytest.mark.parametrize('boundary', ['cancel', 'rotate'])
+    @pytest.mark.asyncio
+    async def test_cancel_or_rotation_during_pre_static_hash_blocks_worker(boundary, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = asyncio.to_thread
+        hash_calls = 0
+    
+        async def pause_run_hash(fn, *args, **kwargs):
+            nonlocal hash_calls
+            if fn is service.hash_file:
+                hash_calls += 1
+                if hash_calls == 2:  # First hash belongs to create; second to run.
+                    entered.set()
+                    await release.wait()
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', pause_run_hash)
+        doc = await service.create(request, web.app.state.auth_token)
+        task = service.tasks[doc['id']]
+        await asyncio.wait_for(entered.wait(), 5)
+        if boundary == 'cancel':
+            service.cancel(doc['id'])
+        else:
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+        release.set()
+        await task
+        result = service.store().get(doc['id'])
+        assert result['status'] == ('cancelled' if boundary == 'cancel' else 'paused')
+>       service.static_runner.assert_not_called()
+
+tests/test_session_boundary_regressions.py:123: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='140121010517200'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'mock' to not have been called. Called 1 times.
+E           Calls: [call(PosixPath('/tmp/pytest-of-shambhu/pytest-1/test_cancel_or_rotation_during0/uploads/session-fixture.apk'), <function AssessmentService.run.<locals>.linked at 0x7f7077158d50>)].
+
+/usr/lib/python3.14/unittest/mock.py:947: AssertionError
+_____ test_cancel_or_rotation_during_pre_static_hash_blocks_worker[rotate] _____
+
+boundary = 'rotate'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7077136c50>
+
+    @pytest.mark.parametrize('boundary', ['cancel', 'rotate'])
+    @pytest.mark.asyncio
+    async def test_cancel_or_rotation_during_pre_static_hash_blocks_worker(boundary, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = asyncio.to_thread
+        hash_calls = 0
+    
+        async def pause_run_hash(fn, *args, **kwargs):
+            nonlocal hash_calls
+            if fn is service.hash_file:
+                hash_calls += 1
+                if hash_calls == 2:  # First hash belongs to create; second to run.
+                    entered.set()
+                    await release.wait()
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', pause_run_hash)
+        doc = await service.create(request, web.app.state.auth_token)
+        task = service.tasks[doc['id']]
+        await asyncio.wait_for(entered.wait(), 5)
+        if boundary == 'cancel':
+            service.cancel(doc['id'])
+        else:
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+        release.set()
+        await task
+        result = service.store().get(doc['id'])
+        assert result['status'] == ('cancelled' if boundary == 'cancel' else 'paused')
+>       service.static_runner.assert_not_called()
+
+tests/test_session_boundary_regressions.py:123: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='140121011274144'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'mock' to not have been called. Called 1 times.
+E           Calls: [call(PosixPath('/tmp/pytest-of-shambhu/pytest-1/test_cancel_or_rotation_during1/uploads/session-fixture.apk'), <function AssessmentService.run.<locals>.linked at 0x7f7077159640>)].
+
+/usr/lib/python3.14/unittest/mock.py:947: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[/api/scope]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[/api/assessments]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[/api/automation/runs]
+FAILED tests/test_session_boundary_regressions.py::test_rotation_during_create_hash_cannot_save_policy
+FAILED tests/test_session_boundary_regressions.py::test_cancel_or_rotation_during_pre_static_hash_blocks_worker[cancel]
+FAILED tests/test_session_boundary_regressions.py::test_cancel_or_rotation_during_pre_static_hash_blocks_worker[rotate]
+6 failed, 157 warnings in 1.76s

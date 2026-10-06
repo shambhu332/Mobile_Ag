@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "1443063b7d2f69a10c436f5befa43fc08cbb2002",
+  "application_version": "0.1.0",
+  "python": "3.14.7",
+  "os": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "fastapi": "0.141.1",
+    "starlette": "1.7.0",
+    "httpx": "0.28.1",
+    "pytest": "8.4.2",
+    "pytest-asyncio": "0.24.0",
+    "playwright": "1.63.0"
+  },
+  "sha256": {
+    "mobileag/web/security.py": "904ad2bdde5c28fd12de7386da892cfbf70ada91bc057fae37504b2170cfc6d3",
+    "mobileag/web/app.py": "59dfa90cfbf87eb26fed4e09843fb37d3ee705ce1e9b471d0823dc18d22e2c1b",
+    "mobileag/assessments/routes.py": "9af62ec7698d170451242c3aa49ddc2b088851643e9ef1940317d7f7f3a0f9b0",
+    "mobileag/assessments/service.py": "dd0bc7c93e496567df0cba07d686bbffad307836cd81df309f6ac63c77b2ec12",
+    "mobileag/automation/routes.py": "d2957ce6c6f6e3779d8f4ff6d3863407f980dbafc55f011e9c64d928fcd5ff31",
+    "tests/test_session_boundary_regressions.py": "1041cd6c0dd71a5be4b0f6535702c370c3a8d152641ecd920274572d6e146c14",
+    "docs/automation-2026-10-05/validation/navigation-synthetic.apk": "678c3906158acdff220c8b116166c019f2adb323548545562b2537b4bb5043ee"
+  },
+  "changes": "Security follow-up; original dist/APK/evidence retained",
+  "test_scope": "Synthetic ASGI/mocked worker/device/provider and controlled loopback browser only; no target API or real device commands"
+}

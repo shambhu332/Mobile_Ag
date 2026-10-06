@@ -1,0 +1,494 @@
+FFFFFFFFFFF...                                                           [100%]
+=================================== FAILURES ===================================
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/scope] _
+
+path = '/api/scope', revocation = 'rotate'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1766c40>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/assessments] _
+
+path = '/api/assessments', revocation = 'rotate'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce17662c0>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/automation/runs] _
+
+path = '/api/automation/runs', revocation = 'rotate'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce16f6e70>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/dast/launch] _
+
+path = '/api/dast/launch', revocation = 'rotate'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1502be0>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/scope] _
+
+path = '/api/scope', revocation = 'expire'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1503df0>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/assessments] _
+
+path = '/api/assessments', revocation = 'expire'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1567250>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/automation/runs] _
+
+path = '/api/automation/runs', revocation = 'expire'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1567950>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_ test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/dast/launch] _
+
+path = '/api/dast/launch', revocation = 'expire'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce0c5d040>
+
+    @pytest.mark.parametrize('path', ['/api/scope', '/api/assessments', '/api/automation/runs', '/api/dast/launch'])
+    @pytest.mark.parametrize('revocation', ['rotate', 'expire'])
+    @pytest.mark.asyncio
+    async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revocation, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        old_token = web.app.state.auth_token
+        monkeypatch.setattr(web.app.state, 'session_deadline', web.app.state.session_deadline)
+        payload = request.model_dump(mode='json') if path == '/api/assessments' else (
+            {'serial': 'emulator-5554', 'package_name': PKG, 'component': PKG + '/.Main',
+             'environment': 'synthetic', 'dedicated_device_confirmed': True, 'dedicated_account_confirmed': True}
+            if path == '/api/automation/runs' else
+            {'serial': 'emulator-5554', 'component': PKG + '/.Main'} if path == '/api/dast/launch' else request.scope.model_dump()
+        )
+        automation = AsyncMock()
+        automation.create.return_value = {}
+        monkeypatch.setattr(web.app.state, 'automation_service', automation, raising=False)
+    
+        async def delayed_body():
+            # Headers have already passed middleware authentication when ASGI asks
+            # the transport for this body. Rotate through the actual auth route.
+            if revocation == 'rotate':
+                rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
+                assert rotated.status_code == 200
+            else:
+                monkeypatch.setattr(web.app.state, 'session_deadline', 0)
+            yield json.dumps(payload).encode()
+    
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url='http://testserver') as client:
+            response = await client.post(path, headers={'Authorization': 'Bearer ' + old_token, 'Content-Type': 'application/json'}, content=delayed_body())
+        # Drain any pre-fix task before asserting so failed probes leave no work.
+        if service.tasks:
+            await asyncio.gather(*list(service.tasks.values()))
+>       assert response.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_session_boundary_regressions.py:71: AssertionError
+_____________ test_rotation_during_create_hash_cannot_save_policy ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce0c5e5d0>
+
+    @pytest.mark.asyncio
+    async def test_rotation_during_create_hash_cannot_save_policy(monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        before = web.repository().get_policy()
+        token = web.app.state.auth_token
+        original = asyncio.to_thread
+    
+        async def rotate_at_hash(fn, *args, **kwargs):
+            if fn is service.hash_file:
+                monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', rotate_at_hash)
+        try:
+>           with pytest.raises(PermissionError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'PermissionError'>
+
+tests/test_session_boundary_regressions.py:93: Failed
+_ test_cancel_or_rotation_during_pre_static_hash_blocks_worker[pre_static-cancel] _
+
+boundary = 'cancel', phase = 'pre_static'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce0c4c4b0>
+
+    @pytest.mark.parametrize('boundary', ['cancel', 'rotate'])
+    @pytest.mark.parametrize('phase', ['pre_static', 'post_static'])
+    @pytest.mark.asyncio
+    async def test_cancel_or_rotation_during_pre_static_hash_blocks_worker(boundary, phase, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = asyncio.to_thread
+        hash_calls = 0
+    
+        async def pause_run_hash(fn, *args, **kwargs):
+            nonlocal hash_calls
+            if fn is service.hash_file:
+                hash_calls += 1
+                if hash_calls == (2 if phase == 'pre_static' else 3):
+                    entered.set()
+                    await release.wait()
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', pause_run_hash)
+        doc = await service.create(request, web.app.state.auth_token)
+        task = service.tasks[doc['id']]
+        await asyncio.wait_for(entered.wait(), 5)
+        if boundary == 'cancel':
+            service.cancel(doc['id'])
+        else:
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+        release.set()
+        await task
+        result = service.store().get(doc['id'])
+        assert result['status'] == ('cancelled' if boundary == 'cancel' else 'paused')
+        if phase == 'pre_static':
+>           service.static_runner.assert_not_called()
+
+tests/test_session_boundary_regressions.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='140174323798704'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'mock' to not have been called. Called 1 times.
+E           Calls: [call(PosixPath('/tmp/pytest-of-shambhu/pytest-8/test_cancel_or_rotation_during0/uploads/session-fixture.apk'), <function AssessmentService.run.<locals>.linked at 0x7f7ce15cbe20>)].
+
+/usr/lib/python3.14/unittest/mock.py:947: AssertionError
+_ test_cancel_or_rotation_during_pre_static_hash_blocks_worker[pre_static-rotate] _
+
+boundary = 'rotate', phase = 'pre_static'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7ce1543d90>
+
+    @pytest.mark.parametrize('boundary', ['cancel', 'rotate'])
+    @pytest.mark.parametrize('phase', ['pre_static', 'post_static'])
+    @pytest.mark.asyncio
+    async def test_cancel_or_rotation_during_pre_static_hash_blocks_worker(boundary, phase, monkeypatch):
+        service, request = fixture_service(monkeypatch)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = asyncio.to_thread
+        hash_calls = 0
+    
+        async def pause_run_hash(fn, *args, **kwargs):
+            nonlocal hash_calls
+            if fn is service.hash_file:
+                hash_calls += 1
+                if hash_calls == (2 if phase == 'pre_static' else 3):
+                    entered.set()
+                    await release.wait()
+            return await original(fn, *args, **kwargs)
+    
+        monkeypatch.setattr(asyncio, 'to_thread', pause_run_hash)
+        doc = await service.create(request, web.app.state.auth_token)
+        task = service.tasks[doc['id']]
+        await asyncio.wait_for(entered.wait(), 5)
+        if boundary == 'cancel':
+            service.cancel(doc['id'])
+        else:
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
+        release.set()
+        await task
+        result = service.store().get(doc['id'])
+        assert result['status'] == ('cancelled' if boundary == 'cancel' else 'paused')
+        if phase == 'pre_static':
+>           service.static_runner.assert_not_called()
+
+tests/test_session_boundary_regressions.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='140174333033312'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'mock' to not have been called. Called 1 times.
+E           Calls: [call(PosixPath('/tmp/pytest-of-shambhu/pytest-8/test_cancel_or_rotation_during1/uploads/session-fixture.apk'), <function AssessmentService.run.<locals>.linked at 0x7f7ce15c9f30>)].
+
+/usr/lib/python3.14/unittest/mock.py:947: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/scope]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/assessments]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/automation/runs]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[rotate-/api/dast/launch]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/scope]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/assessments]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/automation/runs]
+FAILED tests/test_session_boundary_regressions.py::test_body_delivered_after_rotation_cannot_mutate_or_start[expire-/api/dast/launch]
+FAILED tests/test_session_boundary_regressions.py::test_rotation_during_create_hash_cannot_save_policy
+FAILED tests/test_session_boundary_regressions.py::test_cancel_or_rotation_during_pre_static_hash_blocks_worker[pre_static-cancel]
+FAILED tests/test_session_boundary_regressions.py::test_cancel_or_rotation_during_pre_static_hash_blocks_worker[pre_static-rotate]
+11 failed, 3 passed, 257 warnings in 1.33s

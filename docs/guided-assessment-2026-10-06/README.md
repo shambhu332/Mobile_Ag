@@ -82,3 +82,7 @@ PYTHONPATH="$PWD" python tests/guided_local_regression.py \
 ```
 
 Still not implemented/proven: native iOS live automation, credential/form filling, transparent TLS capture, account-pair ownership assertions, write/payment/business transactions, full screen-reader/contrast/native performance testing, every platform DAST check, representative corpus/load acceptance or numerical production certification. LLM integration does not turn those gaps into coverage. Owned APK/package, exact staging origins, dedicated account identifiers and current unrooted devices remain necessary for real-app acceptance; never use discovered credentials or test unrelated targets.
+
+## Security continuation
+
+[Request/session boundary follow-up](../continuation-2026-10-06/README.md) records reproduced rotation/expiry/hash-cancellation races and their fixes, 14 new boundary tests, the current 226-test suite, and a fresh synthetic browser regression. Earlier evidence above remains preserved and is not rewritten as evidence for this changed source tree.

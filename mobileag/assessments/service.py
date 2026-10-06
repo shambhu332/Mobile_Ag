@@ -36,6 +36,7 @@ class AssessmentService:
         apk=Path(req.apk_path).resolve()
         if not apk.is_relative_to(self.uploads().resolve()) or apk.is_symlink():raise ValueError('Select an immutable dashboard upload')
         if await asyncio.to_thread(validate_archive,apk)!='android':raise ValueError('Guided live assessment currently requires an Android APK')
+        if not self.session_valid(token):raise PermissionError('Session unavailable')
         policy=validate_policy(req.scope.model_dump())
         if req.package_name not in policy['packages']:raise PermissionError('APK package must be approved in scope')
         if req.api:
@@ -55,6 +56,10 @@ class AssessmentService:
         if req.llm_provider:
             if not req.llm_metadata_egress_confirmed or not configured(req.llm_provider)['enabled']:raise PermissionError('AI stage needs explicit aggregate-metadata approval and server-configured provider')
         sha=await asyncio.to_thread(self.hash_file,apk)
+        # Validation/hash can yield while the operator revokes the credential or
+        # server scope. Revalidate before durable state/policy mutation.
+        if not self.session_valid(token):raise PermissionError('Session unavailable')
+        policy=validate_policy(policy)
         # Reserve only after awaited validation/hash: concurrent creates cannot
         # both pass the one-assessment limit and replace each other's policy.
         if self.tasks:raise ValueError('One guided assessment at a time')
@@ -74,6 +79,7 @@ class AssessmentService:
             async with asyncio.timeout(480):
                 self.guard(doc,token)
                 if await asyncio.to_thread(self.hash_file,apk)!=doc['artifact_sha256']:raise PermissionError('Uploaded artifact changed')
+                self.guard(doc,token)
                 doc['stages']['sast']['status']='running';self.persist(doc)
                 async def linked(sid):doc['scan_id']=sid;self.persist(doc)
                 scan=await self.static_runner(apk,linked)
@@ -83,6 +89,7 @@ class AssessmentService:
                 if scan.get('package_name')!=req.package_name:raise PermissionError('Static package differs from explicitly approved package')
                 if scan['status']!='completed':raise ValueError('Static analysis incomplete; live stages not started')
                 if await asyncio.to_thread(self.hash_file,apk)!=doc['artifact_sha256']:raise PermissionError('Artifact changed after static analysis')
+                self.guard(doc,token)
                 executed=0;screens=0
                 if req.api:
                     doc['stages']['api']['status']='running';self.persist(doc)

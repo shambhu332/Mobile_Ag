@@ -1392,7 +1392,7 @@ def automation_service():
     return app.state.automation_service
 
 from mobileag.automation.routes import build_router as build_automation_router
-app.include_router(build_automation_router(automation_service,lambda:app.state.auth_token))
+app.include_router(build_automation_router(automation_service,lambda request:request.state.authenticated_token))
 
 def assessment_service():
     if not hasattr(app.state,'assessment_service'):
@@ -1410,7 +1410,7 @@ def assessment_service():
     return app.state.assessment_service
 
 from mobileag.assessments.routes import build_router as build_assessment_router
-app.include_router(build_assessment_router(assessment_service,lambda:app.state.auth_token))
+app.include_router(build_assessment_router(assessment_service,lambda request:request.state.authenticated_token))
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:

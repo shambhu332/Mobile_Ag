@@ -6,6 +6,7 @@ import time
 from urllib.parse import urlsplit
 from starlette.responses import JSONResponse
 from starlette.requests import Request
+from starlette.exceptions import HTTPException
 from mobileag.security.archives import MAX_UPLOAD
 
 
@@ -66,6 +67,18 @@ class SecurityMiddleware:
         if scope['type'] == 'websocket':
             return await self.app(scope, receive, send)
         path = scope['path']
+        protected = path != '/' and not path.startswith('/static/')
+        request_token = headers.get('authorization', '').removeprefix('Bearer ')
+        # Bind downstream tasks to the credential actually authenticated, never
+        # to the server's replacement token after logout/rotation.
+        if protected:
+            scope.setdefault('state', {})['authenticated_token'] = request_token
+
+        def check_session():
+            if protected and (time.monotonic() >= getattr(self.owner.state, 'session_deadline', float('inf'))
+                              or not authorized(request_token, self.owner.state.auth_token)):
+                raise HTTPException(401, 'Bearer authentication required')
+
         upload = path == '/api/upload/apk'
         limit = MAX_UPLOAD + 65536 if upload else 1024 * 1024
         try:
@@ -78,10 +91,12 @@ class SecurityMiddleware:
         consumed = 0
         async def limited_receive():
             nonlocal consumed
+            check_session()
             message = await receive()
+            # A suspended/streaming body must not resurrect revoked authority.
+            check_session()
             consumed += len(message.get('body', b''))
             if consumed > limit:
-                from fastapi import HTTPException
                 raise HTTPException(413, 'Request size limit exceeded')
             return message
         if path.startswith('/api/dast/') and path not in {'/api/dast/devices', '/api/dast/traffic/audit'}:
@@ -105,6 +120,8 @@ class SecurityMiddleware:
                 package = data.get('package_name')
                 if package and not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package):
                     raise ValueError('Invalid package name')
+            except HTTPException as exc:
+                return await JSONResponse({'detail': exc.detail}, status_code=exc.status_code)(scope, receive, send)
             except (ValueError, TypeError):
                 return await JSONResponse({'detail':'Invalid request'}, status_code=400)(scope, receive, send)
             body = await req.body() if scope['method'] == 'POST' else b''

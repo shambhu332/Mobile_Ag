@@ -1,0 +1,3 @@
+offline-regressions	Run python -m pytest -q	2026-10-06T04:24:52.2665672Z 184 passed, 2 skipped in 17.41s
+offline-regressions	Smoke installed wheel outside source checkout	2026-10-06T04:24:55.5683190Z {"installed_wheel_import": true, "version": "0.1.0", "shipped_script_count": 16, "unauthenticated_api_denied": true}
+offline-regressions	Browser regression (synthetic, devices disabled)	2026-10-06T04:25:42.6786555Z   "small_screen_scrollwidth": 320

@@ -11,3 +11,7 @@
 - `attempt1/`: original failed device attempt and APK hash preserved. It installed/launched/observed but failed to select Profile; subsequent controlled validation with canonical curated uppercase labels succeeded. An additional command before the final run failed before any device mutation (module search path, then disconnected device); it was not a passed test. Final reproduction uses `PYTHONPATH="$PWD"` and a connected explicitly selected device.
 
 The actual owned app/APK, staging origins, dedicated account IDs, current unrooted device, native iOS, full auth/ownership/business flows, representative corpus/throughput and manual accessibility remain **not tested**. No confirmed target security finding or production score was inferred.
+
+## Remote CI (executed, not inferred from local results)
+
+[GitHub run 37413507875](https://github.com/shambhu332/Mobile_Ag/actions/runs/37413507875) succeeded on exact implementation commit `35d103081474713371565152c749d7b78586745a`: **184 passed, 2 skipped**, wheel/build/local assets/installed package and browser regression all succeeded. The two runner skips mean CI does not validate local bubblewrap availability; local full suite passed 186. Pinned Node24 action revisions and Ubuntu24.04 ran successfully. Machine-readable result and bounded log summary are preserved here. A subsequent documentation-only commit records this already-executed result; it does not change the tested implementation.

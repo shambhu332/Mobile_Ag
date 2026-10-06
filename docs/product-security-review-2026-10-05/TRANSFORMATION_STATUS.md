@@ -97,3 +97,7 @@ Current: API/auth + SQLite authoritative state + isolated static process/cgroup 
 - [ ] If web cloud analysis is required, implement a separate least-privilege credential/data broker; **this cannot be securely fixed through UI/UX alone**. Current web workers intentionally reject cloud egress.
 
 A request to fix everything cannot justify fabricating an ordinary-app exploit, a platform feature that does not exist, a numerical risk score, or a production-readiness certification.
+
+## Authorized automation follow-up (2026-10-06)
+
+See [`../automation-2026-10-05/README.md`](../automation-2026-10-05/README.md) for the new bounded Android navigation/read-only API workflow, API inventory and validation. Earlier evidence remains unchanged. This follow-up does not close the current-unrooted owned-app, representative corpus, manual accessibility or production readiness gates.

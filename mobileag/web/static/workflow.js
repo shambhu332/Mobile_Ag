@@ -16,7 +16,7 @@
     const label=make('label',name+' (comma-separated exact values)',form);const input=make('input','',label);input.id='scope-'+name;input.name=name;fields[name]=input;
   }
   button('Check local readiness',actions,async()=>{const result=await(await fetch('/api/readiness')).json();notice(JSON.stringify(result));});
-  const help=make('p','Actions: connect, root, install, launch, deeplink, execute_adb, logcat, logcat/clear, screenshot, storage, providers, deeplinks, memory, crawl, frida, fuzz. Empty scope disables execution.',form);help.id='scope-help';
+  const help=make('p','Actions: connect, root, install, launch, deeplink, execute_adb, logcat, logcat/clear, screenshot, storage, providers, deeplinks, memory, crawl, frida, fuzz, automation_observe, automation_execute. Automation input is device-wide; only dedicated devices. Empty scope disables execution.',form);help.id='scope-help';
   Object.values(fields).forEach(input=>input.setAttribute('aria-describedby','scope-help'));
   const save=make('button','Save authorized scope',form);save.type='submit';
   form.addEventListener('submit',async(event)=>{event.preventDefault();save.disabled=true;try{

@@ -4,7 +4,7 @@ import re
 from mobileag.web.security import configured_list
 
 DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb','logcat','logcat/clear',
-                   'screenshot','storage','providers','deeplinks','memory','crawl','frida','fuzz'}
+                   'automation_observe','automation_execute','screenshot','storage','providers','deeplinks','memory','crawl','frida','fuzz'}
 METHODS = {'GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'}
 
 def validate_policy(value):
@@ -34,7 +34,7 @@ def check_action(policy, action, data):
     package = data.get('package_name')
     if action == 'launch':
         package = str(data.get('component','')).split('/')[0]
-    if action in {'storage','providers','deeplinks','memory','crawl','fuzz','launch','frida','deeplink','install','execute_adb'}:
+    if action in {'storage','providers','deeplinks','memory','crawl','automation_observe','automation_execute','fuzz','launch','frida','deeplink','install','execute_adb'}:
         # Arbitrary shell / root / Frida remain powerful *device-wide* permissions.
         # A package field does not constrain arbitrary shell code. Explicit action approval
         # is a device-wide research authorization, not an ordinary-app boundary.

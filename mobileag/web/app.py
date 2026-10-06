@@ -29,9 +29,23 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(application):
+    # Direct uvicorn launches must also announce the local access mechanism.
+    if not getattr(application.state,'token_announced',False):
+        if os.environ.get('MOBILEAG_API_TOKEN'):
+            print('MobileAg uses configured MOBILEAG_API_TOKEN; enter that local access key, not a GitHub/app/API credential.',flush=True)
+        else:
+            print('Session access token (paste into dashboard): '+application.state.auth_token,flush=True)
+        application.state.token_announced=True
     await recover_interrupted_jobs()
+    automation_service().store().recover()
     yield
     CANCELLED.update(PROCESSES)
+    service=automation_service()
+    for rid in list(service.tasks):
+        try:service.cancel(rid)
+        except ValueError:pass
+    for task in list(service.tasks.values()):task.cancel()
+    if service.tasks:await asyncio.gather(*list(service.tasks.values()),return_exceptions=True)
 
 from fastapi import BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -757,7 +771,8 @@ class ApiFuzzRequest(BaseModel):
 async def get_dast_devices() -> dict[str, Any]:
     """List connected Android devices, emulators, and verify root shell status."""
     avail = await adb_manager.is_adb_available()
-    devices = await adb_manager.list_devices() if avail else []
+    from mobileag.web.security import configured_list
+    devices = await adb_manager.list_devices(allowed_serials=configured_list("MOBILEAG_ALLOWED_DEVICES")) if avail else []
     return {
         "adb_available": avail,
         "adb_path": adb_manager.adb_bin,
@@ -1361,6 +1376,20 @@ def hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+
+def automation_service():
+    if not hasattr(app.state,'automation_service'):
+        from mobileag.automation.engine import AutomationService
+        from mobileag.automation.android import AndroidDriver
+        app.state.automation_service=AutomationService(
+            output=lambda:OUTPUT_DIR,policy=lambda:repository().get_policy(),
+            session_valid=lambda token:time.monotonic()<app.state.session_deadline and authorized(token,app.state.auth_token),
+            driver_factory=lambda serial,package:AndroidDriver(adb_manager,serial,package))
+    return app.state.automation_service
+
+from mobileag.automation.routes import build_router as build_automation_router
+app.include_router(build_automation_router(automation_service,lambda:app.state.auth_token))
+
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     """Entrypoint to launch the web dashboard."""
     import uvicorn
@@ -1374,6 +1403,9 @@ def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
     if not os.environ.get("MOBILEAG_API_TOKEN"):
         print(f"Session access token (paste into dashboard): {app.state.auth_token}")
+    else:
+        print("Using configured MOBILEAG_API_TOKEN; enter that local workbench access key.")
+    app.state.token_announced=True
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 
 

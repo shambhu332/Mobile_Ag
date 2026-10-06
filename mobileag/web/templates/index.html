@@ -86,6 +86,8 @@
           <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
         </button>
 
+        <button id="nav-automation" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="route" class="w-4 h-4"></i><span>Authorized Automation</span></button>
+
         <button data-onclick="static4" id="nav-api" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="globe" class="w-4 h-4 text-purple-400"></i>
           <span>API Security Studio</span>
@@ -1006,6 +1008,8 @@
       <!-- =================================================================== -->
       <!-- VIEW: API SECURITY STUDIO & CATALOG -->
       <!-- =================================================================== -->
+      <div id="view-automation" class="view-panel h-full hidden overflow-auto"></div>
+
       <div id="view-api" class="view-panel h-full hidden flex overflow-hidden">
 
         <!-- Left: Discovered API Inventory List -->
@@ -1215,6 +1219,7 @@
 <script src="/static/dast.js"></script>
 <script src="/static/taint.js"></script>
 <script src="/static/api.js"></script>
+<script src="/static/automation.js"></script>
 <script src="/static/dashboard.js"></script>
   <script src="/static/workflow.js"></script>
 </body>

@@ -1,0 +1,1505 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/automation/capabilities": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_automation_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Runs",
+        "operationId": "runs_api_automation_runs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_automation_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRun"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Get",
+        "operationId": "get_api_automation_runs__rid__get",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/observe": {
+      "post": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Observe",
+        "operationId": "observe_api_automation_runs__rid__observe_post",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/execute": {
+      "post": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Execute",
+        "operationId": "execute_api_automation_runs__rid__execute_post",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteRun"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/cancel": {
+      "post": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Cancel",
+        "operationId": "cancel_api_automation_runs__rid__cancel_post",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/captures": {
+      "post": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Captures",
+        "operationId": "captures_api_automation_runs__rid__captures_post",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCaptures"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/report": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Final Report",
+        "operationId": "final_report_api_automation_runs__rid__report_get",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/export": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Export",
+        "operationId": "export_api_automation_runs__rid__export_get",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automation/runs/{rid}/screens/{sid}/layout": {
+      "get": {
+        "tags": [
+          "Authorized automation"
+        ],
+        "summary": "Layout",
+        "operationId": "layout_api_automation_runs__rid__screens__sid__layout_get",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiFuzzRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "default": "GET"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "response_status": {
+            "type": "integer",
+            "title": "Response Status",
+            "default": 200
+          },
+          "response_headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Headers"
+          },
+          "response_body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ApiFuzzRequest"
+      },
+      "ApiTestRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "default": "GET"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "timeout": {
+            "type": "number",
+            "title": "Timeout",
+            "default": 4.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ApiTestRequest"
+      },
+      "Body_upload_apk_api_upload_apk_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_apk_api_upload_apk_post"
+      },
+      "Capture": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "HEAD"
+            ],
+            "title": "Method",
+            "default": "GET"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Label",
+            "default": "Observed request"
+          },
+          "ui_action_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Action Id"
+          },
+          "response_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 599.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Status"
+          },
+          "protected": {
+            "type": "boolean",
+            "title": "Protected",
+            "default": false
+          },
+          "read_only_confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only Confirmed"
+          },
+          "query_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Query Names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "read_only_confirmed"
+        ],
+        "title": "Capture"
+      },
+      "CapturedTransaction": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 8192,
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "HEAD",
+              "OPTIONS"
+            ],
+            "title": "Method",
+            "default": "GET"
+          },
+          "request_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 100,
+            "title": "Request Headers"
+          },
+          "response_status": {
+            "type": "integer",
+            "maximum": 599.0,
+            "minimum": 100.0,
+            "title": "Response Status",
+            "default": 200
+          },
+          "response_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 100,
+            "title": "Response Headers"
+          },
+          "request_body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Body"
+          },
+          "response_body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "CapturedTransaction"
+      },
+      "CopilotRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Prompt"
+          },
+          "scan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "CopilotRequest"
+      },
+      "CreateRun": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+$",
+            "title": "Package Name"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 240,
+            "title": "Component"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "synthetic",
+              "dedicated_staging"
+            ],
+            "title": "Environment"
+          },
+          "dedicated_account_confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Dedicated Account Confirmed"
+          },
+          "dedicated_device_confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Dedicated Device Confirmed"
+          },
+          "max_steps": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 8
+          },
+          "max_requests": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Max Requests",
+            "default": 4
+          },
+          "request_interval_seconds": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.5,
+            "title": "Request Interval Seconds",
+            "default": 1
+          },
+          "captures": {
+            "items": {
+              "$ref": "#/components/schemas/Capture"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Captures"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "logged_out",
+              "logged_in",
+              "expired",
+              "insufficient_privileges"
+            ],
+            "title": "Auth State",
+            "default": "unknown"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^auto_[a-f0-9]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name",
+          "component",
+          "environment",
+          "dedicated_account_confirmed",
+          "dedicated_device_confirmed"
+        ],
+        "title": "CreateRun"
+      },
+      "DastFuzzRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "apk_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apk Path"
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activities"
+          },
+          "deeplinks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deeplinks"
+          },
+          "authorities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorities"
+          },
+          "targeted_extras": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targeted Extras"
+          },
+          "audit_storage": {
+            "type": "boolean",
+            "title": "Audit Storage",
+            "default": true
+          },
+          "audit_memory": {
+            "type": "boolean",
+            "title": "Audit Memory",
+            "default": false
+          },
+          "crawl_ui": {
+            "type": "boolean",
+            "title": "Crawl Ui",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name"
+        ],
+        "title": "DastFuzzRequest"
+      },
+      "DeepLinkAuditRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "deep_links": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Deep Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name",
+          "deep_links"
+        ],
+        "title": "DeepLinkAuditRequest"
+      },
+      "DeviceActionRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial"
+        ],
+        "title": "DeviceActionRequest"
+      },
+      "DeviceConnectRequest": {
+        "properties": {
+          "host_port": {
+            "type": "string",
+            "title": "Host Port",
+            "default": "127.0.0.1:5555"
+          }
+        },
+        "type": "object",
+        "title": "DeviceConnectRequest"
+      },
+      "DispatchDeeplinkRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "uri": {
+            "type": "string",
+            "title": "Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name",
+          "uri"
+        ],
+        "title": "DispatchDeeplinkRequest"
+      },
+      "ExecuteAdbRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "command": {
+            "type": "string",
+            "title": "Command"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "command"
+        ],
+        "title": "ExecuteAdbRequest"
+      },
+      "ExecuteRun": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "approved_action_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Approved Action Ids"
+          },
+          "approved_api_cases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Approved Api Cases"
+          },
+          "allow_back": {
+            "type": "boolean",
+            "title": "Allow Back",
+            "default": false
+          },
+          "confirmation": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Confirmation"
+          },
+          "test_authorization": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Authorization"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "confirmation"
+        ],
+        "title": "ExecuteRun"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "CONFIRMED",
+              "FALSE_POSITIVE",
+              "DUPLICATE",
+              "UNVERIFIED"
+            ],
+            "title": "Verdict"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Notes",
+            "default": ""
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "title": "FeedbackRequest"
+      },
+      "FridaDeployRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "script_type": {
+            "type": "string",
+            "enum": [
+              "unpinning",
+              "crypto",
+              "root_bypass",
+              "all",
+              "unified"
+            ],
+            "title": "Script Type",
+            "default": "unpinning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name"
+        ],
+        "title": "FridaDeployRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImportCaptures": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "captures": {
+            "items": {
+              "$ref": "#/components/schemas/Capture"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Captures"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "captures"
+        ],
+        "title": "ImportCaptures"
+      },
+      "InstallApkRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "apk_path": {
+            "type": "string",
+            "title": "Apk Path"
+          },
+          "grant_permissions": {
+            "type": "boolean",
+            "title": "Grant Permissions",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "apk_path"
+        ],
+        "title": "InstallApkRequest"
+      },
+      "LaunchActivityRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "component": {
+            "type": "string",
+            "title": "Component"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "component"
+        ],
+        "title": "LaunchActivityRequest"
+      },
+      "MemoryAuditRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name"
+        ],
+        "title": "MemoryAuditRequest"
+      },
+      "ProviderAuditRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "authorities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Authorities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name",
+          "authorities"
+        ],
+        "title": "ProviderAuditRequest"
+      },
+      "PurgeRequest": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "title": "Confirmation"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation",
+          "revision"
+        ],
+        "title": "PurgeRequest"
+      },
+      "Revision": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "Revision"
+      },
+      "RunScanRequest": {
+        "properties": {
+          "apk_path": {
+            "type": "string",
+            "title": "Apk Path"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir"
+          },
+          "auto_dast": {
+            "type": "boolean",
+            "title": "Auto Dast",
+            "default": false
+          },
+          "auto_taint": {
+            "type": "boolean",
+            "title": "Auto Taint",
+            "default": true
+          },
+          "bypass_root": {
+            "type": "boolean",
+            "title": "Bypass Root",
+            "default": false
+          },
+          "bypass_ssl": {
+            "type": "boolean",
+            "title": "Bypass Ssl",
+            "default": false
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          }
+        },
+        "type": "object",
+        "required": [
+          "apk_path"
+        ],
+        "title": "RunScanRequest"
+      },
+      "StorageAuditRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name"
+        ],
+        "title": "StorageAuditRequest"
+      },
+      "TaintAnalyzeRequest": {
+        "properties": {
+          "source_code": {
+            "type": "string",
+            "maxLength": 262144,
+            "title": "Source Code"
+          },
+          "file_path": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "File Path",
+            "default": "VulnerableActivity.java"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_code"
+        ],
+        "title": "TaintAnalyzeRequest"
+      },
+      "TrafficAuditRequest": {
+        "properties": {
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/CapturedTransaction"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Transactions"
+          }
+        },
+        "type": "object",
+        "title": "TrafficAuditRequest"
+      },
+      "UICrawlRequest": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "package_name": {
+            "type": "string",
+            "title": "Package Name"
+          },
+          "max_steps": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "package_name"
+        ],
+        "title": "UICrawlRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+Virtual device stopped successfully
+ State    |   ADB Serial    |                UUID                |      Name
+----------+-----------------+------------------------------------+---------------
+      Off |  127.0.0.1:6554 |64f1f659-76fa-4035-9a68-784eced27a39| Genymotion Phone
+      Off |  127.0.0.1:6554 |b6581daf-86fa-4943-b977-007ac37eecca| Google Pixel

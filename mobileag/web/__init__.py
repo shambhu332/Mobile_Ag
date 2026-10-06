@@ -1,5 +1,8 @@
-"""MobileAg Web Dashboard and API server."""
+"""Web package. Importing policy/contracts must not construct an API server."""
 
-from .app import app, run_server
-
-__all__ = ["app", "run_server"]
+def __getattr__(name):
+    if name in {'app','run_server'}:
+        from importlib import import_module
+        module=import_module('mobileag.web.app')
+        return getattr(module,name)
+    raise AttributeError(name)

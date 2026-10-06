@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/home/shambhu/Desktop/Mobile_Ag/tests/automation_device_regression.py", line 61, in run
+    action=next(a for a in doc['actions'] if a['label']=='Profile' and not a['blocked_reason'])
+StopIteration
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/shambhu/Desktop/Mobile_Ag/tests/automation_device_regression.py", line 80, in <module>
+    asyncio.run(run(p.parse_args()))
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/asyncio/runners.py", line 205, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/asyncio/runners.py", line 128, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.14/asyncio/base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+RuntimeError: coroutine raised StopIteration

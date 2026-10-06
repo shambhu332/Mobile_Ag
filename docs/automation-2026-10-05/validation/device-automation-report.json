@@ -1,0 +1,919 @@
+{
+  "executive_summary": {
+    "status": "awaiting_review",
+    "executed": 1,
+    "generated": 16,
+    "confirmed_security_issues": 0,
+    "production_readiness_score": null,
+    "score_reason": "Coverage is incomplete; no numerical certification is inferred"
+  },
+  "test_state": {
+    "environment": "synthetic",
+    "authentication_state": "unknown",
+    "authentication_source": "operator_declared",
+    "account_state": "operator-confirmed dedicated account; credentials are not persisted",
+    "database_state": "operator-prepared; agent does not reset data",
+    "network_state": "scoped read-only requests; no device network changes"
+  },
+  "application_map": {
+    "package_name": "org.mobileag.validation.navigation",
+    "environment": "synthetic",
+    "device_metadata": {
+      "adapter": "ADB/UIAutomator",
+      "ordinary_app_exploit_proof": false,
+      "android_version": "9",
+      "sdk_level": "28",
+      "fingerprint": "google/vbox86p/vbox86p:9/PI/771:userdebug/test-keys,p1",
+      "root_shell_observed": true,
+      "version_name": "1.0-synthetic",
+      "version_code": "1"
+    }
+  },
+  "screen_graph": {
+    "nodes": [
+      {
+        "id": "e280d166926ee1674b89503b",
+        "elements": [
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "FrameLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "LinearLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": "b36ac62bd64daff6b8d2c2a1",
+            "locator_kind": "resource_id",
+            "class": "FrameLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              63,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "LinearLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              63,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "TextView",
+            "label": "Control",
+            "label_hash": "0df8c71f0d09ca3108b08e4c",
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": true,
+            "dangerous": false,
+            "bounds": [
+              42,
+              105,
+              486,
+              156
+            ]
+          },
+          {
+            "locator": "152a20a1e67a3b4b4c0efb2b",
+            "locator_kind": "resource_id",
+            "class": "Button",
+            "label": "Profile",
+            "label_hash": "52639258e471bc04bf7f0baa",
+            "editable": false,
+            "clickable": true,
+            "enabled": true,
+            "scrollable": false,
+            "named": true,
+            "dangerous": false,
+            "bounds": [
+              42,
+              156,
+              1038,
+              282
+            ]
+          },
+          {
+            "locator": "8710c1b60c8b56b3beca2717",
+            "locator_kind": "resource_id",
+            "class": "View",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              63
+            ]
+          },
+          {
+            "locator": "b8faf34918cbac35fe60fb6e",
+            "locator_kind": "resource_id",
+            "class": "View",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": []
+          }
+        ]
+      },
+      {
+        "id": "ba71a83baf23f7e33150903d",
+        "elements": [
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "FrameLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "LinearLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": "b36ac62bd64daff6b8d2c2a1",
+            "locator_kind": "resource_id",
+            "class": "FrameLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              63,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "LinearLayout",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              63,
+              1080,
+              1794
+            ]
+          },
+          {
+            "locator": null,
+            "locator_kind": "unavailable",
+            "class": "TextView",
+            "label": "Control",
+            "label_hash": "664b43f5b5df7e312b87c9a2",
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": true,
+            "dangerous": false,
+            "bounds": [
+              42,
+              105,
+              428,
+              156
+            ]
+          },
+          {
+            "locator": "145526003e4caecdbc0b3551",
+            "locator_kind": "resource_id",
+            "class": "Button",
+            "label": "Home",
+            "label_hash": "36e65c39f83b8df92770b95b",
+            "editable": false,
+            "clickable": true,
+            "enabled": true,
+            "scrollable": false,
+            "named": true,
+            "dangerous": false,
+            "bounds": [
+              42,
+              156,
+              1038,
+              282
+            ]
+          },
+          {
+            "locator": "8710c1b60c8b56b3beca2717",
+            "locator_kind": "resource_id",
+            "class": "View",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": [
+              0,
+              0,
+              1080,
+              63
+            ]
+          },
+          {
+            "locator": "b8faf34918cbac35fe60fb6e",
+            "locator_kind": "resource_id",
+            "class": "View",
+            "label": "Control",
+            "label_hash": null,
+            "editable": false,
+            "clickable": false,
+            "enabled": true,
+            "scrollable": false,
+            "named": false,
+            "dangerous": false,
+            "bounds": []
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "e280d166926ee1674b89503b",
+        "to": "ba71a83baf23f7e33150903d",
+        "action_id": "54d464aaa7e1d03b17124f87"
+      }
+    ]
+  },
+  "api_inventory": [],
+  "coverage": [
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_happy_path",
+      "variant": "happy_path",
+      "ui_tested": true,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "passed",
+      "untested_reason": null
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_empty_input",
+      "variant": "empty_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_invalid_input",
+      "variant": "invalid_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_boundary",
+      "variant": "boundary",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_unexpected_state",
+      "variant": "unexpected_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_authentication_state",
+      "variant": "authentication_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_authorization_state",
+      "variant": "authorization_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_recovery",
+      "variant": "recovery",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_happy_path",
+      "variant": "happy_path",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Not approved or not reached within budget"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_empty_input",
+      "variant": "empty_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_invalid_input",
+      "variant": "invalid_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_boundary",
+      "variant": "boundary",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_unexpected_state",
+      "variant": "unexpected_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_authentication_state",
+      "variant": "authentication_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_authorization_state",
+      "variant": "authorization_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_recovery",
+      "variant": "recovery",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    }
+  ],
+  "security_and_ux_observations": [],
+  "security_findings": [],
+  "accessibility_findings": [],
+  "ui_ux_findings": [],
+  "performance": [
+    {
+      "kind": "snapshot_driver_elapsed_ms",
+      "value": 2376.01
+    },
+    {
+      "kind": "UI_driver_elapsed_ms",
+      "value": 2059.75,
+      "action_id": "54d464aaa7e1d03b17124f87"
+    }
+  ],
+  "crashes_reliability": {
+    "crashes": "not_assessed",
+    "ANRs": "not_assessed",
+    "driver_status": "awaiting_review",
+    "driver_reason": "Batch finished; coverage distinguishes generated, executed and untested cases"
+  },
+  "remediation_priorities": [],
+  "api_ui_correlations": [],
+  "failed_tests": [],
+  "untested": [
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_empty_input",
+      "variant": "empty_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_invalid_input",
+      "variant": "invalid_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_boundary",
+      "variant": "boundary",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_unexpected_state",
+      "variant": "unexpected_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_authentication_state",
+      "variant": "authentication_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_authorization_state",
+      "variant": "authorization_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "test_id": "54d464aaa7e1d03b17124f87_recovery",
+      "variant": "recovery",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_happy_path",
+      "variant": "happy_path",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Not approved or not reached within budget"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_empty_input",
+      "variant": "empty_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_invalid_input",
+      "variant": "invalid_input",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_boundary",
+      "variant": "boundary",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_unexpected_state",
+      "variant": "unexpected_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_authentication_state",
+      "variant": "authentication_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_authorization_state",
+      "variant": "authorization_state",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "test_id": "292c973f5b1ac367f85bdd9a_recovery",
+      "variant": "recovery",
+      "ui_tested": false,
+      "api_tested": false,
+      "security_tested": false,
+      "ux_tested": false,
+      "result": "not_executed",
+      "untested_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    }
+  ],
+  "regression": [],
+  "regression_suite": [
+    {
+      "id": "54d464aaa7e1d03b17124f87_happy_path",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "happy_path",
+      "priority": "P1",
+      "blocked_reason": null
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_empty_input",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "empty_input",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_invalid_input",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "invalid_input",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_boundary",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "boundary",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_unexpected_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "unexpected_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_authentication_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "authentication_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_authorization_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "authorization_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_recovery",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "recovery",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_happy_path",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "happy_path",
+      "priority": "P2",
+      "blocked_reason": null
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_empty_input",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "empty_input",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_invalid_input",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "invalid_input",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_boundary",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "boundary",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_unexpected_state",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "unexpected_state",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_authentication_state",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "authentication_state",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_authorization_state",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "authorization_state",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "292c973f5b1ac367f85bdd9a_recovery",
+      "kind": "ui",
+      "feature": "Home",
+      "screen": "ba71a83baf23f7e33150903d",
+      "action_id": "292c973f5b1ac367f85bdd9a",
+      "variant": "recovery",
+      "priority": "P2",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    }
+  ],
+  "limitations": [
+    "ADB input is device-wide: package checks are non-atomic guardrails, not isolation; dedicated device authorization is required.",
+    "No permission acceptance, root, hooks, credential entry, destructive transactions, writes, account creation or data resets.",
+    "Layouts omit pixels/text. Contrast, screen-reader behavior, clipping, app memory, ANRs and native iOS runtime are not assessed.",
+    "Imported captures/correlations are operator-declared; no transparent TLS capture, automatic pinning bypass or causal network proof.",
+    "Authentication state is operator-declared. Logout/refresh/expired-session/ownership flows need controlled account fixtures; status alone is not proof.",
+    "Driver timings include ADB/snapshot overhead. Test assertions do not prove vulnerability impact or production readiness."
+  ]
+}

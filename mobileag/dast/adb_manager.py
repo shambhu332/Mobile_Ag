@@ -31,21 +31,41 @@ class ADBManager:
     def __init__(self, adb_path: Optional[str] = None) -> None:
         self.adb_bin = adb_path or shutil.which("adb") or "adb"
 
-    async def _exec_cmd(self, args: list[str], timeout: float = 3.0) -> tuple[int, bytes, bytes]:
+    async def _exec_cmd(self, args: list[str], timeout: float = 3.0, output_limit: int | None = None) -> tuple[int, bytes, bytes]:
         """Execute an ADB command with strict timeout protection to prevent hanging on offline devices."""
         if "shell" in args:
             index = args.index("shell")
             if len(args[index + 1:]) > 1:
                 args = args[:index + 1] + [shlex.join(args[index + 1:])]
         proc = None
+        readers = []
         try:
             proc = await asyncio.create_subprocess_exec(
                 self.adb_bin, *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            if output_limit is None:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            else:
+                async def bounded(stream):
+                    data=bytearray()
+                    while chunk:=await stream.read(16384):
+                        if len(data)+len(chunk)>output_limit:raise ValueError("ADB output limit exceeded")
+                        data.extend(chunk)
+                    return bytes(data)
+                readers=[asyncio.create_task(bounded(proc.stdout)),asyncio.create_task(bounded(proc.stderr))]
+                async def finish():
+                    result=await asyncio.gather(*readers)
+                    await proc.wait()
+                    return result
+                stdout,stderr=await asyncio.wait_for(finish(),timeout=timeout)
             return proc.returncode or 0, stdout, stderr
+        except asyncio.CancelledError:
+            if proc and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            raise
         except asyncio.TimeoutError:
             if proc:
                 try:
@@ -55,14 +75,21 @@ class ADBManager:
                     pass
             return -1, b"", b"ADB command timed out (device offline or not responding)"
         except Exception as e:
+            if proc and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
             return -1, b"", str(e).encode()
+        finally:
+            for reader in readers:
+                if not reader.done():reader.cancel()
+            if readers:await asyncio.gather(*readers,return_exceptions=True)
 
     async def is_adb_available(self) -> bool:
         """Check if ADB executable exists and can execute."""
         code, stdout, _ = await self._exec_cmd(["version"], timeout=2.0)
         return code == 0 and b"Android Debug Bridge" in stdout
 
-    async def list_devices(self) -> list[ConnectedDevice]:
+    async def list_devices(self, allowed_serials: set[str] | None = None) -> list[ConnectedDevice]:
         """Enumerate all connected Android devices and emulators."""
         devices: list[ConnectedDevice] = []
         code, stdout, _ = await self._exec_cmd(["devices", "-l"], timeout=3.0)
@@ -77,7 +104,7 @@ class ADBManager:
             parts = line.split()
             if len(parts) >= 2:
                 serial, status = parts[0], parts[1]
-                if status == "device":
+                if status == "device" and (allowed_serials is None or serial in allowed_serials):
                     dev_info = await self._get_device_details(serial)
                     devices.append(dev_info)
                 else:

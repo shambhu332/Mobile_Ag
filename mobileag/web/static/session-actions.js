@@ -12,6 +12,8 @@
         dialog = document.createElement('dialog');dialog.id='session-connect';dialog.className='workflow-panel';dialog.setAttribute('aria-labelledby','session-title');
         const heading=document.createElement('h2');heading.id='session-title';heading.textContent='Connect to your local workbench';dialog.append(heading);
         const text=document.createElement('p');text.textContent='Use the session token displayed in your server terminal. It stays in page memory only. Sessions expire after eight hours.';dialog.append(text);
+        const help=document.createElement('details');const summary=document.createElement('summary');summary.textContent='What token is this?';help.append(summary);
+        const guide=document.createElement('p');guide.textContent='This is the workbench access key, not your GitHub password, mobile-app login, or AI API key. In the terminal running this server, copy the value after “Session access token (paste into dashboard):”. If MOBILEAG_API_TOKEN is configured, use that configured value. Do not share it. A server restart usually changes the key and stops active jobs.';help.append(guide);dialog.append(help);
         const form=document.createElement('form');const label=document.createElement('label');label.textContent='Session token';
         const input=document.createElement('input');input.type='password';input.id='session-token';input.required=true;input.autocomplete='off';label.append(input);form.append(label);
         const error=document.createElement('p');error.setAttribute('role','alert');form.append(error);

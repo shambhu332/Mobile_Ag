@@ -8,3 +8,5 @@ dialog::backdrop{background:#000b}dialog.workflow-panel{max-width:min(90vw,600px
 .text-xs,.text-\[9px\],.text-\[10px\],.text-\[11px\]{font-size:14px;line-height:1.45}
 .text-slate-500{color:#94a3b8}textarea{font-size:14px;line-height:1.5}
 .bg-sky-600{background-color:#0369a1}.hover\:bg-sky-500:hover{background-color:#075985}.text-slate-600{color:#94a3b8}
+
+.automation-panel{min-width:0}.automation-panel h3{font-size:18px;font-weight:700;margin-top:20px}.automation-panel select,.automation-panel textarea{display:block;width:100%;color:#f8fafc;background:#0b0f17;border:1px solid #64748b;padding:8px;border-radius:6px}.automation-panel input[type=checkbox]{display:inline-block;width:24px;height:24px;min-height:24px;margin-left:12px;vertical-align:middle}.automation-panel label{overflow-wrap:anywhere}.automation-panel pre{max-height:600px;overflow:auto}

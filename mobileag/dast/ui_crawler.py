@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import uuid
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
@@ -34,18 +35,17 @@ class UICrawler:
 
     async def dump_ui_hierarchy(self, serial: str) -> str:
         """Dump the current foreground window UIAutomator hierarchy XML."""
-        # Dump to device temp
-        await self.adb._exec_cmd(
-            ["-s", serial, "shell", "uiautomator dump /data/local/tmp/uidump.xml"],
-            timeout=4.0,
-        )
-        code, stdout, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", "cat /data/local/tmp/uidump.xml"],
-            timeout=4.0,
-        )
-        if code == 0 and stdout:
-            return stdout.decode("utf-8", errors="replace").strip()
-        return ""
+        # Do not overwrite a user's predictable uidump.xml or read stale output.
+        path='/data/local/tmp/mobileag-observe-'+uuid.uuid4().hex+'.xml'
+        try:
+            code, _, _ = await self.adb._exec_cmd(["-s",serial,"shell","uiautomator","dump",path],timeout=6,output_limit=16384)
+            if code:return ""
+            code, stdout, _ = await self.adb._exec_cmd(["-s",serial,"shell","cat",path],timeout=4,output_limit=1024*1024)
+            if code == 0 and 0 < len(stdout) <= 1024*1024:
+                return stdout.decode("utf-8",errors="replace").strip()
+            return ""
+        finally:
+            await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
 
     def parse_ui_elements(self, xml_content: str) -> list[dict[str, Any]]:
         """Parse UIAutomator XML hierarchy into structured interactable element objects."""

@@ -39,6 +39,19 @@ m.attack_graph.verify_connection=AsyncMock(return_value=False)
 m.adb_manager.list_devices=AsyncMock(return_value=[])
 m.adb_manager.is_adb_available=AsyncMock(return_value=False)
 m.adb_manager._exec_cmd=AsyncMock(side_effect=RuntimeError('Real device operations are prohibited in this regression'))
+from mobileag.automation.models import CreateRun
+from mobileag.automation.android import parse_snapshot
+class SyntheticNavigator:
+    def __init__(self):self.screen='Profile'
+    async def snapshot(self):
+        pkg='org.example.automation'
+        control='Settings' if self.screen=='Profile' else 'Home'
+        return parse_snapshot(f'<hierarchy><node package="{pkg}" class="android.widget.Button" resource-id="{pkg}:id/{control.lower()}" text="{control}" clickable="true" bounds="[20,20][220,100]"/></hierarchy>',pkg)
+    async def act(self,action,element=None):self.screen='Settings' if self.screen=='Profile' else 'Home'
+navigator=SyntheticNavigator();service=m.automation_service()
+service.driver_factory=lambda serial,package:navigator
+m.repository().save_policy({'devices':['emulator-synthetic'],'packages':['org.example.automation'],'origins':[],'methods':['GET'],'actions':['automation_observe','automation_execute']})
+auto=asyncio.run(service.create(CreateRun(serial='emulator-synthetic',package_name='org.example.automation',component='org.example.automation/.Main',environment='synthetic',dedicated_account_confirmed=True,dedicated_device_confirmed=True,max_steps=2),m.app.state.auth_token))
 uvicorn.run(m.app,host='127.0.0.1',port=int(os.environ['TEST_PORT']),log_level='warning')
 '''
 
@@ -130,9 +143,27 @@ def main():
                     page.evaluate("() => {const e=document.createElement('button');e.setAttribute('onclick','window.auditXssProbe()');document.body.append(e);e.click();e.remove();}")
                     result['csp_control_marker_executions']=page.evaluate('window.auditXssCount')
                     result['screens']={}
-                    for view in ['surface','findings','scans','agents','settings','dast','taint','api']:
+                    for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation']:
                         page.locator('#nav-'+view).click();page.wait_for_timeout(250)
                         result['screens'][view]={'visible':page.locator('#view-'+view).is_visible()}
+                    # Actual router/service/SQLite exercised through approval UI.
+                    # Only the navigator is a synthetic adapter; auth/scope/CAS remain real.
+                    page.locator('#nav-automation').click()
+                    page.locator('#automation-runs button').first.click()
+                    page.locator('#automation-confirmation').wait_for(state='visible')
+                    runid=page.locator('#automation-status').inner_text().split(' · ')[0]
+                    before_requests=len([r for r in requests if '/execute' in r])
+                    page.get_by_role('button',name='Execute approved batch',exact=True).click()
+                    assert len([r for r in requests if '/execute' in r])==before_requests
+                    page.locator('#automation-detail input[data-action-id]').first.check()
+                    page.locator('#automation-confirmation').fill(runid)
+                    page.get_by_role('button',name='Execute approved batch',exact=True).click()
+                    wait_condition(page,'document.querySelector("#automation-report") && JSON.parse(document.querySelector("#automation-report").textContent || "{}").executive_summary?.executed === 1')
+                    automation_report=json.loads(page.locator('#automation-report').inner_text())
+                    result['automation']={'unconfirmed_execution_blocked':True,'actual_service_with_synthetic_adapter':True,'executed':automation_report['executive_summary']['executed'],
+                        'screens':len(automation_report['screen_graph']['nodes']),'edges':len(automation_report['screen_graph']['edges']),'untested':len(automation_report['untested']),
+                        'score':automation_report['executive_summary']['production_readiness_score']}
+                    assert result['automation']['screens']==2 and result['automation']['edges']==1 and result['automation']['untested']>0 and result['automation']['score'] is None
                     # Actual durable triage API reached via the migrated UI callback.
                     page.locator('#nav-findings').click();page.evaluate('inspectFinding("synthetic-finding")')
                     page.locator('#detail-content button',has_text='False Positive').click()
@@ -149,7 +180,7 @@ def main():
                     result['a11y']={}
                     if args.axe:
                         page.evaluate(Path(args.axe).read_text())
-                        for view in ['surface','findings','scans','agents','settings','dast','taint','api']:
+                        for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation']:
                             page.locator('#nav-'+view).click();page.wait_for_timeout(200)
                             assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
                             result['a11y'][view]=[{'id':v['id'],'impact':v['impact'],'count':len(v['nodes']),'nodes':[{'html':n['html'],'failure':n['failureSummary']} for n in v['nodes']]} for v in assessment['violations']]

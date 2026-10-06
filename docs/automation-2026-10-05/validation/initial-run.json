@@ -1,0 +1,303 @@
+{
+  "id": "auto_6d954df72c994a7488eba39903969d0e",
+  "serial": "127.0.0.1:6562",
+  "package_name": "org.mobileag.validation.navigation",
+  "component": "org.mobileag.validation.navigation/.MainActivity",
+  "environment": "synthetic",
+  "auth_state": "unknown",
+  "auth_state_source": "operator_declared",
+  "max_steps": 1,
+  "max_requests": 0,
+  "request_interval_seconds": 1,
+  "status": "awaiting_review",
+  "revision": 1,
+  "created_at": "2026-10-06T04:19:53.584227+00:00",
+  "current_screen": "e280d166926ee1674b89503b",
+  "screens": [
+    {
+      "id": "e280d166926ee1674b89503b",
+      "elements": [
+        {
+          "locator": null,
+          "locator_kind": "unavailable",
+          "class": "FrameLayout",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": [
+            0,
+            0,
+            1080,
+            1794
+          ]
+        },
+        {
+          "locator": null,
+          "locator_kind": "unavailable",
+          "class": "LinearLayout",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": [
+            0,
+            0,
+            1080,
+            1794
+          ]
+        },
+        {
+          "locator": "b36ac62bd64daff6b8d2c2a1",
+          "locator_kind": "resource_id",
+          "class": "FrameLayout",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": [
+            0,
+            63,
+            1080,
+            1794
+          ]
+        },
+        {
+          "locator": null,
+          "locator_kind": "unavailable",
+          "class": "LinearLayout",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": [
+            0,
+            63,
+            1080,
+            1794
+          ]
+        },
+        {
+          "locator": null,
+          "locator_kind": "unavailable",
+          "class": "TextView",
+          "label": "Control",
+          "label_hash": "0df8c71f0d09ca3108b08e4c",
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": true,
+          "dangerous": false,
+          "bounds": [
+            42,
+            105,
+            486,
+            156
+          ]
+        },
+        {
+          "locator": "152a20a1e67a3b4b4c0efb2b",
+          "locator_kind": "resource_id",
+          "class": "Button",
+          "label": "Profile",
+          "label_hash": "52639258e471bc04bf7f0baa",
+          "editable": false,
+          "clickable": true,
+          "enabled": true,
+          "scrollable": false,
+          "named": true,
+          "dangerous": false,
+          "bounds": [
+            42,
+            156,
+            1038,
+            282
+          ]
+        },
+        {
+          "locator": "8710c1b60c8b56b3beca2717",
+          "locator_kind": "resource_id",
+          "class": "View",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": [
+            0,
+            0,
+            1080,
+            63
+          ]
+        },
+        {
+          "locator": "b8faf34918cbac35fe60fb6e",
+          "locator_kind": "resource_id",
+          "class": "View",
+          "label": "Control",
+          "label_hash": null,
+          "editable": false,
+          "clickable": false,
+          "enabled": true,
+          "scrollable": false,
+          "named": false,
+          "dangerous": false,
+          "bounds": []
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "actions": [
+    {
+      "id": "54d464aaa7e1d03b17124f87",
+      "screen": "e280d166926ee1674b89503b",
+      "locator": "152a20a1e67a3b4b4c0efb2b",
+      "class": "Button",
+      "label": "Profile",
+      "action": "tap",
+      "blocked_reason": null,
+      "original_bounds": [
+        42,
+        156,
+        1038,
+        282
+      ]
+    }
+  ],
+  "captures": [],
+  "tests": [
+    {
+      "id": "54d464aaa7e1d03b17124f87_happy_path",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "happy_path",
+      "priority": "P1",
+      "blocked_reason": null
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_empty_input",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "empty_input",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_invalid_input",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "invalid_input",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_boundary",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "boundary",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_unexpected_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "unexpected_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_authentication_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "authentication_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_authorization_state",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "authorization_state",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    },
+    {
+      "id": "54d464aaa7e1d03b17124f87_recovery",
+      "kind": "ui",
+      "feature": "Profile",
+      "screen": "e280d166926ee1674b89503b",
+      "action_id": "54d464aaa7e1d03b17124f87",
+      "variant": "recovery",
+      "priority": "P1",
+      "blocked_reason": "Needs explicit test data/state and behavior assertions; generation is not execution"
+    }
+  ],
+  "steps": [],
+  "results": [],
+  "observations": [],
+  "correlations": [],
+  "measurements": [
+    {
+      "kind": "snapshot_driver_elapsed_ms",
+      "value": 2376.01
+    }
+  ],
+  "request_count": 0,
+  "cancel_requested": false,
+  "limitations": [
+    "ADB input is device-wide: package checks are non-atomic guardrails, not isolation; dedicated device authorization is required.",
+    "No permission acceptance, root, hooks, credential entry, destructive transactions, writes, account creation or data resets.",
+    "Layouts omit pixels/text. Contrast, screen-reader behavior, clipping, app memory, ANRs and native iOS runtime are not assessed.",
+    "Imported captures/correlations are operator-declared; no transparent TLS capture, automatic pinning bypass or causal network proof.",
+    "Authentication state is operator-declared. Logout/refresh/expired-session/ownership flows need controlled account fixtures; status alone is not proof.",
+    "Driver timings include ADB/snapshot overhead. Test assertions do not prove vulnerability impact or production readiness."
+  ],
+  "parent_run_id": null,
+  "device_metadata": {
+    "adapter": "ADB/UIAutomator",
+    "ordinary_app_exploit_proof": false,
+    "android_version": "9",
+    "sdk_level": "28",
+    "fingerprint": "google/vbox86p/vbox86p:9/PI/771:userdebug/test-keys,p1",
+    "root_shell_observed": true,
+    "version_name": "1.0-synthetic",
+    "version_code": "1"
+  },
+  "reason": "Review exact controls/cases before execution"
+}

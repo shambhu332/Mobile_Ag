@@ -17,6 +17,8 @@ def isolated_test_environment(monkeypatch, tmp_path):
     for key in ['OPENAI_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','DEEPSEEK_API_KEY','XAI_API_KEY']:
         monkeypatch.delenv(key,raising=False)
     web = importlib.import_module('mobileag.web.app')
+    monkeypatch.setattr(web.app.state,'auth_token','synthetic-unit-test-token-only')
+    monkeypatch.setattr(web.app.state,'token_announced',True,raising=False)
     monkeypatch.setattr(web,'ACTIVE_SCANS',{})
     monkeypatch.setattr(web,'DEMO_SCAN_CACHE',None)
     monkeypatch.setattr(web,'RUNTIME_SETTINGS',web.RUNTIME_SETTINGS.copy())

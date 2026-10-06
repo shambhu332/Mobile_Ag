@@ -1,0 +1,22 @@
+{
+  "package": "org.mobileag.validation.navigation",
+  "serial": "127.0.0.1:6562",
+  "ordinary_app_exploit_proof": false,
+  "device": {
+    "serial": "127.0.0.1:6562",
+    "status": "online",
+    "model": "Pixel",
+    "android_version": "9",
+    "sdk_level": "28",
+    "is_emulator": true,
+    "is_rooted": true
+  },
+  "fingerprint": "google/vbox86p/vbox86p:9/PI/771:userdebug/test-keys,p1",
+  "version": "1.0-synthetic",
+  "apk_sha256": "926bab343281bede44b4dad266b7bd05be43d171a9ffc45b2704e159e417658f",
+  "install_acknowledged": true,
+  "launch_acknowledged": true,
+  "initial_status": "awaiting_review",
+  "cleanup_confirmed": true,
+  "limitations": "One synthetic navigation-only fixture on recorded emulator/build/shell. Not current ordinary-app exploitation, own production app coverage, iOS, payment/auth workflows or readiness certification."
+}

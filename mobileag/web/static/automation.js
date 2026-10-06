@@ -70,5 +70,6 @@
     refreshReport().catch(e=>{status.textContent=e.message;});
   }
   async function refreshReport(){if(!current)return;const data=await(await fetch('/api/automation/runs/'+current.id+'/report')).json();const target=document.getElementById('automation-report');if(target)target.textContent=JSON.stringify(data,null,2);}
+  window.addEventListener('automation-open-run',async event=>{switchView('automation');try{current=await(await fetch('/api/automation/runs/'+event.detail.id)).json();render();}catch(e){status.textContent=e.message;}});
   document.getElementById('nav-automation').addEventListener('click',async()=>{switchView('automation');try{await loadRuns();}catch(e){status.textContent=e.message;}});
 })();

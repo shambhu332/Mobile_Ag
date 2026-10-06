@@ -1,0 +1,30 @@
+..................F..                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_all_provider_adapters_protocol_shape_and_metadata_only[ollama] ______
+
+provider = 'ollama'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7f0d85d320>
+
+    @pytest.mark.parametrize('provider',list(PROVIDERS))
+    @pytest.mark.asyncio
+    async def test_all_provider_adapters_protocol_shape_and_metadata_only(provider,monkeypatch):
+        spec=PROVIDERS[provider];monkeypatch.setenv('MOBILEAG_LLM_ALLOWED_PROVIDERS',provider)
+        monkeypatch.setenv('MOBILEAG_LLM_'+provider.upper()+'_MODEL','synthetic-test-model')
+        if spec[4]:monkeypatch.setenv(spec[4],'private-provider-key')
+        if provider in {'ollama','local_openai'}:monkeypatch.setenv('MOBILEAG_LLM_LOCAL_ORIGINS',spec[2])
+        value={'candidates':[{'content':{'parts':[{'text':'private-provider-key advice'}]}}]} if provider=='gemini' else {'content':[{'type':'text','text':'private-provider-key advice'}]} if provider=='claude' else {'message':{'content':'private-provider-key advice'}} if provider=='ollama' else {'choices':[{'message':{'content':'private-provider-key advice'}}]}
+        transport=AsyncMock(return_value={'status_code':200,'body':json.dumps(value)})
+        result=await LLMBroker(transport).review(provider,aggregate({'status':'completed','findings':[{'severity':'high','description':'private-source'}]}),lambda:None)
+        args,kwargs=transport.call_args;body=json.loads(kwargs['body'])
+        assert args[1]=='POST' and kwargs['allowed_origins']=={spec[2]} and kwargs['loopback_only']==(provider in {'ollama','local_openai'})
+        assert 'private-source' not in json.dumps(body) and 'private-provider-key' not in json.dumps(body)
+>       assert 'private-provider-key' not in result['advice'] and not result['tools_executed']
+E       AssertionError: assert ('private-provider-key' not in 'private-pro...r-key advice'
+E         
+E         'private-provider-key' is contained here:
+E           private-provider-key advice)
+
+tests/test_guided_assessments.py:147: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_guided_assessments.py::test_all_provider_adapters_protocol_shape_and_metadata_only[ollama]
+1 failed, 20 passed in 3.23s

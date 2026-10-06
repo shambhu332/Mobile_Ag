@@ -1,0 +1,186 @@
+{
+  "scan_id": "scan_d9c3d84464ab4111a5f290f512a69322",
+  "app_name": "synthetic-fixture",
+  "package_name": "org.mobileag.validation.navigation",
+  "version": "1.0-synthetic",
+  "revision": 0,
+  "artifact_sha256": "678c3906158acdff220c8b116166c019f2adb323548545562b2537b4bb5043ee",
+  "request": {
+    "apk_path": "/tmp/mobileag-guided-fixture-mf7v57ee/uploads/synthetic-fixture.apk",
+    "auto_taint": true
+  },
+  "created_at": "2026-10-06T04:46:42.807976+00:00",
+  "status": "completed",
+  "progress": 100,
+  "framework": "Native",
+  "obfuscation_level": "Assessing...",
+  "stats": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 1,
+    "total": 1
+  },
+  "findings": [
+    {
+      "id": "d5e5ade0-88d2-4b4a-a92e-40db5885d0da",
+      "title": "Review Exported Activity: .MainActivity",
+      "description": "Activity '.MainActivity' accepts external callers without a manifest permission. This may be intentional (for example a launcher activity). Trace caller-controlled inputs to sensitive operations and verify runtime authorization before claiming a vulnerability.",
+      "severity": "INFO",
+      "confidence": 0.485,
+      "cwe_id": "CWE-Unknown",
+      "cvss_score": 0.0,
+      "cvss_vector": "",
+      "owasp_masvs": "",
+      "affected_component": ".MainActivity",
+      "file_path": "AndroidManifest.xml",
+      "line_number": null,
+      "code_snippet": "",
+      "detection_method": "ManifestAuditor",
+      "consensus_votes": {},
+      "frida_script": null,
+      "poc_guide": null,
+      "remediation": "Keep intentionally public entrypoints usable. For private operations, disable export or enforce caller authorization before processing inputs; do not disable launcher access blindly.",
+      "status": "UNVERIFIED",
+      "false_positive_reasons": [
+        "reachability: Only 1 reference(s) to 'MainActivity' \u2014 limited reachability",
+        "sanitizer: Could not read code context \u2014 assuming no sanitization",
+        "historical: No historical data available (Qdrant not configured)"
+      ],
+      "filter_scores": {
+        "reachability": 0.5,
+        "sanitizer": 0.6,
+        "consensus": 0.5,
+        "historical": 0.5
+      },
+      "related_findings": [],
+      "metadata": {
+        "filter_reasons": {
+          "reachability": "Only 1 reference(s) to 'MainActivity' \u2014 limited reachability",
+          "sanitizer": "Could not read code context \u2014 assuming no sanitization",
+          "historical": "No historical data available (Qdrant not configured)"
+        },
+        "assessment": "Heuristic scores, not exploit verification",
+        "below_confidence_threshold": true
+      }
+    }
+  ],
+  "agent_telemetry": [],
+  "api_endpoints": [],
+  "components": [
+    {
+      "name": ".MainActivity",
+      "type": "activity",
+      "exported": true,
+      "permission": "",
+      "taskAffinity": "",
+      "intent_filters": [
+        {
+          "actions": [
+            "android.intent.action.MAIN"
+          ],
+          "categories": [
+            "android.intent.category.LAUNCHER"
+          ],
+          "data": []
+        }
+      ],
+      "meta_data": {}
+    }
+  ],
+  "deep_links": [],
+  "attack_surface_graph": {
+    "nodes": [
+      {
+        "id": "app",
+        "label": "synthetic-fixture",
+        "group": "app",
+        "shape": "dot",
+        "size": 32,
+        "color": "#0ea5e9"
+      }
+    ],
+    "edges": []
+  },
+  "analysis_policy": {
+    "enable_deep_taint": true,
+    "enable_consensus_voting": true,
+    "entropy_threshold": 4.5,
+    "enable_reachability_filter": true,
+    "offline": true,
+    "approved_llm_providers": [],
+    "execution": "isolated_offline"
+  },
+  "events": [
+    {
+      "sequence": 1,
+      "stage": "APK Extraction",
+      "message": "Decompiling DEX and resources via JADX / APKTool...",
+      "progress": 10
+    },
+    {
+      "sequence": 2,
+      "stage": "Ingestion Complete",
+      "message": "Parsed manifest for org.mobileag.validation.navigation (Framework: Native)",
+      "progress": 25
+    },
+    {
+      "sequence": 3,
+      "stage": "Static Analysis",
+      "message": "Running 10 parallel SAST engines (Taint, Secrets, Keystore, Call Graph, ELF)...",
+      "progress": 40
+    },
+    {
+      "sequence": 4,
+      "stage": "SAST Completed",
+      "message": "Discovered 1 raw potential security findings",
+      "progress": 75
+    },
+    {
+      "sequence": 5,
+      "stage": "Finding Discovered",
+      "message": "Review Exported Activity: .MainActivity",
+      "progress": 78
+    },
+    {
+      "sequence": 6,
+      "stage": "5-Layer Filter",
+      "message": "Eliminating false positives through reachability and consensus verification...",
+      "progress": 85
+    },
+    {
+      "sequence": 7,
+      "stage": "Filtering Complete",
+      "message": "Retained 1 review candidates",
+      "progress": 92
+    },
+    {
+      "sequence": 8,
+      "stage": "Generators",
+      "message": "Synthesizing Frida hooks and Markdown PoC guides...",
+      "progress": 95
+    },
+    {
+      "sequence": 9,
+      "stage": "Scan Complete",
+      "message": "Scan scan_d9c3d84464ab4111a5f290f512a69322 complete: 1 candidate findings.",
+      "progress": 98
+    }
+  ],
+  "event_sequence": 9,
+  "execution_environment": {
+    "python": "3.14.7",
+    "os": "Linux-7.2.8-2-cachyos-x86_64-with-glibc2.44",
+    "worker": "bubblewrap",
+    "network": "denied",
+    "device_access": "not_mounted"
+  },
+  "coverage": {
+    "java_files": 2,
+    "smali_files": 1,
+    "resources": true,
+    "dependency_lookup": "skipped_offline",
+    "historical_learning": "not_configured"
+  }
+}

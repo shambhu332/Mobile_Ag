@@ -49,6 +49,10 @@ class SyntheticNavigator:
         return parse_snapshot(f'<hierarchy><node package="{pkg}" class="android.widget.Button" resource-id="{pkg}:id/{control.lower()}" text="{control}" clickable="true" bounds="[20,20][220,100]"/></hierarchy>',pkg)
     async def act(self,action,element=None):self.screen='Settings' if self.screen=='Profile' else 'Home'
 navigator=SyntheticNavigator();service=m.automation_service()
+async def guided_static(apk,linked):
+    await linked('scan_guided_ui_fixture')
+    return {'scan_id':'scan_guided_ui_fixture','status':'completed','package_name':'org.example.automation','findings':[]}
+m.assessment_service().static_runner=guided_static
 service.driver_factory=lambda serial,package:navigator
 m.repository().save_policy({'devices':['emulator-synthetic'],'packages':['org.example.automation'],'origins':[],'methods':['GET'],'actions':['automation_observe','automation_execute']})
 auto=asyncio.run(service.create(CreateRun(serial='emulator-synthetic',package_name='org.example.automation',component='org.example.automation/.Main',environment='synthetic',dedicated_account_confirmed=True,dedicated_device_confirmed=True,max_steps=2),m.app.state.auth_token))
@@ -82,8 +86,10 @@ def main():
         with socket.socket() as listener:
             listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
         env=os.environ.copy()
-        for key in ['OPENAI_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','DEEPSEEK_API_KEY','XAI_API_KEY']:
+        for key in ['OPENAI_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','DEEPSEEK_API_KEY','XAI_API_KEY','GROQ_API_KEY','MISTRAL_API_KEY','OPENROUTER_API_KEY','MOBILEAG_LOCAL_LLM_KEY']:
             env.pop(key,None)
+        for key in list(env):
+            if key.startswith('MOBILEAG_LLM_'):env.pop(key,None)
         env.update(MOBILEAG_DATA_DIR=str(root),MOBILEAG_API_TOKEN='synthetic-local-only',OFFLINE='true',APPROVED_LLM_PROVIDERS='[]',MOBILEAG_ALLOWED_DEVICES='emulator-synthetic',MOBILEAG_ALLOWED_ORIGINS='',MOBILEAG_ALLOWED_CONNECT='',TEST_PORT=str(port),PYTHONPATH=str(repo))
         runner=root/'runner.py';runner.write_text(SERVER)
         with (root/'server.log').open('w') as log:
@@ -142,8 +148,9 @@ def main():
                     # Real response CSP negative control: an arbitrary inline handler is blocked.
                     page.evaluate("() => {const e=document.createElement('button');e.setAttribute('onclick','window.auditXssProbe()');document.body.append(e);e.click();e.remove();}")
                     result['csp_control_marker_executions']=page.evaluate('window.auditXssCount')
+                    page.locator('#advanced-tools').evaluate('(el)=>el.open=true')
                     result['screens']={}
-                    for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation']:
+                    for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
                         page.locator('#nav-'+view).click();page.wait_for_timeout(250)
                         result['screens'][view]={'visible':page.locator('#view-'+view).is_visible()}
                     # Actual router/service/SQLite exercised through approval UI.
@@ -164,6 +171,35 @@ def main():
                         'screens':len(automation_report['screen_graph']['nodes']),'edges':len(automation_report['screen_graph']['edges']),'untested':len(automation_report['untested']),
                         'score':automation_report['executive_summary']['production_readiness_score']}
                     assert result['automation']['screens']==2 and result['automation']['edges']==1 and result['automation']['untested']>0 and result['automation']['score'] is None
+                    # Primary workflow: real archive upload/auth/scope/orchestration;
+                    # only static executor and Android adapter are synthetic.
+                    import io,zipfile
+                    payload=io.BytesIO()
+                    with zipfile.ZipFile(payload,'w') as archive:
+                        archive.writestr('AndroidManifest.xml','<manifest package="org.example.automation"/>')
+                        archive.writestr('classes.dex',b'dex\n035\x00synthetic-ui-fixture')
+                    page.locator('#nav-assessment').click()
+                    before=len([u for u in requests if '/api/scans/run' in u])
+                    page.locator('#assessment-file').set_input_files({'name':'synthetic-ui-fixture.apk','mimeType':'application/vnd.android.package-archive','buffer':payload.getvalue()})
+                    wait_condition(page,'document.querySelector("#assessment-artifact").value.length>0')
+                    assert len([u for u in requests if '/api/scans/run' in u])==before
+                    page.locator('#assessment-package').fill('org.example.automation')
+                    page.locator('#assessment-dast').check()
+                    page.locator('#assessment-serial').fill('emulator-synthetic')
+                    page.locator('#assessment-component').fill('org.example.automation/.Main')
+                    for name in ['account','device','authorized','scope']:page.locator('#assessment-'+name).check()
+                    page.locator('#assessment-confirmation').fill('START SCOPED TESTS')
+                    page.locator('#assessment-start').click()
+                    wait_condition(page,'document.querySelector("#assessment-status").textContent.includes("awaiting_action_review")')
+                    guided=json.loads(page.locator('#assessment-results pre').inner_text())
+                    result['guided_assessment']={'upload_did_not_start_tests':True,'status':guided['status'],'sast_executor':'synthetic callback; not actual decompiler proof',
+                        'sast':guided['stages']['sast']['status'],'dast_screens':guided['stages']['dast']['screens'],'api':guided['stages']['api']['status'],'llm':guided['stages']['llm']['status']}
+                    assert guided['stages']['dast']['screens']==1 and guided['stages']['llm']['status']=='not_selected'
+                    result['guided_assessment']['scrollable']=page.locator('#view-assessment').evaluate('(el)=>el.scrollHeight>el.clientHeight && getComputedStyle(el).overflowY==="auto"')
+                    assert result['guided_assessment']['scrollable']
+                    page.locator('#view-assessment').evaluate('(el)=>el.scrollTop=0')
+                    page.screenshot(path=str(out/'guided-assessment-desktop.png'))
+
                     # Actual durable triage API reached via the migrated UI callback.
                     page.locator('#nav-findings').click();page.evaluate('inspectFinding("synthetic-finding")')
                     page.locator('#detail-content button',has_text='False Positive').click()
@@ -180,7 +216,7 @@ def main():
                     result['a11y']={}
                     if args.axe:
                         page.evaluate(Path(args.axe).read_text())
-                        for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation']:
+                        for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
                             page.locator('#nav-'+view).click();page.wait_for_timeout(200)
                             assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
                             result['a11y'][view]=[{'id':v['id'],'impact':v['impact'],'count':len(v['nodes']),'nodes':[{'html':n['html'],'failure':n['failureSummary']} for n in v['nodes']]} for v in assessment['violations']]

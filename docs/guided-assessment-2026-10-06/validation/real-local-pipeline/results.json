@@ -1,0 +1,33 @@
+{
+  "artifact_sha256": "678c3906158acdff220c8b116166c019f2adb323548545562b2537b4bb5043ee",
+  "package": "org.mobileag.validation.navigation",
+  "assessment_status": "completed",
+  "stages": {
+    "sast": "completed",
+    "api": "completed_with_observations",
+    "dast": "not_selected",
+    "llm": "completed"
+  },
+  "requests": {
+    "api": 2,
+    "model": 1,
+    "metadata_only": true
+  },
+  "coverage": {
+    "java_files": 2,
+    "smali_files": 1,
+    "resources": true,
+    "dependency_lookup": "skipped_offline",
+    "historical_learning": "not_configured"
+  },
+  "execution_environment": {
+    "python": "3.14.7",
+    "os": "Linux-7.2.8-2-cachyos-x86_64-with-glibc2.44",
+    "worker": "bubblewrap",
+    "network": "denied",
+    "device_access": "not_mounted"
+  },
+  "device_operations": 0,
+  "commercial_provider_calls": 0,
+  "boundary": "Real namespace/cgroup/parser and loopback transport integration only; no production app/device exploitation proof."
+}

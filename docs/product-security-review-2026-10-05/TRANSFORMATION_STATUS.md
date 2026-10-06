@@ -101,3 +101,7 @@ A request to fix everything cannot justify fabricating an ordinary-app exploit, 
 ## Authorized automation follow-up (2026-10-06)
 
 See [`../automation-2026-10-05/README.md`](../automation-2026-10-05/README.md) for the new bounded Android navigation/read-only API workflow, API inventory and validation. Earlier evidence remains unchanged. This follow-up does not close the current-unrooted owned-app, representative corpus, manual accessibility or production readiness gates.
+
+## Primary guided workflow and provider broker (2026-10-06)
+
+[`../guided-assessment-2026-10-06/README.md`](../guided-assessment-2026-10-06/README.md) records the primary upload/scope/start flow, optional advanced tools, separate metadata-only provider broker, real isolated SAST/loopback integration and open gates. The parser still has no network or provider credentials. This broker is not raw APK/source cloud analysis or an executable LLM agent.

@@ -63,7 +63,8 @@
 
       <!-- Main Navigation Menu -->
       <nav aria-label="Workspace sections" class="p-3 space-y-1">
-        <button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
+        <button id="nav-assessment" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="play" class="w-4 h-4"></i><span>Start Assessment</span></button>
+<button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
           <i data-lucide="network" class="w-4 h-4"></i>
           <span>Attack Surface</span>
         </button>
@@ -74,25 +75,15 @@
           <span id="nav-findings-count" class="ml-auto px-1.5 py-0.2 rounded bg-amber-950/80 text-[10px] font-mono text-amber-300 border border-amber-800">0</span>
         </button>
 
-        <button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
-          <span>Live DAST & BYOD Lab</span>
-          <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
-        </button>
 
-        <button data-onclick="static3" id="nav-taint" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="git-merge" class="w-4 h-4 text-emerald-400"></i>
-          <span>Taint Dataflow</span>
-          <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
-        </button>
 
-        <button id="nav-automation" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="route" class="w-4 h-4"></i><span>Authorized Automation</span></button>
 
-        <button data-onclick="static4" id="nav-api" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="globe" class="w-4 h-4 text-purple-400"></i>
-          <span>API Security Studio</span>
-          <span id="nav-api-badge" class="ml-auto px-1.5 py-0.2 rounded bg-purple-950/80 text-[10px] font-mono text-purple-300 border border-purple-800">0 APIs</span>
-        </button>
+
+
+
+
+
+
 
 
         <button data-onclick="static5" id="nav-scans" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
@@ -100,12 +91,25 @@
           <span>Scan History</span>
         </button>
 
-        <button data-onclick="static6" id="nav-agents" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+
+
+        <details id="advanced-tools"><summary class="text-slate-300 px-3 py-2">Advanced tools (optional)</summary><button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
+          <span>Advanced Device Tools</span>
+          <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
+        </button><button data-onclick="static3" id="nav-taint" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="git-merge" class="w-4 h-4 text-emerald-400"></i>
+          <span>Taint Dataflow</span>
+          <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
+        </button><button id="nav-automation" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="route" class="w-4 h-4"></i><span>Navigation Review</span></button><button data-onclick="static4" id="nav-api" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+          <i data-lucide="globe" class="w-4 h-4 text-purple-400"></i>
+          <span>Advanced API Tools</span>
+          <span id="nav-api-badge" class="ml-auto px-1.5 py-0.2 rounded bg-purple-950/80 text-[10px] font-mono text-purple-300 border border-purple-800">0 APIs</span>
+        </button><button data-onclick="static6" id="nav-agents" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="cpu" class="w-4 h-4"></i>
           <span>Analyzer Agents</span>
           <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="Engine Active"></span>
-        </button>
-
+        </button></details>
         <button data-onclick="static7" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="settings" class="w-4 h-4"></i>
           <span>Configuration</span>
@@ -145,30 +149,13 @@
 
     <!-- Top Header Bar -->
     <header class="h-16 border-b border-borderSubtle bg-panel/80 px-6 flex items-center justify-between shrink-0">
-      <div class="flex items-center gap-4">
+      <div id="static-scan-context" class="flex items-center gap-4">
         <div class="flex items-center gap-2">
           <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">TARGET</span>
           <h2 id="top-package-name" class="text-sm font-semibold text-white font-mono">Select a scan</h2>
         </div>
         <span id="top-version" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">Version unknown</span>
         <span id="top-framework" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Not assessed</span>
-      </div>
-
-      <!-- Djini.ai BYOD Live Device Status Bar -->
-      <div class="hidden md:flex items-center gap-2 border-x border-borderSubtle/80 px-4 py-1">
-        <div class="flex items-center gap-1.5 text-xs font-mono">
-          <span id="header-device-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <select id="header-device-select" data-onchange="static8" class="bg-card border border-borderSubtle rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500">
-            <option value="">Detecting BYOD Devices...</option>
-          </select>
-        </div>
-        <span id="header-root-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">No device selected</span>
-        <button data-onclick="static9" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-800/60 text-[11px] font-mono flex items-center gap-1 transition">
-          <i data-lucide="shield-off" class="w-3 h-3"></i> Root preset check
-        </button>
-        <button data-onclick="static10" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-800/60 text-[11px] font-mono flex items-center gap-1 transition">
-          <i data-lucide="unlock" class="w-3 h-3"></i> TLS preset check
-        </button>
       </div>
 
       <!-- Action Buttons -->
@@ -178,7 +165,7 @@
         <!-- New Scan Trigger -->
         <button data-onclick="static11" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-2 transition shadow-sm">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-          <span>New Target Scan</span>
+          <span>Start Assessment</span>
         </button>
 
         <!-- Export Report Dropdown -->
@@ -571,7 +558,24 @@
       <!-- =================================================================== -->
       <!-- VIEW: LIVE DAST & EMULATORS -->
       <!-- =================================================================== -->
-      <div id="view-dast" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">
+      <div id="view-dast" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">      <!-- Djini.ai BYOD Live Device Status Bar -->
+      <div class="hidden md:flex items-center gap-2 border-x border-borderSubtle/80 px-4 py-1">
+        <div class="flex items-center gap-1.5 text-xs font-mono">
+          <span id="header-device-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <select id="header-device-select" data-onchange="static8" class="bg-card border border-borderSubtle rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500">
+            <option value="">Select authorized device...</option>
+          </select>
+        </div>
+        <span id="header-root-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">No device selected</span>
+        <button data-onclick="static9" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-800/60 text-[11px] font-mono flex items-center gap-1 transition">
+          <i data-lucide="shield-off" class="w-3 h-3"></i> Root preset check
+        </button>
+        <button data-onclick="static10" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-800/60 text-[11px] font-mono flex items-center gap-1 transition">
+          <i data-lucide="unlock" class="w-3 h-3"></i> TLS preset check
+        </button>
+      </div>
+
+
 
         <!-- Header & Connection Bar -->
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
@@ -1008,7 +1012,8 @@
       <!-- =================================================================== -->
       <!-- VIEW: API SECURITY STUDIO & CATALOG -->
       <!-- =================================================================== -->
-      <div id="view-automation" class="view-panel h-full hidden overflow-auto"></div>
+      <div id="view-assessment" class="view-panel h-full hidden overflow-auto"></div>
+        <div id="view-automation" class="view-panel h-full hidden overflow-auto"></div>
 
       <div id="view-api" class="view-panel h-full hidden flex overflow-hidden">
 
@@ -1220,6 +1225,7 @@
 <script src="/static/taint.js"></script>
 <script src="/static/api.js"></script>
 <script src="/static/automation.js"></script>
+<script src="/static/assessment.js"></script>
 <script src="/static/dashboard.js"></script>
   <script src="/static/workflow.js"></script>
 </body>

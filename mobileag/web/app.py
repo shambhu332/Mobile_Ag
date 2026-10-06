@@ -38,8 +38,12 @@ async def lifespan(application):
         application.state.token_announced=True
     await recover_interrupted_jobs()
     automation_service().store().recover()
+    assessment_service().store().recover()
     yield
     CANCELLED.update(PROCESSES)
+    assessments=assessment_service()
+    for task in list(assessments.tasks.values()):task.cancel()
+    if assessments.tasks:await asyncio.gather(*list(assessments.tasks.values()),return_exceptions=True)
     service=automation_service()
     for rid in list(service.tasks):
         try:service.cancel(rid)
@@ -360,7 +364,7 @@ async def get_readiness():
     return {'local_operator_only':True,'sandbox_probe':isolated,
             'android_tools':{'jadx':Path('/usr/bin/jadx').is_file(),'apktool':Path('/usr/bin/apktool').is_file() or jar.is_file()},
             'aggregate_worker_limits':{'memory':'3GiB','swap':'512MiB','tasks':128,'cpu':'one core','wall_seconds':360},
-            'web_static_network':'denied', 'cloud_web_worker':'unsupported_without_credential_broker',
+            'web_static_network':'denied', 'cloud_web_worker':'offline; optional separate aggregate-only broker',
             'python':sys.version.split()[0], 'production_device_validation':'not_performed',
             'multiuser_deployment':'unsupported', 'offline_ui_assets':True}
 
@@ -1389,6 +1393,25 @@ def automation_service():
 
 from mobileag.automation.routes import build_router as build_automation_router
 app.include_router(build_automation_router(automation_service,lambda:app.state.auth_token))
+
+def assessment_service():
+    if not hasattr(app.state,'assessment_service'):
+        from mobileag.assessments.service import AssessmentService
+        from mobileag.llm.broker import LLMBroker
+        async def static_runner(apk,linked):
+            background=BackgroundTasks()
+            result=await trigger_scan(RunScanRequest(apk_path=str(apk),auto_dast=False,auto_taint=True),background)
+            await linked(result['scan_id'])
+            await background()
+            return repository().get(result['scan_id'])
+        app.state.assessment_service=AssessmentService(lambda:OUTPUT_DIR,lambda:UPLOAD_DIR,repository,
+            lambda token:time.monotonic()<app.state.session_deadline and authorized(token,app.state.auth_token),
+            static_runner,automation_service,adb_manager,LLMBroker(),hash_file)
+    return app.state.assessment_service
+
+from mobileag.assessments.routes import build_router as build_assessment_router
+app.include_router(build_assessment_router(assessment_service,lambda:app.state.auth_token))
+
 
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     """Entrypoint to launch the web dashboard."""

@@ -1,6 +1,6 @@
 /* MobileAg uploads-exports.js — ordered local classic-script module; shared workspace state is in workspace.js. */
     // Modal, Drag & Drop, and Scan Launching
-    function openNewScanModal() { document.getElementById('scan-modal').classList.remove('hidden'); }
+    function openNewScanModal() { document.getElementById('nav-assessment').click(); }
     function closeNewScanModal() { document.getElementById('scan-modal').classList.add('hidden'); }
 
     function handleDragOver(e) {
@@ -55,7 +55,7 @@
       if (!file) return;
       if (!file.name.toLowerCase().endsWith('.apk') && !file.name.toLowerCase().endsWith('.ipa') && !file.name.toLowerCase().endsWith('.zip')) {
         showToast('Please upload an .apk or .ipa file', 'error');
-        return;
+        return {error:'Please upload an APK, IPA or ZIP archive.'};
       }
 
       showToast(`Uploading ${file.name}...`, 'info');
@@ -92,26 +92,15 @@
           window.lucide?.createIcons();
         }
 
+        window.dispatchEvent(new CustomEvent('assessment-uploaded',{detail:{path:data.file_path,filename:data.filename}}));
         if (autoRunAfterUpload) {
-          showToast('Triggering autonomous full-spectrum pipeline...', 'info');
-          const runRes = await fetch('/api/scans/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              apk_path: data.file_path,
-              auto_dast: false,
-              auto_taint: true,
-              bypass_root: false,
-              bypass_ssl: false,
-              serial: dastActiveDevice
-            })
-          });
-          const runData = await runRes.json();
-          showToast(`Autonomous pipeline active: ${runData.scan_id}`, 'success');
-          await loadSpecificScan(runData.scan_id);
+          document.getElementById('nav-assessment').click();
+          showToast('Upload ready. Approve APK/API scope and stages before starting tests.', 'info');
         }
+        return data;
       } catch (err) {
         showToast(err.message || 'Upload error', 'error');
+        return {error:err.message || 'Upload error'};
       } finally {
         if (spinner) spinner.classList.add('hidden');
       }

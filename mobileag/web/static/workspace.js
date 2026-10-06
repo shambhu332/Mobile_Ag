@@ -27,6 +27,7 @@
     // View Navigation
     function switchView(viewId) {
       activeView = viewId;
+      for(const id of ['static-scan-context','scan-assessment-state']){const el=document.getElementById(id);if(el)el.style.display=viewId==='assessment'?'none':'';}
       document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
       document.querySelectorAll('.nav-item').forEach(el => {
         el.classList.remove('bg-sky-950/40', 'text-sky-400', 'border', 'border-sky-800/40');
@@ -63,6 +64,7 @@
         currentScan = page.items.length ? await (await fetch('/api/scans/' + encodeURIComponent(page.items[0].scan_id))).json() : null;
         if (!currentScan) {
           renderDashboard({package_name:"Upload an APK or IPA to begin", stats:{total:0}, findings:[]});
+          document.getElementById("nav-assessment").click();
           return;
         }
 
@@ -92,6 +94,7 @@
       scan.stats ||= {};
       let assessment=document.getElementById('scan-assessment-state');
       if(!assessment){assessment=document.createElement('p');assessment.id='scan-assessment-state';assessment.className='workflow-panel';assessment.setAttribute('role','status');document.getElementById('main-workspace').prepend(assessment);}
+      assessment.style.display=activeView==='assessment'?'none':'';
       assessment.textContent='Job: '+(scan.status||'not started')+'. Static candidates are not exploit proof. '+(scan.errors||[]).join(' ');
       if(document.getElementById('job-scan-id'))document.getElementById('job-scan-id').value=scan.scan_id||'';
       if (!scan) return;

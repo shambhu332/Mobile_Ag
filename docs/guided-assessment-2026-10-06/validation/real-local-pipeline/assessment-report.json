@@ -1,0 +1,123 @@
+{
+  "id": "assess_21acf7197f1d40b081b741d7a3ea9122",
+  "status": "completed",
+  "created_at": "2026-10-06T04:46:42.799719+00:00",
+  "package_name": "org.mobileag.validation.navigation",
+  "artifact_sha256": "678c3906158acdff220c8b116166c019f2adb323548545562b2537b4bb5043ee",
+  "scope": {
+    "origins": [
+      "http://127.0.0.1:1151"
+    ],
+    "actions": [],
+    "packages": [
+      "org.mobileag.validation.navigation"
+    ],
+    "devices": [],
+    "methods": [
+      "GET"
+    ]
+  },
+  "cancel_requested": false,
+  "scan_id": "scan_d9c3d84464ab4111a5f290f512a69322",
+  "automation_run_id": null,
+  "stages": {
+    "sast": {
+      "status": "completed",
+      "scan_id": "scan_d9c3d84464ab4111a5f290f512a69322"
+    },
+    "api": {
+      "status": "completed_with_observations",
+      "inventory": [
+        {
+          "id": "406f8ae2cdf212dc627a41cc",
+          "origin": "http://127.0.0.1:1151",
+          "method": "GET",
+          "label": "Imported request 1",
+          "query_names": [],
+          "imported_status": 200,
+          "protected": true,
+          "provenance": "operator_import_not_independently_verified",
+          "ui_action_id": null,
+          "curl": "curl --request GET \"$TEST_ENDPOINT_406f8ae2cdf212dc627a41cc\" --header \"Authorization: Bearer $TEST_TOKEN\""
+        }
+      ],
+      "generated_tests": [
+        {
+          "id": "406f8ae2cdf212dc627a41cc_baseline",
+          "kind": "api",
+          "feature": "Imported request 1",
+          "variant": "baseline",
+          "capture_id": "406f8ae2cdf212dc627a41cc",
+          "priority": "P1"
+        },
+        {
+          "id": "406f8ae2cdf212dc627a41cc_unauthenticated",
+          "kind": "api",
+          "feature": "Imported request 1",
+          "variant": "unauthenticated",
+          "capture_id": "406f8ae2cdf212dc627a41cc",
+          "priority": "P1"
+        }
+      ],
+      "results": [
+        {
+          "test_id": "406f8ae2cdf212dc627a41cc_baseline",
+          "executed": true,
+          "result": "passed",
+          "status_code": 200,
+          "elapsed_ms": 213.31,
+          "response_shape": {
+            "data": {
+              "id": "str"
+            }
+          },
+          "auth_mechanism": "operator_supplied_test_header",
+          "provenance": "agent_read_only_replay",
+          "assertion": "Imported baseline status",
+          "redirect_followed": false,
+          "response_body_retained": false
+        },
+        {
+          "test_id": "406f8ae2cdf212dc627a41cc_unauthenticated",
+          "executed": true,
+          "result": "passed",
+          "status_code": 401,
+          "elapsed_ms": 25.77,
+          "response_shape": {
+            "data": {
+              "id": "str"
+            }
+          },
+          "auth_mechanism": "none",
+          "provenance": "agent_read_only_replay",
+          "assertion": "401/403 for operator-declared protected request",
+          "redirect_followed": false,
+          "response_body_retained": false
+        }
+      ],
+      "observations": [],
+      "executed": 2,
+      "untested": 0
+    },
+    "dast": {
+      "status": "not_selected"
+    },
+    "llm": {
+      "status": "completed",
+      "review": {
+        "provider": "local_openai",
+        "model": "synthetic-loopback-model",
+        "advice": "Synthetic local advice: review actual coverage; no production score.",
+        "classification": "untrusted AI advice; not a finding or executed test",
+        "egress": "aggregate_metadata_only",
+        "tools_executed": false
+      }
+    }
+  },
+  "limitations": [
+    "SAST candidates are not confirmed vulnerabilities.",
+    "DAST maps in-package UI; taps require later exact action approval.",
+    "API tests are read-only operator-imported requests, not transparent capture.",
+    "AI receives aggregate counts only, never executes actions."
+  ]
+}

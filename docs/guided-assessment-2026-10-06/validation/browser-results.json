@@ -1,0 +1,100 @@
+{
+  "keyboard_connection": {
+    "initial_token_focus": true,
+    "tab_to_submit": true,
+    "enter_submits": true
+  },
+  "reduced_motion_media": true,
+  "browser": "155.0.8059.12",
+  "source_to_finding": "Real SecretScanner + synthetic Java; not compiled APK/decompiler proof",
+  "xss_marker_executions": 0,
+  "exact_clipboard_copies": {
+    "poc": true,
+    "adb": true,
+    "frida": true,
+    "ast": true
+  },
+  "proof_text": "VALIDATION NOTES\nANALYST EVIDENCE\n\n            No runtime validation evidence recorded. Static findings and generated guides are unverified review candidates.\n          \n\nGenerated scripts, static reachability and LLM votes do not establish runtime exploitation.",
+  "finding_count": "1",
+  "masvs": "Not assessed",
+  "inline_handlers": 0,
+  "inline_scripts": 0,
+  "implicit_device_selection": null,
+  "hostile_title_kept_as_text": true,
+  "csp_control_marker_executions": 0,
+  "screens": {
+    "surface": {
+      "visible": true
+    },
+    "findings": {
+      "visible": true
+    },
+    "scans": {
+      "visible": true
+    },
+    "agents": {
+      "visible": true
+    },
+    "settings": {
+      "visible": true
+    },
+    "dast": {
+      "visible": true
+    },
+    "taint": {
+      "visible": true
+    },
+    "api": {
+      "visible": true
+    },
+    "automation": {
+      "visible": true
+    },
+    "assessment": {
+      "visible": true
+    }
+  },
+  "automation": {
+    "unconfirmed_execution_blocked": true,
+    "actual_service_with_synthetic_adapter": true,
+    "executed": 1,
+    "screens": 2,
+    "edges": 1,
+    "untested": 15,
+    "score": null
+  },
+  "guided_assessment": {
+    "upload_did_not_start_tests": true,
+    "status": "awaiting_action_review",
+    "sast_executor": "synthetic callback; not actual decompiler proof",
+    "sast": "completed",
+    "dast_screens": 1,
+    "api": "not_selected",
+    "llm": "not_selected",
+    "scrollable": true
+  },
+  "durable_feedback_status": "FALSE_POSITIVE",
+  "page_errors": [],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked."
+  ],
+  "narrow_scrollwidth": 390,
+  "api_requests_outside_loopback": [],
+  "runtime_requests_outside_loopback": [],
+  "device_operations": "Mocked and disabled; no real ADB/Frida commands",
+  "cloud_model_calls": 0,
+  "a11y": {
+    "surface": [],
+    "findings": [],
+    "scans": [],
+    "agents": [],
+    "settings": [],
+    "dast": [],
+    "taint": [],
+    "api": [],
+    "automation": [],
+    "assessment": []
+  },
+  "small_screen_scrollwidth": 320
+}

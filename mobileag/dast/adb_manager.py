@@ -168,13 +168,15 @@ class ADBManager:
             "is_rooted": is_root,
         }
 
-    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = True) -> dict[str, Any]:
+    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = True, replace: bool = True) -> dict[str, Any]:
         """Install an APK onto the target device, optionally auto-granting permissions."""
         apk_p = Path(apk_path).resolve()
         if not apk_p.exists():
             return {"status": "error", "message": f"APK not found: {apk_p}"}
 
-        cmd = ["-s", serial, "install", "-r"]
+        cmd = ["-s", serial, "install"]
+        if replace:
+            cmd.append("-r")
         if grant_permissions:
             cmd.append("-g")
         cmd.append(str(apk_p))

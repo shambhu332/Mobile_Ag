@@ -14,8 +14,11 @@ def isolated_test_environment(monkeypatch, tmp_path):
     monkeypatch.setenv('MOBILEAG_ALLOWED_CONNECT','127.0.0.1:5555')
     monkeypatch.delenv('MOBILEAG_ALLOWED_ORIGINS',raising=False)
     monkeypatch.delenv('MOBILEAG_ALLOW_PRIVATE_TARGETS',raising=False)
-    for key in ['OPENAI_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','DEEPSEEK_API_KEY','XAI_API_KEY']:
+    for key in ['OPENAI_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','DEEPSEEK_API_KEY','XAI_API_KEY','GROQ_API_KEY','MISTRAL_API_KEY','OPENROUTER_API_KEY','MOBILEAG_LOCAL_LLM_KEY']:
         monkeypatch.delenv(key,raising=False)
+    import os
+    for key in list(os.environ):
+        if key.startswith('MOBILEAG_LLM_'):monkeypatch.delenv(key,raising=False)
     web = importlib.import_module('mobileag.web.app')
     monkeypatch.setattr(web.app.state,'auth_token','synthetic-unit-test-token-only')
     monkeypatch.setattr(web.app.state,'token_announced',True,raising=False)

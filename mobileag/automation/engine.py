@@ -214,7 +214,7 @@ class AutomationService:
             try:self.persist(doc)
             finally:
                 self.busy.discard(doc['serial']);self.tasks.pop(doc['id'],None)
-    async def api_case(self,doc,tid,authorization,token):
+    async def api_case(self,doc,tid,authorization,token,guard=None):
         test=next(t for t in doc['tests'] if t['id']==tid);capture=next(c for c in doc['captures'] if c['id']==test['capture_id'])
         url=self.targets[doc['id']][capture['id']];p=urlsplit(url);variant=test['variant']
         headers={}
@@ -231,7 +231,8 @@ class AutomationService:
             doc['results'].append({'test_id':tid,'result':'inconclusive','executed':False,'reason':'Request budget exhausted; not executed'});return
         if variant=='baseline' and capture['protected'] and not authorization:
             doc['results'].append({'test_id':tid,'result':'inconclusive','executed':False,'reason':'Explicit ephemeral test-account authorization missing; not executed'});return
-        await asyncio.sleep(doc['request_interval_seconds']);self.guard(doc,token,True)
+        await asyncio.sleep(doc['request_interval_seconds'])
+        (guard or (lambda:self.guard(doc,token,True)))()
         if not check_replay(self.policy(),url,capture['method']):raise PermissionError('API replay scope changed')
         doc['request_count']+=1;start=time.monotonic()
         try:result=await self.transport(url,capture['method'],headers=headers)
@@ -242,6 +243,7 @@ class AutomationService:
         status=result['status_code'];elapsed=round((time.monotonic()-start)*1000,2)
         try:shape=safe_shape(json.loads(result.get('body','')))
         except (ValueError,TypeError):shape='non_json_or_truncated'
+        if len(json.dumps(shape).encode())>8192:shape='omitted_shape_budget'
         assertion='401/403 for operator-declared protected request' if variant=='unauthenticated' else 'Imported baseline status' if variant=='baseline' and capture['imported_status'] else 'Response observed; no correctness oracle supplied'
         passed=status in {401,403} if variant=='unauthenticated' else status==capture['imported_status'] if variant=='baseline' and capture['imported_status'] else None
         receipt={'test_id':tid,'executed':True,'result':'passed' if passed is True else 'failed' if passed is False else 'observed',

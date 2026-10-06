@@ -9,18 +9,22 @@ import httpx
 MAX_RESPONSE = 1024 * 1024
 
 
-async def _scoped_request(url, method='GET', headers=None, body=None, timeout=4.0, raw=False):
+async def _scoped_request(url, method='GET', headers=None, body=None, timeout=4.0, raw=False, allowed_origins=None, allow_private=None, loopback_only=False):
     parsed = urlsplit(url)
     if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError('Only HTTP(S) URLs without userinfo are supported')
     origin = f'{parsed.scheme}://{parsed.netloc}'
-    allowed = {s.strip().rstrip('/') for s in os.getenv('MOBILEAG_ALLOWED_ORIGINS','').split(',') if s.strip()}
+    # Explicit origins are supplied only by trusted server-side brokers, never
+    # from user request bodies; default target scope remains unchanged.
+    allowed = set(allowed_origins) if allowed_origins is not None else {s.strip().rstrip('/') for s in os.getenv('MOBILEAG_ALLOWED_ORIGINS','').split(',') if s.strip()}
     if origin not in allowed:
         raise PermissionError('Destination origin is outside configured test scope')
     port = parsed.port or (443 if parsed.scheme == 'https' else 80)
     infos = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(parsed.hostname,port,type=socket.SOCK_STREAM), 3)
     addresses = {info[4][0] for info in infos}
-    allow_private = os.getenv('MOBILEAG_ALLOW_PRIVATE_TARGETS') == '1'
+    allow_private = os.getenv('MOBILEAG_ALLOW_PRIVATE_TARGETS') == '1' if allow_private is None else allow_private
+    if loopback_only and any(not ipaddress.ip_address(a).is_loopback for a in addresses):
+        raise PermissionError('Local model address must resolve only to loopback')
     if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses) and not allow_private:
         raise PermissionError('Private/local destinations require explicit opt-in')
     address = sorted(addresses)[0]

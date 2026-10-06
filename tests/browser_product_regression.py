@@ -32,7 +32,7 @@ async def fixture():
     findings=await SecretScanner(LLMRouter(Settings(_env_file=None,offline=True))).scan(str(source))
     result=[f.model_dump(mode='json') for f in findings]
     result[0]['id']='synthetic-finding'
-    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','stats':{'total':1,'high':1},'findings':result,'coverage':{},'revision':0,'api_endpoints':[]}
+    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','stats':{'total':1,'high':1},'findings':result,'coverage':{},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
 scan=asyncio.run(fixture());m=importlib.import_module('mobileag.web.app')
 m.repository().save(scan)
 m.attack_graph.verify_connection=AsyncMock(return_value=False)
@@ -53,6 +53,12 @@ async def guided_static(apk,linked):
     await linked('scan_guided_ui_fixture')
     return {'scan_id':'scan_guided_ui_fixture','status':'completed','package_name':'org.example.automation','findings':[]}
 m.assessment_service().static_runner=guided_static
+async def synthetic_model_transport(url,method,**kwargs):
+    assert url=='https://api.openai.com/v1/chat/completions' and method=='POST'
+    body=json.loads(kwargs['body']);summary=json.loads(body['messages'][1]['content'])
+    assert set(summary)=={'static_status','static_candidate_counts','static_confirmed','api_cases_executed','dast_screens_observed','production_readiness'}
+    return {'status_code':200,'body':json.dumps({'choices':[{'message':{'content':'Synthetic protocol advice; no actual commercial model contacted.'}}]})}
+m.assessment_service().broker.transport=synthetic_model_transport
 service.driver_factory=lambda serial,package:navigator
 m.repository().save_policy({'devices':['emulator-synthetic'],'packages':['org.example.automation'],'origins':[],'methods':['GET'],'actions':['automation_observe','automation_execute']})
 auto=asyncio.run(service.create(CreateRun(serial='emulator-synthetic',package_name='org.example.automation',component='org.example.automation/.Main',environment='synthetic',dedicated_account_confirmed=True,dedicated_device_confirmed=True,max_steps=2),m.app.state.auth_token))
@@ -90,7 +96,7 @@ def main():
             env.pop(key,None)
         for key in list(env):
             if key.startswith('MOBILEAG_LLM_'):env.pop(key,None)
-        env.update(MOBILEAG_DATA_DIR=str(root),MOBILEAG_API_TOKEN='synthetic-local-only',OFFLINE='true',APPROVED_LLM_PROVIDERS='[]',MOBILEAG_ALLOWED_DEVICES='emulator-synthetic',MOBILEAG_ALLOWED_ORIGINS='',MOBILEAG_ALLOWED_CONNECT='',TEST_PORT=str(port),PYTHONPATH=str(repo))
+        env.update(MOBILEAG_DATA_DIR=str(root),MOBILEAG_API_TOKEN='synthetic-local-only',OFFLINE='true',APPROVED_LLM_PROVIDERS='[]',MOBILEAG_ALLOWED_DEVICES='emulator-synthetic',MOBILEAG_ALLOWED_ORIGINS='',MOBILEAG_ALLOWED_CONNECT='',TEST_PORT=str(port),PYTHONPATH=str(repo),MOBILEAG_LLM_ALLOWED_PROVIDERS='openai',MOBILEAG_LLM_OPENAI_MODEL='synthetic-browser-model',OPENAI_API_KEY='synthetic-browser-provider-key')
         runner=root/'runner.py';runner.write_text(SERVER)
         with (root/'server.log').open('w') as log:
             server=subprocess.Popen([args.server_python,str(runner)],cwd=root,env=env,stdout=log,stderr=log)
@@ -152,7 +158,120 @@ def main():
                     result['screens']={}
                     for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
                         page.locator('#nav-'+view).click();page.wait_for_timeout(250)
-                        result['screens'][view]={'visible':page.locator('#view-'+view).is_visible()}
+                        result['screens'][view]={'visible':page.locator('#view-'+view).is_visible(),'label':page.locator('#workspace-title').inner_text(),'current_nav_count':page.locator('.nav-item[aria-current="page"]').count()}
+                        assert result['screens'][view]['label'] and result['screens'][view]['current_nav_count']==1
+                        page.screenshot(path=str(out/('view-'+view+'.png')))
+                    # Workspace-wide usable controls and honest evidence states.
+                    assert page.locator('.nav-item[aria-current="page"]').count()==1
+                    assert page.locator('#workspace-title').inner_text()=='Start Assessment'
+                    page.locator('#export-menu-button').click()
+                    assert page.locator('#export-dropdown').is_visible()
+                    page.keyboard.press('Escape')
+                    assert not page.locator('#export-dropdown').is_visible()
+                    assert page.locator('#export-menu-button').evaluate('(el)=>el===document.activeElement')
+                    page.locator('#export-menu-button').click()
+                    with page.expect_download() as download:
+                        page.locator('#export-dropdown button').first.click()
+                    exported=json.loads(Path(download.value.path()).read_text())
+                    assert exported['scan_id']=='scan_synthetic'
+                    page.locator('#nav-findings').click()
+                    page.locator('#findings-search-input').fill('Example.java')
+                    assert page.locator('#findings-full-list [role="button"]').count()==1
+                    page.locator('#findings-full-list [role="button"]').first.focus()
+                    page.keyboard.press('Enter')
+                    page.locator('#findings-search-input').fill('')
+                    before_triage=len([u for u in requests if u.endswith('/feedback')])
+                    page.get_by_role('button',name='Confirm TP',exact=True).click()
+                    assert page.locator('#triage-notes-dialog').is_visible()
+                    page.locator('#triage-notes-dialog button[type=submit]').click()
+                    assert page.locator('#triage-notes-dialog').is_visible()
+                    assert len([u for u in requests if u.endswith('/feedback')])==before_triage
+                    page.keyboard.press('Escape')
+                    wait_condition(page,'!document.querySelector("#triage-notes-dialog")')
+                    assert page.locator('#triage-notes-dialog').count()==0
+                    assert len([u for u in requests if u.endswith('/feedback')])==before_triage
+                    page.locator('#nav-scans').click()
+                    scan_url=url+'/api/scans?limit=25&summaries=true&offset=0'
+                    page.route(scan_url,lambda route:route.fulfill(status=503,content_type='application/json',body='{"detail":"Synthetic history outage"}'))
+                    page.locator('#nav-scans').click()
+                    wait_condition(page,'document.querySelector("#scans-table-body").textContent.includes("Synthetic history outage")')
+                    page.unroute(scan_url)
+                    page.locator('#scans-table-body').get_by_role('button',name='Retry',exact=True).click()
+                    wait_condition(page,'document.querySelector("#scans-table-body").textContent.includes("scan_synthetic")')
+                    page.locator('#nav-api').click()
+                    wait_condition(page,'document.querySelector("#api-detail-status-badge").textContent === "NOT ASSESSED"')
+                    page.locator('#api-subtab-btn-response').click()
+                    assert page.locator('#api-resp-status-badge').inner_text()=='Not observed'
+                    page.locator('#api-subtab-btn-request').click()
+                    page.locator('#api-req-headers').fill('{invalid json')
+                    before_replay=len([u for u in requests if u.endswith('/api/apis/test')])
+                    page.locator('#btn-replay-req').click()
+                    assert len([u for u in requests if u.endswith('/api/apis/test')])==before_replay
+                    before_analysis=len([u for u in requests if u.endswith('/api/apis/fuzz')])
+                    page.locator('#btn-fuzz-api').click()
+                    assert len([u for u in requests if u.endswith('/api/apis/fuzz')])==before_analysis
+                    page.locator('#api-subtab-btn-owasp').click()
+                    page.locator('#api-observed-status').fill('200')
+                    page.locator('#api-observed-body').fill('{"data":"synthetic-owned-capture"}')
+                    page.locator('#api-observed-confirm').check()
+                    with page.expect_response(lambda response: response.url.endswith('/api/apis/fuzz')) as captured:
+                        page.locator('#btn-fuzz-api').click()
+                    assert captured.value.status==200
+                    assert all(f['status']=='UNVERIFIED' for f in captured.value.json()['findings'])
+                    wait_condition(page,'document.querySelector("#api-live-fuzz-results").textContent.includes("Unverified candidates")')
+                    result['interface']={'export_menu_usable':True,'json_export_matches_scan':True,'keyboard_finding_review':True,
+                        'file_path_filter_works':True,'cancelled_or_empty_triage_has_no_mutation':True,'history_failure_retry_recovers':True,
+                        'unobserved_api_not_marked_secure':True,'invalid_headers_send_no_request':True,'capture_requires_observation':True,
+                        'local_capture_analysis_only':True,'section_title_and_aria_current':True}
+                    # Select every integration for setup, even with missing server
+                    # settings. Availability/consent gates still block execution.
+                    page.locator('#nav-assessment').click()
+                    wait_condition(page,'document.querySelector("#assessment-provider").options.length === 11')
+                    assert page.locator('#assessment-provider option:disabled').count()==0
+                    page.locator('#assessment-provider').select_option('grok')
+                    assert 'XAI_API_KEY' in page.locator('#assessment-provider-info').inner_text()
+                    assert 'MOBILEAG_LLM_GROK_MODEL' in page.locator('#assessment-provider-info').inner_text()
+                    assert page.locator('#assessment-start').is_disabled()
+                    page.locator('#assessment-provider-info details').evaluate('(el)=>el.open=true')
+                    page.screenshot(path=str(out/'provider-setup-required.png'))
+                    before_assessment=len([u for u in requests if u.endswith('/api/assessments')])
+                    page.locator('#assessment-egress').check()
+                    assert page.locator('#assessment-start').is_disabled()
+                    # A forged submit cannot silently skip AI or create a run.
+                    page.locator('#assessment-start').evaluate('(el)=>el.form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))')
+                    assert len([u for u in requests if u.endswith('/api/assessments')])==before_assessment
+                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("XAI_API_KEY")')
+                    assert page.locator('#assessment-provider').input_value()=='grok'
+                    page.locator('#assessment-provider').select_option('openai')
+                    assert page.locator('#assessment-model').input_value()=='synthetic-browser-model'
+                    assert page.locator('#assessment-start').is_disabled() and not page.locator('#assessment-egress').is_checked()
+                    page.locator('#assessment-egress').check()
+                    assert page.locator('#assessment-start').is_enabled()
+                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    wait_condition(page,'!document.querySelector("#assessment-start").disabled')
+                    assert page.locator('#assessment-provider').input_value()=='openai'
+                    # A failed refresh must block selected AI, not silently reset
+                    # to a deterministic run or trust a stale ready catalog.
+                    catalog_url=url+'/api/assessments/providers'
+                    page.route(catalog_url,lambda route:route.fulfill(status=503,content_type='application/json',body='{"detail":"Synthetic catalog unavailable"}'))
+                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("Could not load provider configuration")')
+                    assert page.locator('#assessment-provider').input_value()=='openai'
+                    assert page.locator('#assessment-start').is_disabled()
+                    page.unroute(catalog_url)
+                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    wait_condition(page,'!document.querySelector("#assessment-start").disabled')
+                    page.locator('#assessment-provider').select_option('')
+                    assert page.locator('#assessment-start').is_enabled()
+                    page.locator('#nav-settings').click()
+                    assert page.locator('#cfg-llm-primary').count()==page.locator('#cfg-llm-fallback').count()==0
+                    page.locator('#settings-open-ai').click()
+                    assert page.locator('#view-assessment').is_visible()
+                    result['provider_selection']={'all_ten_selectable_for_setup':True,'missing_settings_visible':True,
+                        'unconfigured_execution_blocked':True,'forged_submit_blocked':True,'refresh_preserves_selection':True,
+                        'configured_model_visible':True,'explicit_consent_required':True,'settings_links_to_real_selector':True,
+                        'configuration_not_connectivity':True,'catalog_failure_blocks_selected_ai':True}
                     # Actual router/service/SQLite exercised through approval UI.
                     # Only the navigator is a synthetic adapter; auth/scope/CAS remain real.
                     page.locator('#nav-automation').click()
@@ -191,6 +310,7 @@ def main():
                     page.locator('#assessment-confirmation').fill('START SCOPED TESTS')
                     page.locator('#assessment-start').click()
                     wait_condition(page,'document.querySelector("#assessment-status").textContent.includes("awaiting_action_review")')
+                    page.locator('#assessment-results summary').click()
                     guided=json.loads(page.locator('#assessment-results pre').inner_text())
                     result['guided_assessment']={'upload_did_not_start_tests':True,'status':guided['status'],'sast_executor':'synthetic callback; not actual decompiler proof',
                         'sast':guided['stages']['sast']['status'],'dast_screens':guided['stages']['dast']['screens'],'api':guided['stages']['api']['status'],'llm':guided['stages']['llm']['status']}
@@ -199,6 +319,24 @@ def main():
                     assert result['guided_assessment']['scrollable']
                     page.locator('#view-assessment').evaluate('(el)=>el.scrollTop=0')
                     page.screenshot(path=str(out/'guided-assessment-desktop.png'))
+
+                    # A second, static-only assessment includes an explicitly
+                    # selected/approved model using ONLY the synthetic broker
+                    # transport. No provider account or commercial network call.
+                    page.locator('#assessment-dast').uncheck()
+                    page.locator('#assessment-provider').select_option('openai')
+                    assert page.locator('#assessment-start').is_disabled()
+                    page.locator('#assessment-egress').check()
+                    page.locator('#assessment-start').click()
+                    wait_condition(page,'document.querySelector("#assessment-results pre") && JSON.parse(document.querySelector("#assessment-results pre").textContent).stages?.llm?.status === "completed"')
+                    page.locator('#assessment-results summary').click()
+                    ai_run=json.loads(page.locator('#assessment-results pre').inner_text())
+                    assert ai_run['stages']['llm']['review']['provider']=='openai'
+                    assert ai_run['stages']['llm']['review']['model']=='synthetic-browser-model'
+                    assert ai_run['stages']['dast']['status']=='not_selected'
+                    result['provider_selection']['selected_provider_reaches_broker']=True
+                    result['provider_selection']['transport']='Mocked protocol callback; not live inference'
+                    page.screenshot(path=str(out/'provider-selection.png'))
 
                     # Actual durable triage API reached via the migrated UI callback.
                     page.locator('#nav-findings').click();page.evaluate('inspectFinding("synthetic-finding")')
@@ -213,6 +351,8 @@ def main():
                                   api_requests_outside_loopback=[r for r in requests if '/api/' in r and not r.startswith(url)],
                                   runtime_requests_outside_loopback=[r for r in requests if not r.startswith(url)],
                                   device_operations='Mocked and disabled; no real ADB/Frida commands',cloud_model_calls=0)
+                    page.set_viewport_size({'width':1440,'height':1000})
+                    page.locator('#workspace-navigation').wait_for(state='visible')
                     result['a11y']={}
                     if args.axe:
                         page.evaluate(Path(args.axe).read_text())
@@ -224,6 +364,25 @@ def main():
                         assert all(not violations for violations in result['a11y'].values()), result['a11y']
                     page.set_viewport_size({'width':320,'height':844})
                     result['small_screen_scrollwidth']=page.evaluate('document.documentElement.scrollWidth')
+                    result['interface']['mobile_views']={}
+                    result['mobile_a11y']={}
+                    page.locator('#workspace-navigation').wait_for(state='hidden')
+                    assert page.locator('#workspace-menu-toggle').is_visible()
+                    assert not page.locator('#workspace-navigation').is_visible()
+                    for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
+                        page.locator('#workspace-menu-toggle').click()
+                        assert page.locator('#workspace-navigation').is_visible()
+                        page.locator('#nav-'+view).click();page.wait_for_timeout(200)
+                        assert not page.locator('#workspace-navigation').is_visible()
+                        width=page.evaluate('document.documentElement.scrollWidth')
+                        result['interface']['mobile_views'][view]=width
+                        assert width<=320, (view,width)
+                        if args.axe:
+                            assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
+                            result['mobile_a11y'][view]=[{'id':v['id'],'impact':v['impact'],'nodes':[n['html'] for n in v['nodes']]} for v in assessment['violations']]
+                            assert not result['mobile_a11y'][view], result['mobile_a11y'][view]
+                    assert page.locator('#workspace-title').bounding_box()['y'] < 500
+                    result['interface']['mobile_menu_collapses_after_selection']=True
                     page.screenshot(path=str(out/'fixed-320px.png'))
                     (out/'browser-results.json').write_text(json.dumps(result,indent=2))
                     assert all(result['keyboard_connection'].values()) and result['reduced_motion_media']

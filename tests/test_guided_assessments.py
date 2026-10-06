@@ -230,3 +230,37 @@ async def test_concurrent_create_cannot_bypass_reservation(setup,monkeypatch):
     assert sum(isinstance(r,ValueError) for r in responses)==1 and len(svc.tasks)==1
     tasks=list(svc.tasks.values());waiting.set();await asyncio.gather(*tasks)
     assert not svc.tasks
+
+@pytest.mark.parametrize('provider', list(PROVIDERS))
+def test_provider_catalog_has_specific_setup_without_secrets(provider, monkeypatch):
+    from mobileag.llm.broker import configured
+    row = next(row for row in catalog()['providers'] if row['id'] == provider)
+    assert not row['enabled']
+    assert provider in row['reason'] and 'MOBILEAG_LLM_ALLOWED_PROVIDERS' in row['reason']
+    assert row['setup']['model_variable'] == 'MOBILEAG_LLM_' + provider.upper() + '_MODEL'
+    spec = PROVIDERS[provider]
+    if spec[4]:
+        assert row['setup']['key_variable'] == spec[4]
+        monkeypatch.setenv(spec[4], 'synthetic-private-provider-key-never-in-catalog')
+    monkeypatch.setenv('MOBILEAG_LLM_' + provider.upper() + '_MODEL', 'synthetic-exact-model')
+    if provider in {'ollama', 'local_openai'}:
+        monkeypatch.setenv('MOBILEAG_LLM_LOCAL_ORIGINS', spec[2])
+        assert row['setup']['default_origin'] == spec[2]
+    assert 'synthetic-private-provider-key-never-in-catalog' not in json.dumps(catalog())
+    assert not configured(provider)['enabled']  # Key/model alone never approve egress.
+    monkeypatch.setenv('MOBILEAG_LLM_ALLOWED_PROVIDERS', provider)
+    assert configured(provider)['enabled'] and configured(provider)['reason'] is None
+
+
+def test_catalog_reasons_distinguish_missing_model_key_and_bad_configuration(monkeypatch):
+    monkeypatch.setenv('MOBILEAG_LLM_ALLOWED_PROVIDERS', 'openai')
+    row = next(row for row in catalog()['providers'] if row['id'] == 'openai')
+    assert 'MOBILEAG_LLM_OPENAI_MODEL' in row['reason'] and 'OPENAI_API_KEY' in row['reason']
+    monkeypatch.setenv('MOBILEAG_LLM_OPENAI_MODEL', 'synthetic-model')
+    row = next(row for row in catalog()['providers'] if row['id'] == 'openai')
+    assert row['reason'] == 'Set OPENAI_API_KEY privately on the server'
+    monkeypatch.setenv('OPENAI_API_KEY', 'synthetic-invalid\nprivate-value')
+    row = next(row for row in catalog()['providers'] if row['id'] == 'openai')
+    assert row['reason'] == 'Invalid server configuration' and not row['enabled']
+    assert row['setup']['key_variable'] == 'OPENAI_API_KEY'
+    assert 'private-value' not in json.dumps(catalog())

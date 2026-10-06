@@ -75,7 +75,7 @@
           throw new Error(data.detail || 'Upload failed');
         }
 
-        showToast(`Uploaded ${escapeHtml(String(data.filename ?? ""))} (${escapeHtml(String(data.size_mb ?? ""))} MB)`, 'success');
+        showToast(`Uploaded ${String(data.filename ?? '')} (${String(data.size_mb ?? '')} MB)`, 'success');
 
         // Populate modal input
         const modalInput = document.getElementById('modal-apk-input');
@@ -92,7 +92,7 @@
           window.lucide?.createIcons();
         }
 
-        window.dispatchEvent(new CustomEvent('assessment-uploaded',{detail:{path:data.file_path,filename:data.filename}}));
+        window.dispatchEvent(new CustomEvent('assessment-uploaded',{detail:{path:data.file_path,filename:data.filename,platform:data.platform}}));
         if (autoRunAfterUpload) {
           document.getElementById('nav-assessment').click();
           showToast('Upload ready. Approve APK/API scope and stages before starting tests.', 'info');
@@ -137,7 +137,8 @@
         showToast(`Scan launched: ${escapeHtml(String(data.scan_id ?? ""))}`, 'success');
         await loadSpecificScan(data.scan_id);
       } catch (err) {
-        showToast('Failed to start scan', 'error');
+        showToast('Failed to start scan: '+err.message, 'error');
+        document.getElementById('scan-modal').classList.remove('hidden');
       }
     }
 
@@ -159,6 +160,7 @@
     function toggleExportMenu() {
       const menu = document.getElementById('export-dropdown');
       menu.classList.toggle('hidden');
+      document.getElementById('export-menu-button').setAttribute('aria-expanded',String(!menu.classList.contains('hidden')));
     }
 
     function exportReportJSON() {

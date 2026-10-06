@@ -26,6 +26,16 @@ PROVIDERS={
 }
 SYSTEM='Summarize the supplied aggregate assessment counts and coverage. Never invent vulnerabilities or claim production readiness. Provide concise next validation steps. You cannot execute tools or actions. Counts are unverified static candidates.'
 
+def setup_fields(name):
+    """Public variable names only; never expose credentials or their values."""
+    local=name in {'ollama','local_openai'}
+    return {'approval_variable':'MOBILEAG_LLM_ALLOWED_PROVIDERS',
+        'model_variable':'MOBILEAG_LLM_'+name.upper()+'_MODEL',
+        'key_variable':PROVIDERS[name][4] or None,
+        'origin_variable':'MOBILEAG_LLM_'+name.upper()+'_ORIGIN' if local else None,
+        'allowed_origins_variable':'MOBILEAG_LLM_LOCAL_ORIGINS' if local else None,
+        'default_origin':PROVIDERS[name][2] if local else None}
+
 def configured(name):
     if name not in PROVIDERS:raise ValueError('Unknown provider')
     title,protocol,origin,prefix,key_env=PROVIDERS[name]
@@ -40,9 +50,14 @@ def configured(name):
     key=os.getenv(key_env,'') if key_env else ''
     if key and (len(key)>4096 or '\n' in key or '\r' in key):raise ValueError('Invalid server provider key')
     valid_model=bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./:+-]{0,127}',model)) and '..' not in model and '?' not in model
-    available=enabled and valid_model and (origin in locals_ if local else bool(key))
+    missing=[]
+    if not enabled:missing.append('Add '+name+' to MOBILEAG_LLM_ALLOWED_PROVIDERS')
+    if not valid_model:missing.append('Set a valid exact model ID in MOBILEAG_LLM_'+name.upper()+'_MODEL')
+    if local and origin not in locals_:missing.append('Approve the configured loopback origin in MOBILEAG_LLM_LOCAL_ORIGINS')
+    if not local and not key:missing.append('Set '+key_env+' privately on the server')
+    available=not missing
     return {'id':name,'title':title,'protocol':protocol,'origin':origin,'prefix':prefix,'key':key,'model':model if valid_model else '',
-            'local':local,'enabled':available,'reason':None if available else 'Server approval, valid model and key/local origin configuration required'}
+            'local':local,'enabled':available,'reason':'; '.join(missing) if missing else None}
 
 def catalog():
     rows=[]
@@ -51,6 +66,7 @@ def catalog():
             config=configured(name)
             rows.append({k:config[k] for k in ('id','title','model','local','enabled','reason')})
         except ValueError:rows.append({'id':name,'title':PROVIDERS[name][0],'model':'','local':name in {'ollama','local_openai'},'enabled':False,'reason':'Invalid server configuration'})
+        rows[-1]['setup']=setup_fields(name)
     return {'providers':rows,'data_policy':'aggregate counts/status only; no APK, source, URLs, identifiers, findings text, credentials or raw responses',
             'credentials':'server environment only; no dashboard key storage','health':'not contacted; configuration is not availability'}
 

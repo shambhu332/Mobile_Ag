@@ -1,0 +1,38 @@
+{
+  "baseline_commit": "ef1a154b7ce56e3cec0ebb33d67efffed735c7dd",
+  "application_version": "0.1.0",
+  "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+  "os_build": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "pytest": "8.4.2",
+    "playwright": "1.63.0",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.54.0",
+    "build": "1.6.0"
+  },
+  "browser_binary_sha256": "adf078f8f80eb9e980a07b4418af23b0f4008a83bc5756d5588055bc4d76c5a0",
+  "source_sha256": {
+    "mobileag/llm/broker.py": "e8689b4641bf88a8c6eb1d030707805dfba8b4f74a54843817cae494bfc84bf7",
+    "mobileag/web/static/api.js": "641eb9b948f9015af7c43105fc60f2b0367e1d62927ba1f92227120a333f21db",
+    "mobileag/web/static/assessment.js": "d4b1d8b8e67cfcfdb0b993cf01149e14d08b6db43c2c29e116feaefd71444fa1",
+    "mobileag/web/static/copilot.js": "c96ed9e6d3411f6e52955eddf7151988042e02a6b618639333594b1d15b68a15",
+    "mobileag/web/static/dashboard.js": "e12d800506ed9d736afbba8033985f69f3f793eb75f6f0667c46f1f0fab49c64",
+    "mobileag/web/static/findings.js": "81ad74b641a95123b25ef3a552ac73d5cf54409e1c77aa9eade32faac6846b0a",
+    "mobileag/web/static/history-settings.js": "e9c02958e9fad6236380b179c6e17184e90a39b6182ae358980f8911ae861f9d",
+    "mobileag/web/static/interface.css": "cdf5ceffde6f32f8361350c3a8f2ea0a6a5c7c66be7ec400ac6e395d7cab6a0b",
+    "mobileag/web/static/interface.js": "828318589d5e698d065f3cb27e334f45d9a8a1b33fae2f9d1dc5a8a3b769325e",
+    "mobileag/web/static/taint.js": "51631c393e311f84b97e1078c3e6e10ea0ffab944741ac7f0488dfc65cde0236",
+    "mobileag/web/static/uploads-exports.js": "394cfadbd0ee96d1c5c495fdd0f9de14f7bcc06e07d4330f5de68040888c1989",
+    "mobileag/web/static/workflow.js": "cca2c94c26afa3ef9017b4a64499d7944737f258c20911d8dbf789b3a8c4f99b",
+    "mobileag/web/static/workspace.js": "83324b011423c5ab6ef0c3809733e74c0133aa6518975c89394d48c986565598",
+    "mobileag/web/templates/index.html": "33f83609bd62ff3a6d22ff798541af98b44369f344f38f97bf0e84cc032bd32d",
+    "tests/browser_product_regression.py": "d472631cebd97942b86fa4264e11c3ec79863eb7aa08d114a42345d9f47fecef",
+    "tests/test_guided_assessments.py": "0d87e0a11f7376ffbf0ccab4ffac3b2624fae0fdfbc9b55f0fa467b0e926f958",
+    "tests/test_interface_contracts.py": "495785cd7593fb44929a7bbf68067cdc4c943858c8f9bee0e9a094eef08527f2"
+  },
+  "real_device_apk_provider_target_validation": "Not performed; controlled synthetic fixtures only",
+  "git_state": "Working tree updates, not committed or pushed",
+  "original_dist_sha256": {
+    "dist/mobileag-0.1.0-py3-none-any.whl": "a5d0867c81fa440c80812d1e179f01611035a167de9db494b53a3ff38b44db03"
+  }
+}

@@ -8,7 +8,7 @@
 
     async function loadApiView() {
       const scanId = currentScan?.scan_id;
-      if (!scanId) { showToast('Select a scan first.', 'info'); return; }
+      if(!scanId){currentApiEndpoints=[];selectedApiId=null;window.MobileAgUI?.state(document.getElementById('api-endpoints-list'),'No scan selected','Open a saved scan or start an assessment to inspect discovered routes.');return;}
       try {
         const res = await fetch(`/api/scans/${scanId}/apis`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -25,7 +25,7 @@
         }
       } catch (err) {
         console.error('Failed to load API endpoints:', err);
-        showToast('Error loading API endpoints inventory');
+        window.MobileAgUI.state(document.getElementById('api-endpoints-list'),'API inventory unavailable',err.message,'error',loadApiView);
       }
     }
 
@@ -99,7 +99,7 @@
           : `<span class="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-mono text-[10px]">Not assessed</span>`;
 
         return `
-          <div ${bindAction('click', () => selectApiEndpoint(ep.id))} class="p-3 rounded-lg border transition cursor-pointer ${isSelected ? 'bg-purple-950/20 border-purple-500/60 shadow-lg' : 'bg-card border-borderSubtle hover:border-slate-700'} space-y-2">
+          <div role="button" tabindex="0" aria-label="${escapeHtml('Inspect '+ep.method+' '+(ep.path||ep.url))}" ${bindAction('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectApiEndpoint(ep.id);}})} ${bindAction('click', () => selectApiEndpoint(ep.id))} class="p-3 rounded-lg border transition cursor-pointer ${isSelected ? 'bg-purple-950/20 border-purple-500/60 shadow-lg' : 'bg-card border-borderSubtle hover:border-slate-700'} space-y-2">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2">
                 <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] border ${methodBadge}">${escapeHtml(ep.method)}</span>
@@ -135,10 +135,10 @@
       if (badge) {
         if (ep.status === 'VULNERABLE') {
           badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-800';
-          badge.textContent = 'OWASP FLAW DETECTED';
+          badge.textContent = 'UNVERIFIED CANDIDATE';
         } else {
           badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800';
-          badge.textContent = 'SECURE GATEWAY';
+          badge.textContent = 'NOT ASSESSED';
         }
       }
 
@@ -254,17 +254,23 @@
             </div>
           ` : ''}
 
+          <div class="evidence-hint">
+            <p>Offline captured-response analysis does not contact the endpoint. Use only an authorized synthetic/staging capture; redact credentials and user data.</p>
+            <label>Observed HTTP status<input id="api-observed-status" type="number" min="100" max="599" placeholder="Enter the actual captured status" /></label>
+            <label>Redacted observed body<textarea id="api-observed-body" rows="4" placeholder="Paste only synthetic or redacted observed data"></textarea></label>
+            <label><input id="api-observed-confirm" type="checkbox" /> I confirm this is an actual authorized capture, not a generated example.</label>
+          </div>
           <!-- Live OWASP Fuzzing Output Box -->
           <div id="api-live-fuzz-results" class="space-y-2 pt-2 border-t border-borderSubtle">
             <div class="flex items-center justify-between text-[11px] font-mono">
-              <span class="text-slate-400">Autonomous Fuzzing Audit:</span>
-              <span id="api-fuzz-status-text" class="text-purple-400">Ready to execute</span>
+              <span class="text-slate-400">Captured-response heuristics:</span>
+              <span id="api-fuzz-status-text" class="text-purple-400">Observed response required</span>
             </div>
             <div class="p-3 bg-card/60 rounded-lg border border-borderSubtle font-mono text-xs text-slate-400 space-y-1.5">
               <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>TLS/SSL Transport Encryption Check</span></div>
-              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>BOLA / IDOR Sequential Identifier Probing</span></div>
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>Authorization/ownership needs a separate controlled-account test</span></div>
               <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>PII & Response Payload Leakage Audit (SSN, Passwords, Keys)</span></div>
-              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>BFLA Client Privileged Route Escalation Check</span></div>
+              <div class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>Privilege boundaries require independent server-side validation</span></div>
             </div>
           </div>
         </div>
@@ -285,14 +291,14 @@
 
             <!-- Headers Textarea -->
             <div>
-              <label class="block text-[11px] font-mono text-slate-400 mb-1">Request Headers (JSON or Raw):</label>
-              <textarea id="api-req-headers" rows="3" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-sky-300 focus:outline-none focus:border-sky-500">${escapeHtml(ep.auth_type === 'Bearer Token' ? '{\n  "Authorization": "Bearer mock_token_for_audit",\n  "Accept": "application/json"\n}' : '{\n  "Content-Type": "application/json"\n}')}</textarea>
+              <label class="block text-[11px] font-mono text-slate-400 mb-1">Request headers (valid JSON; dedicated test credentials only):</label>
+              <textarea id="api-req-headers" rows="3" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-sky-300 focus:outline-none focus:border-sky-500">${escapeHtml('{\n  "Accept": "application/json"\n}')}</textarea>
             </div>
 
             <!-- Body Textarea -->
             <div>
               <label class="block text-[11px] font-mono text-slate-400 mb-1">Request Body (JSON / Form):</label>
-              <textarea id="api-req-body" rows="4" placeholder="{}" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-emerald-300 focus:outline-none focus:border-sky-500">${escapeHtml(ep.method === 'POST' ? '{\n  "username": "admin",\n  "query": "{ products { id } }"\n}' : '')}</textarea>
+              <textarea id="api-req-body" rows="4" placeholder="{}" class="w-full bg-slate-900 border border-borderSubtle rounded-lg p-2.5 font-mono text-xs text-emerald-300 focus:outline-none focus:border-sky-500">${''}</textarea>
             </div>
 
             <!-- Pre-generated cURL Command Box -->
@@ -311,7 +317,7 @@
           <div class="flex items-center justify-between bg-card p-2.5 rounded-lg border border-borderSubtle font-mono text-xs">
             <div class="flex items-center gap-2">
               <span class="text-slate-400">Status:</span>
-              <span id="api-resp-status-badge" class="px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">200 OK</span>
+              <span id="api-resp-status-badge" class="px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">Not observed</span>
             </div>
             <div class="flex items-center gap-3 text-[11px]">
               <span id="api-resp-mode-badge" class="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800">Sample preview — not an observed response</span>
@@ -404,9 +410,7 @@ val okHttpClient = OkHttpClient.Builder()
       try {
         const rawHeaders = document.getElementById('api-req-headers')?.value;
         if (rawHeaders) headers = JSON.parse(rawHeaders);
-      } catch (e) {
-        headers = { "Authorization": "Bearer mock_token_for_audit" };
-      }
+      } catch(e){showToast('Invalid headers JSON. No request was sent.','error');if(btn){btn.disabled=false;btn.innerHTML=originalHtml;}return;}
       const body = document.getElementById('api-req-body')?.value || undefined;
 
       try {
@@ -422,7 +426,7 @@ val okHttpClient = OkHttpClient.Builder()
 
         const statusBadge = document.getElementById('api-resp-status-badge');
         if (statusBadge) {
-          statusBadge.textContent = `${data.status_code || 200} ${data.status_code === 200 ? 'OK' : 'RESPONSE'}`;
+          statusBadge.textContent = `${data.status_code ?? 'not observed'} ${data.status_code === 200 ? 'OK' : 'RESPONSE'}`;
           statusBadge.className = data.status_code >= 400
             ? 'px-2 py-0.5 rounded font-bold bg-rose-950 text-rose-300 border border-rose-800'
             : 'px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800';
@@ -452,7 +456,7 @@ val okHttpClient = OkHttpClient.Builder()
           }
         }
 
-        showToast(`Request executed: HTTP ${data.status_code || 200}`);
+        showToast(`Request executed: HTTP ${data.status_code ?? 'not observed'}`);
       } catch (err) {
         console.error('Request replay failed:', err);
         showToast('API replay failed: ' + err.message);
@@ -469,6 +473,9 @@ val okHttpClient = OkHttpClient.Builder()
       const ep = currentApiEndpoints.find(e => e.id === apiId);
       if (!ep) return;
 
+      const capturedStatus=Number(document.getElementById('api-observed-status')?.value);
+      if(!document.getElementById('api-observed-confirm')?.checked||!Number.isInteger(capturedStatus)||capturedStatus<100||capturedStatus>599){showToast('Supply an actual observed status and explicitly confirm the authorized capture. No target request was sent.','info');return;}
+      const capturedBody=document.getElementById('api-observed-body')?.value||'';
       const btn = document.getElementById('btn-fuzz-api');
       const originalHtml = btn ? btn.innerHTML : '';
       if (btn) {
@@ -489,9 +496,9 @@ val okHttpClient = OkHttpClient.Builder()
           body: JSON.stringify({
             url: ep.url,
             method: ep.method,
-            headers: ep.auth_type === 'Bearer Token' ? { "Authorization": "Bearer mock_token_for_audit" } : {},
-            response_status: 200,
-            response_body: ep.sample_response,
+            headers: {},
+            response_status: capturedStatus,
+            response_body: capturedBody,
           }),
         });
         const data = await res.json();
@@ -504,7 +511,7 @@ val okHttpClient = OkHttpClient.Builder()
         if (resultsContainer) {
           resultsContainer.innerHTML = `
             <div class="flex items-center justify-between text-[11px] font-mono">
-              <span class="text-slate-400">Autonomous Fuzzing Audit:</span>
+              <span class="text-slate-400">Captured-response heuristics:</span>
               <span class="${data.findings_count > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}">${escapeHtml(String(data.findings_count))} Unverified candidates</span>
             </div>
             ${data.findings.length > 0 ? data.findings.map(f => `
@@ -521,14 +528,14 @@ val okHttpClient = OkHttpClient.Builder()
             `).join('') : `
               <div class="p-3 bg-emerald-950/20 border border-emerald-900/60 rounded-lg text-xs font-mono text-emerald-300 flex items-center gap-2">
                 <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
-                <span>No OWASP API Top 10 vulnerabilities detected on this endpoint.</span>
+                <span>No candidates were found by these captured-response rules. Authorization and business logic remain untested.</span>
               </div>
             `}
           `;
           window.lucide?.createIcons();
         }
 
-        showToast(`OWASP API Audit completed: ${escapeHtml(String(data.findings_count))} flaws identified`);
+        showToast(`OWASP API Audit completed: ${escapeHtml(String(data.findings_count))} unverified candidates identified`);
       } catch (err) {
         console.error('Fuzzing error:', err);
         showToast('Fuzzing failed: ' + err.message);
@@ -541,43 +548,7 @@ val okHttpClient = OkHttpClient.Builder()
       }
     }
 
-    async function fuzzAllApiEndpoints() {
-      const btn = document.getElementById('btn-audit-all-apis');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Auditing...</span>`;
-      }
-
-      showToast('Starting autonomous OWASP API Top 10 assessment on all endpoints...');
-      let totalFlaws = 0;
-      for (const ep of currentApiEndpoints) {
-        try {
-          const res = await fetch('/api/apis/fuzz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: ep.url,
-              method: ep.method,
-              headers: ep.auth_type === 'Bearer Token' ? { "Authorization": "Bearer mock_token_for_audit" } : {},
-              response_body: ep.sample_response,
-            }),
-          });
-          const data = await res.json();
-          totalFlaws += (data.findings_count || 0);
-        } catch (e) {
-          console.warn('Endpoint fuzzing check failed for', ep.url, e);
-        }
-      }
-
-      showToast(`Audit complete: ${totalFlaws} OWASP API flaws evaluated across ${currentApiEndpoints.length} endpoints.`);
-      if (selectedApiId) selectApiEndpoint(selectedApiId);
-
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i><span>Audit All</span>`;
-        window.lucide?.createIcons();
-      }
-    }
+    async function fuzzAllApiEndpoints(){showToast('Plan exact read-only API requests in Start Assessment. Discovery alone never authorizes tests.','info');document.getElementById('nav-assessment').click();}
 
     function copyApiCurl(apiId) {
       const ep = currentApiEndpoints.find(e => e.id === apiId);

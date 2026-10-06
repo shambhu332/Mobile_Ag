@@ -1,0 +1,24 @@
+{
+  "baseline_commit": "ef1a154b7ce56e3cec0ebb33d67efffed735c7dd",
+  "application_version": "0.1.0",
+  "python": "3.14.7",
+  "os": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "fastapi": "0.141.1",
+    "starlette": "1.7.0",
+    "httpx": "0.28.1",
+    "pytest": "8.4.2",
+    "pytest-asyncio": "0.24.0",
+    "playwright": "1.63.0"
+  },
+  "sha256": {
+    "mobileag/llm/broker.py": "e8689b4641bf88a8c6eb1d030707805dfba8b4f74a54843817cae494bfc84bf7",
+    "mobileag/web/static/assessment.js": "8bfdf13e49f7c8b611b989f26201fa8ef26ea18285a0591c3cb8d2de0f0c3218",
+    "mobileag/web/static/history-settings.js": "ef140480b6d74c5f5eb1a97c837960e0902afa4861c3050cbe99839b3dc432ca",
+    "mobileag/web/templates/index.html": "3b31c65c6736d452851e43878250d7b9b15e25d1a1f5853d99ef889394553c88",
+    "tests/browser_product_regression.py": "77f19c4e4f8e0b50ecc247aafb0a3b34f77b79de5d2c87edfbe3ceb31411b1ef",
+    "tests/test_guided_assessments.py": "0d87e0a11f7376ffbf0ccab4ffac3b2624fae0fdfbc9b55f0fa467b0e926f958"
+  },
+  "testing": "Synthetic broker/static/device adapters; loopback browser only; no actual provider or target traffic",
+  "deployment": "Local working-tree changes, not committed/pushed; original dist untouched"
+}

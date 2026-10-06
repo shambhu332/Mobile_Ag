@@ -3,6 +3,7 @@
     let scanHistoryOffset=0;
     async function loadScansView() {
       const tbody = document.getElementById('scans-table-body');
+      tbody.setAttribute('aria-busy','true');
       tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Loading scan history...</td></tr>';
 
       try {
@@ -27,7 +28,7 @@
             <td class="py-3 px-4 text-slate-400">${escapeHtml(String(s.created_at || 'Just now'))}</td>
             <td class="py-3 px-4">
               <span class="px-2 py-0.5 rounded text-[10px] ${s.status === 'completed' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-sky-950 text-sky-400 border border-sky-800'}">
-                ${escapeHtml(String(s.status.toUpperCase()))}
+                ${escapeHtml(String((s.status||'unknown').toUpperCase()))}
               </span>
             </td>
             <td class="py-3 px-4">
@@ -44,8 +45,8 @@
           tbody.appendChild(tr);
         });
       } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-400">Failed to load scans.</td></tr>';
-      }
+        tbody.replaceChildren();const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=6;tr.append(td);tbody.append(tr);window.MobileAgUI.state(td,'Unable to load scan history',err.message,'error',loadScansView);
+      }finally{tbody.setAttribute('aria-busy','false');}
     }
 
     async function loadSpecificScan(scanId) {
@@ -58,7 +59,7 @@
         renderDashboard(currentScan);
         showToast(`Loaded target: ${currentScan.package_name || currentScan.app_name}`, 'success');
       } catch (e) {
-        showToast('Error loading scan details', 'error');
+        showToast('Could not load scan: '+e.message, 'error');
       }
     }
 
@@ -92,15 +93,15 @@
                 <span>Findings: <strong class="text-white">${escapeHtml(String(a.findings_count ?? 'Not measured'))}</strong></span> •
                 <span>Runtime: <strong class="text-slate-300">${escapeHtml(String(a.last_runtime ?? 'Not measured'))}</strong></span>
               </div>
-              <button disabled title="Individual execution is not implemented" class="px-2 py-1 rounded bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-[10px]">
+              <span title="Individual execution is not implemented" class="px-2 py-1 rounded bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-[10px]">
                 Capability only
-              </button>
+              </span>
             </div>
           `;
           grid.appendChild(card);
         });
       } catch (e) {
-        grid.innerHTML = '<div class="col-span-2 text-center text-red-400 font-mono text-xs">Failed to load agent metadata.</div>';
+        window.MobileAgUI.state(grid,'Capabilities unavailable',e.message,'error',loadAgentsView);
       }
     }
 
@@ -114,23 +115,26 @@
 
     // Settings View
     async function loadSettingsView() {
+      let status=document.getElementById('settings-status');if(!status){status=document.createElement('p');status.id='settings-status';status.setAttribute('role','status');document.getElementById('view-settings').prepend(status);}status.textContent='Loading saved settings…';
       try {
         const res = await fetch('/api/settings');
         const cfg = await res.json();
-        if (cfg.llm_primary_provider) document.getElementById('cfg-llm-primary').value = cfg.llm_primary_provider;
-        if (cfg.llm_fallback_provider) document.getElementById('cfg-llm-fallback').value = cfg.llm_fallback_provider;
         if (cfg.offline !== undefined) document.getElementById('cfg-offline').checked = cfg.offline;
         if (cfg.entropy_threshold !== undefined) document.getElementById('cfg-entropy').value = cfg.entropy_threshold;
         if (cfg.neo4j_uri) document.getElementById('cfg-neo4j-uri').value = cfg.neo4j_uri;
         if (cfg.enable_deep_taint !== undefined) document.getElementById('cfg-deep-taint').checked = cfg.enable_deep_taint;
         if (cfg.enable_reachability_filter !== undefined) document.getElementById('cfg-reachability').checked = cfg.enable_reachability_filter;
         if (cfg.enable_consensus_voting !== undefined) document.getElementById('cfg-consensus').checked = cfg.enable_consensus_voting;
+        status.textContent='Saved settings loaded. Provider credentials and worker policy stay server-controlled.';
       } catch (e) {
-        console.warn('Error loading settings:', e);
+        status.textContent='Settings unavailable: '+e.message+'. Reconnect or select Configuration to retry.';
       }
     }
 
+    let settingsSaving=false;
     async function saveSettingsForm() {
+      if(settingsSaving)return;settingsSaving=true;
+      const button=document.querySelector('button[data-onclick="static35"]'),original=button.innerHTML;button.disabled=true;button.textContent='Saving…';
       const payload = {
         offline: document.getElementById('cfg-offline').checked,
         entropy_threshold: parseFloat(document.getElementById('cfg-entropy').value),
@@ -147,6 +151,6 @@
         await loadPrivacyPolicy();
         showToast('Settings saved for new scans', 'success');
       } catch (err) {
-        showToast('Failed to save settings', 'error');
-      }
+        showToast('Settings were not saved: '+err.message, 'error');
+      }finally{settingsSaving=false;button.disabled=false;button.innerHTML=original;window.lucide?.createIcons();}
     }

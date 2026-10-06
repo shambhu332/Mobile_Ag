@@ -1,0 +1,31 @@
+"""Shipped interface contracts; actual behavior is covered by the browser harness."""
+from pathlib import Path
+import pytest
+
+ROOT=Path(__file__).resolve().parents[1]/'mobileag/web'
+
+@pytest.mark.parametrize('asset',['interface.js','interface.css'])
+def test_shared_interface_asset_is_shipped_and_referenced(asset):
+    assert (ROOT/'static'/asset).is_file()
+    assert '/static/'+asset in (ROOT/'templates/index.html').read_text()
+
+@pytest.mark.parametrize('claim',['SECURE GATEWAY','OWASP FLAW DETECTED','Bearer mock_token_for_audit','No OWASP API Top 10 vulnerabilities detected'])
+def test_api_ui_does_not_invent_success_or_credentials(claim):
+    assert claim not in (ROOT/'static/api.js').read_text()
+
+def test_offline_modal_does_not_offer_automatic_bypass_controls():
+    html=(ROOT/'templates/index.html').read_text()
+    assert 'modal-opt-bypass-root' not in html and 'modal-opt-bypass-ssl' not in html
+    assert 'Uploading alone never runs tests' in html
+
+def test_assessment_has_grouped_review_and_preserved_provider_gates():
+    js=(ROOT/'static/assessment.js').read_text()
+    assert "make('fieldset'" in js and 'assessment-plan-summary' in js
+    assert 'llm_metadata_egress_confirmed:fields.egress.checked' in js
+    assert 'providersLoaded' in js and 'uploading' in js
+
+def test_native_notes_prompt_replaced_by_cancellable_labelled_dialog():
+    assert 'window.prompt(' not in (ROOT/'static/findings.js').read_text()
+    js=(ROOT/'static/interface.js').read_text()
+    assert 'triage-validation-notes' in js and 'notes.required=true' in js
+    assert "dialog.addEventListener('close'" in js

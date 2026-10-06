@@ -15,7 +15,7 @@ Open the printed URL and enter the session token printed in the terminal using t
 
 ## Scanning
 
-Upload an APK/IPA through the dashboard. Uploads have opaque names, ZIP validation and size limits. Drag-and-drop starts static analysis, not automatic device selection or bypass hooks. Missing files are errors, never demo scans.
+Upload an APK/IPA through the dashboard. Uploads have opaque names, ZIP validation and size limits. Drag-and-drop uploads the artifact; a separate explicit start action begins static analysis. It never selects a device or enables bypass hooks. Missing files are errors, never demo scans.
 
 `python -m mobileag.cli scan --apk owned.apk --offline --output ./output` enforces no LLM/OSV networking for that scan. Install JADX and APKTool for Android decompilation. Failures are reported as incomplete scans rather than successful clean results.
 
@@ -40,7 +40,7 @@ See `docs/audit-2026-10-05/FIX_STATUS.md` for validation and limitations. The ar
 
 ## Current isolated web workflow
 
-Web static analysis requires Linux bubblewrap and an ordinary-user systemd manager. Settings → Check local readiness probes actual namespace/cgroup execution without contacting a target. No unsafe fallback; use a trusted direct APKTool JAR when a snap wrapper cannot run in the sandbox. Web jobs are always offline; cloud review needs an explicitly approved CLI flow or a separately designed broker.
+Web static analysis requires Linux bubblewrap and an ordinary-user systemd manager. Settings → Check local readiness probes actual namespace/cgroup execution without contacting a target. No unsafe fallback; use a trusted direct APKTool JAR when a snap wrapper cannot run in the sandbox. Web static jobs are always offline; optional aggregate-metadata review uses the separately gated assessment broker described below.
 
 Settings → Authorized scope persists exact actions/package/device/origin/method restrictions, narrowed by server environment ceilings. Without a saved policy, the web product is static-only. Root, shell, install and Frida authorization is explicitly device-wide. History provides cancellation, immutable-original retry and preview/confirmed evidence deletion; original uploads are preserved.
 
@@ -51,3 +51,9 @@ See `docs/product-security-review-2026-10-05/TRANSFORMATION_STATUS.md` for curre
 Start Assessment: upload → exact APK/API/device scope → select stages → explicitly approve → results. Upload alone never starts testing. API-only stages do not need a fake/implicit device. SAST stays isolated/offline; live stages require static success and a package match. DAST maps the current approved app; exact navigation actions still need review. Install-if-absent refuses replacement and does not request forced runtime permission grants (-g); normal OS install-time permission behavior still applies. Advanced static APK/IPA scanning remains available.
 
 Optional model review uses a separate aggregate-metadata-only broker, not worker egress or executable model output. Server owner configures `MOBILEAG_LLM_ALLOWED_PROVIDERS`, exact model IDs/keys and loopback origins as documented in `.env.example`; each assessment must also explicitly approve metadata egress. Provider configuration is not a health check. See `docs/guided-assessment-2026-10-06/README.md` for stages, endpoint/provider matrices and validation boundaries.
+
+Provider selection: Start Assessment → Optional AI review. All adapters can be selected to inspect setup; **Setup required** is not permission to execute. Configure the exact named variables privately on the server, restart and Refresh providers. Selection is retained on refresh; AI still requires a ready catalog and explicit metadata-egress consent. Settings/advanced static routes link to this real selector. See `docs/provider-selector-2026-10-06/README.md` for the tested UI states; no live provider health is inferred.
+
+## Shared interface and recovery
+
+All ten views share local interface assets, per-view headings, keyboard navigation and a collapsible mobile menu. Upload is not execution. Triage confirmation requires explicit reproduction notes; cancel/empty notes send no mutation. API captured-response analysis needs an actual status and an authorized redacted capture, stays local, and produces unverified candidates, not a clean/security verdict. Settings readiness shows actual harmless local probe results. See `docs/interface-refresh-2026-10-06/README.md` for browser, accessibility, packaging and test evidence and remaining limits.

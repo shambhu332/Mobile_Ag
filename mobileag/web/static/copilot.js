@@ -4,6 +4,9 @@
       copilotOpen = !copilotOpen;
       const drawer = document.getElementById('copilot-drawer');
       const chevron = document.getElementById('copilot-chevron');
+      drawer.hidden=!copilotOpen;
+      document.getElementById('evidence-summary-button').setAttribute('aria-expanded',String(copilotOpen));
+      if(copilotOpen)document.getElementById('copilot-chat-input').focus();else document.getElementById('evidence-summary-button').focus();
       if (copilotOpen) {
         drawer.classList.remove('translate-y-[520px]');
         chevron.style.transform = 'rotate(180deg)';
@@ -18,16 +21,7 @@
       sendCopilotChat();
     }
 
-    function askCopilotActivePoc() {
-      const f = (currentScan && currentScan.findings && selectedFindingId)
-        ? currentScan.findings.find(item => item.id === selectedFindingId)
-        : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
-      if (f) {
-        askCopilotPrompt(`Generate a step-by-step PoC reproduction guide for ${escapeHtml(String(f.title ?? ""))} (${escapeHtml(String(f.cwe_id))}) in ${escapeHtml(String(f.affected_component ?? ""))}`);
-      } else {
-        askCopilotPrompt('Generate step-by-step reproduction PoC for the critical findings in this application');
-      }
-    }
+    function askCopilotActivePoc(){askCopilotPrompt('Summarize the recorded candidates and coverage of the selected scan.');}
 
     function askCopilotActiveAdb() {
       const f = (currentScan && currentScan.findings && selectedFindingId)
@@ -75,6 +69,7 @@
 
     async function sendCopilotChat() {
       const input = document.getElementById('copilot-chat-input');
+      if(!currentScan?.scan_id){showToast('Select a recorded scan before requesting its local evidence summary.','info');return;}
       const text = input.value.trim();
       if (!text) return;
       input.value = '';
@@ -89,7 +84,7 @@
       // Assistant thinking bubble
       const assistantBubble = document.createElement('div');
       assistantBubble.className = 'bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 space-y-1';
-      assistantBubble.innerHTML = '<span class="animate-pulse text-sky-400 font-mono text-[10px]">Analyzing codebase & findings...</span>';
+      assistantBubble.innerHTML = '<span class="animate-pulse text-sky-400 font-mono text-[10px]">Reading recorded evidence (local, no AI call)...</span>';
       container.appendChild(assistantBubble);
       container.scrollTop = container.scrollHeight;
 
@@ -102,7 +97,7 @@
         const data = await res.json();
         assistantBubble.innerHTML = formatMarkdownToHtml(data.response);
       } catch (err) {
-        assistantBubble.innerHTML = '<span class="text-red-400">Failed to connect to Copilot engine.</span>';
+        assistantBubble.innerHTML = '<span class="text-red-400">Unable to load evidence summary. Select a scan, check your session and retry.</span>';
       }
       container.scrollTop = container.scrollHeight;
     }

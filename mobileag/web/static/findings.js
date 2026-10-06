@@ -6,7 +6,7 @@
         b.classList.remove('bg-slate-700', 'text-white');
         b.classList.add('text-slate-400');
       });
-      const activeBtn = document.getElementById(`sev-${sev === 'CRITICAL' ? 'crit' : sev.toLowerCase()}`);
+      const activeBtn = document.getElementById(`sev-${sev === 'CRITICAL' ? 'crit' : sev === 'MEDIUM' ? 'med' : sev.toLowerCase()}`);
       if (activeBtn) {
         activeBtn.classList.add('bg-slate-700', 'text-white');
         activeBtn.classList.remove('text-slate-400');
@@ -18,7 +18,8 @@
       const query = (document.getElementById('findings-search-input')?.value || '').toLowerCase();
       const status = document.getElementById('status-filter-select')?.value || 'ALL';
       const container = document.getElementById('findings-full-list');
-      if (!container || !currentScan) return;
+      if(!container)return;
+      if(!currentScan){window.MobileAgUI?.state(container,'No scan selected','Start an assessment or open a saved scan to review its candidates.');return;}
 
       container.innerHTML = '';
       const list = (currentScan.findings || []).filter(f => {
@@ -27,7 +28,8 @@
         const matchesQuery = !query ||
           (f.title && f.title.toLowerCase().includes(query)) ||
           (f.cwe_id && f.cwe_id.toLowerCase().includes(query)) ||
-          (f.affected_component && f.affected_component.toLowerCase().includes(query));
+          (f.affected_component && f.affected_component.toLowerCase().includes(query)) ||
+          (f.file_path && f.file_path.toLowerCase().includes(query));
         return matchesSev && matchesStatus && matchesQuery;
       });
 
@@ -42,6 +44,8 @@
         card.className = `p-3 rounded-lg border transition cursor-pointer ${
           isSelected ? 'bg-card border-sky-500' : 'bg-panel border-borderSubtle hover:border-slate-600'
         }`;
+        card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-label',String(f.title||'Review candidate'));
+        card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();inspectFinding(f.id);}});
         card.addEventListener('click', () => inspectFinding(f.id));
 
         const sevColors = {
@@ -151,7 +155,7 @@
       if (!terminal) return;
       const dev = dastActiveDevice;
       if (!dev) {
-        terminal.innerHTML += `\n<span class="text-amber-400">[!] No connected BYOD device detected. Connect a device/emulator via Live DAST tab first.</span>`;
+        terminal.innerHTML += `\n<span class="text-amber-400">[!] No explicitly selected authorized device. Connect a device/emulator via Device Diagnostics first.</span>`;
         return;
       }
       if (!window.confirm('Run this diagnostic command on ' + dev + '?\n' + command + '\nSample-derived commands are untrusted.')) return;
@@ -176,7 +180,7 @@
     async function deployFridaFromPoc(scriptType) {
       const dev = dastActiveDevice;
       if (!dev) {
-        showToast('Connect a device first via Live DAST tab', 'error');
+        showToast('Connect a device first via Device Diagnostics', 'error');
         return;
       }
       const pkg = document.getElementById('top-package-name')?.textContent || 'com.target.mobile.app';
@@ -367,7 +371,7 @@
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-mono text-slate-400 uppercase block">Developer Security Guidance</span>
             <button ${bindAction('click', () => askCopilotAboutFinding(f.id))} class="text-[10px] font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1">
-              <i data-lucide="sparkles" class="w-3 h-3"></i> Refine in Copilot
+              <i data-lucide="sparkles" class="w-3 h-3"></i> Local evidence summary
             </button>
           </div>
           <div class="bg-card p-3.5 rounded-lg border border-borderSubtle text-slate-200 text-xs leading-relaxed space-y-2">
@@ -381,7 +385,7 @@
         <!-- Triage & Co-Pilot Action Bar -->
         <div class="pt-4 border-t border-borderSubtle flex items-center justify-between gap-2">
           <button ${bindAction('click', () => askCopilotAboutFinding(f.id))} class="px-2.5 py-1.5 rounded bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs font-mono flex items-center gap-1.5 transition">
-            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-sky-400"></i> Copilot Deep Dive
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-sky-400"></i> Summarize recorded evidence
           </button>
           <div class="flex items-center gap-2">
             <button ${bindAction('click', () => submitTriage(f.id, 'CONFIRMED'))} class="px-3 py-1.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 text-xs font-mono transition flex items-center gap-1">
@@ -399,11 +403,12 @@
     }
 
     async function submitTriage(findingId, verdict) {
+      const notes=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes():'';if(notes===null)return;
       try {
         const res = await fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(findingId)}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes: verdict === 'CONFIRMED' ? (window.prompt('Describe the reproduced impact, prerequisites and evidence:') || '') : '' })
+          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes })
         });
         const data = await res.json();
 
@@ -416,16 +421,17 @@
         applyFindingsFilter();
         showToast(`Triage recorded: ${verdict}`, 'success');
       } catch (err) {
-        showToast('Error recording triage feedback', 'error');
+        showToast('Triage was not saved: '+err.message, 'error');
       }
     }
 
     async function submitTriageVerdict(findingId, verdict) {
+      const notes=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes():'';if(notes===null)return;
       try {
         const response = await fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(findingId)}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes: verdict === 'CONFIRMED' ? (window.prompt('Describe the reproduced impact, prerequisites and evidence:') || '') : '' })
+          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes })
         });
 
         currentScan.revision = (await response.json()).revision;
@@ -440,7 +446,7 @@
         renderDastFindings();
         showToast(`DAST Triage updated: ${verdict}`, 'success');
       } catch (err) {
-        showToast('Error recording triage verdict', 'error');
+        showToast('Triage was not saved: '+err.message, 'error');
       }
     }
 

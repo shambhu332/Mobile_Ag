@@ -182,11 +182,12 @@ public class DiagnosticHandler {
       if (statSinks) statSinks.textContent = findings.length;
 
       if (findings.length === 0) {
-        if (statSev) statSev.textContent = 'CLEAN';
+        if(statConf)statConf.textContent='Not measured';
+        if (statSev) statSev.textContent = 'NOT ASSESSED';
         container.innerHTML = `
           <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
             <i data-lucide="shield-check" class="w-6 h-6 mx-auto mb-2 text-emerald-400"></i>
-            No source-to-sink dataflow vulnerabilities detected in the analyzed snippet. Inputs appear properly sanitized.
+            No source-to-sink candidates were found by these heuristics. This does not establish that inputs are sanitized or the app is secure.
           </div>
         `;
         window.lucide?.createIcons();

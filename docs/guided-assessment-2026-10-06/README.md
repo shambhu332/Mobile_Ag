@@ -86,3 +86,11 @@ Still not implemented/proven: native iOS live automation, credential/form fillin
 ## Security continuation
 
 [Request/session boundary follow-up](../continuation-2026-10-06/README.md) records reproduced rotation/expiry/hash-cancellation races and their fixes, 14 new boundary tests, the current 226-test suite, and a fresh synthetic browser regression. Earlier evidence above remains preserved and is not rewritten as evidence for this changed source tree.
+
+## Selecting an AI provider
+
+The [provider selector follow-up](../provider-selector-2026-10-06/README.md) makes all ten integrations selectable to inspect setup requirements, while keeping AI execution blocked until server configuration and explicit metadata-egress consent are present. Refresh preserves selection; Settings links to the real per-assessment selector rather than a disabled legacy picker. This is not automatic provider activation or a live connectivity check.
+
+### Workspace interface refresh
+
+The current ten-view interface refresh, grouped assessment workflow, collapsible mobile navigation, cancel-safe triage, captured-response guardrails and final validation are recorded in [the interface refresh report](../interface-refresh-2026-10-06/README.md). Historical evidence in this directory remains tied to its original source boundary.

@@ -2,8 +2,9 @@
     // Close export dropdown on click outside
     window.addEventListener('click', (e) => {
       const menu = document.getElementById('export-dropdown');
-      if (menu && !menu.contains(e.target) && !e.target.closest('button[data-onclick="static98"]')) {
+      if (menu && !menu.contains(e.target) && !e.target.closest('#export-menu-button')) {
         menu.classList.add('hidden');
+        document.getElementById('export-menu-button').setAttribute('aria-expanded','false');
       }
     });
 

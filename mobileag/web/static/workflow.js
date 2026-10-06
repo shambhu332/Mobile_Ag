@@ -15,7 +15,8 @@
   for(const name of ['devices','packages','origins','methods','actions']){
     const label=make('label',name+' (comma-separated exact values)',form);const input=make('input','',label);input.id='scope-'+name;input.name=name;fields[name]=input;
   }
-  button('Check local readiness',actions,async()=>{const result=await(await fetch('/api/readiness')).json();notice(JSON.stringify(result));});
+  const readiness=make('section','',panel);readiness.id='readiness-result';readiness.setAttribute('aria-live','polite');
+  button('Check local readiness',actions,async()=>{const result=await(await fetch('/api/readiness')).json();window.MobileAgUI.renderReadiness(result);notice('Readiness checked without contacting a device, model or target.');});
   const help=make('p','Actions: connect, root, install, launch, deeplink, execute_adb, logcat, logcat/clear, screenshot, storage, providers, deeplinks, memory, crawl, frida, fuzz, automation_observe, automation_execute. Automation input is device-wide; only dedicated devices. Empty scope disables execution.',form);help.id='scope-help';
   Object.values(fields).forEach(input=>input.setAttribute('aria-describedby','scope-help'));
   const save=make('button','Save authorized scope',form);save.type='submit';
@@ -29,7 +30,7 @@
   const controls=make('div','',jobs);controls.className='workflow-actions';
   button('Cancel active scan',controls,async()=>{await fetch('/api/scans/'+encodeURIComponent(sid.value)+'/cancel',{method:'POST'});notice('Cancellation requested; refresh history to confirm final status.');});
   button('Retry incomplete scan',controls,async()=>{const result=await(await fetch('/api/scans/'+encodeURIComponent(sid.value)+'/retry',{method:'POST'})).json();notice('New job: '+result.scan_id);await loadScansView();});
-  const preview=make('pre','',jobs);preview.setAttribute('aria-live','polite');let pending=null;
+  const preview=make('pre','',jobs);preview.setAttribute('aria-live','polite');preview.tabIndex=0;let pending=null;sid.addEventListener('input',()=>{pending=null;preview.textContent='Scan ID changed. Preview again before deleting evidence.';});
   button('Preview evidence deletion',controls,async()=>{pending=await(await fetch('/api/scans/'+encodeURIComponent(sid.value)+'/retention')).json();preview.textContent=JSON.stringify(pending,null,2);});
   const confirmLabel=make('label','Type the exact previewed scan ID to delete its outputs and decisions',jobs);const confirmation=make('input','',confirmLabel);confirmation.autocomplete='off';
   button('Delete previewed evidence',controls,async()=>{if(!pending||!pending.allowed||confirmation.value!==pending.scan_id)throw new Error('Preview an inactive scan and type its exact ID first.');await fetch('/api/scans/'+encodeURIComponent(pending.scan_id)+'/purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:confirmation.value,revision:pending.revision})});if(currentScan?.scan_id===pending.scan_id){currentScan=null;renderDashboard({stats:{},findings:[]});document.getElementById('detail-content').textContent='Evidence deleted.';document.getElementById('text-surface-summary').textContent='No scan selected.';}pending=null;preview.textContent='Evidence deleted. Uploaded original preserved.';await loadScansView();});

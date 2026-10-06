@@ -53,6 +53,7 @@
       if (viewId === 'surface' && visNetwork) visNetwork.fit();
 
       window.lucide?.createIcons();
+      window.dispatchEvent(new Event('workspace-view-changed'));
 
     }
 
@@ -91,6 +92,7 @@
     }
 
     function renderDashboard(scan) {
+      scan ||= {};
       scan.stats ||= {};
       let assessment=document.getElementById('scan-assessment-state');
       if(!assessment){assessment=document.createElement('p');assessment.id='scan-assessment-state';assessment.className='workflow-panel';assessment.setAttribute('role','status');document.getElementById('main-workspace').prepend(assessment);}
@@ -122,12 +124,14 @@
       renderAgentTelemetryFeed(scan.agent_telemetry || []);
       renderMasvsRadarChart(scan.masvs_compliance || {});
       applyFindingsFilter();
+      window.dispatchEvent(new Event('workspace-scan-changed'));
 
       window.lucide?.createIcons();
     }
 
     // Vis.js Network Topology
     function renderVisNetwork(graphData) {
+      if(visNetwork?.destroy)visNetwork.destroy();visNetwork=null;
       const container = document.getElementById('visjs-container');
       if (!window.vis) { container.textContent = 'Graph library unavailable; findings remain accessible.'; return; }
       visNodes = new vis.DataSet(graphData.nodes || []);

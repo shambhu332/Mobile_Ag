@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/home/shambhu/Desktop/Mobile_Ag/tests/browser_product_regression.py", line 385, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/shambhu/Desktop/Mobile_Ag/tests/browser_product_regression.py", line 360, in main
+    assert all(not violations for violations in result['a11y'].values()), result['a11y']
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'surface': [], 'findings': [], 'scans': [], 'agents': [], 'settings': [], 'dast': [], 'taint': [{'id': 'color-contrast', 'impact': 'serious', 'count': 1, 'nodes': [{'html': '<button data-onclick="static62" id="btn-run-taint" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">', 'failure': 'Fix any of the following:\n  Element has insufficient color contrast of 3.65 (foreground color: #ffffff, background color: #009966, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1'}]}], 'api': [], 'automation': [], 'assessment': []}

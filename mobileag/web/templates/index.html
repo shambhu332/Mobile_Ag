@@ -9,6 +9,7 @@
   <!-- Tailwind CSS -->
   <link rel="stylesheet" href="/static/dashboard.css" />
   <link rel="stylesheet" href="/static/accessibility.css" />
+  <link rel="stylesheet" href="/static/interface.css" />
 
 
   <!-- Vis.js for Network Topology Graph -->
@@ -59,10 +60,11 @@
           <h1 class="text-sm font-semibold text-white tracking-wide">MobileAg</h1>
           <p class="text-[10px] font-mono text-slate-400">Local security workbench</p>
         </div>
+        <button id="workspace-menu-toggle" type="button" aria-controls="workspace-navigation" aria-expanded="true">Menu</button>
       </div>
 
       <!-- Main Navigation Menu -->
-      <nav aria-label="Workspace sections" class="p-3 space-y-1">
+      <nav id="workspace-navigation" aria-label="Workspace sections" class="p-3 space-y-1">
         <button id="nav-assessment" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="play" class="w-4 h-4"></i><span>Start Assessment</span></button>
 <button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
           <i data-lucide="network" class="w-4 h-4"></i>
@@ -71,7 +73,7 @@
 
         <button data-onclick="static1" id="nav-findings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
-          <span>Exploit PoC Studio</span>
+          <span>Findings & Evidence</span>
           <span id="nav-findings-count" class="ml-auto px-1.5 py-0.2 rounded bg-amber-950/80 text-[10px] font-mono text-amber-300 border border-amber-800">0</span>
         </button>
 
@@ -95,7 +97,7 @@
 
         <details id="advanced-tools"><summary class="text-slate-300 px-3 py-2">Advanced tools (optional)</summary><button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
-          <span>Advanced Device Tools</span>
+          <span>Device Diagnostics</span>
           <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
         </button><button data-onclick="static3" id="nav-taint" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="git-merge" class="w-4 h-4 text-emerald-400"></i>
@@ -107,8 +109,8 @@
           <span id="nav-api-badge" class="ml-auto px-1.5 py-0.2 rounded bg-purple-950/80 text-[10px] font-mono text-purple-300 border border-purple-800">0 APIs</span>
         </button><button data-onclick="static6" id="nav-agents" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="cpu" class="w-4 h-4"></i>
-          <span>Analyzer Agents</span>
-          <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="Engine Active"></span>
+          <span>Analyzer Capabilities</span>
+          <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="Available capabilities; inspect each scan for actual execution"></span>
         </button></details>
         <button data-onclick="static7" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="settings" class="w-4 h-4"></i>
@@ -170,9 +172,9 @@
 
         <!-- Export Report Dropdown -->
         <div class="relative">
-          <button data-onclick="static12" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-200 text-xs flex items-center gap-2 transition">
+          <button id="export-menu-button" aria-expanded="false" aria-controls="export-dropdown" data-onclick="static12" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-200 text-xs flex items-center gap-2 transition">
             <i data-lucide="download" class="w-3.5 h-3.5"></i>
-            <span>Export Report</span>
+            <span>Export Scan</span>
             <i data-lucide="chevron-down" class="w-3 h-3"></i>
           </button>
           <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-44 bg-panel border border-borderSubtle rounded-lg shadow-xl z-30 py-1 text-xs font-mono">
@@ -189,7 +191,7 @@
         </div>
 
         <!-- Copilot Toggle Button -->
-        <button data-onclick="static16" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-xs flex items-center gap-1.5 transition">
+        <button id="evidence-summary-button" aria-expanded="false" aria-controls="copilot-drawer" data-onclick="static16" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-xs flex items-center gap-1.5 transition">
           <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
           <span>Evidence summary</span>
         </button>
@@ -197,6 +199,11 @@
     </header>
 
     <!-- Content Workspace Views (Multi-Tab Switching) -->
+    <section class="workspace-context" aria-label="Current workspace section">
+      <div><h2 id="workspace-title" tabindex="-1">Attack Surface</h2><p id="workspace-subtitle">Review observed coverage and static candidates.</p></div>
+      <p id="scan-assessment-state" role="status" aria-live="polite">No scan selected. Start an assessment to collect evidence.</p>
+    </section>
+
     <div class="flex-1 overflow-hidden relative">
 
       <!-- =================================================================== -->
@@ -221,7 +228,7 @@
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/80 border border-purple-700 text-purple-300">No automatic device actions</span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-950/80 border border-sky-700 text-sky-300">Taint Analysis</span>
               </div>
-              <p class="text-[11px] text-slate-400 mt-0.5">Drop an authorized APK/IPA to run static review. Device diagnostics are separate opt-in actions.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Upload an authorized APK/IPA, then review scope before starting. Uploading alone never runs tests.</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
@@ -279,7 +286,7 @@
 
           <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
             <div>
-              <p class="text-[11px] font-mono text-sky-400 uppercase">Consensus Verification</p>
+              <p class="text-[11px] font-mono text-sky-400 uppercase">Review coverage</p>
               <h3 id="kpi-consensus" class="text-2xl font-bold font-mono text-sky-400 mt-0.5">Not measured</h3>
             </div>
             <div class="w-9 h-9 rounded-lg bg-sky-950/30 border border-sky-800/30 flex items-center justify-center text-sky-400">
@@ -318,9 +325,9 @@
             <div class="flex items-center justify-between mb-3 border-b border-borderSubtle pb-2">
               <div class="flex items-center gap-2">
                 <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
-                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">Active Agent Telemetry</h4>
+                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">Recorded analyzer events</h4>
               </div>
-              <span class="text-[10px] font-mono text-slate-400">Live Execution Stream</span>
+              <span class="text-[10px] font-mono text-slate-400">Observed events only</span>
             </div>
 
             <div id="agent-telemetry-feed" class="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
@@ -333,7 +340,7 @@
             <div class="flex items-center justify-between mb-1 border-b border-borderSubtle pb-2">
               <div class="flex items-center gap-2">
                 <i data-lucide="radar" class="w-4 h-4 text-sky-400"></i>
-                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">OWASP MASVS 7-Axis Benchmark</h4>
+                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">MASVS assessment boundary</h4>
               </div>
               <span id="masvs-summary-score" class="text-[11px] font-mono text-emerald-400 font-bold">Not assessed</span>
             </div>
@@ -394,7 +401,7 @@
           <div class="flex items-center justify-between border-b border-borderSubtle pb-3 mb-4">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-              <h3 class="text-xs font-bold text-white tracking-wider uppercase font-mono">⚡ Exploit PoC & Verification Studio</h3>
+              <h3 class="text-xs font-bold text-white tracking-wider uppercase font-mono">Finding review & validation</h3>
             </div>
             <span id="detail-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">STATUS</span>
           </div>
@@ -403,7 +410,7 @@
             <div class="text-slate-400 text-center py-20 font-mono text-xs">
               <i data-lucide="zap" class="w-8 h-8 mx-auto text-amber-500/60 mb-2"></i>
               <p class="text-slate-300 font-medium">Select any finding from the list</p>
-              <p class="text-slate-500 text-[11px] mt-1">Inspect AST code context, step-by-step PoC, 1-click ADB commands, Frida hooks, and captured proof.</p>
+              <p class="text-slate-500 text-[11px] mt-1">Review static context, suggested procedures and actual evidence. Generated commands are untrusted suggestions, not exploit proof.</p>
             </div>
           </div>
         </div>
@@ -420,7 +427,7 @@
             <p class="text-xs text-slate-400">Historical security assessments and active analysis runs</p>
           </div>
           <button data-onclick="static30" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i> Launch New Scan
+            <i data-lucide="play" class="w-3.5 h-3.5"></i> Start Assessment
           </button>
         </div>
 
@@ -436,7 +443,7 @@
             </div>
             <div>
               <h4 class="text-xs font-bold text-white tracking-wide">UPLOAD AN AUTHORIZED APK OR IPA</h4>
-              <p class="text-[11px] text-slate-400 mt-0.5">Upload starts static heuristics only. Review the effective privacy policy before scanning.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Upload preserves the original archive. Review and approve scope before any testing starts.</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
@@ -471,11 +478,11 @@
       <div id="view-agents" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 class="text-sm font-semibold text-white">Security Analyzer Agents</h3>
+            <h3 class="text-sm font-semibold text-white">Security Analyzer Capabilities</h3>
             <p class="text-xs text-slate-400">Multi-layer static, native, and dependency audit modules</p>
           </div>
           <button data-onclick="static34" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-xs text-slate-200 font-mono flex items-center gap-1.5">
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Run Full Pipeline
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Start Assessment
           </button>
         </div>
 
@@ -491,28 +498,14 @@
         <div class="max-w-2xl space-y-6">
           <div>
             <h3 class="text-sm font-semibold text-white">Platform Settings & Engine Configuration</h3>
-            <p class="text-xs text-slate-400">Configure LLM providers, graph databases, and analysis thresholds</p>
+            <p class="text-xs text-slate-400">Review server configuration and set analysis thresholds</p>
           </div>
 
           <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
             <div>
-              <label class="block text-slate-300 mb-1">Primary LLM Provider</label>
-              <select id="cfg-llm-primary" disabled title="Configure through environment variables" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
-                <option value="gemini_pro">Google Gemini 1.5 Pro</option>
-                <option value="openai">OpenAI GPT-4o</option>
-                <option value="claude">Anthropic Claude 3.5 Sonnet</option>
-                <option value="deepseek">DeepSeek R1 / V3</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-slate-300 mb-1">Backup / Consensus LLM Provider</label>
-              <select id="cfg-llm-fallback" disabled title="Configure through environment variables" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
-                <option value="openai">OpenAI GPT-4o</option>
-                <option value="claude">Anthropic Claude 3.5 Sonnet</option>
-                <option value="deepseek">DeepSeek R1 / V3</option>
-                <option value="gemini_pro">Google Gemini 1.5 Pro</option>
-              </select>
+              <h4 class="text-slate-300 mb-1">Optional AI review</h4>
+              <p class="text-slate-400 mb-2">Choose a provider per assessment. All integrations can be selected to inspect setup; execution needs server approval, an exact model and explicit metadata-egress consent. No automatic fallback or multi-provider billing.</p>
+              <button id="settings-open-ai" type="button" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Choose AI provider in Start Assessment</button>
             </div>
 
             <div>
@@ -542,7 +535,7 @@
 
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" id="cfg-consensus" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-                <span class="text-slate-300">Enable approved-provider review votes (not proof)</span>
+                <span class="text-slate-300">Record consensus preference (web workers remain offline; no model votes)</span>
               </label>
             </div>
 
@@ -729,7 +722,7 @@
                   <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready
                 </span>
                 <button data-onclick="static47" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
-                  <i data-lucide="play-circle" class="w-4 h-4"></i> Run Full DAST Assessment Suite
+                  <i data-lucide="play-circle" class="w-4 h-4"></i> Run explicitly scoped diagnostics
                 </button>
               </div>
             </div>
@@ -845,7 +838,7 @@
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i> Live Logcat & Runtime Telemetry
+                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i> Collected logcat & diagnostic events
                 </h4>
                 <span id="dast-log-counter" class="text-[10px] font-mono px-2 py-0.5 rounded bg-card text-slate-400 border border-borderSubtle">0 lines</span>
               </div>
@@ -896,7 +889,7 @@
               <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
                 <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-400"></i> Dynamic Security Findings & Runtime Traces
               </h4>
-              <p class="text-[11px] text-slate-400 mt-0.5">Identified via live activity intent fuzzing, crash interception, and logcat credential auditing.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Only results from explicitly executed diagnostics appear here. Device-wide shell observations are not ordinary-app exploitation proof.</p>
             </div>
             <span id="dast-findings-count" class="px-2.5 py-1 rounded-full text-xs font-mono bg-red-950/60 border border-red-800 text-red-300">0 Dynamic Findings</span>
           </div>
@@ -970,7 +963,7 @@
           </div>
 
           <!-- Taint Findings & Propagation Visualizer (6 cols) -->
-          <div class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto max-h-[640px]">
+          <div tabindex="0" role="region" aria-label="Discovered taint chains, keyboard-scrollable" class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto max-h-[640px]">
             <div class="flex items-center justify-between">
               <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
                 <i data-lucide="git-commit" class="w-4 h-4 text-amber-400"></i> Discovered Taint Chains
@@ -990,7 +983,7 @@
               </div>
               <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
                 <div class="text-[10px] font-mono text-slate-400">Confidence</div>
-                <div id="taint-stat-conf" class="text-base font-bold font-mono text-emerald-400">100%</div>
+                <div id="taint-stat-conf" class="text-base font-bold font-mono text-slate-300">Not measured</div>
               </div>
             </div>
 
@@ -1041,13 +1034,13 @@
               <!-- Status Filter -->
               <select id="api-status-filter" data-onchange="static68" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-purple-500">
                 <option value="ALL">All Endpoints</option>
-                <option value="VULNERABLE">Vulnerable Only</option>
-                <option value="SECURE">Secure Only</option>
+                <option value="VULNERABLE">Unverified candidates</option>
+                <option value="UNVERIFIED">Not assessed</option>
               </select>
 
               <button data-onclick="static69" id="btn-audit-all-apis" class="px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 text-xs font-mono flex items-center gap-1.5 transition">
                 <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
-                <span>Audit All</span>
+                <span>Plan scoped API tests</span>
               </button>
             </div>
           </div>
@@ -1072,7 +1065,7 @@
             <div class="text-slate-400 text-center py-20 font-mono text-xs">
               <i data-lucide="globe" class="w-8 h-8 mx-auto text-purple-500/60 mb-2"></i>
               <p class="text-slate-300 font-medium">Select an API endpoint from the inventory</p>
-              <p class="text-slate-500 text-[11px] mt-1">Replay requests, run OWASP API Top 10 fuzzing (BOLA/IDOR, PII, BFLA), and copy cURL commands.</p>
+              <p class="text-slate-500 text-[11px] mt-1">Inspect discovered routes and imported captures. Live replay requires exact server-approved scope; discovery does not prove authorization flaws.</p>
             </div>
           </div>
         </div>
@@ -1087,7 +1080,7 @@
       <div class="h-12 border-b border-borderSubtle px-4 flex items-center justify-between shrink-0 bg-card rounded-t-xl cursor-pointer" data-onclick="static70">
         <div class="flex items-center gap-2">
           <i data-lucide="sparkles" class="w-4 h-4 text-sky-400"></i>
-          <h4 class="text-xs font-semibold text-white">MobileAg Security Copilot</h4>
+          <h4 class="text-xs font-semibold text-white">Local Evidence Summary</h4>
         </div>
         <button class="text-slate-400 hover:text-white">
           <i data-lucide="chevron-up" id="copilot-chevron" class="w-4 h-4 transition-transform"></i>
@@ -1097,22 +1090,17 @@
       <!-- Chat Feed -->
       <div id="copilot-messages" class="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
         <div class="bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 leading-relaxed">
-          Hello! I am your <strong>MobileAg Copilot</strong>. I can explain findings, trace taint paths, or generate secure remediation code for your target.
+          This is a <strong>local evidence summary</strong>, not an AI chat or runtime verifier. Select a scan to summarize its recorded candidates. Optional model review is configured separately in Start Assessment.
         </div>
       </div>
 
-      <!-- Suggestion Chips (Djini.ai Style) -->
-      <div class="px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto border-t border-borderSubtle bg-appbg text-[10px] font-mono text-slate-400">
-        <button data-onclick="static71" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap text-amber-300 flex items-center gap-1"><i data-lucide="zap" class="w-2.5 h-2.5"></i> PoC Guide</button>
-        <button data-onclick="static72" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap text-emerald-300 flex items-center gap-1"><i data-lucide="terminal" class="w-2.5 h-2.5"></i> ADB Command</button>
-        <button data-onclick="static73" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap text-purple-300 flex items-center gap-1"><i data-lucide="code" class="w-2.5 h-2.5"></i> Frida Hook</button>
-        <button data-onclick="static74" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap text-sky-300 flex items-center gap-1"><i data-lucide="wrench" class="w-2.5 h-2.5"></i> Kotlin Patch</button>
-        <button data-onclick="static75" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 whitespace-nowrap text-cyan-300 flex items-center gap-1"><i data-lucide="file-text" class="w-2.5 h-2.5"></i> Bug Bounty</button>
+      <div class="px-3 py-1.5 border-t border-borderSubtle bg-appbg text-xs">
+        <button data-onclick="static71" class="px-3 py-2 rounded bg-card border border-borderSubtle text-sky-300">Summarize selected scan (local only)</button>
       </div>
 
       <!-- Input Bar -->
       <div class="p-3 border-t border-borderSubtle bg-card rounded-b-xl flex items-center gap-2 shrink-0">
-        <input type="text" id="copilot-chat-input" data-onkeydown="static76" placeholder="Ask about vulnerabilities or fixes..."
+        <input type="text" id="copilot-chat-input" data-onkeydown="static76" placeholder="Request a summary of the selected scan..."
           class="flex-1 bg-appbg border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono" />
         <button data-onclick="static77" class="p-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition">
           <i data-lucide="send" class="w-3.5 h-3.5"></i>
@@ -1166,27 +1154,12 @@
         </div>
 
         <div>
-          <label class="block text-slate-300 mb-1">LLM Provider Routing</label>
-          <select id="modal-provider-select" disabled title="Effective cloud/offline policy is configured in Settings and the server environment" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-slate-200">
-            <option>Server-controlled policy; inspect the Offline/Cloud badge</option>
-          </select>
+          <p class="text-slate-300 mb-1">Advanced static analysis stays offline. Optional AI review is a separate guided-assessment stage.</p>
+          <button id="modal-open-ai" type="button" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Choose AI provider in Start Assessment</button>
         </div>
 
         <div class="space-y-2 pt-2 border-t border-borderSubtle">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="modal-opt-auto-dast" disabled title="Static jobs do not execute device actions; review findings before explicitly scoped diagnostics" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-            <span class="text-slate-200 font-semibold">Opt-in device diagnostics (explicit authorized device required)</span>
-          </label>
-          <div class="pl-6 space-y-1.5 text-[11px] text-slate-400">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" id="modal-opt-bypass-root" disabled title="Use the explicit Frida workbench" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-              <span class="text-slate-300">Self Root Detection Bypass (Frida / Su-Mask hooks)</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" id="modal-opt-bypass-ssl" disabled title="Use the explicit Frida workbench" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-              <span class="text-slate-300">Self SSL / TLS Pinning Bypass (Frida / OkHttp3 / TrustManager)</span>
-            </label>
-          </div>
+          <p class="text-slate-400">Static analysis does not install apps, select devices, request root or bypass TLS. Review authorized live stages in Start Assessment or advanced diagnostics.</p>
           <label class="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" id="modal-opt-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
             <span class="text-slate-300">Run straight-line taint heuristics (requires manual validation)</span>
@@ -1228,5 +1201,6 @@
 <script src="/static/assessment.js"></script>
 <script src="/static/dashboard.js"></script>
   <script src="/static/workflow.js"></script>
+  <script src="/static/interface.js"></script>
 </body>
 </html>

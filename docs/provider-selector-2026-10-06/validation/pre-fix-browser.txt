@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/tmp/mobileag-provider-before-djoogoj7/tests/browser_product_regression.py", line 302, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/tmp/mobileag-provider-before-djoogoj7/tests/browser_product_regression.py", line 166, in main
+    assert page.locator('#assessment-provider option:disabled').count()==0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

@@ -17,27 +17,28 @@
       renderDastFindings();
     }
 
-    async function refreshDastDevices() {
+    async function refreshDastDevices(inventory = null) {
       try {
-        const res = await fetch('/api/dast/devices');
-        const data = await res.json();
+        const data = inventory || await (await fetch('/api/dast/devices')).json();
+        if (data.inventory_state === 'unknown') throw new Error('Inventory unavailable');
         dastDevices = data.devices || [];
+        if (!dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device')) dastActiveDevice = null;
 
         // Update badge and indicator
         const badge = document.getElementById('nav-dast-device-badge');
         if (badge) badge.textContent = `${dastDevices.length} Devs`;
 
         const fleetCount = document.getElementById('dast-fleet-count');
-        if (fleetCount) fleetCount.textContent = `${dastDevices.length} Connected`;
+        if (fleetCount) fleetCount.textContent = `${dastDevices.filter(d => d.status === 'device').length} Online / ${dastDevices.length} Listed`;
 
         const adbIndicator = document.getElementById('dast-adb-indicator');
         if (adbIndicator) {
           if (data.adb_available) {
             adbIndicator.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400 flex items-center gap-1.5';
-            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ADB Ready';
+            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ADB executable available';
           } else {
             adbIndicator.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-950/60 border border-amber-800 text-amber-400 flex items-center gap-1.5';
-            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> ADB Offline';
+            adbIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> ADB unavailable';
           }
         }
 
@@ -47,7 +48,7 @@
           if (dastDevices.length === 0) {
             headerDevSelect.innerHTML = '<option value="">No Active Device</option>';
           } else {
-            headerDevSelect.innerHTML = '<option value="">Select an authorized device</option>' + dastDevices.filter(d => d.allowed).map(d =>
+            headerDevSelect.innerHTML = '<option value="">Select an authorized device</option>' + dastDevices.filter(d => d.allowed && d.status === 'device').map(d =>
               `<option value="${escapeHtml(String(d.serial))}" ${d.serial === dastActiveDevice ? 'selected' : ''}>${escapeHtml(d.model)} (${escapeHtml(String(d.serial))})</option>`
             ).join('');
           }
@@ -55,12 +56,12 @@
         const headerRootBadge = document.getElementById('header-root-badge');
         if (headerRootBadge) {
           const activeDev = dastDevices.find(d => d.serial === dastActiveDevice);
-          if (activeDev && activeDev.is_rooted) {
+          if (activeDev && activeDev.root_checked && activeDev.is_rooted) {
             headerRootBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800';
             headerRootBadge.innerHTML = '● Root diagnostic';
           } else if (activeDev) {
             headerRootBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700';
-            headerRootBadge.innerHTML = '○ Root shell not observed';
+            headerRootBadge.textContent = activeDev.root_checked ? '○ Root shell not observed' : 'Root not checked';
           } else {
             headerRootBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-slate-500 border border-slate-800';
             headerRootBadge.innerHTML = 'No Device';
@@ -69,11 +70,20 @@
 
         renderDastDeviceFleet();
 
-        // Selection must be explicit and still in scope after every refresh.
-        if (!dastDevices.some(d => d.serial === dastActiveDevice && d.allowed)) dastActiveDevice = null;
+        updateDastControls();
       } catch (e) {
-        console.warn('Error fetching DAST devices:', e);
-        showToast('Error refreshing ADB devices', 'error');
+        dastDevices = []; dastActiveDevice = null;
+        const indicator = document.getElementById('dast-adb-indicator');
+        if (indicator) { indicator.textContent = 'ADB inventory unknown — retry'; indicator.className = 'text-xs text-amber-400'; }
+        const select = document.getElementById('header-device-select');
+        if (select) select.replaceChildren(new Option('Device inventory unavailable', ''));
+        document.getElementById('header-root-badge').textContent = 'Not checked';
+        document.getElementById('nav-dast-device-badge').textContent = 'Unknown';
+        document.getElementById('dast-fleet-count').textContent = 'Unknown';
+        const fleet = document.getElementById('dast-device-fleet-list');
+        if (fleet) fleet.textContent = 'Inventory unavailable. Reconnect the session or Refresh; no device is selected.';
+        updateDastControls();
+        showToast('Device inventory unavailable; no target selected.', 'error');
       }
     }
 
@@ -83,7 +93,8 @@
         showToast('Connect an ADB device first via Live DAST tab', 'error');
         return;
       }
-      const pkg = document.getElementById('top-package-name')?.textContent || 'com.target.mobile.app';
+      const pkg = document.getElementById('dast-input-package')?.value.trim();
+      if (!pkg || pkg === 'com.target.mobile.app') { showToast('Specify your exact approved package first.', 'error'); return; }
       showToast(`Deploying Frida ${scriptType} to ${pkg} on ${escapeHtml(String(dev))}...`, 'info');
       try {
         const res = await fetch('/api/dast/frida', {
@@ -121,14 +132,14 @@
 
       container.innerHTML = dastDevices.map(dev => {
         const isSelected = dev.serial === dastActiveDevice;
-        const rootBadge = dev.is_rooted
+        const rootBadge = dev.root_checked && dev.is_rooted
           ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700 text-[10px] font-mono text-emerald-300 font-semibold flex items-center gap-1">
                <span class="w-1 h-1 rounded-full bg-emerald-400"></span> # ROOT (uid=0)
              </span>`
-          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400">Root shell not observed</span>`;
+          : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400">${dev.root_checked ? 'Root shell not observed' : 'Root not checked'} · ${escapeHtml(dev.status)} · ${dev.allowed ? 'server approved' : 'not approved'}</span>`;
 
         return `
-          <div ${bindAction('click', () => selectDastDevice(dev.serial))} class="p-3 rounded-lg border cursor-pointer transition ${
+          <button type="button" ${bindAction('click', () => selectDastDevice(dev.serial))} ${dev.allowed && dev.status === 'device' ? '' : 'disabled'} class="w-full text-left p-3 rounded-lg border cursor-pointer transition ${
             isSelected
               ? 'bg-sky-950/40 border-sky-500/60 shadow-sm'
               : 'bg-card hover:bg-slate-800/60 border-borderSubtle'
@@ -145,7 +156,7 @@
               <span>Serial: <span class="text-slate-300">${escapeHtml(dev.serial)}</span></span>
               <span>Android ${escapeHtml(dev.android_version)} (API ${escapeHtml(dev.sdk_level)})</span>
             </div>
-          </div>
+          </button>
         `;
       }).join('');
 
@@ -153,8 +164,8 @@
     }
 
     function selectDastDevice(serial) {
-      if (!dastDevices.some(d => d.serial === serial && d.allowed)) {
-        dastActiveDevice = null;
+      if (!dastDevices.some(d => d.serial === serial && d.allowed && d.status === 'device')) {
+        dastActiveDevice = null; updateDastControls();
         showToast('Select an explicitly authorized device.', 'error');
         return;
       }
@@ -163,7 +174,8 @@
       if (select) select.value = serial;
       const label = document.getElementById('dast-active-target-label');
       if (label) label.textContent = serial;
-      renderDastDeviceFleet();
+      renderDastDeviceFleet(); updateDastControls();
+      window.dispatchEvent(new CustomEvent('dast-device-selected', {detail: {serial}}));
       showToast(`Selected Device: ${serial}`, 'info');
     }
 
@@ -227,7 +239,7 @@
         return;
       }
 
-      showToast(`Installing ${apkPath} with runtime permissions (-g)...`, 'info');
+      showToast(`Installing ${apkPath} without forced runtime grants...`, 'info');
       try {
         const res = await fetch('/api/dast/install', {
           method: 'POST',
@@ -589,7 +601,7 @@
         container.innerHTML = `
           <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
             <i data-lucide="shield-check" class="w-6 h-6 mx-auto mb-2 text-emerald-500/60"></i>
-            No dynamic runtime vulnerabilities recorded yet. Launch intent fuzzing to discover unhandled crashes or token leaks.
+            No diagnostic evidence collected. Zero entries is not a security verdict. Run only reviewed, explicitly scoped diagnostics.
           </div>
         `;
         window.lucide?.createIcons();
@@ -770,36 +782,36 @@
     // 4. Frida Dynamic Instrumentation & Hooks
     let activeFridaScriptCode = '';
 
-    async function checkFridaServerStatus() {
-      if (!dastActiveDevice) {
-        showToast('Select a device first', 'error');
-        return;
-      }
+    function updateDastControls() {
+      const selected = dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device');
+      const actions = [9,10,38,39,40,41,42,43,44,45,46,47,48,49,51,53,58,59,60];
+      for (const id of actions) document.querySelectorAll(`[data-onclick="static${id}"]`).forEach(button => {
+        button.disabled = !selected;
+        button.title = selected ? 'Requires the saved exact action scope' : 'Explicitly select an online server-approved device first';
+      });
+      const select = document.getElementById('header-device-select');
+      if (select) select.value = selected ? dastActiveDevice : '';
+      const label = document.getElementById('dast-active-target-label');
+      if (label) label.textContent = selected ? dastActiveDevice : 'None Selected';
       const badge = document.getElementById('frida-status-badge');
-      if (badge) {
-        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> Checking...';
-      }
+      if (badge) { badge.textContent = 'Frida process not checked'; badge.className = 'text-xs text-slate-400'; }
+      document.getElementById('header-root-badge').textContent = selected ? 'Root not checked' : 'No Device';
+    }
+
+    async function checkFridaServerStatus() {
+      if (!dastActiveDevice) { showToast('Select an approved online device first', 'error'); return; }
+      const serial = dastActiveDevice;
+      const badge = document.getElementById('frida-status-badge');
+      if (badge) badge.textContent = 'Checking approved process observation…';
       try {
-        const res = await fetch('/api/dast/frida', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dastActiveDevice, package_name: 'com.android.systemui', script_type: 'unpinning' }),
-        });
-        const data = await res.json();
-        const isRunning = data.result && data.result.frida_server_running;
-        if (badge) {
-          if (isRunning) {
-            badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-300 flex items-center gap-1.5';
-            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> frida-server Online';
-            showToast('frida-server verified running on target device', 'success');
-          } else {
-            badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/60 border border-purple-800 text-purple-300 flex items-center gap-1.5';
-            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> Script Generator Ready';
-            showToast('Frida payload generator ready (frida-server daemon idle)', 'info');
-          }
-        }
-      } catch (e) {
-        showToast(`Frida check notice: ${e}`, 'info');
+        const data = await (await fetch('/api/dast/frida/status?serial=' + encodeURIComponent(serial))).json();
+        if (dastActiveDevice !== serial) return;
+        if (badge) badge.textContent = 'Frida process: ' + data.process_state.replaceAll('_', ' ') + ' (attachment not checked)';
+        showToast('Process observation only; compatibility and attachment are not verified.', 'info');
+      } catch (error) {
+        if (dastActiveDevice !== serial) return;
+        if (badge) badge.textContent = error.status === 403 ? 'Frida observation not approved' : 'Frida status unknown — retry';
+        showToast('Approve frida_status for this dedicated device in Configuration before checking. No hook was executed.', 'info');
       }
     }
 
@@ -837,11 +849,7 @@
       if (!codeOverride) {
         const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
         try {
-          const res = await fetch('/api/dast/frida', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ serial: dastActiveDevice || 'preview', package_name: pkg, script_type: scriptType }),
-          });
+          const res = await fetch('/api/frida/presets/' + encodeURIComponent(scriptType));
           const data = await res.json();
           activeFridaScriptCode = data.script || '';
         } catch (e) {
@@ -865,3 +873,6 @@
     }
 
     // =========================================================================
+
+    window.addEventListener('DOMContentLoaded', updateDastControls);
+    window.addEventListener('workspace-session-invalidated', () => { dastDevices=[]; dastActiveDevice=null; updateDastControls(); document.getElementById('dast-adb-indicator').textContent='ADB not checked — reconnect'; document.getElementById('header-device-select').replaceChildren(new Option('Reconnect session', '')); document.getElementById('dast-device-fleet-list').textContent='Session disconnected; reconnect and refresh inventory.'; document.getElementById('dast-fleet-count').textContent='Not checked'; document.getElementById('nav-dast-device-badge').textContent='Unknown'; });

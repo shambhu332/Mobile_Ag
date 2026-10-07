@@ -10,14 +10,14 @@
   make('p','Scope is enforced by the server. UI allowlists can only narrow environment permissions. Root, shell, install and Frida approvals are device-wide, not package-isolated. Web static jobs always run offline.',panel);
   const actions=make('div','',panel); actions.className='workflow-actions';
   button('Rotate session token',actions,async()=>{const data=await (await fetch('/api/session/rotate',{method:'POST'})).json();accessToken=data.token;notice('Session rotated. Old tokens are invalid. Reconnect telemetry using the current session.');if(wsConnection)wsConnection.close();connectTelemetryWebSocket();});
-  button('Log out',actions,async()=>{await fetch('/api/session/logout',{method:'POST'});accessToken='';if(wsConnection)wsConnection.close();notice('Logged out. Reconnect with the new token in the server terminal.');});
+  button('Log out',actions,async()=>{await fetch('/api/session/logout',{method:'POST'});accessToken='';window.dispatchEvent(new Event('workspace-session-invalidated'));if(wsConnection)wsConnection.close();notice('Logged out. Reconnect with the new token in the server terminal.');});
   const form=make('form','',panel);const fields={};
   for(const name of ['devices','packages','origins','methods','actions']){
     const label=make('label',name+' (comma-separated exact values)',form);const input=make('input','',label);input.id='scope-'+name;input.name=name;fields[name]=input;
   }
   const readiness=make('section','',panel);readiness.id='readiness-result';readiness.setAttribute('aria-live','polite');
   button('Check local readiness',actions,async()=>{const result=await(await fetch('/api/readiness')).json();window.MobileAgUI.renderReadiness(result);notice('Readiness checked without contacting a device, model or target.');});
-  const help=make('p','Actions: connect, root, install, launch, deeplink, execute_adb, logcat, logcat/clear, screenshot, storage, providers, deeplinks, memory, crawl, frida, fuzz, automation_observe, automation_execute. Automation input is device-wide; only dedicated devices. Empty scope disables execution.',form);help.id='scope-help';
+  const help=make('p','Actions: connect, root, install, launch, deeplink, execute_adb, logcat, logcat/clear, screenshot, storage, providers, deeplinks, memory, crawl, frida_status (read-only device-wide process observation), frida, fuzz, automation_observe, automation_execute. Automation input is device-wide; only dedicated devices. Empty scope disables execution.',form);help.id='scope-help';
   Object.values(fields).forEach(input=>input.setAttribute('aria-describedby','scope-help'));
   const save=make('button','Save authorized scope',form);save.type='submit';
   form.addEventListener('submit',async(event)=>{event.preventDefault();save.disabled=true;try{

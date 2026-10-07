@@ -14,3 +14,8 @@ body{background:var(--ui-bg);color:#e7eef8}main{min-width:0;min-height:0}body>as
 @media(max-width:767px){#workspace-menu-toggle{display:block}body>aside>div:first-child>div:first-child p{display:none}#workspace-navigation.navigation-collapsed{display:none!important}main header>div:last-child{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}#privacy-mode{grid-column:1/-1}main header>div:last-child>button{min-height:44px}#export-menu-button{width:100%;min-height:44px}}
 [tabindex="0"]:focus-visible{outline:3px solid var(--ui-accent);outline-offset:3px}
 .evidence-hint>p{line-height:1.5}.evidence-hint label{display:block;margin-top:14px}.evidence-hint input:not([type=checkbox]),.evidence-hint textarea{display:block;width:100%;margin-top:6px;padding:10px 12px;border:1px solid #53657e;border-radius:6px;background:#0b1320;color:#e7eef8;line-height:1.5}.evidence-hint label:has(input[type=checkbox]){display:flex;align-items:flex-start;gap:10px;line-height:1.5}.evidence-hint input[type=checkbox]{flex-shrink:0;margin-top:4px;accent-color:#0284c7}
+
+/* Automatic local readiness and disabled target controls. */
+#auto-ready-checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:10px;margin:14px 0;list-style:none;padding:0}
+#auto-ready-checklist li{border:1px solid var(--ui-border);border-radius:8px;background:#0b1320;padding:12px;overflow-wrap:anywhere}
+#view-dast button:disabled{opacity:.5;cursor:not-allowed}

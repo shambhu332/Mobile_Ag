@@ -24,5 +24,5 @@
       loadPrivacyPolicy();
       checkGraphStatus();
       connectTelemetryWebSocket();
-      refreshDastDevices();
+      // Auto-ready owns the startup inventory; no duplicate device probes.
     });

@@ -37,8 +37,16 @@ scan=asyncio.run(fixture());m=importlib.import_module('mobileag.web.app')
 m.repository().save(scan)
 m.attack_graph.verify_connection=AsyncMock(return_value=False)
 m.adb_manager.list_devices=AsyncMock(return_value=[])
-m.adb_manager.is_adb_available=AsyncMock(return_value=False)
-m.adb_manager._exec_cmd=AsyncMock(side_effect=RuntimeError('Real device operations are prohibited in this regression'))
+m.adb_manager.is_adb_available=AsyncMock(return_value=True)
+from mobileag.dast.adb_manager import ConnectedDevice
+m.adb_manager.discover_devices=AsyncMock(return_value=[ConnectedDevice('emulator-synthetic','device',model='Synthetic inventory')])
+m.get_readiness=AsyncMock(return_value={'sandbox_probe':True,'android_tools':{'jadx':True,'apktool':True},'web_static_network':'denied'})
+async def synthetic_adb(args, **kwargs):
+    if args==['-s','emulator-synthetic','shell','ps','-A']:
+        assert kwargs=={'timeout':4.0,'output_limit':65536}
+        return 0,b'shell 1 frida-server\n',b''
+    raise RuntimeError('Real device operations are prohibited in this regression')
+m.adb_manager._exec_cmd=AsyncMock(side_effect=synthetic_adb)
 from mobileag.automation.models import CreateRun
 from mobileag.automation.android import parse_snapshot
 class SyntheticNavigator:
@@ -66,7 +74,7 @@ async def synthetic_model_transport(url,method,**kwargs):
     return {'status_code':200,'body':json.dumps({'choices':[{'message':{'content':'Synthetic protocol advice; no actual commercial model contacted.'}}]})}
 m.assessment_service().broker.transport=synthetic_model_transport
 service.driver_factory=lambda serial,package:navigator
-m.repository().save_policy({'devices':['emulator-synthetic'],'packages':['org.example.automation'],'origins':[],'methods':['GET'],'actions':['automation_observe','automation_execute']})
+m.repository().save_policy({'devices':['emulator-synthetic'],'packages':['org.example.automation'],'origins':[],'methods':['GET'],'actions':['automation_observe','automation_execute','frida_status']})
 auto=asyncio.run(service.create(CreateRun(serial='emulator-synthetic',package_name='org.example.automation',component='org.example.automation/.Main',environment='synthetic',dedicated_account_confirmed=True,dedicated_device_confirmed=True,max_steps=2),m.app.state.auth_token))
 uvicorn.run(m.app,host='127.0.0.1',port=int(os.environ['TEST_PORT']),log_level='warning')
 '''
@@ -120,7 +128,8 @@ def main():
                 with sync_playwright() as p:
                     browser=p.chromium.launch(executable_path=args.chromium,headless=True)
                     context=browser.new_context(viewport={'width':1440,'height':1000},permissions=['clipboard-read','clipboard-write'])
-                    page=context.new_page();errors=[];console=[];requests=[];assessment_posts=[]
+                    page=context.new_page();errors=[];console=[];requests=[];assessment_posts=[];downloads=[]
+                    page.on('download',lambda download:downloads.append(download.suggested_filename))
                     page.on('pageerror',lambda e:errors.append(str(e)))
                     page.on('console',lambda m:console.append(m.text) if m.type=='error' else None)
                     page.on('request',lambda r:requests.append(r.url))
@@ -138,6 +147,15 @@ def main():
                     page.locator('#session-token').fill('synthetic-local-only')
                     page.locator('#session-token').press('Enter')
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
+                    wait_condition(page,'document.querySelector("#auto-ready-status").textContent.startsWith("Checked ")')
+                    assert page.locator('#view-assessment #assessment-readiness').count()==1
+                    assert page.evaluate('dastActiveDevice') is None
+                    assert 'not checked' in page.locator('#frida-status-badge').inner_text()
+                    assert page.locator('[data-onclick="static48"]').is_disabled()
+                    assert not assessment_posts
+                    assert page.locator('#assessment-serial').input_value()==''
+                    assert page.locator('#assessment-device-choices option').count()==1
+                    result_auto_ready={'automatic_local_check':True,'never_auto_selects_or_starts':True,'configured_provider_not_health':True,'synthetic_host_probe':True}
                     # Workspace search is keyboard-first navigation, not execution.
                     post_methods=[]
                     page.on('request',lambda r:post_methods.append(r.url) if r.method in {'POST','PUT','PATCH','DELETE'} else None)
@@ -386,6 +404,33 @@ def main():
                         'unconfigured_execution_blocked':True,'forged_submit_blocked':True,'refresh_preserves_selection':True,
                         'configured_model_visible':True,'explicit_consent_required':True,'configuration_hosts_provider_controls':True,'assessment_keeps_explicit_consent':True,
                         'configuration_not_connectivity':True,'catalog_failure_blocks_selected_ai':True}
+                    # Status and preview have zero instrumentation POSTs.
+                    page.locator('#nav-dast').click()
+                    wait_condition(page,'document.querySelector("#header-device-select").options.length===2')
+                    assert 'executable available' in page.locator('#dast-adb-indicator').inner_text()
+                    assert page.locator('[data-onclick="static49"]').is_disabled()
+                    device_posts=[]
+                    page.on('request',lambda request:device_posts.append(request.url) if request.method=='POST' and '/api/dast/' in request.url else None)
+                    page.locator('#header-device-select').select_option('emulator-synthetic')
+                    assert 'Root not checked' in page.locator('#header-root-badge').inner_text()
+                    wait_condition(page,'document.querySelector("#frida-status-badge").textContent.includes("attachment not checked")')
+                    page.locator('[data-onclick="static50"]').click()
+                    page.locator('#frida-script-preview-panel').wait_for(state='visible')
+                    assert page.locator('#frida-script-code').inner_text()
+                    assert device_posts==[]
+                    # Failed refresh invalidates previously selected ready-looking state.
+                    page.route('**/api/dast/devices',lambda route:route.fulfill(status=503,json={'detail':'Synthetic inventory unavailable'}))
+                    page.locator('[data-onclick="static37"]').click()
+                    wait_condition(page,'document.querySelector("#dast-adb-indicator").textContent.includes("unknown")')
+                    assert page.evaluate('dastActiveDevice') is None
+                    assert page.locator('[data-onclick="static48"]').is_disabled()
+                    page.unroute('**/api/dast/devices')
+                    page.locator('[data-onclick="static37"]').click()
+                    wait_condition(page,'document.querySelector("#header-device-select").options.length===2')
+                    result_auto_ready['failed_inventory_clears_selection_and_status']=True
+                    result_auto_ready['status_and_preview_never_execute_hooks']=True
+                    result_auto_ready['automatic_process_observation_only_after_selection_and_saved_action']=True
+                    result['auto_ready']=result_auto_ready
                     # Actual router/service/SQLite exercised through approval UI.
                     # Only the navigator is a synthetic adapter; auth/scope/CAS remain real.
                     page.locator('#nav-automation').click()
@@ -404,6 +449,7 @@ def main():
                         'screens':len(automation_report['screen_graph']['nodes']),'edges':len(automation_report['screen_graph']['edges']),'untested':len(automation_report['untested']),
                         'score':automation_report['executive_summary']['production_readiness_score']}
                     assert result['automation']['screens']==2 and result['automation']['edges']==1 and result['automation']['untested']>0 and result['automation']['score'] is None
+                    assessment_download_baseline=len(downloads)
                     # Primary workflow: real archive upload/auth/scope/orchestration;
                     # only static executor and Android adapter are synthetic.
                     import io,zipfile
@@ -412,6 +458,7 @@ def main():
                         archive.writestr('AndroidManifest.xml','<manifest package="org.example.automation"/>')
                         archive.writestr('classes.dex',b'dex\n035\x00synthetic-ui-fixture')
                     page.locator('#nav-assessment').click()
+                    assert page.locator('#assessment-readiness').is_visible()
                     before=len([u for u in requests if '/api/scans/run' in u])
                     page.locator('#assessment-file').set_input_files({'name':'synthetic-ui-fixture.apk','mimeType':'application/vnd.android.package-archive','buffer':payload.getvalue()})
                     wait_condition(page,'document.querySelector("#assessment-artifact").value.length>0')
@@ -422,6 +469,17 @@ def main():
                     page.locator('#assessment-component').fill('org.example.automation/.Main')
                     for name in ['account','device','authorized','scope']:page.locator('#assessment-'+name).check()
                     page.locator('#assessment-confirmation').fill('START SCOPED TESTS')
+                    # Fresh preflight failure blocks even an explicitly filled plan.
+                    def blocked_preflight(route):
+                        response=route.fetch();data=response.json();data['host']['sandbox_probe']=False
+                        route.fulfill(response=response,json=data)
+                    page.route('**/api/preflight',blocked_preflight)
+                    before_assessments=len(assessment_posts)
+                    start_assessment()
+                    wait_condition(page,'document.querySelector("#assessment-status").textContent.includes("Static worker prerequisites are unavailable")')
+                    assert len(assessment_posts)==before_assessments
+                    page.unroute('**/api/preflight')
+                    result['auto_ready']['fresh_blocked_preflight_prevents_start']=True
                     start_assessment()
                     wait_condition(page,'document.querySelector("#assessment-status").textContent.includes("awaiting_action_review")')
                     page.locator('#assessment-results summary').click()
@@ -434,6 +492,16 @@ def main():
                     page.locator('#view-assessment').evaluate('(el)=>el.scrollTop=0')
                     page.screenshot(path=str(out/'guided-assessment-desktop.png'))
 
+                    assert len(downloads)==assessment_download_baseline
+                    # The guided scope replaced previous process-observation approval.
+                    page.locator('#nav-dast').click()
+                    wait_condition(page,'document.querySelector("#header-device-select").options.length===2')
+                    page.locator('#header-device-select').select_option('emulator-synthetic')
+                    wait_condition(page,'document.querySelector("#frida-status-badge").textContent.includes("approval required")')
+                    assert device_posts==[]
+                    page.locator('#header-device-select').select_option('')
+                    result['auto_ready']['scope_replacement_blocks_automatic_process_observation']=True
+                    page.locator('#nav-assessment').click()
                     # A second, static-only assessment includes an explicitly
                     # selected/approved model using ONLY the synthetic broker
                     # transport. No provider account or commercial network call.
@@ -441,7 +509,14 @@ def main():
                     configure_provider('assessment-provider','openai')
                     assert page.locator('#assessment-start').is_disabled()
                     approve_ai('assessment-egress')
-                    start_assessment()
+                    page.locator('#assessment-auto-export').check()
+                    with page.expect_download() as download_info:
+                        start_assessment()
+                    download=download_info.value
+                    downloaded=json.loads(Path(download.path()).read_text())
+                    assert downloaded['status']=='completed' and 'synthetic-browser-provider-key' not in json.dumps(downloaded)
+                    page.locator('#assessment-auto-export').uncheck()
+                    result['auto_ready']['opt_in_terminal_evidence_download']=True
                     wait_condition(page,'document.querySelector("#assessment-results pre") && JSON.parse(document.querySelector("#assessment-results pre").textContent).stages?.llm?.status === "completed"')
                     page.locator('#assessment-results summary').click()
                     ai_run=json.loads(page.locator('#assessment-results pre').inner_text())
@@ -499,6 +574,8 @@ def main():
                     page.locator('#scans-table-body button').first.click();page.wait_for_timeout(250)
                     page.screenshot(path=str(out/'fixed-desktop.png'))
                     page.set_viewport_size({'width':390,'height':844});page.screenshot(path=str(out/'fixed-narrow.png'))
+                    assert len(downloads)==assessment_download_baseline+1
+                    result['auto_ready']['only_opted_in_run_downloads_once']=True
                     result.update(page_errors=errors,console_errors=console,narrow_scrollwidth=page.evaluate('document.documentElement.scrollWidth'),
                                   api_requests_outside_loopback=[r for r in requests if '/api/' in r and not r.startswith(url)],
                                   runtime_requests_outside_loopback=[r for r in requests if not r.startswith(url)],

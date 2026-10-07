@@ -24,6 +24,7 @@ async def check(target):
         assert '/static/automation.js' in scripts
         assert '/static/assessment.js' in scripts
         assert '/static/experience.js' in scripts
+        assert '/static/auto-ready.js' in scripts
         styles = re.findall(r'<link[^>]+href=["\'](/static/[^"\']+\.css)["\']', response.text)
         assert '/static/experience.css' in styles
         for style in styles:

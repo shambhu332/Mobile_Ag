@@ -5,7 +5,7 @@
   make('h2','Start an authorized assessment',panel);
   make('p','1 Upload APK → 2 Approve APK + API scope → 3 Choose stages → 4 Start → 5 Review evidence. Advanced tools remain optional. Uploading alone never starts testing.',panel);
   const status=make('p','Choose an owned APK to begin.',panel);status.id='assessment-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-  const form=make('form','',panel);const fields={};let current=null,timer=null;
+  const form=make('form','',panel);const fields={};let current=null,timer=null,autoExportId=null;
   let providerLimits=null;
   let providers=new Map(),providersLoaded=false,providerLoad=0,submitting=false,uploading=false;
   const field=(key,title,tag='input',type='text')=>{const label=make('label',title,form),el=make(tag,'',label);el.id='assessment-'+key;if(tag==='input')el.type=type;fields[key]=el;return el;};
@@ -37,6 +37,7 @@
   check('device','I confirm an authorized dedicated test device for DAST (ADB input is device-wide)');
   check('authorized','I own/have permission for this APK and every listed API/device target');fields.authorized.required=true;
   check('scope','I approve replacing the saved global workbench scope; this can stop other active jobs');fields.scope.required=true;
+  check('auto-export','Download assessment evidence JSON automatically when the approved stages finish or pause (navigation still requires review)');
   const confirmation=field('confirmation','Type START SCOPED TESTS to approve execution');confirmation.required=true;
   make('p','SAST always runs offline in the isolated worker. Live phases start only after static success and an exact package match. DAST maps the live app automatically; taps on discovered controls still need exact action approval. No root, TLS bypass, write APIs or destructive tests.',form);
   const providerHelp=make('details','',form);make('summary','Configure local/cloud providers (server owner)',providerHelp);
@@ -57,7 +58,7 @@
   fields.egress.addEventListener('change',updateProvider);
   const controls=make('div','',panel);controls.className='workflow-actions';
   const button=(title,parent,run)=>{const b=make('button',title,parent);b.type='button';b.addEventListener('click',async()=>{b.disabled=true;try{await run();}catch(e){status.textContent=e.message;}finally{b.disabled=false;}});return b;};
-  button('Check tools and server scope',controls,async()=>{const [ready,scope]=await Promise.all([fetch('/api/readiness').then(r=>r.json()),fetch('/api/scope').then(r=>r.json())]);status.textContent='Offline sandbox: '+(ready.sandbox_probe?'ready':'unavailable; SAST will not run unsafely')+'; allowed devices: '+(scope.ceilings.devices.join(', ')||'none')+'; API origins: '+(scope.ceilings.origins.join(', ')||'none');});
+  button('Check tools and server scope',controls,async()=>{await window.MobileAgReady.check();status.textContent='Readiness refreshed. Review the automatic checklist; no tests started.';});
   const providerControls=document.getElementById('configuration-llm-controls');
   const providerActions=make('div','',providerControls);providerActions.className='workflow-actions';
   button('Refresh providers',providerActions,loadProviders);
@@ -67,7 +68,7 @@
   const submit=make('button','Start scoped assessment',form);submit.type='submit';submit.id='assessment-start';
   const steps=make('ol','',panel);steps.className='assessment-steps';steps.setAttribute('aria-label','Assessment preparation steps');form.before(steps);
   for(const title of ['1 Artifact','2 Test stages','3 Optional AI','4 Approve & start'])make('li',title,steps);
-  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['egress','fallback-egress']],['Authorization and execution',['authorized','scope','confirmation']]];
+  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['egress','fallback-egress']],['Authorization and execution',['authorized','scope','auto-export','confirmation']]];
   const groups=sections.map(([title,keys],index)=>{const group=make('fieldset','',form);group.className='form-section';make('legend',`${index+1}. ${title}`,group);for(const key of keys)group.append(fields[key].parentElement);return group;});
   groups[1].append(captureHelp);
   const providerGroup=make('fieldset','',providerControls);providerGroup.className='form-section';make('legend','Primary / secondary selection',providerGroup);
@@ -131,9 +132,14 @@
     }catch(error){if(sequence===providerLoad){providersLoaded=false;updateProvider();make('p','Could not load provider configuration: '+error.message,providerInfo);}throw error;}
   }
   async function loadRuns(){runs.replaceChildren();const list=await(await fetch('/api/assessments')).json();if(!list.length)make('p','No guided assessments yet.',runs);for(const row of list)button(row.package_name+' · '+row.status,runs,async()=>{current=await(await fetch('/api/assessments/'+row.id)).json();render();});}
-  form.addEventListener('submit',async event=>{event.preventDefault();if(uploading){status.textContent='Wait for archive upload and validation to finish.';return;}if(!artifact.value){status.textContent='Upload an authorized Android APK first.';upload.focus();return;}if((secondary.value&&!llm.value)||(llm.value&&!aiReady())){status.textContent='AI review needs distinct configured providers and explicit primary/secondary egress approval. Choose No AI to run deterministic stages only.';updateProvider();return;}if(confirmation.value!=='START SCOPED TESTS'){status.textContent='Type START SCOPED TESTS before execution.';return;}submitting=true;updateProvider();
+  form.addEventListener('submit',async event=>{event.preventDefault();if(submitting)return;if(uploading){status.textContent='Wait for archive upload and validation to finish.';return;}if(!artifact.value){status.textContent='Upload an authorized Android APK first.';upload.focus();return;}if((secondary.value&&!llm.value)||(llm.value&&!aiReady())){status.textContent='AI review needs distinct configured providers and explicit primary/secondary egress approval. Choose No AI to run deterministic stages only.';updateProvider();return;}if(confirmation.value!=='START SCOPED TESTS'){status.textContent='Type START SCOPED TESTS before execution.';return;}submitting=true;updateProvider();
     try{
       const isDast=fields.dast.checked,isAPI=fields.api.checked;
+      const ready=await window.MobileAgReady.check();
+      if (!ready.host.sandbox_probe || !ready.host.android_tools.jadx || !ready.host.android_tools.apktool)
+        throw new Error('Static worker prerequisites are unavailable. Review the readiness checklist and configure the isolated worker; no assessment started.');
+      if (isDast && (ready.devices.inventory_state !== 'checked' || !ready.devices.devices.some(device=>device.serial===serial.value.trim() && device.allowed && device.status==='device')))
+        throw new Error('Choose an online server-approved device from the fresh inventory. No device is selected implicitly; no assessment started.');
       const actions=isDast?['automation_observe','automation_execute']:[];
       if(isDast&&fields.install.checked)actions.push('install');if(isDast&&fields.launch.checked)actions.push('launch');
       const scope={devices:isDast?[serial.value.trim()]:[],packages:[pkg.value.trim()],origins:isAPI?origins.value.split(/\s+/).filter(Boolean):[],methods:['GET','HEAD'],actions};
@@ -142,7 +148,7 @@
         dedicated_account_confirmed:fields.account.checked,dedicated_device_confirmed:fields.device.checked,
         install_if_absent:isDast&&fields.install.checked,launch:isDast&&fields.launch.checked,captures:isAPI?JSON.parse(captures.value):[],llm_provider:llm.value||null,llm_metadata_egress_confirmed:fields.egress.checked,llm_secondary_provider:secondary.value||null,llm_fallback_egress_confirmed:Boolean(secondary.value&&fields['fallback-egress'].checked)};
       if(authorization.value)body.api_authorization=authorization.value;authorization.value='';
-      current=await(await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();render();
+      current=await(await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();autoExportId=fields['auto-export'].checked?current.id:null;render();
     }catch(e){status.textContent=e.message;}finally{submitting=false;updateProvider();}
   });
   function render(){
@@ -157,11 +163,14 @@
     if(current.scan_id)button('Review SAST findings',actions,async()=>{await loadSpecificScan(current.scan_id);switchView('findings');});
     if(current.automation_run_id)button('Review/approve exact navigation actions',actions,async()=>{window.dispatchEvent(new CustomEvent('automation-open-run',{detail:{id:current.automation_run_id}}));});
     button('Stop future stages',actions,async()=>{await fetch('/api/assessments/'+current.id+'/cancel',{method:'POST'});status.textContent='Stop requested. Issued actions cannot be undone.';}).disabled=current.status!=='running';
-    button('Export assessment evidence',actions,async()=>{const data=await(await fetch('/api/assessments/'+current.id)).json();const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=make('a','',document.body);link.href=url;link.download=current.id+'-assessment.json';link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+    button('Export assessment evidence',actions,async()=>{const data=await(await fetch('/api/assessments/'+current.id)).json();downloadEvidence(data);});
     const evidence=make('details','',results);make('summary','Technical assessment evidence (JSON)',evidence);
     const pre=make('pre',JSON.stringify(current,null,2),evidence);pre.tabIndex=0;pre.setAttribute('aria-label','Assessment evidence, keyboard-scrollable');
+    if(autoExportId===current.id && current.status!=='running'){autoExportId=null;downloadEvidence(current);}
     if(timer)clearTimeout(timer);if(current.status==='running')timer=setTimeout(async()=>{try{current=await(await fetch('/api/assessments/'+current.id)).json();render();}catch(e){status.textContent=e.message;}},1500);
   }
+  function downloadEvidence(data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=make('a','',document.body);link.href=url;link.download=data.id+'-assessment.json';link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  window.addEventListener('assessment-refresh-providers',()=>{loadProviders().catch(error=>{status.textContent=error.message;});});
   document.getElementById('nav-assessment').addEventListener('click',async()=>{switchView('assessment');try{await loadProviders();await loadRuns();}catch(e){status.textContent=e.message;}});
   document.getElementById('nav-settings').addEventListener('click',async()=>{try{await loadProviders();}catch(e){status.textContent=e.message;}});
   document.getElementById('modal-open-ai')?.addEventListener('click',openConfiguration);

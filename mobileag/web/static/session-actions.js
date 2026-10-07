@@ -24,6 +24,7 @@
           accessToken=input.value;input.value='';dialog.close();
           if(connectedBefore){await loadInitialScan();await loadPrivacyPolicy();if(wsConnection)wsConnection.close();connectTelemetryWebSocket();}
           else{connectedBefore=true;resolveConnection();}
+          window.dispatchEvent(new Event('workspace-session-connected'));
         }catch(e){error.textContent=e.message;}finally{submit.disabled=false;}});
         dialog.append(form);document.body.append(dialog);
       }
@@ -39,7 +40,7 @@
       const response = await nativeFetch(input, {...options, headers});
       if (!response.ok) {
         const body = await response.clone().json().catch(() => ({}));
-        if(response.status===401){accessToken='';showConnectionForm();}
+        if(response.status===401){accessToken='';window.dispatchEvent(new Event('workspace-session-invalidated'));showConnectionForm();}
         const error=new Error(body.detail || `Request failed (${response.status})`);error.status=response.status;throw error;
       }
       return response;

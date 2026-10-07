@@ -65,6 +65,12 @@ Configure strong `NEO4J_PASSWORD` and `QDRANT_API_KEY` before `docker compose up
 
 ## Evidence and limitations
 
+### Advanced workspace navigation
+
+Use **Find a section** or **Ctrl/Command K** for keyboard-first workflow navigation across all ten views. The **Next steps** guide uses the actual selected job and offers navigation only—not execution. Compact density and desktop focus layout are page-local preferences; scan/device/model authorization is unchanged.
+
+Configuration includes searchable local/cloud provider cards, primary/secondary comparison, setup/consent checklists and server-enforced broker limits. Token consumption, cost, quota and tokens/minute are not measured. See [advanced workspace validation](docs/advanced-workspace-2026-10-07/README.md).
+
 ### Dashboard LLM configuration
 
 Use **Configuration → LLM provider configuration** to choose the primary provider and an optional distinct secondary, inspect exact server-configured models/setup, and refresh the provider catalog. Selection alone never starts AI review. Choices stay in the current dashboard session; they reset on reload and are not persisted by Save Settings. API keys/models and allowed destinations remain privately server-configured, not editable credentials in the browser.

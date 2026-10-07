@@ -1,0 +1,27 @@
+{
+  "baseline_commit": "ad0cd277a4128955ec5818377665615a4e754eca",
+  "application_version": "0.1.0",
+  "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+  "os_build": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "pytest": "8.4.2",
+    "playwright": "1.63.0",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.54.0",
+    "build": "1.6.0"
+  },
+  "source_sha256": {
+    "mobileag/llm/broker.py": "08a4833a6b652a965ab7dcb874fff31f0b69f5be46d76894d15b924681da345f",
+    "mobileag/web/static/assessment.js": "a61b24428736c06b12c126b3d86b0504af4d6e19afbf396bbae787a4b5b175cd",
+    "mobileag/web/static/experience.js": "a0df26e006d595f135067d7b55a00bc311c75045f20e517b4b2cfa8ba82eb732",
+    "mobileag/web/static/experience.css": "e22aac9cb40084131cbfd21657037f861b013fe1c5705346048b4ad60526803f",
+    "mobileag/web/templates/index.html": "e3d82f659e1421b6115b6331ec88338cf2eedf3888ab8b4763c6e578ef77b0cf",
+    "scripts/wheel-smoke.py": "42a76473e7ce109ba0c4d064abf70d89d4d4c7e284b527947664366776bdb953",
+    "tests/browser_product_regression.py": "1214fa0847aafa2a54847ceb54c0079e7f787640b54bb1940f959bd5551c9957",
+    "tests/test_guided_assessments.py": "78351d0fe46001e42660de11b6aa13df36b7a1eb76877d3fd03e38d8219dfdce",
+    "tests/test_interface_contracts.py": "dd26b3e26b589bf8423c48067288ae47598babf875ce7118e73497f740ed83e1"
+  },
+  "validation": "Synthetic provider/device adapters and researcher-controlled loopback routes/storage only; no real APK/device/account/model calls",
+  "environment_files": "Pre-existing user .env.example edit preserved; excluded from implementation and evidence; no private environment modifications",
+  "git_state": "Local changes; not committed/pushed"
+}

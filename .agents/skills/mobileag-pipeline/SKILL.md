@@ -63,3 +63,7 @@ All ten views share local interface assets, per-view headings, keyboard navigati
 Guided assessment accepts a distinct optional secondary, with separate explicit metadata-egress consent. Both destinations must be server-configured/approved. The broker attempts secondary once only after actual primary HTTP 429, never for auth/timeout/content/other errors, and never loops. Each assessment starts with primary; revocation/cancellation stops continuation. Actual provider/model/attempt outcomes are recorded. This is not CLI-router fallback or increased provider quota. See `docs/provider-fallback-2026-10-06/README.md`. Never commit secrets in `.env.example`; keep keys private and preserve user changes.
 
 See `docs/llm-configuration-2026-10-07/README.md` for the provider-control move, real browser checks and preserved authorization boundaries.
+
+## Advanced workspace UX
+
+Ctrl/Command K or Find a section opens navigation-only search; `/` does not interrupt editable fields. Contextual Next steps reports actual selected jobs, never confirmed vulnerability counts from static candidates. Compact/focus preferences are page-local. Provider cards use the existing catalog/change/consent gates; server-provided broker ceilings are not measured usage/billing/quota. See `docs/advanced-workspace-2026-10-07/README.md` for browser/packaging evidence and limits.

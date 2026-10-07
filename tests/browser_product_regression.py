@@ -138,6 +138,56 @@ def main():
                     page.locator('#session-token').fill('synthetic-local-only')
                     page.locator('#session-token').press('Enter')
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
+                    # Workspace search is keyboard-first navigation, not execution.
+                    post_methods=[]
+                    page.on('request',lambda r:post_methods.append(r.url) if r.method in {'POST','PUT','PATCH','DELETE'} else None)
+                    page.locator('#workspace-command-open').focus()
+                    page.keyboard.press('Control+k')
+                    page.locator('#workspace-command-dialog').wait_for(state='visible')
+                    assert page.locator('#workspace-command-search').evaluate('(el)=>el===document.activeElement')
+                    page.locator('#workspace-command-search').fill('history')
+                    assert page.locator('#workspace-command-results button').count()==1
+                    page.keyboard.press('ArrowDown')
+                    assert page.locator('#workspace-command-results button').evaluate('(el)=>el===document.activeElement')
+                    page.keyboard.press('Enter')
+                    assert page.locator('#view-scans').is_visible()
+                    assert not page.locator('#workspace-command-dialog').evaluate('(el)=>el.open')
+                    page.locator('#workspace-command-open').focus();page.keyboard.press('Control+k')
+                    page.locator('#workspace-command-search').fill('<img src=x onerror=alert(1)>')
+                    assert page.locator('#workspace-command-results button').count()==0
+                    assert 'No matching sections' in page.locator('#workspace-command-status').inner_text()
+                    if args.axe:
+                        page.evaluate(Path(args.axe).read_text())
+                        violations=page.evaluate("async()=> (await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})).violations")
+                        assert not violations, violations
+                    page.keyboard.press('Escape')
+                    wait_condition(page,'!document.querySelector("#workspace-command-dialog").open && document.querySelector("#workspace-command-open")===document.activeElement')
+                    page.locator('#workspace-density').select_option('compact')
+                    assert page.locator('body').get_attribute('data-density')=='compact'
+                    page.locator('#workspace-focus-toggle').click()
+                    assert not page.locator('body>aside').is_visible()
+                    page.locator('#workspace-command-open').click()
+                    page.locator('#workspace-command-search').fill('manifest');page.keyboard.press('Enter')
+                    assert page.locator('#view-surface').is_visible()
+                    page.locator('#workspace-focus-toggle').click()
+                    assert page.locator('body>aside').is_visible()
+                    page.locator('#workspace-guide summary').click()
+                    assert 'Selected job: scan_synthetic' in page.locator('#workspace-guide-job').inner_text()
+                    page.evaluate('()=>{window.experienceSavedScan=currentScan;currentScan=null;window.dispatchEvent(new Event("workspace-scan-changed"));}')
+                    assert 'No job selected' in page.locator('#workspace-guide-job').inner_text()
+                    assert page.locator('#export-menu-button').is_disabled()
+                    page.evaluate('()=>{currentScan=window.experienceSavedScan;delete window.experienceSavedScan;window.dispatchEvent(new Event("workspace-scan-changed"));}')
+                    assert len(post_methods)==0, post_methods
+                    page.screenshot(path=str(out/'advanced-workspace-guide.png'))
+                    page.locator('#workspace-guide summary').click()
+                    page.locator('#workspace-density').select_option('comfortable')
+                    # Typing slash in an editable control must never hijack navigation.
+                    page.locator('#nav-findings').click()
+                    page.locator('#findings-search-input').fill('')
+                    page.locator('#findings-search-input').press('/')
+                    assert page.locator('#findings-search-input').input_value()=='/'
+                    assert not page.locator('#workspace-command-dialog').evaluate('(el)=>el.open')
+                    page.locator('#findings-search-input').fill('')
                     # A block is essential: an expression returning a function can
                     # be invoked by Playwright itself, creating a false marker.
                     page.evaluate('() => {window.auditXssCount=0;window.auditXssProbe=()=>{window.auditXssCount++;return 0};}')
@@ -226,6 +276,7 @@ def main():
                     assert captured.value.status==200
                     assert all(f['status']=='UNVERIFIED' for f in captured.value.json()['findings'])
                     wait_condition(page,'document.querySelector("#api-live-fuzz-results").textContent.includes("Unverified candidates")')
+                    result['advanced_experience']={'keyboard_search_navigation':True,'search_has_no_mutations':True,'escape_restores_focus':True,'editable_slash_not_hijacked':True,'compact_and_focus_layouts':True,'contextual_guidance_uses_recorded_job':True}
                     result['interface']={'export_menu_usable':True,'json_export_matches_scan':True,'keyboard_finding_review':True,
                         'file_path_filter_works':True,'cancelled_or_empty_triage_has_no_mutation':True,'history_failure_retry_recovers':True,
                         'unobserved_api_not_marked_secure':True,'invalid_headers_send_no_request':True,'capture_requires_observation':True,
@@ -455,6 +506,19 @@ def main():
                             assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
                             result['mobile_a11y'][view]=[{'id':v['id'],'impact':v['impact'],'nodes':[n['html'] for n in v['nodes']]} for v in assessment['violations']]
                             assert not result['mobile_a11y'][view], result['mobile_a11y'][view]
+                    page.locator('#workspace-command-open').click()
+                    page.locator('#workspace-command-search').fill('provider')
+                    assert page.locator('#workspace-command-results button').count()==1
+                    assert page.locator('#workspace-command-dialog').bounding_box()['width']<=320
+                    if args.axe:
+                        violations=page.evaluate("async()=> (await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})).violations")
+                        assert not violations, violations
+                    page.screenshot(path=str(out/'mobile-command-search.png'))
+                    page.keyboard.press('Escape')
+                    wait_condition(page,'!document.querySelector("#workspace-command-dialog").open')
+                    result['advanced_experience']['mobile_command_search']=True
+                    # Search leaves the current view unchanged until a match is chosen.
+                    assert page.locator('#view-assessment').is_visible()
                     assert page.locator('#workspace-title').bounding_box()['y'] < 500
                     result['interface']['mobile_menu_collapses_after_selection']=True
                     page.screenshot(path=str(out/'fixed-320px.png'))

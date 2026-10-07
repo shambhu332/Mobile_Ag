@@ -23,13 +23,18 @@ async def check(target):
         assert len(scripts) >= 12
         assert '/static/automation.js' in scripts
         assert '/static/assessment.js' in scripts
+        assert '/static/experience.js' in scripts
+        styles = re.findall(r'<link[^>]+href=["\'](/static/[^"\']+\.css)["\']', response.text)
+        assert '/static/experience.css' in styles
+        for style in styles:
+            assert (await client.get(style)).status_code == 200, style
         for script in scripts:
             assert (await client.get(script)).status_code == 200, script
         assert (await client.get('/api/scans')).status_code == 401
         assert (await client.get('/api/automation/runs')).status_code == 401
         assert (await client.get('/api/assessments')).status_code == 401
         assert (await client.get('/api/automation/capabilities',headers={'Authorization':'Bearer synthetic-wheel-smoke-only'})).json()['platforms']==['android']
-    print(json.dumps({'installed_wheel_import':True,'version':mobileag.__version__,'shipped_script_count':len(scripts),'unauthenticated_api_denied':True}))
+    print(json.dumps({'installed_wheel_import':True,'version':mobileag.__version__,'shipped_script_count':len(scripts),'shipped_stylesheet_count':len(styles),'unauthenticated_api_denied':True}))
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser();p.add_argument('--target',required=True);args=p.parse_args()

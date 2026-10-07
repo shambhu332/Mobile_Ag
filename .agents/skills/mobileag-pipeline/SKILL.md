@@ -67,3 +67,9 @@ See `docs/llm-configuration-2026-10-07/README.md` for the provider-control move,
 ## Advanced workspace UX
 
 Ctrl/Command K or Find a section opens navigation-only search; `/` does not interrupt editable fields. Contextual Next steps reports actual selected jobs, never confirmed vulnerability counts from static candidates. Compact/focus preferences are page-local. Provider cards use the existing catalog/change/consent gates; server-provided broker ceilings are not measured usage/billing/quota. See `docs/advanced-workspace-2026-10-07/README.md` for browser/packaging evidence and limits.
+
+## Automatic local readiness
+
+Start Assessment automatically checks the harmless host sandbox/tool configuration, host-only ADB inventory, saved scope and public provider catalog after authentication and before Start. It does not select/connect/boot devices, execute device shell, install dependencies, contact models or approve scope. Guided submission blocks unavailable static-worker prerequisites and non-online/unapproved DAST serials; production worker authorization/isolation remain independent.
+
+Explicit device selection may automatically observe the process name via ordinary-shell `ps -A` ONLY with the saved exact `frida_status` action. This device-wide read-only observation is separate from `frida` attachment approval. Default badges are not checked; unknown inventory invalidates selection. Preset Preview generates text without instrumentation. Optional terminal-stage JSON download is opt-in for a newly explicitly started assessment, once only, not history replay. See `docs/auto-ready-2026-10-07/README.md`; tests remain synthetic, not live device/Frida or provider-health proof.

@@ -71,6 +71,14 @@ Use **Find a section** or **Ctrl/Command K** for keyboard-first workflow navigat
 
 Configuration includes searchable local/cloud provider cards, primary/secondary comparison, setup/consent checklists and server-enforced broker limits. Token consumption, cost, quota and tokens/minute are not measured. See [advanced workspace validation](docs/advanced-workspace-2026-10-07/README.md).
 
+### Automatic readiness and approved stage orchestration
+
+**Start Assessment → Automatic readiness checklist** runs after session connection and again before Start: harmless local sandbox probe, trusted worker-tool presence, host-only ADB inventory, saved scope and public provider configuration. It never selects/connects/boots a device, installs tools, starts a test or contacts a model. Missing worker prerequisites or an unavailable/unapproved DAST serial block guided submission. The backend remains authoritative and fails closed independently of the UI.
+
+Explicitly upload, choose exact scope/stages and approve Start once; the existing guided pipeline then runs offline SAST → approved read-only API cases → approved DAST mapping → optional consented metadata-only AI. Navigation input still requires exact action review. Opt in to a single evidence JSON download when those stages finish or pause; loading history never opts in.
+
+Device Diagnostics now distinguishes executable availability, online/approved inventory and **not checked** root/Frida state. After explicit device selection, automatic process observation requires the saved **frida_status** action for that exact dedicated device; it only uses ordinary-shell `ps -A`, never starts Frida, attaches hooks or runs a preset. A process name is not compatibility/attachment proof. Preview is generation-only. Root/TLS bypass, installs, fuzzing and logcat remain separately scoped explicit operations. See [implementation and synthetic validation](docs/auto-ready-2026-10-07/README.md).
+
 ### Dashboard LLM configuration
 
 Use **Configuration → LLM provider configuration** to choose the primary provider and an optional distinct secondary, inspect exact server-configured models/setup, and refresh the provider catalog. Selection alone never starts AI review. Choices stay in the current dashboard session; they reset on reload and are not persisted by Save Settings. API keys/models and allowed destinations remain privately server-configured, not editable credentials in the browser.

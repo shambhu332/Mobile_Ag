@@ -1,0 +1,39 @@
+{
+  "application_version": "0.1.0",
+  "baseline_commit": "afc58418e369422b25121da9a7674420ee3a58fb",
+  "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+  "os": {
+    "system": "Linux",
+    "kernel": "6.18.55-1-cachyos-lts",
+    "distribution": {
+      "NAME": "CachyOS Linux",
+      "ID": "cachyos",
+      "PRETTY_NAME": "CachyOS",
+      "ID_LIKE": "arch",
+      "BUILD_ID": "rolling",
+      "ANSI_COLOR": "38;2;23;147;209",
+      "HOME_URL": "https://cachyos.org/",
+      "DOCUMENTATION_URL": "https://wiki.cachyos.org/",
+      "SUPPORT_URL": "https://discuss.cachyos.org/",
+      "BUG_REPORT_URL": "https://github.com/cachyos",
+      "PRIVACY_POLICY_URL": "https://terms.archlinux.org/docs/privacy-policy/",
+      "LOGO": "cachyos"
+    }
+  },
+  "packages": {
+    "fastapi": "0.141.1",
+    "starlette": "1.7.0",
+    "httpx": "0.28.1",
+    "pytest": "8.4.2",
+    "pytest-asyncio": "0.24.0",
+    "playwright": "1.63.0",
+    "pydantic": "2.13.5",
+    "build": "1.6.0"
+  },
+  "real_device_os_build": "not tested",
+  "real_apk_sha256": "no real APK used",
+  "device_transport": "synthetic mocked adapter",
+  "model_transport": "synthetic mocked adapter; zero real provider calls",
+  "worker_preflight_browser": "synthetic; actual decompilation/isolation not established by this browser run",
+  "private_environment_files": "excluded and preserved"
+}

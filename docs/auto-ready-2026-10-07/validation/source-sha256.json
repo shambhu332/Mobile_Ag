@@ -1,0 +1,17 @@
+{
+  "mobileag/dast/adb_manager.py": "ba49ef899c3732ba76c5c6829634bad9d17ae9edf32b4fcfcdd9c70f366b0f20",
+  "mobileag/web/app.py": "068a6ff23d0bc3a5780d697eed4bf94941beeb5a593e45e4bfa0d9f9c89d6201",
+  "mobileag/web/policy.py": "ad9eccf78d3a4eccfcda0fe55f8aba124473c182e8189d21ba643c30931074c6",
+  "mobileag/web/security.py": "c73f1699eb59fdb5b08bf6d2eb004035e7b0ced41e925aa6b3acff935de03cf8",
+  "mobileag/web/static/assessment.js": "58217524a74d411a0b372acb0c480af3e979f9d42a8473a6bc67023211a6a386",
+  "mobileag/web/static/auto-ready.js": "edc6d85b9f1ff77beb51c3a1a0dd6ac43c13d0590f88039786146abd4c6275b3",
+  "mobileag/web/static/dashboard.js": "b1d4a0d3fe3fc7af1da0162a28145a6ea2b7f1875721012d3caed4f96fd3cd26",
+  "mobileag/web/static/dast.js": "522a917665ca8a4737ec794e7d7355528b1249b0c0e4b1d7025a5e727e909750",
+  "mobileag/web/static/interface.css": "f4fe3130fd2501f5d78e60af386b82c36668e0d631426c54d88577f20e8ac981",
+  "mobileag/web/static/session-actions.js": "8cf29fe53a3f973f8dde32a4eb0598d6053321f50c33e631c487b2d85fa8126a",
+  "mobileag/web/static/workflow.js": "868abd36bf32ae4a8de290129c3d7626a29d237e3d54c6b2be664047b7946d39",
+  "mobileag/web/templates/index.html": "5671790032fa95b338c7693f5086516c49cac1c630b1fb6e9c9f01e7f31c6285",
+  "scripts/wheel-smoke.py": "8c4284a31f265a30bc19707d72e499ebccf22ac96acb5baef8279256f31c7515",
+  "tests/test_auto_ready.py": "0d045b6e0eda76083e5096a4efa7ef390be09a0c1c4b921f10ad1af4ff6f913f",
+  "tests/browser_product_regression.py": "4aeeee1a31d1de07e2e49e3fc2a1cfa3435d311a8ac0b2f3f4b0a6d0bb072177"
+}

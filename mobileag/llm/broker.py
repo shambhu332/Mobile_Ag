@@ -24,6 +24,10 @@ PROVIDERS={
     'ollama':('Local Ollama','ollama','http://127.0.0.1:11434','',''),
     'local_openai':('Local OpenAI-compatible / LM Studio / vLLM','openai','http://127.0.0.1:1234','/v1','MOBILEAG_LOCAL_LLM_KEY'),
 }
+OUTPUT_TOKEN_LIMIT=1024
+REQUEST_TIMEOUT_SECONDS=25
+TRANSPORT_TIMEOUT_SECONDS=15
+
 SYSTEM='Summarize the supplied aggregate assessment counts and coverage. Never invent vulnerabilities or claim production readiness. Provide concise next validation steps. You cannot execute tools or actions. Counts are unverified static candidates.'
 
 def setup_fields(name):
@@ -68,7 +72,9 @@ def catalog():
         except ValueError:rows.append({'id':name,'title':PROVIDERS[name][0],'model':'','local':name in {'ollama','local_openai'},'enabled':False,'reason':'Invalid server configuration'})
         rows[-1]['setup']=setup_fields(name)
     return {'providers':rows,'data_policy':'aggregate counts/status only; no APK, source, URLs, identifiers, findings text, credentials or raw responses',
-            'credentials':'server environment only; no dashboard key storage','health':'not contacted; configuration is not availability'}
+            'credentials':'server environment only; no dashboard key storage','health':'not contacted; configuration is not availability',
+            'limits':{'max_attempts':2,'output_token_limit':OUTPUT_TOKEN_LIMIT,'request_timeout_seconds':REQUEST_TIMEOUT_SECONDS,
+                'transport_timeout_seconds':TRANSPORT_TIMEOUT_SECONDS,'fallback_trigger':'HTTP 429 only','usage':'not metered'}}
 
 def aggregate(scan,api=None,dast=None):
     levels=['critical','high','medium','low','info']
@@ -156,21 +162,21 @@ class LLMBroker:
         if protocol=='gemini':
             url=config['origin']+config['prefix']+'/models/'+model+':generateContent'
             headers['x-goog-api-key']=config['key']
-            body={'systemInstruction':{'parts':[{'text':SYSTEM}]},'contents':[{'role':'user','parts':[{'text':user}]}],'generationConfig':{'maxOutputTokens':1024}}
+            body={'systemInstruction':{'parts':[{'text':SYSTEM}]},'contents':[{'role':'user','parts':[{'text':user}]}],'generationConfig':{'maxOutputTokens':OUTPUT_TOKEN_LIMIT}}
         elif protocol=='claude':
             url=config['origin']+config['prefix']+'/messages';headers.update({'x-api-key':config['key'],'anthropic-version':'2023-06-01'})
-            body={'model':model,'max_tokens':1024,'system':SYSTEM,'messages':[{'role':'user','content':user}]}
+            body={'model':model,'max_tokens':OUTPUT_TOKEN_LIMIT,'system':SYSTEM,'messages':[{'role':'user','content':user}]}
         elif protocol=='ollama':
-            url=config['origin']+'/api/chat';body={'model':model,'messages':messages,'stream':False,'options':{'num_predict':1024}}
+            url=config['origin']+'/api/chat';body={'model':model,'messages':messages,'stream':False,'options':{'num_predict':OUTPUT_TOKEN_LIMIT}}
         else:
             url=config['origin']+config['prefix']+'/chat/completions'
             if config['key']:headers['Authorization']='Bearer '+config['key']
             body={'model':model,'messages':messages,'stream':False}
-            body['max_completion_tokens' if config['id']=='openai' else 'max_tokens']=1024
+            body['max_completion_tokens' if config['id']=='openai' else 'max_tokens']=OUTPUT_TOKEN_LIMIT
             if config['id']=='openai':body['store']=False
-        async with asyncio.timeout(25):
+        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
             guard()
-            response=await self.transport(url,'POST',headers=headers,body=json.dumps(body),timeout=15,raw=True,
+            response=await self.transport(url,'POST',headers=headers,body=json.dumps(body),timeout=TRANSPORT_TIMEOUT_SECONDS,raw=True,
                 allowed_origins={config['origin']},allow_private=config['local'],loopback_only=config['local'])
             guard()
         if response['status_code']!=200:raise ProviderResponseError(response['status_code'])

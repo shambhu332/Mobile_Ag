@@ -264,3 +264,12 @@ def test_catalog_reasons_distinguish_missing_model_key_and_bad_configuration(mon
     assert row['reason'] == 'Invalid server configuration' and not row['enabled']
     assert row['setup']['key_variable'] == 'OPENAI_API_KEY'
     assert 'private-value' not in json.dumps(catalog())
+
+
+def test_catalog_publishes_enforced_limits_not_usage_or_credentials():
+    from mobileag.llm.broker import OUTPUT_TOKEN_LIMIT, REQUEST_TIMEOUT_SECONDS, TRANSPORT_TIMEOUT_SECONDS
+    limits=catalog()['limits']
+    assert limits == {'max_attempts':2,'output_token_limit':OUTPUT_TOKEN_LIMIT,
+        'request_timeout_seconds':REQUEST_TIMEOUT_SECONDS,'transport_timeout_seconds':TRANSPORT_TIMEOUT_SECONDS,
+        'fallback_trigger':'HTTP 429 only','usage':'not metered'}
+    assert (OUTPUT_TOKEN_LIMIT,REQUEST_TIMEOUT_SECONDS,TRANSPORT_TIMEOUT_SECONDS)==(1024,25,15)

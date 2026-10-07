@@ -276,7 +276,7 @@ def main():
                     assert captured.value.status==200
                     assert all(f['status']=='UNVERIFIED' for f in captured.value.json()['findings'])
                     wait_condition(page,'document.querySelector("#api-live-fuzz-results").textContent.includes("Unverified candidates")')
-                    result['advanced_experience']={'keyboard_search_navigation':True,'search_has_no_mutations':True,'escape_restores_focus':True,'editable_slash_not_hijacked':True,'compact_and_focus_layouts':True,'contextual_guidance_uses_recorded_job':True}
+                    result['advanced_experience']={'keyboard_search_navigation':True,'search_has_no_mutations':True,'escape_restores_focus':True,'editable_slash_not_hijacked':True,'compact_and_focus_layouts':True,'contextual_guidance_uses_recorded_job':True,'provider_search_filters':True,'card_selection_requires_consent':True,'bounds_not_usage':True}
                     result['interface']={'export_menu_usable':True,'json_export_matches_scan':True,'keyboard_finding_review':True,
                         'file_path_filter_works':True,'cancelled_or_empty_triage_has_no_mutation':True,'history_failure_retry_recovers':True,
                         'unobserved_api_not_marked_secure':True,'invalid_headers_send_no_request':True,'capture_requires_observation':True,
@@ -300,6 +300,34 @@ def main():
                     assert page.locator('#configuration-llm #assessment-secondary').count()==1
                     assert page.locator('#view-assessment #assessment-provider').count()==0
                     assert page.locator('#view-assessment #assessment-egress').count()==1
+                    wait_condition(page,'document.querySelectorAll("#provider-grid article").length===10')
+                    assert '3 configured' in page.locator('#provider-explorer-status').inner_text()
+                    page.locator('#provider-filter').select_option('local')
+                    assert page.locator('#provider-grid article').count()==2
+                    page.locator('#provider-search').fill('ollama')
+                    assert page.locator('#provider-grid article').count()==1
+                    page.locator('#provider-search').fill('<script>synthetic-no-match</script>')
+                    assert page.locator('#provider-grid article').count()==0
+                    page.locator('#provider-search').fill('');page.locator('#provider-filter').select_option('configured')
+                    assert page.locator('#provider-grid article').count()==3
+                    before_explorer_posts=len(assessment_posts)
+                    page.locator('#provider-grid [data-provider="gemini"]').get_by_role('button',name='Set primary: Google Gemini',exact=True).click()
+                    assert page.locator('#assessment-provider').input_value()=='gemini'
+                    assert not page.locator('#assessment-egress').is_checked()
+                    page.locator('#provider-grid [data-provider="grok"]').get_by_role('button',name='Set secondary: xAI Grok',exact=True).click()
+                    assert page.locator('#assessment-secondary').input_value()=='grok'
+                    assert not page.locator('#assessment-fallback-egress').is_checked()
+                    assert page.locator('#assessment-start').is_disabled()
+                    assert len(assessment_posts)==before_explorer_posts
+                    page.locator('#provider-explorer details summary').click()
+                    assert '1024 tokens per attempt' in page.locator('#provider-limits').inner_text()
+                    assert 'Actual token usage' in page.locator('#provider-limits').inner_text()
+                    assert 'Requests per AI review: at most 2' in page.locator('#provider-limits').inner_text()
+                    page.locator('#view-settings').evaluate('(el)=>el.scrollTop=0')
+                    wait_condition(page,'document.querySelectorAll("#toast-container > *").length===0')
+                    page.screenshot(path=str(out/'advanced-provider-explorer.png'))
+                    configure_provider('assessment-provider','')
+                    page.locator('#provider-filter').select_option('all')
                     # Select every integration for setup, even with missing server
                     # settings. Availability/consent gates still block execution.
                     page.locator('#nav-settings').click()
@@ -336,6 +364,8 @@ def main():
                     wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("Could not load provider configuration")')
                     assert page.locator('#assessment-provider').input_value()=='openai'
                     assert page.locator('#assessment-start').is_disabled()
+                    assert page.locator('#provider-grid article').count()==0
+                    assert 'Catalog unavailable' in page.locator('#provider-explorer-status').inner_text()
                     page.unroute(catalog_url)
                     refresh_providers()
                     wait_condition(page,'!document.querySelector("#assessment-start").disabled')

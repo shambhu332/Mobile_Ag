@@ -49,3 +49,5 @@ def test_advanced_workspace_navigation_is_non_executing_and_text_safe():
     assert "document.getElementById('nav-'+id)?.click()" in js
     assert 'innerHTML' not in js and 'localStorage' not in js
     assert "fetch(" not in js and 'Rotate session token' not in js
+    assert 'provider-approval-checklist' in js and 'Actual token usage' in js
+    assert "window.addEventListener('llm-configuration-changed'" in js

@@ -6,6 +6,7 @@
   make('p','1 Upload APK → 2 Approve APK + API scope → 3 Choose stages → 4 Start → 5 Review evidence. Advanced tools remain optional. Uploading alone never starts testing.',panel);
   const status=make('p','Choose an owned APK to begin.',panel);status.id='assessment-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   const form=make('form','',panel);const fields={};let current=null,timer=null;
+  let providerLimits=null;
   let providers=new Map(),providersLoaded=false,providerLoad=0,submitting=false,uploading=false;
   const field=(key,title,tag='input',type='text')=>{const label=make('label',title,form),el=make(tag,'',label);el.id='assessment-'+key;if(tag==='input')el.type=type;fields[key]=el;return el;};
   const upload=field('file','1. Upload your authorized Android APK','input','file');upload.accept='.apk';
@@ -108,6 +109,7 @@
     }
     aiSummary.textContent=llm.value?'Selected AI: primary '+(providers.get(llm.value)?.title||llm.value)+' / '+(model.value||'model not configured')+(secondary.value?' → HTTP 429 only → secondary '+(providers.get(secondary.value)?.title||secondary.value)+' / '+(secondaryModel.value||'model not configured'):'; no secondary')+'. '+(providersLoaded?'Review the configuration and approve metadata egress below.':'Provider catalog unavailable; refresh in Configuration before approving AI.'):'No AI selected — deterministic stages only. Choose optional providers in Configuration.';
     submit.disabled=submitting||uploading||Boolean(llm.value&&!aiReady());
+    window.dispatchEvent(new CustomEvent('llm-configuration-changed',{detail:{providers:[...providers.values()],loaded:providersLoaded,limits:providerLimits,primary:llm.value,secondary:secondary.value,primaryConsent:fields.egress.checked,secondaryConsent:fields['fallback-egress'].checked}}));
   }
   async function loadProviders(){
     const sequence=++providerLoad;providersLoaded=false;updateProvider();
@@ -122,7 +124,7 @@
         for(const provider of data.providers)make('option',provider.title+' · '+(provider.enabled?provider.model:'Setup required'),selector).value=provider.id;
         selector.value=id;
       }
-      providersLoaded=true;
+      providerLimits=data.limits||null;providersLoaded=true;
       if(primaryId&&(!providers.get(primaryId)?.enabled||previous?.model!==providers.get(primaryId).model)){fields.egress.checked=false;fields['fallback-egress'].checked=false;}
       if(secondaryId&&(!providers.get(secondaryId)?.enabled||previousSecondary?.model!==providers.get(secondaryId).model))fields['fallback-egress'].checked=false;
       updateStages();
@@ -163,4 +165,5 @@
   document.getElementById('nav-assessment').addEventListener('click',async()=>{switchView('assessment');try{await loadProviders();await loadRuns();}catch(e){status.textContent=e.message;}});
   document.getElementById('nav-settings').addEventListener('click',async()=>{try{await loadProviders();}catch(e){status.textContent=e.message;}});
   document.getElementById('modal-open-ai')?.addEventListener('click',openConfiguration);
+  window.addEventListener('llm-configuration-request',updateProvider);
 })();

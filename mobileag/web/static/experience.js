@@ -58,4 +58,51 @@
   dialog.addEventListener('close',()=>{if(!chosen)previousFocus?.focus();});
   window.addEventListener('keydown',event=>{const editing=event.target.closest?.('input,textarea,select,[contenteditable="true"]');if(!event.repeat&&!event.altKey&&((event.key.toLowerCase()==='k'&&(event.ctrlKey||event.metaKey))||(event.key==='/'&&!editing&&!event.ctrlKey&&!event.metaKey))){if(document.querySelector('dialog[open]:not(#workspace-command-dialog)'))return;event.preventDefault();openCommands();}});
 
+  // Provider explorer consumes only the authenticated, public catalog snapshot.
+  const providerRoot=document.getElementById('configuration-llm-controls'),explorer=make('section','');explorer.id='provider-explorer';explorer.setAttribute('aria-labelledby','provider-explorer-title');providerRoot.before(explorer);
+  make('h3','Provider workspace',explorer).id='provider-explorer-title';
+  make('p','Compare local and cloud integrations. Configured means server settings exist—not model health, quota, availability or permission to execute.',explorer);
+  const catalogStatus=make('p','Catalog not loaded. Open Configuration or Refresh providers.',explorer);catalogStatus.id='provider-explorer-status';catalogStatus.setAttribute('role','status');catalogStatus.setAttribute('aria-live','polite');
+  const filters=make('div','',explorer);filters.className='provider-filters';
+  const queryLabel=make('label','Find a provider or model',filters),query=make('input','',queryLabel);query.id='provider-search';query.type='search';query.maxLength=100;query.autocomplete='off';
+  const filterLabel=make('label','Filter integrations',filters),filter=make('select','',filterLabel);filter.id='provider-filter';
+  for(const [value,title] of [['all','All integrations'],['configured','Configured'],['setup','Setup required'],['local','Local only'],['cloud','Cloud only']])make('option',title,filter).value=value;
+  const grid=make('div','',explorer);grid.id='provider-grid';grid.className='provider-grid';
+  const review=make('section','',explorer);review.id='provider-routing-review';review.setAttribute('aria-labelledby','provider-routing-title');
+  const limitsPanel=make('details','',explorer);make('summary','Broker limits and usage boundaries',limitsPanel);const limitsBody=make('div','',limitsPanel);limitsBody.id='provider-limits';
+  let snapshot={providers:[],loaded:false,limits:null,primary:'',secondary:'',primaryConsent:false,secondaryConsent:false};
+  function chooseProvider(role,id){const selector=document.getElementById('assessment-'+(role==='primary'?'provider':'secondary'));selector.value=id;selector.dispatchEvent(new Event('change',{bubbles:true}));selector.focus();}
+  function renderProviders(){
+    const {providers,loaded,primary,secondary}=snapshot;const q=query.value.trim().toLowerCase();grid.replaceChildren();
+    if(!loaded){catalogStatus.textContent='Catalog unavailable/loading. Refresh in Configuration; stale configuration cannot authorize AI.';make('p','Provider cards are unavailable until the current catalog loads.',grid);return;}
+    const matches=providers.filter(p=>[p.id,p.title,p.model].join(' ').toLowerCase().includes(q)&&({all:true,configured:p.enabled,setup:!p.enabled,local:p.local,cloud:!p.local}[filter.value]));
+    catalogStatus.textContent=matches.length+' of '+providers.length+' integrations shown · '+providers.filter(p=>p.enabled).length+' configured · no connectivity checks performed.';
+    if(!matches.length)make('p','No matching integrations. Clear the search or choose All integrations.',grid);
+    for(const p of matches){
+      const card=make('article','',grid);card.className='provider-card';card.dataset.provider=p.id;card.dataset.configured=String(p.enabled);
+      make('h4',p.title,card);const badges=make('div','',card);badges.className='provider-badges';make('span',p.local?'Local / loopback':'Cloud egress',badges);make('span',p.enabled?'Configured':'Setup required',badges);
+      if(primary===p.id)make('span','Primary selection',badges);if(secondary===p.id)make('span','Secondary selection',badges);
+      make('p','Model: '+(p.model||'not configured'),card);make('p',p.enabled?'Configuration present; live model health is unknown.':p.reason||'Server setup required.',card);
+      const actions=make('div','',card);actions.className='experience-actions';
+      button('Set primary: '+p.title,actions,()=>chooseProvider('primary',p.id));
+      const secondaryButton=button('Set secondary: '+p.title,actions,()=>chooseProvider('secondary',p.id));secondaryButton.disabled=!primary||primary===p.id;
+      if(!primary||primary===p.id)secondaryButton.title='Choose a different primary first; primary and secondary must be distinct.';
+    }
+  }
+  function renderReview(){
+    review.replaceChildren();make('h3','Routing and approval checklist',review).id='provider-routing-title';
+    const pair=make('div','',review);pair.className='provider-comparison';
+    for(const [role,id] of [['Primary',snapshot.primary],['Secondary',snapshot.secondary]]){const p=snapshot.providers.find(p=>p.id===id),card=make('div','',pair);make('h4',role,card);make('p',p?p.title:role==='Primary'?'No AI selected':'No fallback selected',card);make('p',p?'Model: '+(p.model||'not configured')+' · '+(p.local?'loopback destination':'cloud processor'):'No destination for this role.',card);}
+    const primary=snapshot.providers.find(p=>p.id===snapshot.primary),secondary=snapshot.providers.find(p=>p.id===snapshot.secondary),hasPrimary=Boolean(snapshot.primary),hasSecondary=Boolean(snapshot.secondary);
+    const checks=make('ul','',review);checks.id='provider-approval-checklist';
+    const rows=[['Current server catalog',snapshot.loaded?'Loaded; no provider contacted':'Unavailable — selected AI blocked',snapshot.loaded],['Primary configuration',!hasPrimary?'AI not selected':primary?.enabled?'Configured; not a health check':'Setup required — execution blocked',!hasPrimary||Boolean(snapshot.loaded&&primary?.enabled)],['Secondary configuration',!hasSecondary?'Not selected; stop on primary rate limit':snapshot.secondary===snapshot.primary?'Invalid duplicate provider — blocked':secondary?.enabled?'Configured; HTTP 429 only':'Setup required — execution blocked',!hasSecondary||Boolean(snapshot.loaded&&secondary?.enabled&&snapshot.secondary!==snapshot.primary)],['Primary egress approval',!hasPrimary?'Not needed for deterministic stages':snapshot.primaryConsent?'Approved for the current assessment selection':'Pending in Start Assessment',!hasPrimary||snapshot.primaryConsent],['Secondary egress approval',!hasSecondary?'Not needed without secondary':snapshot.secondaryConsent?'Separately approved for the current selection':'Pending in Start Assessment',!hasSecondary||snapshot.secondaryConsent]];
+    for(const [title,text,ok] of rows){const item=make('li','',checks);item.dataset.ready=String(ok);make('strong',title,item);make('span',text,item);}
+    make('p','Only Start Assessment can approve scope and begin work. Changing a provider clears the relevant consent. No permanent switch, retries, tertiary providers or automatic device actions.',review);
+    limitsBody.replaceChildren();const l=snapshot.loaded?snapshot.limits:null;
+    make('p',l?'Requests per AI review: at most '+(hasPrimary?(hasSecondary?l.max_attempts:1):0)+'. Requested output ceiling: '+l.output_token_limit+' tokens per attempt. Outer request timeout: '+l.request_timeout_seconds+'s; HTTP transport timeout: '+l.transport_timeout_seconds+'s.':'Load the current server catalog to see broker limits.',limitsBody);
+    make('p','Actual token usage, billing, account quota and tokens/minute are not measured here. These are configured ceilings, not consumed-token estimates. Each provider may bill separately. Raw APK/source/findings/URLs never leave this broker; aggregate counts/status only.',limitsBody);
+  }
+  query.addEventListener('input',renderProviders);filter.addEventListener('change',renderProviders);
+  window.addEventListener('llm-configuration-changed',event=>{snapshot=event.detail;renderProviders();renderReview();});
+  window.dispatchEvent(new Event('llm-configuration-request'));
 })();

@@ -51,7 +51,7 @@ async def lifespan(application):
     for task in list(service.tasks.values()):task.cancel()
     if service.tasks:await asyncio.gather(*list(service.tasks.values()),return_exceptions=True)
 
-from fastapi import BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
+from fastapi import Request, BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -771,30 +771,86 @@ class ApiFuzzRequest(BaseModel):
 
 
 
+def require_current_session(request: Request):
+    token = request.state.authenticated_token
+    if time.monotonic() >= app.state.session_deadline or not authorized(token, app.state.auth_token):
+        raise HTTPException(401, "Session expired or revoked")
+
+
 @app.get("/api/dast/devices")
-async def get_dast_devices() -> dict[str, Any]:
-    """List connected Android devices, emulators, and verify root shell status."""
+async def get_dast_devices(request: Request) -> dict[str, Any]:
+    """Observe host ADB inventory; do not query device shell/root or choose a target."""
+    require_current_session(request)
     avail = await adb_manager.is_adb_available()
-    from mobileag.web.security import configured_list
-    devices = await adb_manager.list_devices(allowed_serials=configured_list("MOBILEAG_ALLOWED_DEVICES")) if avail else []
+    require_current_session(request)
+    state = "unavailable"
+    devices = []
+    if avail:
+        try:
+            devices = await adb_manager.discover_devices()
+            state = "checked"
+        except Exception:
+            state = "unknown"
+    require_current_session(request)
     return {
-        "adb_available": avail,
-        "adb_path": adb_manager.adb_bin,
-        "device_count": len(devices),
-        "devices": [
-            {
-                "serial": d.serial,
-                "status": d.status,
-                "model": d.model,
-                "android_version": d.android_version,
-                "sdk_level": d.sdk_level,
-                "is_emulator": d.is_emulator,
-                "is_rooted": d.is_rooted,
-                "allowed": check_device(d.serial),
-            }
-            for d in devices
-        ],
+        "adb_available": avail, "adb_path": adb_manager.adb_bin,
+        "inventory_state": state, "device_count": len(devices),
+        "devices": [{"serial": d.serial, "status": d.status, "model": d.model,
+            "android_version": d.android_version, "sdk_level": d.sdk_level,
+            "is_emulator": d.is_emulator, "is_rooted": False, "root_checked": False,
+            "allowed": check_device(d.serial)} for d in devices],
     }
+
+
+@app.get("/api/preflight")
+async def get_preflight(request: Request):
+    """Local readiness only. Never authorize targets, execute jobs or call a model."""
+    from mobileag.llm.broker import catalog
+    require_current_session(request)
+    host, devices = await asyncio.gather(get_readiness(), get_dast_devices(request))
+    require_current_session(request)
+    scope = await get_scope()
+    return {"checked_at": datetime.now(timezone.utc).isoformat(), "host": host,
+            "devices": devices, "scope": scope, "providers": catalog(),
+            "automatic_actions": ["harmless local sandbox probe", "host ADB inventory", "configuration inspection"],
+            "device_selection": "explicit_only", "model_contacted": False,
+            "target_testing_started": False}
+
+
+@app.get("/api/dast/frida/status")
+async def get_frida_status(request: Request, serial: str = Query(min_length=1, max_length=128)):
+    """Approved ordinary-shell process observation, NOT attachment or server startup."""
+    from mobileag.web.policy import check_action
+    from mobileag.dast import frida_runner as native
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", serial):
+        raise HTTPException(422, "Invalid device serial")
+    def guard():
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "frida_status", {"serial": serial}):
+            raise HTTPException(403, "Read-only device process observation is not approved")
+    guard()
+    try:
+        code, stdout, _ = await adb_manager._exec_cmd(
+            ["-s", serial, "shell", "ps", "-A"], timeout=4.0, output_limit=65536)
+        observed = any(line.split() and line.split()[-1].rsplit("/", 1)[-1] == "frida-server"
+                       for line in stdout.decode("utf-8", errors="replace").splitlines())
+        state = ("observed" if observed else "not_observed") if code == 0 else "unknown"
+    except Exception:
+        state = "unknown"
+    guard()
+    return {"serial": serial, "process_state": state, "native_dependency": native.HAS_NATIVE_FRIDA,
+            "attach_verified": False, "compatibility": "not_checked",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "boundary": "device-wide ordinary ADB shell process observation; not ordinary-app exploit proof"}
+
+
+@app.get("/api/frida/presets/{script_type}")
+async def preview_frida_preset(script_type: Literal["crypto", "root_bypass", "unpinning"]):
+    """Generate preview text only. Never use the execution route for previews."""
+    generators = {"crypto": frida_runner.generate_crypto_monitor_script,
+                  "root_bypass": frida_runner.generate_root_bypass_script,
+                  "unpinning": frida_runner.generate_unpinning_script}
+    return {"script": generators[script_type](), "executed": False}
 
 
 @app.post("/api/dast/connect")

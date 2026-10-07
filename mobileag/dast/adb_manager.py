@@ -89,6 +89,29 @@ class ADBManager:
         code, stdout, _ = await self._exec_cmd(["version"], timeout=2.0)
         return code == 0 and b"Android Debug Bridge" in stdout
 
+    async def discover_devices(self) -> list[ConnectedDevice]:
+        """Host inventory only: never run shell, probe root, connect or select a device."""
+        code, stdout, _ = await self._exec_cmd(
+            ["devices", "-l"], timeout=3.0, output_limit=65536)
+        if code != 0:
+            raise ValueError("ADB inventory unavailable")
+        devices = []
+        seen = set()
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) < 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", parts[0]):
+                continue
+            serial, status = parts[:2]
+            if status not in {"device", "offline", "unauthorized", "recovery", "sideload", "bootloader", "no"} or serial in seen:
+                continue
+            seen.add(serial)
+            model = next((part[6:128] for part in parts[2:] if part.startswith("model:")), "Unknown")
+            devices.append(ConnectedDevice(serial=serial, status=status, model=model,
+                                           is_emulator=serial.startswith("emulator-")))
+            if len(devices) >= 100:
+                break
+        return devices
+
     async def list_devices(self, allowed_serials: set[str] | None = None) -> list[ConnectedDevice]:
         """Enumerate all connected Android devices and emulators."""
         devices: list[ConnectedDevice] = []

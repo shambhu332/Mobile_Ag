@@ -115,6 +115,8 @@ class SecurityMiddleware:
                 from mobileag.web.policy import check_action
                 policy = self.owner.state.scope_repository().get_policy()
                 action = path.removeprefix('/api/dast/')
+                if action == 'frida/status':
+                    action = 'frida_status'
                 if not check_action(policy, action, data):
                     return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')

@@ -29,3 +29,14 @@ def test_native_notes_prompt_replaced_by_cancellable_labelled_dialog():
     js=(ROOT/'static/interface.js').read_text()
     assert 'triage-validation-notes' in js and 'notes.required=true' in js
     assert "dialog.addEventListener('close'" in js
+
+
+def test_llm_configuration_has_one_selector_and_assessment_local_consent():
+    html=(ROOT/'templates/index.html').read_text()
+    js=(ROOT/'static/assessment.js').read_text()
+    assert 'id="configuration-llm-controls"' in html
+    assert 'id="settings-open-ai"' not in html
+    assert "providerGroup.append(fields[key].parentElement)" in js
+    assert "['Optional AI review',['egress','fallback-egress']]" in js
+    assert 'assessment-ai-summary' in js and 'assessment-configure-ai' in js
+    assert "addEventListener('click',openConfiguration)" in js

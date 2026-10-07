@@ -120,10 +120,11 @@ def main():
                 with sync_playwright() as p:
                     browser=p.chromium.launch(executable_path=args.chromium,headless=True)
                     context=browser.new_context(viewport={'width':1440,'height':1000},permissions=['clipboard-read','clipboard-write'])
-                    page=context.new_page();errors=[];console=[];requests=[]
+                    page=context.new_page();errors=[];console=[];requests=[];assessment_posts=[]
                     page.on('pageerror',lambda e:errors.append(str(e)))
                     page.on('console',lambda m:console.append(m.text) if m.type=='error' else None)
                     page.on('request',lambda r:requests.append(r.url))
+                    page.on('request',lambda r:assessment_posts.append(r.url) if r.method=='POST' and r.url.endswith('/api/assessments') else None)
                     page.on('dialog',lambda d:d.accept('synthetic-local-only') if d.type=='prompt' else d.dismiss())
                     page.emulate_media(reduced_motion='reduce')
                     page.goto(url,wait_until='domcontentloaded',timeout=90000)
@@ -229,54 +230,80 @@ def main():
                         'file_path_filter_works':True,'cancelled_or_empty_triage_has_no_mutation':True,'history_failure_retry_recovers':True,
                         'unobserved_api_not_marked_secure':True,'invalid_headers_send_no_request':True,'capture_requires_observation':True,
                         'local_capture_analysis_only':True,'section_title_and_aria_current':True}
+                    # Provider controls live only in Configuration; approval is
+                    # assessment-local and no provider or target is contacted by selection.
+                    def configure_provider(selector,value):
+                        page.locator('#nav-settings').click()
+                        page.locator('#'+selector).select_option(value)
+                    def approve_ai(selector):
+                        page.locator('#nav-assessment').click()
+                        page.locator('#'+selector).check()
+                    def refresh_providers():
+                        page.locator('#nav-settings').click()
+                        page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    def start_assessment():
+                        page.locator('#nav-assessment').click()
+                        page.locator('#assessment-start').click()
+                    page.locator('#nav-settings').click()
+                    assert page.locator('#configuration-llm #assessment-provider').is_visible()
+                    assert page.locator('#configuration-llm #assessment-secondary').count()==1
+                    assert page.locator('#view-assessment #assessment-provider').count()==0
+                    assert page.locator('#view-assessment #assessment-egress').count()==1
                     # Select every integration for setup, even with missing server
                     # settings. Availability/consent gates still block execution.
-                    page.locator('#nav-assessment').click()
+                    page.locator('#nav-settings').click()
                     wait_condition(page,'document.querySelector("#assessment-provider").options.length === 11')
                     assert page.locator('#assessment-provider option:disabled').count()==0
-                    page.locator('#assessment-provider').select_option('mistral')
+                    configure_provider('assessment-provider','mistral')
                     assert 'MISTRAL_API_KEY' in page.locator('#assessment-provider-info').inner_text()
                     assert 'MOBILEAG_LLM_MISTRAL_MODEL' in page.locator('#assessment-provider-info').inner_text()
                     assert page.locator('#assessment-start').is_disabled()
                     page.locator('#assessment-provider-info details').evaluate('(el)=>el.open=true')
                     page.screenshot(path=str(out/'provider-setup-required.png'))
-                    before_assessment=len([u for u in requests if u.endswith('/api/assessments')])
-                    page.locator('#assessment-egress').check()
+                    before_assessment=len(assessment_posts)
+                    approve_ai('assessment-egress')
                     assert page.locator('#assessment-start').is_disabled()
                     # A forged submit cannot silently skip AI or create a run.
                     page.locator('#assessment-start').evaluate('(el)=>el.form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))')
-                    assert len([u for u in requests if u.endswith('/api/assessments')])==before_assessment
-                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    assert len(assessment_posts)==before_assessment
+                    refresh_providers()
                     wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("MISTRAL_API_KEY")')
                     assert page.locator('#assessment-provider').input_value()=='mistral'
-                    page.locator('#assessment-provider').select_option('openai')
+                    configure_provider('assessment-provider','openai')
                     assert page.locator('#assessment-model').input_value()=='synthetic-browser-model'
                     assert page.locator('#assessment-start').is_disabled() and not page.locator('#assessment-egress').is_checked()
-                    page.locator('#assessment-egress').check()
+                    approve_ai('assessment-egress')
                     assert page.locator('#assessment-start').is_enabled()
-                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    refresh_providers()
                     wait_condition(page,'!document.querySelector("#assessment-start").disabled')
                     assert page.locator('#assessment-provider').input_value()=='openai'
                     # A failed refresh must block selected AI, not silently reset
                     # to a deterministic run or trust a stale ready catalog.
                     catalog_url=url+'/api/assessments/providers'
                     page.route(catalog_url,lambda route:route.fulfill(status=503,content_type='application/json',body='{"detail":"Synthetic catalog unavailable"}'))
-                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    refresh_providers()
                     wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("Could not load provider configuration")')
                     assert page.locator('#assessment-provider').input_value()=='openai'
                     assert page.locator('#assessment-start').is_disabled()
                     page.unroute(catalog_url)
-                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    refresh_providers()
                     wait_condition(page,'!document.querySelector("#assessment-start").disabled')
-                    page.locator('#assessment-provider').select_option('')
+                    configure_provider('assessment-provider','')
                     assert page.locator('#assessment-start').is_enabled()
                     page.locator('#nav-settings').click()
                     assert page.locator('#cfg-llm-primary').count()==page.locator('#cfg-llm-fallback').count()==0
-                    page.locator('#settings-open-ai').click()
+                    page.get_by_role('button',name='Return to Start Assessment',exact=True).click()
                     assert page.locator('#view-assessment').is_visible()
+                    page.locator('#assessment-configure-ai').click()
+                    assert page.locator('#view-settings').is_visible()
+                    assert page.locator('#assessment-provider').is_visible()
+                    page.locator('#nav-assessment').click()
+                    page.locator('#modal-open-ai').evaluate('(el)=>el.click()')
+                    assert page.locator('#view-settings').is_visible()
+                    assert page.locator('#scan-modal').is_hidden()
                     result['provider_selection']={'all_ten_selectable_for_setup':True,'missing_settings_visible':True,
                         'unconfigured_execution_blocked':True,'forged_submit_blocked':True,'refresh_preserves_selection':True,
-                        'configured_model_visible':True,'explicit_consent_required':True,'settings_links_to_real_selector':True,
+                        'configured_model_visible':True,'explicit_consent_required':True,'configuration_hosts_provider_controls':True,'assessment_keeps_explicit_consent':True,
                         'configuration_not_connectivity':True,'catalog_failure_blocks_selected_ai':True}
                     # Actual router/service/SQLite exercised through approval UI.
                     # Only the navigator is a synthetic adapter; auth/scope/CAS remain real.
@@ -314,7 +341,7 @@ def main():
                     page.locator('#assessment-component').fill('org.example.automation/.Main')
                     for name in ['account','device','authorized','scope']:page.locator('#assessment-'+name).check()
                     page.locator('#assessment-confirmation').fill('START SCOPED TESTS')
-                    page.locator('#assessment-start').click()
+                    start_assessment()
                     wait_condition(page,'document.querySelector("#assessment-status").textContent.includes("awaiting_action_review")')
                     page.locator('#assessment-results summary').click()
                     guided=json.loads(page.locator('#assessment-results pre').inner_text())
@@ -330,10 +357,10 @@ def main():
                     # selected/approved model using ONLY the synthetic broker
                     # transport. No provider account or commercial network call.
                     page.locator('#assessment-dast').uncheck()
-                    page.locator('#assessment-provider').select_option('openai')
+                    configure_provider('assessment-provider','openai')
                     assert page.locator('#assessment-start').is_disabled()
-                    page.locator('#assessment-egress').check()
-                    page.locator('#assessment-start').click()
+                    approve_ai('assessment-egress')
+                    start_assessment()
                     wait_condition(page,'document.querySelector("#assessment-results pre") && JSON.parse(document.querySelector("#assessment-results pre").textContent).stages?.llm?.status === "completed"')
                     page.locator('#assessment-results summary').click()
                     ai_run=json.loads(page.locator('#assessment-results pre').inner_text())
@@ -346,26 +373,31 @@ def main():
 
                     # Both destinations require consent; only real HTTP 429 shape
                     # in the mocked transport permits one secondary request.
-                    page.locator('#assessment-provider').select_option('gemini')
-                    page.locator('#assessment-secondary').select_option('grok')
-                    page.locator('#assessment-egress').check()
+                    configure_provider('assessment-provider','gemini')
+                    configure_provider('assessment-secondary','grok')
+                    approve_ai('assessment-egress')
                     assert page.locator('#assessment-start').is_disabled()
-                    before_fallback=len([u for u in requests if u.endswith('/api/assessments')])
+                    before_fallback=len(assessment_posts)
                     page.locator('#assessment-start').evaluate('(el)=>el.form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))')
-                    assert len([u for u in requests if u.endswith('/api/assessments')])==before_fallback
-                    page.locator('#assessment-fallback-egress').check()
+                    assert len(assessment_posts)==before_fallback
+                    approve_ai('assessment-fallback-egress')
                     assert page.locator('#assessment-start').is_enabled()
-                    page.locator('#assessment-secondary').select_option('gemini')
-                    page.locator('#assessment-fallback-egress').check()
+                    configure_provider('assessment-secondary','gemini')
+                    approve_ai('assessment-fallback-egress')
                     assert page.locator('#assessment-start').is_disabled()
-                    page.locator('#assessment-secondary').select_option('grok')
+                    configure_provider('assessment-secondary','grok')
                     assert not page.locator('#assessment-fallback-egress').is_checked()
-                    page.locator('#assessment-fallback-egress').check()
-                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    approve_ai('assessment-fallback-egress')
+                    refresh_providers()
                     wait_condition(page,'!document.querySelector("#assessment-start").disabled')
                     assert page.locator('#assessment-provider').input_value()=='gemini'
                     assert page.locator('#assessment-secondary').input_value()=='grok'
-                    page.locator('#assessment-start').click()
+                    page.locator('#view-settings').evaluate('(el)=>el.scrollTop=0')
+                    page.screenshot(path=str(out/'configuration-providers.png'))
+                    page.get_by_role('button',name='Return to Start Assessment',exact=True).click()
+                    assert 'Gemini' in page.locator('#assessment-ai-summary').inner_text()
+                    assert 'Grok' in page.locator('#assessment-ai-summary').inner_text()
+                    start_assessment()
                     wait_condition(page,'document.querySelector("#assessment-results pre") && JSON.parse(document.querySelector("#assessment-results pre").textContent).stages?.llm?.review?.fallback_used === true')
                     page.locator('#assessment-results summary').click()
                     fallback_run=json.loads(page.locator('#assessment-results pre').inner_text())
@@ -416,6 +448,9 @@ def main():
                         width=page.evaluate('document.documentElement.scrollWidth')
                         result['interface']['mobile_views'][view]=width
                         assert width<=320, (view,width)
+                        if view=='settings':
+                            page.locator('#view-settings').evaluate('(el)=>el.scrollTop=0')
+                            page.screenshot(path=str(out/'configuration-mobile.png'))
                         if args.axe:
                             assessment=page.evaluate("async () => await axe.run(document, {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})")
                             result['mobile_a11y'][view]=[{'id':v['id'],'impact':v['impact'],'nodes':[n['html'] for n in v['nodes']]} for v in assessment['violations']]

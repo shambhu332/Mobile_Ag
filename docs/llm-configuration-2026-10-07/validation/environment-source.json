@@ -1,0 +1,21 @@
+{
+  "baseline_commit": "3bdfd2764828c57799d8fbeaca636ba696ca62ce",
+  "application_version": "0.1.0",
+  "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+  "os_build": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "pytest": "8.4.2",
+    "playwright": "1.63.0",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.54.0"
+  },
+  "source_sha256": {
+    "mobileag/web/templates/index.html": "f8b3d693db4c52716d717a2b07e952b4446b9c6972c4915d662473b4379a6d11",
+    "mobileag/web/static/assessment.js": "1c73331190dff2301e1192e0370059a6aa5a59798ee6bb79b22472f253a9d5e3",
+    "tests/browser_product_regression.py": "1a37185cce03648c5c85de2fbf1234891acacb73cc3d4e9cb1f2658d95154a07",
+    "tests/test_interface_contracts.py": "c8dda1c1947cfe6ec29e466c115c2d60ba0e4f543c227bfc0ed3aee15f540364"
+  },
+  "validation": "Synthetic commercial/device adapters and researcher-controlled loopback routes/storage only; no real account/model/device calls",
+  "environment_files": "Pre-existing user .env.example edit preserved and excluded from commit/evidence; no private environment modifications",
+  "git_state_at_validation": "Before publication; Git history records commit and push"
+}

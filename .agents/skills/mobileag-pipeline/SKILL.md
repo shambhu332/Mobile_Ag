@@ -52,7 +52,7 @@ Start Assessment: upload → exact APK/API/device scope → select stages → ex
 
 Optional model review uses a separate aggregate-metadata-only broker, not worker egress or executable model output. Server owner configures `MOBILEAG_LLM_ALLOWED_PROVIDERS`, exact model IDs/keys and loopback origins as documented in `.env.example`; each assessment must also explicitly approve metadata egress. Provider configuration is not a health check. See `docs/guided-assessment-2026-10-06/README.md` for stages, endpoint/provider matrices and validation boundaries.
 
-Provider selection: Start Assessment → Optional AI review. All adapters can be selected to inspect setup; **Setup required** is not permission to execute. Configure the exact named variables privately on the server, restart and Refresh providers. Selection is retained on refresh; AI still requires a ready catalog and explicit metadata-egress consent. Settings/advanced static routes link to this real selector. See `docs/provider-selector-2026-10-06/README.md` for the tested UI states; no live provider health is inferred.
+Provider selection: Configuration → LLM provider configuration. Start Assessment keeps a read-only selection summary and explicit primary/secondary egress consent. All adapters can be selected to inspect setup; **Setup required** is not permission to execute. Configure the exact named variables privately on the server, restart and Refresh providers. Selection is retained on refresh; AI still requires a ready catalog and explicit metadata-egress consent. The assessment and advanced static modal link to this Configuration selector. Provider choices are session-only, retained during navigation, reset on reload and not saved by Save Settings. See `docs/provider-selector-2026-10-06/README.md` for the tested UI states; no live provider health is inferred.
 
 ## Shared interface and recovery
 
@@ -61,3 +61,5 @@ All ten views share local interface assets, per-view headings, keyboard navigati
 ## Primary / secondary AI review
 
 Guided assessment accepts a distinct optional secondary, with separate explicit metadata-egress consent. Both destinations must be server-configured/approved. The broker attempts secondary once only after actual primary HTTP 429, never for auth/timeout/content/other errors, and never loops. Each assessment starts with primary; revocation/cancellation stops continuation. Actual provider/model/attempt outcomes are recorded. This is not CLI-router fallback or increased provider quota. See `docs/provider-fallback-2026-10-06/README.md`. Never commit secrets in `.env.example`; keep keys private and preserve user changes.
+
+See `docs/llm-configuration-2026-10-07/README.md` for the provider-control move, real browser checks and preserved authorization boundaries.

@@ -501,13 +501,13 @@
             <p class="text-xs text-slate-400">Review server configuration and set analysis thresholds</p>
           </div>
 
-          <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
-            <div>
-              <h4 class="text-slate-300 mb-1">Optional AI review</h4>
-              <p class="text-slate-400 mb-2">Choose a provider per assessment. All integrations can be selected to inspect setup; execution needs server approval, an exact model and explicit metadata-egress consent. Optional primary → secondary fallback requires separate consent and runs once only on HTTP 429; either provider may charge fees.</p>
-              <button id="settings-open-ai" type="button" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Choose AI provider in Start Assessment</button>
-            </div>
+          <section id="configuration-llm" class="workflow-panel assessment-panel" aria-labelledby="configuration-llm-title">
+            <h2 id="configuration-llm-title">LLM provider configuration</h2>
+            <p>Select primary and optional secondary providers for this dashboard session. Choices are not saved by Save Settings and reset on reload. No AI request starts here; each assessment requires separate egress approval.</p>
+            <div id="configuration-llm-controls"></div>
+          </section>
 
+          <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
             <div>
               <label class="block text-slate-300 mb-1">Secret Scanner Shannon Entropy Threshold</label>
               <input type="number" step="0.1" id="cfg-entropy" value="4.5" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
@@ -1155,7 +1155,7 @@
 
         <div>
           <p class="text-slate-300 mb-1">Advanced static analysis stays offline. Optional AI review is a separate guided-assessment stage.</p>
-          <button id="modal-open-ai" type="button" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Choose AI provider in Start Assessment</button>
+          <button id="modal-open-ai" type="button" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Configure LLM providers in Configuration</button>
         </div>
 
         <div class="space-y-2 pt-2 border-t border-borderSubtle">

@@ -57,15 +57,25 @@
   const controls=make('div','',panel);controls.className='workflow-actions';
   const button=(title,parent,run)=>{const b=make('button',title,parent);b.type='button';b.addEventListener('click',async()=>{b.disabled=true;try{await run();}catch(e){status.textContent=e.message;}finally{b.disabled=false;}});return b;};
   button('Check tools and server scope',controls,async()=>{const [ready,scope]=await Promise.all([fetch('/api/readiness').then(r=>r.json()),fetch('/api/scope').then(r=>r.json())]);status.textContent='Offline sandbox: '+(ready.sandbox_probe?'ready':'unavailable; SAST will not run unsafely')+'; allowed devices: '+(scope.ceilings.devices.join(', ')||'none')+'; API origins: '+(scope.ceilings.origins.join(', ')||'none');});
-  button('Refresh providers',controls,loadProviders);
+  const providerControls=document.getElementById('configuration-llm-controls');
+  const providerActions=make('div','',providerControls);providerActions.className='workflow-actions';
+  button('Refresh providers',providerActions,loadProviders);
+  button('Return to Start Assessment',providerActions,async()=>{document.getElementById('nav-assessment').click();(llm.value?fields.egress:configureAI).focus();});
   button('Advanced static APK/IPA scan',controls,async()=>{document.getElementById('scan-modal').classList.remove('hidden');});
   button('Load previous assessments',controls,loadRuns);
   const submit=make('button','Start scoped assessment',form);submit.type='submit';submit.id='assessment-start';
   const steps=make('ol','',panel);steps.className='assessment-steps';steps.setAttribute('aria-label','Assessment preparation steps');form.before(steps);
   for(const title of ['1 Artifact','2 Test stages','3 Optional AI','4 Approve & start'])make('li',title,steps);
-  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['provider','model','secondary','secondary-model','egress','fallback-egress']],['Authorization and execution',['authorized','scope','confirmation']]];
+  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['egress','fallback-egress']],['Authorization and execution',['authorized','scope','confirmation']]];
   const groups=sections.map(([title,keys],index)=>{const group=make('fieldset','',form);group.className='form-section';make('legend',`${index+1}. ${title}`,group);for(const key of keys)group.append(fields[key].parentElement);return group;});
-  groups[1].append(captureHelp);groups[2].insertBefore(providerInfo,fields.egress.parentElement);groups[2].append(providerHelp);
+  groups[1].append(captureHelp);
+  const providerGroup=make('fieldset','',providerControls);providerGroup.className='form-section';make('legend','Primary / secondary selection',providerGroup);
+  for(const key of ['provider','model','secondary','secondary-model'])providerGroup.append(fields[key].parentElement);
+  providerGroup.append(providerInfo,providerHelp);providerControls.append(providerActions);
+  const aiSummary=make('p','',groups[2]);aiSummary.id='assessment-ai-summary';aiSummary.setAttribute('role','status');aiSummary.setAttribute('aria-live','polite');groups[2].prepend(aiSummary);
+  const openConfiguration=()=>{document.getElementById('scan-modal').classList.add('hidden');document.getElementById('nav-settings').click();llm.focus();};
+  const configureAI=button('Configure LLM providers',groups[2],openConfiguration);configureAI.id='assessment-configure-ai';
+  groups[2].insertBefore(aiSummary,fields.egress.parentElement);groups[2].insertBefore(configureAI,fields.egress.parentElement);
   const plan=make('p','',groups[3]);plan.id='assessment-plan-summary';plan.className='assessment-plan';submit.before(plan);groups[3].append(plan,submit);
   form.addEventListener('input',updatePlan);form.addEventListener('change',updatePlan);
   function updatePlan(){const names=['SAST (offline)',...(fields.api.checked?['API (explicit GET/HEAD captures)']:[]),...(fields.dast.checked?['DAST (map first; later action approval)']:[]),...(llm.value?['AI primary: '+(providers.get(llm.value)?.title||llm.value)+(secondary.value?' → HTTP 429 only → secondary: '+(providers.get(secondary.value)?.title||secondary.value):' (no fallback)')]:[])];plan.textContent='Selected stages: '+names.join(' → ')+'\nPackage: '+(pkg.value.trim()||'not specified')+' · Artifact: '+(artifact.value?'uploaded; original preserved':'not uploaded')+'\nNothing starts until you approve the scope and press Start.';steps.children[0].dataset.complete=String(Boolean(artifact.value&&pkg.value.trim()));steps.children[1].dataset.complete='true';steps.children[2].dataset.complete=String(!llm.value||aiReady());steps.children[3].dataset.complete=String(fields.authorized.checked&&fields.scope.checked&&confirmation.value==='START SCOPED TESTS');}
@@ -96,6 +106,7 @@
       if(secondary.value===llm.value)make('p','Choose different primary and secondary providers. Execution is blocked.',providerInfo);
       else if(secondary.value)make('p','On primary HTTP 429 only, try the approved secondary once. No fallback for authentication errors, timeouts, server errors or blocked/invalid content; no retry loop. Each assessment starts with the primary.',providerInfo);
     }
+    aiSummary.textContent=llm.value?'Selected AI: primary '+(providers.get(llm.value)?.title||llm.value)+' / '+(model.value||'model not configured')+(secondary.value?' → HTTP 429 only → secondary '+(providers.get(secondary.value)?.title||secondary.value)+' / '+(secondaryModel.value||'model not configured'):'; no secondary')+'. '+(providersLoaded?'Review the configuration and approve metadata egress below.':'Provider catalog unavailable; refresh in Configuration before approving AI.'):'No AI selected — deterministic stages only. Choose optional providers in Configuration.';
     submit.disabled=submitting||uploading||Boolean(llm.value&&!aiReady());
   }
   async function loadProviders(){
@@ -150,5 +161,6 @@
     if(timer)clearTimeout(timer);if(current.status==='running')timer=setTimeout(async()=>{try{current=await(await fetch('/api/assessments/'+current.id)).json();render();}catch(e){status.textContent=e.message;}},1500);
   }
   document.getElementById('nav-assessment').addEventListener('click',async()=>{switchView('assessment');try{await loadProviders();await loadRuns();}catch(e){status.textContent=e.message;}});
-  for(const id of ['settings-open-ai','modal-open-ai'])document.getElementById(id)?.addEventListener('click',()=>{document.getElementById('scan-modal').classList.add('hidden');document.getElementById('nav-assessment').click();llm.focus();});
+  document.getElementById('nav-settings').addEventListener('click',async()=>{try{await loadProviders();}catch(e){status.textContent=e.message;}});
+  document.getElementById('modal-open-ai')?.addEventListener('click',openConfiguration);
 })();

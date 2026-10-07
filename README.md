@@ -32,7 +32,7 @@ python -m mobileag.cli scan --apk owned.apk --offline --format json
 python -m mobileag.cli ios --ipa owned.ipa --format markdown
 ```
 
-`--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
+`--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Source/snippet cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. The dashboard has a separately consented aggregate-metadata-only review stage described below. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
 
 ### Authorized dynamic testing
 
@@ -64,6 +64,12 @@ The optional capture proxy requires `MOBILEAG_PROXY_TOKEN`, accepts only loopbac
 Configure strong `NEO4J_PASSWORD` and `QDRANT_API_KEY` before `docker compose up -d`. Database ports bind to loopback only. The main scan pipeline does not perform historical learning; feedback must not be interpreted as vector-store synchronization.
 
 ## Evidence and limitations
+
+### Dashboard LLM configuration
+
+Use **Configuration → LLM provider configuration** to choose the primary provider and an optional distinct secondary, inspect exact server-configured models/setup, and refresh the provider catalog. Selection alone never starts AI review. Choices stay in the current dashboard session; they reset on reload and are not persisted by Save Settings. API keys/models and allowed destinations remain privately server-configured, not editable credentials in the browser.
+
+**Start Assessment → Optional AI review** shows the selected pair and requires explicit primary metadata-egress consent and separate secondary consent. Secondary runs once only after primary HTTP 429; static analysis stays offline. See [configuration UI validation](docs/llm-configuration-2026-10-07/README.md) and [fallback boundaries](docs/provider-fallback-2026-10-06/README.md).
 
 Automated findings are **UNVERIFIED review candidates**, not proven vulnerabilities. Taint detection is a straight-line heuristic, not a complete inter-procedural engine. Symbol presence, exported components, URL paths, shell-readable data and LLM votes do not prove exploitation. Confirmation requires analyst evidence. Dashboard triage is scan-scoped, revision-checked and saved transactionally in local SQLite; legacy original report files are preserved. The legacy unscoped feedback endpoint rejects requests rather than guessing the target scan.
 

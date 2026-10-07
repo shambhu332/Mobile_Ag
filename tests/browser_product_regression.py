@@ -54,8 +54,14 @@ async def guided_static(apk,linked):
     return {'scan_id':'scan_guided_ui_fixture','status':'completed','package_name':'org.example.automation','findings':[]}
 m.assessment_service().static_runner=guided_static
 async def synthetic_model_transport(url,method,**kwargs):
-    assert url=='https://api.openai.com/v1/chat/completions' and method=='POST'
-    body=json.loads(kwargs['body']);summary=json.loads(body['messages'][1]['content'])
+    assert method=='POST'
+    body=json.loads(kwargs['body'])
+    if url.startswith('https://generativelanguage.googleapis.com/v1beta/models/'):
+        summary=json.loads(body['contents'][0]['parts'][0]['text'])
+        assert set(summary)=={'static_status','static_candidate_counts','static_confirmed','api_cases_executed','dast_screens_observed','production_readiness'}
+        return {'status_code':429,'body':'{"error":"Synthetic rate limit; never a real model call"}'}
+    assert url in {'https://api.openai.com/v1/chat/completions','https://api.x.ai/v1/chat/completions'}
+    summary=json.loads(body['messages'][1]['content'])
     assert set(summary)=={'static_status','static_candidate_counts','static_confirmed','api_cases_executed','dast_screens_observed','production_readiness'}
     return {'status_code':200,'body':json.dumps({'choices':[{'message':{'content':'Synthetic protocol advice; no actual commercial model contacted.'}}]})}
 m.assessment_service().broker.transport=synthetic_model_transport
@@ -96,7 +102,7 @@ def main():
             env.pop(key,None)
         for key in list(env):
             if key.startswith('MOBILEAG_LLM_'):env.pop(key,None)
-        env.update(MOBILEAG_DATA_DIR=str(root),MOBILEAG_API_TOKEN='synthetic-local-only',OFFLINE='true',APPROVED_LLM_PROVIDERS='[]',MOBILEAG_ALLOWED_DEVICES='emulator-synthetic',MOBILEAG_ALLOWED_ORIGINS='',MOBILEAG_ALLOWED_CONNECT='',TEST_PORT=str(port),PYTHONPATH=str(repo),MOBILEAG_LLM_ALLOWED_PROVIDERS='openai',MOBILEAG_LLM_OPENAI_MODEL='synthetic-browser-model',OPENAI_API_KEY='synthetic-browser-provider-key')
+        env.update(MOBILEAG_DATA_DIR=str(root),MOBILEAG_API_TOKEN='synthetic-local-only',OFFLINE='true',APPROVED_LLM_PROVIDERS='[]',MOBILEAG_ALLOWED_DEVICES='emulator-synthetic',MOBILEAG_ALLOWED_ORIGINS='',MOBILEAG_ALLOWED_CONNECT='',TEST_PORT=str(port),PYTHONPATH=str(repo),MOBILEAG_LLM_ALLOWED_PROVIDERS='openai,gemini,grok',MOBILEAG_LLM_OPENAI_MODEL='synthetic-browser-model',OPENAI_API_KEY='synthetic-browser-provider-key',MOBILEAG_LLM_GEMINI_MODEL='synthetic-gemini',MOBILEAG_LLM_GROK_MODEL='synthetic-grok',GEMINI_API_KEY='synthetic-gemini-key',XAI_API_KEY='synthetic-grok-key')
         runner=root/'runner.py';runner.write_text(SERVER)
         with (root/'server.log').open('w') as log:
             server=subprocess.Popen([args.server_python,str(runner)],cwd=root,env=env,stdout=log,stderr=log)
@@ -228,9 +234,9 @@ def main():
                     page.locator('#nav-assessment').click()
                     wait_condition(page,'document.querySelector("#assessment-provider").options.length === 11')
                     assert page.locator('#assessment-provider option:disabled').count()==0
-                    page.locator('#assessment-provider').select_option('grok')
-                    assert 'XAI_API_KEY' in page.locator('#assessment-provider-info').inner_text()
-                    assert 'MOBILEAG_LLM_GROK_MODEL' in page.locator('#assessment-provider-info').inner_text()
+                    page.locator('#assessment-provider').select_option('mistral')
+                    assert 'MISTRAL_API_KEY' in page.locator('#assessment-provider-info').inner_text()
+                    assert 'MOBILEAG_LLM_MISTRAL_MODEL' in page.locator('#assessment-provider-info').inner_text()
                     assert page.locator('#assessment-start').is_disabled()
                     page.locator('#assessment-provider-info details').evaluate('(el)=>el.open=true')
                     page.screenshot(path=str(out/'provider-setup-required.png'))
@@ -241,8 +247,8 @@ def main():
                     page.locator('#assessment-start').evaluate('(el)=>el.form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))')
                     assert len([u for u in requests if u.endswith('/api/assessments')])==before_assessment
                     page.get_by_role('button',name='Refresh providers',exact=True).click()
-                    wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("XAI_API_KEY")')
-                    assert page.locator('#assessment-provider').input_value()=='grok'
+                    wait_condition(page,'document.querySelector("#assessment-provider-info").textContent.includes("MISTRAL_API_KEY")')
+                    assert page.locator('#assessment-provider').input_value()=='mistral'
                     page.locator('#assessment-provider').select_option('openai')
                     assert page.locator('#assessment-model').input_value()=='synthetic-browser-model'
                     assert page.locator('#assessment-start').is_disabled() and not page.locator('#assessment-egress').is_checked()
@@ -337,6 +343,39 @@ def main():
                     result['provider_selection']['selected_provider_reaches_broker']=True
                     result['provider_selection']['transport']='Mocked protocol callback; not live inference'
                     page.screenshot(path=str(out/'provider-selection.png'))
+
+                    # Both destinations require consent; only real HTTP 429 shape
+                    # in the mocked transport permits one secondary request.
+                    page.locator('#assessment-provider').select_option('gemini')
+                    page.locator('#assessment-secondary').select_option('grok')
+                    page.locator('#assessment-egress').check()
+                    assert page.locator('#assessment-start').is_disabled()
+                    before_fallback=len([u for u in requests if u.endswith('/api/assessments')])
+                    page.locator('#assessment-start').evaluate('(el)=>el.form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))')
+                    assert len([u for u in requests if u.endswith('/api/assessments')])==before_fallback
+                    page.locator('#assessment-fallback-egress').check()
+                    assert page.locator('#assessment-start').is_enabled()
+                    page.locator('#assessment-secondary').select_option('gemini')
+                    page.locator('#assessment-fallback-egress').check()
+                    assert page.locator('#assessment-start').is_disabled()
+                    page.locator('#assessment-secondary').select_option('grok')
+                    assert not page.locator('#assessment-fallback-egress').is_checked()
+                    page.locator('#assessment-fallback-egress').check()
+                    page.get_by_role('button',name='Refresh providers',exact=True).click()
+                    wait_condition(page,'!document.querySelector("#assessment-start").disabled')
+                    assert page.locator('#assessment-provider').input_value()=='gemini'
+                    assert page.locator('#assessment-secondary').input_value()=='grok'
+                    page.locator('#assessment-start').click()
+                    wait_condition(page,'document.querySelector("#assessment-results pre") && JSON.parse(document.querySelector("#assessment-results pre").textContent).stages?.llm?.review?.fallback_used === true')
+                    page.locator('#assessment-results summary').click()
+                    fallback_run=json.loads(page.locator('#assessment-results pre').inner_text())
+                    review=fallback_run['stages']['llm']['review']
+                    assert review['provider']=='grok' and review['primary_provider']=='gemini'
+                    assert [a['http_status'] for a in review['attempts']]==[429,200]
+                    assert 'secondary used after primary HTTP 429' in page.locator('#assessment-results').inner_text()
+                    assert 'synthetic-gemini-key' not in json.dumps(fallback_run) and 'synthetic-grok-key' not in json.dumps(fallback_run)
+                    result['rate_limit_fallback']={'primary':'gemini','secondary':'grok','attempt_statuses':[429,200],'separate_consent_required':True,'forged_unconsented_submit_blocked':True,'same_provider_blocked':True,'refresh_retains_pair_and_consent':True,'secondary_after_429_visible':True,'no_credentials_in_evidence':True,'transport':'Synthetic only; no commercial provider contacted'}
+                    page.screenshot(path=str(out/'rate-limit-fallback.png'))
 
                     # Actual durable triage API reached via the migrated UI callback.
                     page.locator('#nav-findings').click();page.evaluate('inspectFinding("synthetic-finding")')

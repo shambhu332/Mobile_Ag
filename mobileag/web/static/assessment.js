@@ -24,11 +24,14 @@
   const captures=field('captures','Observed read-only requests (JSON array; no credentials/headers/bodies)','textarea');captures.value='[]';captures.rows=4;
   const captureHelp=make('p','Example: [{"method":"GET","url":"https://your-staging.example/profile","read_only_confirmed":true,"protected":true,"response_status":200}]. Discovered URLs are not automatically authorized. API tests do not require a device.',form);
   const authorization=field('authorization','Dedicated test Authorization header (optional, memory only)','input','password');authorization.autocomplete='off';
-  const llm=field('provider','Optional AI review (aggregate counts/coverage only)','select');
+  const llm=field('provider','Primary AI provider (aggregate counts/coverage only)','select');
   const noAI=make('option','No AI — deterministic testing only',llm);noAI.value='';
-  const model=field('model','Server-configured exact model (read-only)');model.readOnly=true;
-  const providerInfo=make('div','',form);providerInfo.id='assessment-provider-info';providerInfo.setAttribute('role','status');providerInfo.setAttribute('aria-live','polite');llm.setAttribute('aria-describedby',providerInfo.id);
-  check('egress','I approve sending only aggregate counts/status to the selected model provider (cloud may charge fees/share with processors)');
+  const model=field('model','Primary server-configured model (read-only)');model.readOnly=true;
+  const secondary=field('secondary','Secondary AI provider (HTTP 429 fallback only)','select');make('option','No secondary — stop on rate limit',secondary).value='';
+  const secondaryModel=field('secondary-model','Secondary server-configured model (read-only)');secondaryModel.readOnly=true;
+  const providerInfo=make('div','',form);providerInfo.id='assessment-provider-info';providerInfo.setAttribute('role','status');providerInfo.setAttribute('aria-live','polite');llm.setAttribute('aria-describedby',providerInfo.id);secondary.setAttribute('aria-describedby',providerInfo.id);
+  check('egress','I approve sending aggregate counts/status to the primary provider (cloud may charge fees/share with processors)');
+  check('fallback-egress','I also approve sending the same metadata to the secondary provider, once only if the primary returns HTTP 429 (secondary may charge fees)');
   check('account','I confirm dedicated synthetic/staging test accounts for API/device stages');
   check('device','I confirm an authorized dedicated test device for DAST (ADB input is device-wide)');
   check('authorized','I own/have permission for this APK and every listed API/device target');fields.authorized.required=true;
@@ -43,11 +46,13 @@
     for(const name of ['origins','methods','captures','authorization'])show(name,api);
     for(const name of ['serial','component','install','launch','device'])show(name,dast);
     captureHelp.style.display=api?'':'none';
-    show('account',api||dast);show('egress',Boolean(llm.value));show('model',Boolean(llm.value));
+    show('account',api||dast);show('egress',Boolean(llm.value));show('model',Boolean(llm.value));show('secondary',Boolean(llm.value));show('secondary-model',Boolean(llm.value&&secondary.value));show('fallback-egress',Boolean(llm.value&&secondary.value));
     updateProvider();if(typeof plan!=='undefined')updatePlan();
   }
   for(const field of [fields.api,fields.dast])field.addEventListener('change',updateStages);
-  llm.addEventListener('change',()=>{fields.egress.checked=false;updateStages();});
+  llm.addEventListener('change',()=>{fields.egress.checked=false;fields['fallback-egress'].checked=false;if(!llm.value)secondary.value='';updateStages();});
+  secondary.addEventListener('change',()=>{fields['fallback-egress'].checked=false;updateStages();});
+  fields['fallback-egress'].addEventListener('change',updateProvider);
   fields.egress.addEventListener('change',updateProvider);
   const controls=make('div','',panel);controls.className='workflow-actions';
   const button=(title,parent,run)=>{const b=make('button',title,parent);b.type='button';b.addEventListener('click',async()=>{b.disabled=true;try{await run();}catch(e){status.textContent=e.message;}finally{b.disabled=false;}});return b;};
@@ -58,52 +63,62 @@
   const submit=make('button','Start scoped assessment',form);submit.type='submit';submit.id='assessment-start';
   const steps=make('ol','',panel);steps.className='assessment-steps';steps.setAttribute('aria-label','Assessment preparation steps');form.before(steps);
   for(const title of ['1 Artifact','2 Test stages','3 Optional AI','4 Approve & start'])make('li',title,steps);
-  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['provider','model','egress']],['Authorization and execution',['authorized','scope','confirmation']]];
+  const sections=[['Artifact and package',['file','artifact','package']],['Scoped test stages',['api','origins','methods','captures','authorization','account','dast','serial','component','install','launch','device']],['Optional AI review',['provider','model','secondary','secondary-model','egress','fallback-egress']],['Authorization and execution',['authorized','scope','confirmation']]];
   const groups=sections.map(([title,keys],index)=>{const group=make('fieldset','',form);group.className='form-section';make('legend',`${index+1}. ${title}`,group);for(const key of keys)group.append(fields[key].parentElement);return group;});
   groups[1].append(captureHelp);groups[2].insertBefore(providerInfo,fields.egress.parentElement);groups[2].append(providerHelp);
   const plan=make('p','',groups[3]);plan.id='assessment-plan-summary';plan.className='assessment-plan';submit.before(plan);groups[3].append(plan,submit);
   form.addEventListener('input',updatePlan);form.addEventListener('change',updatePlan);
-  function updatePlan(){const names=['SAST (offline)',...(fields.api.checked?['API (explicit GET/HEAD captures)']:[]),...(fields.dast.checked?['DAST (map first; later action approval)']:[]),...(llm.value?['AI ('+(providers.get(llm.value)?.title||llm.value)+')']:[])];plan.textContent='Selected stages: '+names.join(' → ')+'\nPackage: '+(pkg.value.trim()||'not specified')+' · Artifact: '+(artifact.value?'uploaded; original preserved':'not uploaded')+'\nNothing starts until you approve the scope and press Start.';steps.children[0].dataset.complete=String(Boolean(artifact.value&&pkg.value.trim()));steps.children[1].dataset.complete='true';steps.children[2].dataset.complete=String(!llm.value||Boolean(providersLoaded&&providers.get(llm.value)?.enabled&&fields.egress.checked));steps.children[3].dataset.complete=String(fields.authorized.checked&&fields.scope.checked&&confirmation.value==='START SCOPED TESTS');}
+  function updatePlan(){const names=['SAST (offline)',...(fields.api.checked?['API (explicit GET/HEAD captures)']:[]),...(fields.dast.checked?['DAST (map first; later action approval)']:[]),...(llm.value?['AI primary: '+(providers.get(llm.value)?.title||llm.value)+(secondary.value?' → HTTP 429 only → secondary: '+(providers.get(secondary.value)?.title||secondary.value):' (no fallback)')]:[])];plan.textContent='Selected stages: '+names.join(' → ')+'\nPackage: '+(pkg.value.trim()||'not specified')+' · Artifact: '+(artifact.value?'uploaded; original preserved':'not uploaded')+'\nNothing starts until you approve the scope and press Start.';steps.children[0].dataset.complete=String(Boolean(artifact.value&&pkg.value.trim()));steps.children[1].dataset.complete='true';steps.children[2].dataset.complete=String(!llm.value||aiReady());steps.children[3].dataset.complete=String(fields.authorized.checked&&fields.scope.checked&&confirmation.value==='START SCOPED TESTS');}
   updateStages();updatePlan();
   const runs=make('div','',panel);runs.id='assessment-runs';
   const results=make('div','',panel);results.id='assessment-results';
   window.addEventListener('assessment-uploaded',event=>{artifact.value=event.detail.path;status.textContent=event.detail.platform==='ios'?'IPA uploaded. Use Advanced static APK/IPA scan; guided live assessment accepts Android APKs only.':'APK uploaded. No tests started; review and approve scope.';updatePlan();});
+  function aiReady(){return Boolean(providersLoaded&&providers.get(llm.value)?.enabled&&fields.egress.checked&&(!secondary.value||(secondary.value!==llm.value&&providers.get(secondary.value)?.enabled&&fields['fallback-egress'].checked)));}
   function updateProvider(){
-    providerInfo.replaceChildren();const provider=providers.get(llm.value),selected=Boolean(llm.value);
-    model.value=provider?.model||'';
-    if(!selected)make('p','AI is optional. Select any provider to see its setup requirements. No provider has been contacted.',providerInfo);
-    else if(!providersLoaded||!provider)make('p','Provider configuration unavailable or loading. Refresh providers before starting AI review.',providerInfo);
+    providerInfo.replaceChildren();model.value=providers.get(llm.value)?.model||'';secondaryModel.value=providers.get(secondary.value)?.model||'';
+    if(!llm.value)make('p','AI is optional. Select a primary provider to inspect setup. No provider has been contacted.',providerInfo);
+    else if(!providersLoaded)make('p','Provider configuration unavailable or loading. Refresh providers before starting AI review.',providerInfo);
     else{
-      make('p',provider.enabled?'Configured for selection (not a connectivity test). Approve aggregate-metadata egress below to include AI review.':'Setup required — AI execution is blocked: '+provider.reason,providerInfo);
-      const setup=provider.setup;
-      if(setup){
-        const details=make('details','',providerInfo);make('summary','Server setup for '+provider.title,details);
-        make('p','Set these privately in the server environment or .env. Replace placeholders with your actual model/key, merge the provider into the existing allowlist, restart the server, then Refresh providers. Do not paste keys into this dashboard.',details);
-        const lines=[setup.approval_variable+'='+provider.id,setup.model_variable+'=REPLACE_WITH_EXACT_MODEL_ID'];
-        if(setup.key_variable)lines.push(setup.key_variable+'=REPLACE_PRIVATELY_ON_SERVER');
-        if(setup.origin_variable)lines.push(setup.origin_variable+'='+setup.default_origin,setup.allowed_origins_variable+'='+setup.default_origin);
-        const code=make('pre',lines.join('\n'),details);code.tabIndex=0;code.setAttribute('aria-label','Server configuration variable names, no credentials');
+      for(const [role,id] of [['Primary',llm.value],['Secondary',secondary.value]]){
+        if(!id)continue;const provider=providers.get(id);
+        if(!provider){make('p',role+' provider missing from catalog; refresh or select another.',providerInfo);continue;}
+        make('p',role+': '+provider.title+' — '+(provider.enabled?'Configured (not a connectivity test).':'Setup required — execution blocked: '+provider.reason),providerInfo);
+        const setup=provider.setup;
+        if(setup){
+          const details=make('details','',providerInfo);make('summary','Server setup for '+provider.title,details);
+          make('p','Keep keys private on the server. Merge BOTH selected IDs into the comma-separated approval list (for Gemini and Grok: gemini,grok), configure exact models, restart and refresh. Never paste keys into the dashboard.',details);
+          const lines=[setup.approval_variable+'='+[llm.value,secondary.value].filter(Boolean).join(','),setup.model_variable+'=REPLACE_WITH_EXACT_MODEL_ID'];
+          if(setup.key_variable)lines.push(setup.key_variable+'=REPLACE_PRIVATELY_ON_SERVER');
+          if(setup.origin_variable)lines.push(setup.origin_variable+'='+setup.default_origin,setup.allowed_origins_variable+'='+setup.default_origin);
+          const code=make('pre',lines.join('\n'),details);code.tabIndex=0;code.setAttribute('aria-label','Server configuration variable names, no credentials');
+        }
       }
+      if(secondary.value===llm.value)make('p','Choose different primary and secondary providers. Execution is blocked.',providerInfo);
+      else if(secondary.value)make('p','On primary HTTP 429 only, try the approved secondary once. No fallback for authentication errors, timeouts, server errors or blocked/invalid content; no retry loop. Each assessment starts with the primary.',providerInfo);
     }
-    submit.disabled=submitting||uploading||(selected&&(!providersLoaded||!provider?.enabled||!fields.egress.checked));
+    submit.disabled=submitting||uploading||Boolean(llm.value&&!aiReady());
   }
   async function loadProviders(){
     const sequence=++providerLoad;providersLoaded=false;updateProvider();
     try{
       const data=await(await fetch('/api/assessments/providers')).json();if(sequence!==providerLoad)return;
       if(!Array.isArray(data.providers))throw new Error('Invalid provider catalog; retry Refresh providers.');
-      const selected=llm.value,previous=providers.get(selected);providers=new Map(data.providers.map(provider=>[provider.id,provider]));
-      if(selected&&!providers.has(selected))throw new Error('Selected provider no longer appears in the server catalog. Choose No AI or an available provider.');
-      llm.replaceChildren();const empty=make('option','No AI — deterministic testing only',llm);empty.value='';
-      for(const provider of data.providers){const option=make('option',provider.title+' · '+(provider.enabled?provider.model:'Setup required'),llm);option.value=provider.id;}
-      // Keep the operator's intent on refresh; never silently drop AI to No AI.
-      llm.value=selected;providersLoaded=true;
-      const refreshed=providers.get(selected);if(selected&&(!refreshed?.enabled||previous?.model!==refreshed.model))fields.egress.checked=false;
+      const primaryId=llm.value,secondaryId=secondary.value,previous=providers.get(primaryId),previousSecondary=providers.get(secondaryId);
+      providers=new Map(data.providers.map(provider=>[provider.id,provider]));
+      if([primaryId,secondaryId].some(id=>id&&!providers.has(id)))throw new Error('Selected provider no longer appears in the catalog. Review primary and secondary selections.');
+      for(const [selector,id,emptyTitle] of [[llm,primaryId,'No AI — deterministic testing only'],[secondary,secondaryId,'No secondary — stop on rate limit']]){
+        selector.replaceChildren();make('option',emptyTitle,selector).value='';
+        for(const provider of data.providers)make('option',provider.title+' · '+(provider.enabled?provider.model:'Setup required'),selector).value=provider.id;
+        selector.value=id;
+      }
+      providersLoaded=true;
+      if(primaryId&&(!providers.get(primaryId)?.enabled||previous?.model!==providers.get(primaryId).model)){fields.egress.checked=false;fields['fallback-egress'].checked=false;}
+      if(secondaryId&&(!providers.get(secondaryId)?.enabled||previousSecondary?.model!==providers.get(secondaryId).model))fields['fallback-egress'].checked=false;
       updateStages();
     }catch(error){if(sequence===providerLoad){providersLoaded=false;updateProvider();make('p','Could not load provider configuration: '+error.message,providerInfo);}throw error;}
   }
   async function loadRuns(){runs.replaceChildren();const list=await(await fetch('/api/assessments')).json();if(!list.length)make('p','No guided assessments yet.',runs);for(const row of list)button(row.package_name+' · '+row.status,runs,async()=>{current=await(await fetch('/api/assessments/'+row.id)).json();render();});}
-  form.addEventListener('submit',async event=>{event.preventDefault();if(uploading){status.textContent='Wait for archive upload and validation to finish.';return;}if(!artifact.value){status.textContent='Upload an authorized Android APK first.';upload.focus();return;}if(llm.value&&(!providersLoaded||!providers.get(llm.value)?.enabled||!fields.egress.checked)){status.textContent='AI review needs server configuration and explicit metadata-egress approval. Choose No AI to run deterministic stages only.';updateProvider();return;}if(confirmation.value!=='START SCOPED TESTS'){status.textContent='Type START SCOPED TESTS before execution.';return;}submitting=true;updateProvider();
+  form.addEventListener('submit',async event=>{event.preventDefault();if(uploading){status.textContent='Wait for archive upload and validation to finish.';return;}if(!artifact.value){status.textContent='Upload an authorized Android APK first.';upload.focus();return;}if((secondary.value&&!llm.value)||(llm.value&&!aiReady())){status.textContent='AI review needs distinct configured providers and explicit primary/secondary egress approval. Choose No AI to run deterministic stages only.';updateProvider();return;}if(confirmation.value!=='START SCOPED TESTS'){status.textContent='Type START SCOPED TESTS before execution.';return;}submitting=true;updateProvider();
     try{
       const isDast=fields.dast.checked,isAPI=fields.api.checked;
       const actions=isDast?['automation_observe','automation_execute']:[];
@@ -112,7 +127,7 @@
       const body={apk_path:artifact.value,package_name:pkg.value.trim(),scope,authorized:fields.authorized.checked,scope_change_confirmed:fields.scope.checked,confirmation:confirmation.value,
         api:isAPI,dast:isDast,serial:isDast?serial.value.trim():null,component:isDast?component.value.trim():null,
         dedicated_account_confirmed:fields.account.checked,dedicated_device_confirmed:fields.device.checked,
-        install_if_absent:isDast&&fields.install.checked,launch:isDast&&fields.launch.checked,captures:isAPI?JSON.parse(captures.value):[],llm_provider:llm.value||null,llm_metadata_egress_confirmed:fields.egress.checked};
+        install_if_absent:isDast&&fields.install.checked,launch:isDast&&fields.launch.checked,captures:isAPI?JSON.parse(captures.value):[],llm_provider:llm.value||null,llm_metadata_egress_confirmed:fields.egress.checked,llm_secondary_provider:secondary.value||null,llm_fallback_egress_confirmed:Boolean(secondary.value&&fields['fallback-egress'].checked)};
       if(authorization.value)body.api_authorization=authorization.value;authorization.value='';
       current=await(await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();render();
     }catch(e){status.textContent=e.message;}finally{submitting=false;updateProvider();}
@@ -121,6 +136,10 @@
     results.replaceChildren();status.textContent=current.id+' · '+current.status+' · '+(current.reason||'');
     make('h3','Stage results (actual execution, not promised coverage)',results);
     for(const [name,stage] of Object.entries(current.stages))make('p',name.toUpperCase()+': '+stage.status+(stage.executed!==undefined?' · '+stage.executed+' cases observed':'')+(stage.screens!==undefined?' · '+stage.screens+' live screens mapped':''),results);
+    const review=current.stages.llm?.review,attempts=review?.attempts||current.stages.llm?.attempts||[];
+    if(review)make('p','AI advice from '+review.provider+' / '+review.model+(review.fallback_used?' — secondary used after primary HTTP 429':' — primary used; secondary not contacted'),results);
+    if(attempts.length)make('p','Provider attempts: '+attempts.map(attempt=>attempt.provider+': '+attempt.outcome+(attempt.http_status?' (HTTP '+attempt.http_status+')':'')).join(' → '),results);
+    if(current.stages.llm?.reason)make('p','AI stage: '+current.stages.llm.reason,results);
     const actions=make('div','',results);actions.className='workflow-actions';
     if(current.scan_id)button('Review SAST findings',actions,async()=>{await loadSpecificScan(current.scan_id);switchView('findings');});
     if(current.automation_run_id)button('Review/approve exact navigation actions',actions,async()=>{window.dispatchEvent(new CustomEvent('automation-open-run',{detail:{id:current.automation_run_id}}));});

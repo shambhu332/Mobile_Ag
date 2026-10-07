@@ -30,3 +30,5 @@ class Assessment(Contract):
     api_authorization:SecretStr|None=None
     llm_provider:str|None=Field(default=None,max_length=32)
     llm_metadata_egress_confirmed:bool=False
+    llm_secondary_provider:str|None=Field(default=None,min_length=1,max_length=32)
+    llm_fallback_egress_confirmed:bool=False

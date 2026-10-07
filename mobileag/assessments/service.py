@@ -13,7 +13,7 @@ from mobileag.web.security import check_device,configured_list
 from mobileag.automation.android import digest
 from mobileag.automation.models import CreateRun,ExecuteRun
 from mobileag.security.archives import validate_archive
-from mobileag.llm.broker import aggregate,configured
+from mobileag.llm.broker import aggregate,configured,validate_review_selection,LLMReviewError
 
 class AssessmentCancelled(Exception):pass
 
@@ -55,6 +55,7 @@ class AssessmentService:
         elif req.install_if_absent or req.launch:raise ValueError('Install/launch requires DAST')
         if req.llm_provider:
             if not req.llm_metadata_egress_confirmed or not configured(req.llm_provider)['enabled']:raise PermissionError('AI stage needs explicit aggregate-metadata approval and server-configured provider')
+        validate_review_selection(req.llm_provider,req.llm_secondary_provider,req.llm_fallback_egress_confirmed)
         sha=await asyncio.to_thread(self.hash_file,apk)
         # Validation/hash can yield while the operator revokes the credential or
         # server scope. Revalidate before durable state/policy mutation.
@@ -66,6 +67,7 @@ class AssessmentService:
         doc={'id':'assess_'+uuid.uuid4().hex,'status':'running','created_at':datetime.now(timezone.utc).isoformat(),
             'package_name':req.package_name,'artifact_sha256':sha,'scope':policy,'cancel_requested':False,'scan_id':None,'automation_run_id':None,
             'stages':{name:{'status':'queued' if enabled else 'not_selected'} for name,enabled in [('sast',True),('api',req.api),('dast',req.dast),('llm',bool(req.llm_provider))]},
+            'ai_selection':{'primary_provider':req.llm_provider,'secondary_provider':req.llm_secondary_provider,'metadata_egress_confirmed':req.llm_metadata_egress_confirmed,'fallback_egress_confirmed':req.llm_fallback_egress_confirmed,'fallback_trigger':'HTTP 429 only','maximum_provider_attempts':2 if req.llm_secondary_provider else 1},
             'limitations':['SAST candidates are not confirmed vulnerabilities.','DAST maps in-package UI; taps require later exact action approval.','API tests are read-only operator-imported requests, not transparent capture.','AI receives aggregate counts only, never executes actions.']}
         # The UI explicitly approves replacing global scope. Saved policy is also
         # used by every subsequent legacy operation; not a client-only allowlist.
@@ -125,10 +127,11 @@ class AssessmentService:
                 if req.llm_provider:
                     self.guard(doc,token);doc['stages']['llm']['status']='running';self.persist(doc)
                     try:
-                        advice=await self.broker.review(req.llm_provider,aggregate(scan,executed,screens),lambda:self.guard(doc,token))
+                        advice=await self.broker.review(req.llm_provider,aggregate(scan,executed,screens),lambda:self.guard(doc,token),secondary=req.llm_secondary_provider,fallback_confirmed=req.llm_fallback_egress_confirmed)
                         doc['stages']['llm'].update(status='completed',review=advice)
                     except (PermissionError,AssessmentCancelled):raise
-                    except Exception:doc['stages']['llm'].update(status='error',reason='Provider unavailable, timed out or returned invalid text; no fallback egress')
+                    except LLMReviewError as error:doc['stages']['llm'].update(status='error',reason=str(error),attempts=error.attempts)
+                    except Exception:doc['stages']['llm'].update(status='error',reason='Provider unavailable or invalid configuration; no automatic continuation')
                 doc['status']=('paused' if doc['stages']['dast']['status']=='paused' else 'awaiting_action_review') if req.dast else 'completed'
         except asyncio.CancelledError:
             doc.update(status='interrupted',reason='Task stopped; issued operations cannot be undone');raise

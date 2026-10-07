@@ -94,3 +94,7 @@ The [provider selector follow-up](../provider-selector-2026-10-06/README.md) mak
 ### Workspace interface refresh
 
 The current ten-view interface refresh, grouped assessment workflow, collapsible mobile navigation, cancel-safe triage, captured-response guardrails and final validation are recorded in [the interface refresh report](../interface-refresh-2026-10-06/README.md). Historical evidence in this directory remains tied to its original source boundary.
+
+### Opt-in rate-limit fallback
+
+The primary/secondary broker now supports one separately approved secondary attempt after primary HTTP 429 only. Both destinations require server configuration and explicit consent; no loops or auth/timeout/content-error fallback. See [current fallback setup and validation](../provider-fallback-2026-10-06/README.md). Earlier evidence remains tied to its original source boundary.

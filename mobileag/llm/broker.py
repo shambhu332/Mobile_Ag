@@ -78,57 +78,111 @@ def aggregate(scan,api=None,dast=None):
     return {'static_status':status,'static_candidate_counts':counts,'static_confirmed':False,
         'api_cases_executed':min(10,int(api or 0)),'dast_screens_observed':min(60,int(dast or 0)),'production_readiness':'not_assessed'}
 
+def validate_review_selection(primary,secondary=None,fallback_confirmed=False):
+    """Validate both destinations before any egress; keys alone grant nothing."""
+    if secondary and (not primary or secondary==primary):
+        raise ValueError('Select distinct primary and secondary providers')
+    if fallback_confirmed and not secondary:
+        raise ValueError('Fallback consent requires a secondary provider')
+    if secondary and not fallback_confirmed:
+        raise PermissionError('Secondary provider needs explicit rate-limit fallback consent')
+    for name in filter(None,[primary,secondary]):
+        if not configured(name)['enabled']:
+            raise PermissionError('Provider not server-approved/configured')
+
+class ProviderResponseError(ValueError):
+    def __init__(self,status):
+        self.status=status
+        super().__init__('Provider returned a non-successful HTTP status')
+
+class LLMReviewError(ValueError):
+    """Sanitized terminal evidence; never store provider bodies/headers/errors."""
+    def __init__(self,message,attempts):
+        self.attempts=attempts
+        super().__init__(message)
+
+class _GuardFailure(Exception):
+    def __init__(self,cause):self.cause=cause
+
 class LLMBroker:
     def __init__(self,transport=scoped_request):self.transport=transport;self.busy=False
-    async def review(self,name,summary,guard):
+    async def review(self,name,summary,guard,*,secondary=None,fallback_confirmed=False):
         if self.busy:raise ValueError('LLM broker busy')
-        config=configured(name)
-        if not config['enabled']:raise PermissionError('Provider not server-approved/configured')
-        guard();self.busy=True
+        if not name:raise ValueError('Primary provider required')
+        validate_review_selection(name,secondary,fallback_confirmed)
+        # Reject arbitrary strings/objects before either provider is contacted.
+        allowed={'static_status','static_candidate_counts','static_confirmed','api_cases_executed','dast_screens_observed','production_readiness'}
+        counts=summary.get('static_candidate_counts',{})
+        if (set(summary)!=allowed or set(counts)!={'critical','high','medium','low','info'}
+            or any(type(v) is not int or not 0<=v<=100000 for v in counts.values())
+            or summary['static_status'] not in {'completed','partial','error','cancelled','unknown'}
+            or summary['static_confirmed'] is not False or summary['production_readiness']!='not_assessed'
+            or type(summary['api_cases_executed']) is not int or not 0<=summary['api_cases_executed']<=10
+            or type(summary['dast_screens_observed']) is not int or not 0<=summary['dast_screens_observed']<=60):
+            raise ValueError('Invalid aggregate metadata')
+        def checked_guard():
+            try:guard()
+            except Exception as error:raise _GuardFailure(error) from None
+        guard();self.busy=True;attempts=[]
         try:
-            # Even this internal contract rejects arbitrary strings/objects.
-            allowed={'static_status','static_candidate_counts','static_confirmed','api_cases_executed','dast_screens_observed','production_readiness'}
-            counts=summary.get('static_candidate_counts',{})
-            if (set(summary)!=allowed or set(counts)!={'critical','high','medium','low','info'}
-                or any(type(v) is not int or not 0<=v<=100000 for v in counts.values())
-                or summary['static_status'] not in {'completed','partial','error','cancelled','unknown'}
-                or summary['static_confirmed'] is not False or summary['production_readiness']!='not_assessed'
-                or type(summary['api_cases_executed']) is not int or not 0<=summary['api_cases_executed']<=10
-                or type(summary['dast_screens_observed']) is not int or not 0<=summary['dast_screens_observed']<=60):
-                raise ValueError('Invalid aggregate metadata')
-            user=json.dumps(summary);headers={'Content-Type':'application/json'};protocol=config['protocol'];model=config['model']
-            messages=[{'role':'system','content':SYSTEM},{'role':'user','content':user}]
-            if protocol=='gemini':
-                url=config['origin']+config['prefix']+'/models/'+model+':generateContent'
-                headers['x-goog-api-key']=config['key']
-                body={'systemInstruction':{'parts':[{'text':SYSTEM}]},'contents':[{'role':'user','parts':[{'text':user}]}],'generationConfig':{'maxOutputTokens':1024}}
-            elif protocol=='claude':
-                url=config['origin']+config['prefix']+'/messages';headers.update({'x-api-key':config['key'],'anthropic-version':'2023-06-01'})
-                body={'model':model,'max_tokens':1024,'system':SYSTEM,'messages':[{'role':'user','content':user}]}
-            elif protocol=='ollama':
-                url=config['origin']+'/api/chat';body={'model':model,'messages':messages,'stream':False,'options':{'num_predict':1024}}
-            else:
-                url=config['origin']+config['prefix']+'/chat/completions'
-                if config['key']:headers['Authorization']='Bearer '+config['key']
-                body={'model':model,'messages':messages,'stream':False}
-                body['max_completion_tokens' if name=='openai' else 'max_tokens']=1024
-                if name=='openai':body['store']=False
-            async with asyncio.timeout(25):
+            # At most one primary request and one explicitly approved secondary.
+            # Never retry the throttled provider, loop providers or switch on text.
+            for index,provider in enumerate(filter(None,[name,secondary])):
                 guard()
-                response=await self.transport(url,'POST',headers=headers,body=json.dumps(body),timeout=15,raw=True,
-                    allowed_origins={config['origin']},allow_private=config['local'],loopback_only=config['local'])
-                guard()
-            if response['status_code']!=200:raise ValueError('Provider did not return a successful response')
-            value=json.loads(response['body'])
-            if protocol=='gemini':text=value['candidates'][0]['content']['parts'][0]['text']
-            elif protocol=='claude':text='\n'.join(block['text'] for block in value['content'] if block.get('type')=='text')
-            elif protocol=='ollama':text=value['message']['content']
-            else:text=value['choices'][0]['message']['content']
-            if not isinstance(text,str) or not text.strip():raise ValueError('Provider returned no text')
-            # Remove exact configured key even if it is not a recognizable key format.
-            for row in PROVIDERS.values():
-                secret=os.getenv(row[4],'') if row[4] else ''
-                if secret:text=text.replace(secret,'[REDACTED]')
-            return {'provider':name,'model':model,'advice':redact(text[:8192]),'classification':'untrusted AI advice; not a finding or executed test',
-                    'egress':'aggregate_metadata_only','tools_executed':False}
+                config=configured(provider)  # Recheck approvals/credentials at use.
+                if not config['enabled']:raise PermissionError('Provider approval/configuration revoked')
+                attempt={'provider':provider,'model':config['model']}
+                try:
+                    result=await self._review_once(config,summary,checked_guard)
+                except ProviderResponseError as error:
+                    attempt.update(outcome='rate_limited' if error.status==429 else 'http_error',http_status=error.status)
+                    attempts.append(attempt)
+                    if error.status==429 and index==0 and secondary:
+                        guard();continue
+                    raise LLMReviewError('Provider rate limited; no further provider attempt' if error.status==429 else 'Provider HTTP error; fallback only applies to HTTP 429',attempts) from None
+                except _GuardFailure as error:raise error.cause
+                except PermissionError:raise
+                except Exception:
+                    guard()
+                    attempt.update(outcome='failed');attempts.append(attempt)
+                    raise LLMReviewError('Provider timed out, failed or returned invalid text; no rate-limit fallback',attempts) from None
+                attempt.update(outcome='completed',http_status=200);attempts.append(attempt)
+                return {**result,'primary_provider':name,'secondary_provider':secondary,'fallback_used':index==1,'attempts':attempts}
         finally:self.busy=False
+
+    async def _review_once(self,config,summary,guard):
+        user=json.dumps(summary);headers={'Content-Type':'application/json'};protocol=config['protocol'];model=config['model']
+        messages=[{'role':'system','content':SYSTEM},{'role':'user','content':user}]
+        if protocol=='gemini':
+            url=config['origin']+config['prefix']+'/models/'+model+':generateContent'
+            headers['x-goog-api-key']=config['key']
+            body={'systemInstruction':{'parts':[{'text':SYSTEM}]},'contents':[{'role':'user','parts':[{'text':user}]}],'generationConfig':{'maxOutputTokens':1024}}
+        elif protocol=='claude':
+            url=config['origin']+config['prefix']+'/messages';headers.update({'x-api-key':config['key'],'anthropic-version':'2023-06-01'})
+            body={'model':model,'max_tokens':1024,'system':SYSTEM,'messages':[{'role':'user','content':user}]}
+        elif protocol=='ollama':
+            url=config['origin']+'/api/chat';body={'model':model,'messages':messages,'stream':False,'options':{'num_predict':1024}}
+        else:
+            url=config['origin']+config['prefix']+'/chat/completions'
+            if config['key']:headers['Authorization']='Bearer '+config['key']
+            body={'model':model,'messages':messages,'stream':False}
+            body['max_completion_tokens' if config['id']=='openai' else 'max_tokens']=1024
+            if config['id']=='openai':body['store']=False
+        async with asyncio.timeout(25):
+            guard()
+            response=await self.transport(url,'POST',headers=headers,body=json.dumps(body),timeout=15,raw=True,
+                allowed_origins={config['origin']},allow_private=config['local'],loopback_only=config['local'])
+            guard()
+        if response['status_code']!=200:raise ProviderResponseError(response['status_code'])
+        value=json.loads(response['body'])
+        if protocol=='gemini':text=value['candidates'][0]['content']['parts'][0]['text']
+        elif protocol=='claude':text='\n'.join(block['text'] for block in value['content'] if block.get('type')=='text')
+        elif protocol=='ollama':text=value['message']['content']
+        else:text=value['choices'][0]['message']['content']
+        if not isinstance(text,str) or not text.strip():raise ValueError('Provider returned no text')
+        # Remove exact configured key even if it is not a recognizable key format.
+        for row in PROVIDERS.values():
+            secret=os.getenv(row[4],'') if row[4] else ''
+            if secret:text=text.replace(secret,'[REDACTED]')
+        return {'provider':config['id'],'model':model,'advice':redact(text[:8192]),'classification':'untrusted AI advice; not a finding or executed test',
+                'egress':'aggregate_metadata_only','tools_executed':False}

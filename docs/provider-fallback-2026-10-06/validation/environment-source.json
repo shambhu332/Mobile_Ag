@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "3921bbe49d303f882e4bb61b156fa8b5e77f54bb",
+  "application_version": "0.1.0",
+  "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+  "os_build": "Linux-6.18.55-1-cachyos-lts-x86_64-with-glibc2.44",
+  "packages": {
+    "pytest": "8.4.2",
+    "playwright": "1.63.0",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.54.0",
+    "build": "1.6.0"
+  },
+  "source_sha256": {
+    "mobileag/llm/broker.py": "839b4b05fd0b3a22c90d42d465f39b5a2dd01242c4eb0ed8469cb0907485153b",
+    "mobileag/assessments/models.py": "220752f6b85ac3282de16d55af67649ab46b1c225062022486a0c8d606ffcd77",
+    "mobileag/assessments/service.py": "055c0803cb7c302b37e89afbacb2584d80bd21083111990c87183f2d3da8f6eb",
+    "mobileag/web/static/assessment.js": "ebdbbb96a3a2118240f53f38cbc243f209b8e9bd1fc264bb2b465082a3eae336",
+    "mobileag/web/templates/index.html": "8f7ef1468790bef39f3c0d6e99fb249a1f5a35d2b43e18cebbade98fa1924816",
+    "tests/test_llm_fallback.py": "14b5a35be5af71cad479b21631b18763246556792ac0122f4261ab321de4ad76",
+    "tests/browser_product_regression.py": "4101e096b91892f72dfed9306c3f19e653505ca826ab74b4e1a88fc83d77ecb7"
+  },
+  "validation": "Synthetic vendor adapters and researcher-controlled loopback only; no real account/model/device API calls",
+  "preexisting_user_env_example_edit": "Preserved; excluded from evidence/source hashes/implementation",
+  "git_state": "Local changes, not committed or pushed"
+}

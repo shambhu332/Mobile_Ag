@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible MobileAg defect using redacted or synthetic evidence.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve MobileAg. Search existing issues first.
+        Do not include credentials, tokens, confidential APKs, or customer data.
+        For a sensitive security issue, agree a private disclosure route with the repository owner through an existing trusted channel rather than posting exploit details here.
+  - type: input
+    id: revision
+    attributes:
+      label: Version or commit
+      description: Include the commit hash or installed package version you tested.
+      placeholder: "Commit hash or mobileag version"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, installation method, and browser/version for UI problems. Do not include device identifiers or credentials.
+      placeholder: "Linux; Python 3.14.x; editable install; Chromium version; local-only workflow"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Give the smallest numbered steps or synthetic fixture that reproduces the problem. Do not attach a real APK when synthetic steps will suffice.
+      placeholder: |
+        1. Start the local dashboard...
+        2. Use this synthetic input...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual behavior
+      description: State both outcomes, including the exact error when safe to share.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence and checks
+      description: Optional logs, test commands/results, or screenshots containing only synthetic/redacted data. Remove tokens, personal paths, account details, and target identifiers. Say which checks were not run.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safe reproduction
+      options:
+        - label: I reviewed this report and attachments for secrets and confidential data, and used only synthetic or explicitly authorized inputs.
+          required: true

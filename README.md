@@ -1,6 +1,12 @@
 # MobileAg
 
-Mobile application security review tooling: static heuristics, optional LLM review, explicit device diagnostics, and an authenticated local dashboard.
+**A local-first workbench for authorized mobile application security review.**
+
+[![Project validation](https://github.com/shambhu332/Mobile_Ag/actions/workflows/project-validation.yml/badge.svg)](https://github.com/shambhu332/Mobile_Ag/actions/workflows/project-validation.yml)
+
+[Quick start](#quick-start) · [Contribute](CONTRIBUTING.md) · [Starter tasks](docs/CONTRIBUTOR_ROADMAP.md) · [Report a bug](https://github.com/shambhu332/Mobile_Ag/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/shambhu332/Mobile_Ag/issues/new?template=feature_request.yml)
+
+Review static candidates, inspect evidence, configure optional AI review, and run explicitly scoped device diagnostics from an authenticated local dashboard.
 
 - Android APK decompilation through JADX/APKTool; iOS IPA static inspection.
 - Source, manifest, resource, native-symbol and straight-line taint review candidates.
@@ -9,6 +15,21 @@ Mobile application security review tooling: static heuristics, optional LLM revi
 - Authenticated HTTP/WebSocket APIs, bounded uploads, and scope-controlled HTTP replay.
 
 This is research tooling, not an autonomous exploit verifier. Read the limitations below before relying on a report.
+
+![MobileAg light security console showing a synthetic application, upload controls and candidate severity cards](docs/djini-console-2026-10-08/validation/desktop-overview.png)
+
+*The overview uses real selected-job data; this screenshot uses synthetic fixtures. The Djini-inspired interface retains MobileAg branding and is not affiliated with Djini.*
+
+## Contribute
+
+Help improve the workbench through **documentation, accessible UI, synthetic regression fixtures, and evidence-quality improvements**. Small, focused pull requests are welcome; a live device or paid AI account is not required for the mocked regression suite.
+
+1. Read the [contributor guide](CONTRIBUTING.md).
+2. Pick a [bounded starter task](docs/CONTRIBUTOR_ROADMAP.md) or discuss an idea in an issue.
+3. Include a reproducible synthetic test and an honest description of what was validated.
+
+This repository is currently private: collaborators need access from the owner. No project-level license has been selected yet; bundled dependency licenses do not license the whole project. Public-release and licensing decisions remain with the owner.
+
 
 ## Quick start
 
@@ -44,7 +65,7 @@ export MOBILEAG_ALLOWED_DEVICES=emulator-5554
 export MOBILEAG_ALLOWED_CONNECT=127.0.0.1:5555
 ```
 
-Choose an explicitly authorized device; the dashboard never selects the first device automatically. UI observation is read-only and blocks unrelated packages/system dialogs; it never accepts consent, fills credentials or taps controls. Drag-and-drop defaults to static analysis. CLI dynamic testing uses `--package` (not `--pkg`):
+Choose an explicitly authorized device; the dashboard never selects the first device automatically. UI observation is read-only and blocks unrelated packages/system dialogs; it never accepts consent, fills credentials or taps controls. Drag-and-drop stages an artifact for scope review; it does not start testing. CLI dynamic testing uses `--package` (not `--pkg`):
 
 ```bash
 python -m mobileag.cli dast --serial emulator-5554 --package com.example.owned \
@@ -65,9 +86,15 @@ Configure strong `NEO4J_PASSWORD` and `QDRANT_API_KEY` before `docker compose up
 
 ## Evidence and limitations
 
+### Security Overview
+
+The default light dashboard brings together APK/IPA upload, selected-job activity, five candidate-severity cards, scan identity, and next-step navigation. An absent scan shows unknown values rather than an invented clean result. APK upload opens scope review; IPA upload opens the existing advanced static settings. Uploading alone never starts a scan.
+
+See [console implementation and validation](docs/djini-console-2026-10-08/README.md).
+
 ### Advanced workspace navigation
 
-Use **Find a section** or **Ctrl/Command K** for keyboard-first workflow navigation across all ten views. The **Next steps** guide uses the actual selected job and offers navigation only—not execution. Compact density and desktop focus layout are page-local preferences; scan/device/model authorization is unchanged.
+Use **Find a section** or **Ctrl/Command K** for keyboard-first workflow navigation across all eleven views, including the new Security Overview. The **Next steps** guide uses the actual selected job and offers navigation only—not execution. Compact density and desktop focus layout are page-local preferences; scan/device/model authorization is unchanged.
 
 Configuration includes searchable local/cloud provider cards, primary/secondary comparison, setup/consent checklists and server-enforced broker limits. Token consumption, cost, quota and tokens/minute are not measured. See [advanced workspace validation](docs/advanced-workspace-2026-10-07/README.md).
 
@@ -95,7 +122,7 @@ The current behavior supersedes the historical capability descriptions above and
 python -m pytest -q
 ```
 
-Tests isolate real device operations and provider credentials. Use synthetic data and controlled loopback targets when adding regressions.
+Tests isolate real device operations and provider credentials. Use synthetic data and controlled loopback targets when adding regressions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the CI-aligned environment, browser commands, and PR checklist.
 
 ### Browser regression (optional)
 

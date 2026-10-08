@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a focused workflow, analysis, documentation, or usability improvement.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution. Small, testable improvements are welcome.
+        Do not include confidential application data, credentials, or private target details.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or user need
+      description: Who encounters this problem, and what are they trying to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the workflow and boundaries. Keep the request focused.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How could a contributor demonstrate the improvement with synthetic data or mocked integrations?
+      placeholder: |
+        - Given...
+        - When...
+        - Then...
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Authorization, privacy, and execution impact
+      description: Does this change device access, outbound requests, data storage, permissions, or approval steps? Describe the required safeguards, or state that it does not change these boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and additional context
+      description: Include existing workarounds, related issues, or synthetic mockups. Say whether you would like to help implement or test the change.

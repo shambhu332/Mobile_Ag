@@ -907,14 +907,22 @@ async def launch_dast_activity(req: LaunchActivityRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/deeplink")
-async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest) -> dict[str, Any]:
+async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest, request: Request) -> dict[str, Any]:
     """Dispatch a custom URI scheme or deep-link to the target device."""
+    def guard():
+        from mobileag.web.policy import check_action
+        if (time.monotonic() >= app.state.session_deadline or
+            not authorized(request.state.authenticated_token, app.state.auth_token) or
+            not check_device(req.serial) or
+            not check_action(repository().get_policy(), "deeplink", req.model_dump())):
+            raise HTTPException(403, "Deep-link approval expired or revoked")
     res = await intent_fuzzer.exercise_component(
         serial=req.serial,
         package_name=req.package_name,
         component_name="",
         action="android.intent.action.VIEW",
         data_uri=req.uri,
+        guard=guard,
     )
     return {
         "status": "success" if not res.get("crashed") else "crashed",
@@ -931,28 +939,39 @@ async def execute_adb_command(req: ExecuteAdbRequest) -> dict[str, Any]:
 
 @app.get("/api/dast/logcat")
 async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
-    """Dump recent logcat buffer and audit for CWE-532 leaks and fatal crashes."""
-    raw_lines = await adb_manager.get_logcat_dump(serial=serial, filter_pkg=package_name, lines=lines)
-    findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name or "")
+    """Return only exact target-process log records for an approved package."""
+    if not package_name:
+        raise HTTPException(status_code=422, detail="package_name is required for scoped log capture")
+    # PID filtering happens at logcat collection time, so stale Process markers
+    # cannot cause the shared buffer to expose a different process reusing a PID.
+    pids = await adb_manager.get_process_pids(serial, package_name)
+    raw_lines = []
+    for pid in pids:
+        raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid))
+    findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name, process_pids=pids)
     return {
         "serial": serial,
         "lines": redact(raw_lines),
         "line_count": len(raw_lines),
-        "findings": [f.to_dict() for f in findings],
+        "findings": redact([f.to_dict() for f in findings]),
     }
 
 
 @app.post("/api/dast/logcat/clear")
-async def clear_dast_logcat(req: DeviceActionRequest) -> dict[str, Any]:
+async def clear_dast_logcat(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Clear device logcat buffer."""
+    require_current_session(request)
     success = await adb_manager.clear_logcat(req.serial)
+    require_current_session(request)
     return {"status": "success" if success else "failed"}
 
 
 @app.post("/api/dast/screenshot")
-async def capture_dast_screenshot(req: DeviceActionRequest) -> dict[str, Any]:
+async def capture_dast_screenshot(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Capture a live screenshot of the device screen."""
+    require_current_session(request)
     png_bytes = await adb_manager.capture_screenshot(req.serial)
+    require_current_session(request)
     if png_bytes:
         import base64
         b64 = base64.b64encode(png_bytes).decode("utf-8")
@@ -961,18 +980,35 @@ async def capture_dast_screenshot(req: DeviceActionRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/storage")
-async def audit_dast_storage(req: StorageAuditRequest) -> dict[str, Any]:
+async def audit_dast_storage(req: StorageAuditRequest, request: Request) -> dict[str, Any]:
     """Audit local sandbox storage (SharedPreferences, SQLite DBs, and cache) post-execution."""
-    report = await storage_auditor.audit_all_storage(req.serial, req.package_name)
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), 'storage', req.model_dump()):
+            raise HTTPException(403, 'Storage diagnostic scope revoked')
+    report = await storage_auditor.audit_all_storage(req.serial, req.package_name, guard=guard)
+    guard()
     remember_findings(report.get("findings", []))
-    return {"status": "success", "report": report}
+    return {"status": "success", "report": redact(report)}
 
 
 @app.post("/api/dast/providers")
-async def audit_dast_providers(req: ProviderAuditRequest) -> dict[str, Any]:
+async def audit_dast_providers(req: ProviderAuditRequest, request: Request) -> dict[str, Any]:
     """Audit exported Content Providers for unauthorized access and SQL syntax leakage."""
-    results, findings = await provider_auditor.audit_providers(req.serial, req.package_name, req.authorities)
-    f_dicts = [f.to_dict() for f in findings]
+    def guard():
+        from mobileag.web.policy import check_action
+        if (time.monotonic() >= app.state.session_deadline or
+            not authorized(request.state.authenticated_token, app.state.auth_token) or
+            not check_device(req.serial) or
+            not check_action(repository().get_policy(), "providers", req.model_dump())):
+            raise PermissionError("Provider approval expired or revoked")
+    try:
+        results, findings = await provider_auditor.audit_providers(req.serial, req.package_name, req.authorities, guard=guard)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    f_dicts = redact([f.to_dict() for f in findings])
     remember_findings(f_dicts)
     return {"status": "success", "results": results, "findings": f_dicts}
 
@@ -988,29 +1024,52 @@ async def audit_dast_deeplinks(req: DeepLinkAuditRequest, request: Request) -> d
     guard()
     results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links,guard=guard)
     guard()
-    f_dicts = [f.to_dict() for f in findings]
+    f_dicts = redact([f.to_dict() for f in findings])
     remember_findings(f_dicts)
     return {"status": "success", "results": results, "findings": f_dicts}
 
 
 @app.post("/api/dast/memory")
-async def audit_dast_memory(req: MemoryAuditRequest) -> dict[str, Any]:
+async def audit_dast_memory(req: MemoryAuditRequest, request: Request) -> dict[str, Any]:
     """Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."""
-    report = await memory_auditor.run_memory_audit(req.serial, req.package_name)
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), 'memory', req.model_dump()):
+            raise HTTPException(403, 'Memory diagnostic scope revoked')
+    guard()
+    report = await memory_auditor.run_memory_audit(req.serial, req.package_name, guard=guard)
+    guard()
     remember_findings(report.get("findings", []))
-    return {"status": "success", "report": report}
+    return {"status": "success", "report": redact(report)}
 
 
 @app.post("/api/dast/crawl")
-async def crawl_dast_ui(req: UICrawlRequest) -> dict[str, Any]:
+async def crawl_dast_ui(req: UICrawlRequest, request: Request) -> dict[str, Any]:
     """Autonomously navigate UI views with UIAutomator to expand dynamic coverage."""
-    report = await ui_crawler.crawl_app(req.serial, req.package_name, max_steps=req.max_steps)
-    return {"status": "success", "report": report}
+    require_current_session(request)
+    from mobileag.web.policy import check_action
+    if not check_device(req.serial) or not check_action(repository().get_policy(), 'crawl', req.model_dump()):
+        raise HTTPException(403, 'UI observation scope is not approved')
+    def guard():
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), 'crawl', req.model_dump()):
+            raise HTTPException(403, 'UI observation scope revoked')
+    report = await ui_crawler.crawl_app(req.serial, req.package_name, max_steps=req.max_steps, guard=guard)
+    require_current_session(request)
+    if not check_device(req.serial) or not check_action(repository().get_policy(), 'crawl', req.model_dump()):
+        raise HTTPException(403, 'UI observation scope revoked')
+    return {"status": "success", "report": redact(report)}
 
 
 @app.post("/api/dast/frida")
-async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
+async def deploy_dast_frida(req: FridaDeployRequest, request: Request) -> dict[str, Any]:
     """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass, unified)."""
+    require_current_session(request)
+    from mobileag.web.policy import check_action
+    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
+        raise HTTPException(403, 'Frida device-wide diagnostic action is not approved')
     if req.script_type == "crypto":
         script = frida_runner.generate_crypto_monitor_script()
     elif req.script_type == "root_bypass":
@@ -1020,6 +1079,9 @@ async def deploy_dast_frida(req: FridaDeployRequest) -> dict[str, Any]:
     else:
         script = frida_runner.generate_unpinning_script()
     res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
+    require_current_session(request)
+    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
+        raise HTTPException(403, 'Frida device-wide diagnostic action was revoked')
     return {"status": res.get("status", "error"), "result": res, "script": script}
 
 
@@ -1031,7 +1093,7 @@ async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
     return {
         "status": "success",
         "findings_count": len(findings),
-        "findings": [f.to_dict() for f in findings],
+        "findings": redact([f.to_dict() for f in findings]),
     }
 
 
@@ -1039,7 +1101,7 @@ async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
 async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
     """Find potential straight-line source-to-sink flows; results require manual validation."""
     findings = await asyncio.wait_for(asyncio.to_thread(taint_engine.analyze_source_content, req.source_code, req.file_path), timeout=15)
-    f_dicts = [f.to_dict() for f in findings]
+    f_dicts = redact([f.to_dict() for f in findings])
     return {"status": "success", "findings": f_dicts}
 
 
@@ -1086,7 +1148,7 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
     for finding in findings:
         finding.status = FindingStatus.UNVERIFIED
 
-    f_dicts = [f.to_dict() for f in findings]
+    f_dicts = redact([f.to_dict() for f in findings])
     return {
         "status": "success",
         "url": url,
@@ -1149,7 +1211,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
         await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False)
 
     # Activity intent fuzzing (with targeted extras if provided)
-    acts = req.activities or [f"{pkg}.MainActivity"]
+    acts = req.activities or []
     await manager.broadcast({
         "type": "dast_progress",
         "stage": "Intent Exercising",
@@ -1160,7 +1222,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
 
     guard()
     _, findings = await intent_fuzzer.fuzz_activity_intents(
-        serial, pkg, acts, targeted_extras=req.targeted_extras
+        serial, pkg, acts, targeted_extras=req.targeted_extras, guard=guard
     )
 
     # Deep-link fuzzing
@@ -1173,7 +1235,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks)
+        _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks, guard=guard)
         findings.extend(dl_findings)
 
     # Content Provider Auditing
@@ -1186,7 +1248,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        _, prov_findings = await provider_auditor.audit_providers(serial, pkg, req.authorities)
+        _, prov_findings = await provider_auditor.audit_providers(serial, pkg, req.authorities, guard=guard)
         findings.extend(prov_findings)
 
     # Sandbox Storage Forensics (SharedPreferences, SQLite, Cache)
@@ -1199,7 +1261,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        storage_res = await storage_auditor.audit_all_storage(serial, pkg)
+        storage_res = await storage_auditor.audit_all_storage(serial, pkg, guard=guard)
         for sf in storage_res.get("findings", []):
             findings.append(Finding(**sf))
 
@@ -1232,14 +1294,14 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        mem_res = await memory_auditor.run_memory_audit(serial, pkg)
+        mem_res = await memory_auditor.run_memory_audit(serial, pkg, guard=guard)
         for mf in mem_res.get("findings", []):
             findings.append(Finding(**mf))
 
     # Append to active findings
     guard()
     for f in findings:
-        f_dict = f.to_dict()
+        f_dict = redact(f.to_dict())
         remember_findings([f_dict])
         await manager.broadcast({
             "type": "dast_finding",
@@ -1273,7 +1335,7 @@ async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: Background
         try:
             await asyncio.wait_for(run_dast_background_task(req, token), timeout=180)
         except Exception as exc:
-            await manager.broadcast({"type":"dast_progress", "stage":"DAST failed", "message":str(exc), "progress":100})
+            await manager.broadcast({"type":"dast_progress", "stage":"DAST failed", "message":redact(str(exc)), "progress":100})
         finally:
             DAST_JOBS.discard(req.serial)
     background_tasks.add_task(bounded_job)

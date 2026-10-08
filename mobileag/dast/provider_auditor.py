@@ -1,129 +1,79 @@
-"""Dynamic Content Provider and IPC Auditor for Android DAST.
+"""Read-only ADB provider diagnostics, restricted to server-approved synthetic fixtures.
 
-Audits exported Content Providers via ADB `content query` and `content read`
-to identify:
-1. Exported Content Providers accessible without permissions (CWE-926)
-2. SQL syntax error leakage and raw query concatenation in projection/where (CWE-89)
-3. Insecure FileProvider URI exposure (CWE-22)
+Shell access is not ordinary-app authorization proof. Never retain returned rows.
 """
-
 from __future__ import annotations
-
-import logging
+import json
+import os
 import re
+from urllib.parse import urlsplit, unquote
 from typing import Any, Optional
-
 from mobileag.dast.adb_manager import ADBManager
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
-
-logger = logging.getLogger(__name__)
 
 
 class ProviderAuditor:
-    """Audits exported Android Content Providers via live ADB interaction."""
-
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
-    async def audit_provider_uri(
-        self,
-        serial: str,
-        package_name: str,
-        uri: str,
-    ) -> list[Finding]:
-        """Audit a content provider URI for unauthorized data access and SQL error leakage."""
-        findings: list[Finding] = []
+    def approved_uris(self, serial: str, package_name: str) -> list[str]:
+        """Configuration is operator-owned, not supplied by an APK or HTTP request."""
+        if serial not in os.getenv('MOBILEAG_ALLOWED_DEVICES', '').split(','):
+            raise PermissionError('Provider diagnostic device is not approved')
+        try:
+            raw = os.getenv('MOBILEAG_PROVIDER_FIXTURES', '[]')
+            if len(raw) > 16384:
+                raise ValueError()
+            entries = json.loads(raw)
+            if not isinstance(entries, list) or len(entries) > 100:
+                raise ValueError()
+            uris = []
+            for entry in entries:
+                if not isinstance(entry, dict) or set(entry) != {'package_name', 'uri'}:
+                    raise ValueError()
+                if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+', entry['package_name']):
+                    raise ValueError()
+                uri = entry['uri']; p = urlsplit(uri)
+                if (p.scheme != 'content' or not re.fullmatch(r'[A-Za-z0-9_.-]+', p.netloc)
+                    or p.query or p.fragment or p.path in ('', '/')
+                    or any(part in ('.', '..') for part in unquote(p.path).split('/'))):
+                    raise ValueError()
+                if entry['package_name'] == package_name:
+                    uris.append(uri)
+            return uris
+        except (ValueError, TypeError, KeyError):
+            raise PermissionError('Invalid provider fixture configuration') from None
 
-        # 1. Test unauthenticated read access
-        cmd = ["-s", serial, "shell", "content", "query", "--uri", uri]
-        code, stdout, stderr = await self.adb._exec_cmd(cmd, timeout=4.0)
-        out_str = stdout.decode("utf-8", errors="replace")
-        err_str = stderr.decode("utf-8", errors="replace")
-        combined = (out_str + err_str).strip()
+    async def audit_provider_uri(self, serial: str, package_name: str, uri: str, guard=None) -> list[Finding]:
+        if guard: guard()
+        if uri not in self.approved_uris(serial, package_name):
+            raise PermissionError('Exact synthetic provider fixture is not approved')
+        code, stdout, stderr = await self.adb._exec_cmd(
+            ['-s', serial, 'shell', 'content', 'query', '--uri', uri], timeout=4.0)
+        if guard: guard()
+        # No SQL mutations or raw-row evidence collection. A successful shell
+        # read says nothing about an ordinary application's permission checks.
+        if code != 0 or b'Row:' not in stdout:
+            return []
+        return [Finding(
+            title=f'ADB shell provider fixture read: {uri}',
+            description='The approved synthetic fixture returned a row to ADB shell. Ordinary-app access, permission enforcement and confidentiality impact are not established.',
+            severity=Severity.INFO, confidence=0.4, cwe_id='CWE-926',
+            cvss_score=0.0, cvss_vector='', affected_component=uri,
+            file_path=uri, line_number=1, code_snippet='Row contents intentionally not retained',
+            detection_method='ProviderAuditor (ADB diagnostic)', status=FindingStatus.UNVERIFIED,
+            remediation='Validate expected permissions using an ordinary-app caller and controlled fixture before changing provider exposure.')]
 
-        # If data rows were returned to external caller without signature permission
-        if "Row:" in combined:
-            cwe = "CWE-926"
-            score, vector = get_default_cvss_for_cwe(cwe)
-            snippet = combined[:300]
-
-            findings.append(Finding(
-                title=f"Exported Content Provider Leak: {uri}",
-                description=(
-                    f"The Content Provider at `{uri}` returned data to the ADB shell caller. "
-                    f"Ordinary-app access and intended permissions remain unverified.\n\n"
-                    f"Data returned on unauthenticated query:\n`{snippet}`"
-                ),
-                severity=Severity.HIGH,
-                confidence=0.5,
-                cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
-                owasp_masvs="MASVS-PLATFORM-1",
-                affected_component=uri,
-                file_path=uri,
-                line_number=1,
-                code_snippet=snippet,
-                detection_method="ProviderAuditor (Dynamic)",
-                status=FindingStatus.UNVERIFIED,
-                remediation=(
-                    "Set `android:exported=\"false\"` if external access is unneeded, or protect with "
-                    "`android:readPermission` requiring `signature` protectionLevel."
-                ),
-            ))
-
-        # 2. Test SQL Syntax Error Leakage (CWE-89 / CWE-209)
-        cmd_sqli = ["-s", serial, "shell", "content", "query", "--uri", uri, "--where", "1='1' AND 'a'='a"]
-        _, out_sqli, err_sqli = await self.adb._exec_cmd(cmd_sqli, timeout=4.0)
-        sqli_combined = (out_sqli.decode("utf-8", errors="replace") + err_sqli.decode("utf-8", errors="replace")).strip()
-
-        if any(err_sig in sqli_combined for err_sig in ("SQLiteException", "syntax error", "unrecognized token")):
-            cwe = "CWE-89"
-            score, vector = get_default_cvss_for_cwe(cwe)
-
-            findings.append(Finding(
-                title=f"SQL Syntax Error Leakage in Content Provider: {uri}",
-                description=(
-                    f"The Content Provider query selection logic leaked internal SQLite database exception details "
-                    f"when provided an injected query argument:\n`{sqli_combined[:250]}`\n\n"
-                    "This is an error-disclosure lead; SQL injection and authorization impact are unverified."
-                ),
-                severity=Severity.HIGH,
-                confidence=0.90,
-                cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
-                owasp_masvs="MASVS-CODE-2",
-                affected_component=uri,
-                file_path=uri,
-                line_number=1,
-                code_snippet=sqli_combined[:200],
-                detection_method="ProviderAuditor (Dynamic)",
-                status=FindingStatus.UNVERIFIED,
-                remediation="Use parameterized queries with SQLiteQueryBuilder and bind selectionArgs instead of string concatenation.",
-            ))
-
-        return findings
-
-    async def audit_providers(
-        self,
-        serial: str,
-        package_name: str,
-        authorities: list[str],
-    ) -> tuple[list[dict[str, Any]], list[Finding]]:
-        """Audit multiple provider authorities for a package."""
-        all_results: list[dict[str, Any]] = []
-        all_findings: list[Finding] = []
-
-        for auth in authorities:
-            uri = f"content://{auth}"
-            findings = await self.audit_provider_uri(serial, package_name, uri)
-            all_results.append({
-                "authority": auth,
-                "uri": uri,
-                "findings_count": len(findings),
-            })
-            all_findings.extend(findings)
-
-        return all_results, all_findings
+    async def audit_providers(self, serial: str, package_name: str, authorities: list[str], guard=None) -> tuple[list[dict[str, Any]], list[Finding]]:
+        if guard: guard()
+        approved = self.approved_uris(serial, package_name)
+        if len(authorities) > 30 or any(not any(urlsplit(u).netloc == a for u in approved) for a in authorities):
+            raise PermissionError('Provider authority has no approved synthetic fixture')
+        results, findings = [], []
+        for uri in approved:
+            if urlsplit(uri).netloc not in authorities:
+                continue
+            current = await self.audit_provider_uri(serial, package_name, uri, guard=guard)
+            results.append({'authority': urlsplit(uri).netloc, 'uri': uri, 'findings_count': len(current)})
+            findings.extend(current)
+        return results, findings

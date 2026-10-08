@@ -283,6 +283,14 @@ class Orchestrator:
                 continue
 
             engines[name]="skipped_disabled" if name=="taint" and not self._settings.enable_deep_taint else "completed_heuristically"
+            if name == "dependencies" and self._settings.offline:
+                engines[name] = "skipped_offline"
+                state["coverage"]["dependencies"] = {
+                    "static_status": "skipped_offline", "runtime_status": "not_tested",
+                    "proof_status": "not_proven", "exhaustive": False,
+                    "limitations": ["OSV lookup disabled; no vulnerability database queried",
+                                    "APK-only library identity/version and exploit reachability are not established"],
+                }
             if name in {"auth_session", "firebase"}:
                 all_findings.extend(result["findings"])
                 state["coverage"][name] = result["coverage"]

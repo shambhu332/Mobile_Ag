@@ -31,7 +31,8 @@ async def test_adb_manager_device_enumeration():
 def test_logcat_auditor_sensitive_token_leak():
     auditor = LogcatAuditor()
     log_sample = [
-        "09-21 10:00:01.123 1234 1234 D ApiClient: Sending request with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0",
+        "09-21 10:00:01.123 1234 1234 I ActivityManager: Process: com.test.app, PID: 1234",
+        "09-21 10:00:01.124 1234 1234 D ApiClient: Sending request with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0",
         "09-21 10:00:02.456 1234 1234 I MainActivity: Initialized",
     ]
     findings = auditor.audit_lines(log_sample, package_name="com.test.app")
@@ -44,7 +45,7 @@ def test_logcat_auditor_crash_detection():
     auditor = LogcatAuditor()
     log_sample = [
         "09-21 10:05:00.000 1234 1234 E AndroidRuntime: FATAL EXCEPTION: main",
-        "Process: com.test.app, PID: 1234",
+        "09-21 10:05:00.001 1234 1234 E AndroidRuntime: Process: com.test.app, PID: 1234",
         "java.lang.NullPointerException: Attempt to invoke virtual method on a null object reference",
     ]
     findings = auditor.audit_lines(log_sample, package_name="com.test.app")
@@ -82,11 +83,11 @@ async def test_intent_fuzzer_crash_capture():
     mock_adb = ADBManager()
     mock_adb.clear_logcat = AsyncMock(return_value=True)
     mock_adb._exec_cmd = AsyncMock(return_value=(0, b"Starting: Intent { cmp=com.target.app/.VulnActivity }\n", b""))
-    mock_adb.get_logcat_dump = AsyncMock(return_value=[
+    mock_adb.get_logcat_dump = AsyncMock(side_effect=[[], [
         "09-21 10:10:00.000 5678 5678 E AndroidRuntime: FATAL EXCEPTION: main",
         "Process: com.target.app, PID: 5678",
         "java.lang.NullPointerException: Null intent parameter in onCreate",
-    ])
+    ]])
 
     fuzzer = IntentFuzzer(adb=mock_adb)
     res = await fuzzer.exercise_component(
@@ -106,7 +107,7 @@ async def test_storage_auditor_shared_preferences():
     mock_adb = ADBManager()
     auditor = StorageAuditor(adb=mock_adb)
 
-    async def mock_run_su(serial, cmd):
+    async def mock_run_su(serial, cmd, guard=None):
         if "ls -1" in cmd:
             return "user_session.xml\nsettings.xml"
         if "cat /data/data/com.test.app/shared_prefs/user_session.xml" in cmd:
@@ -127,7 +128,7 @@ async def test_storage_auditor_sqlite_databases():
     mock_adb = ADBManager()
     auditor = StorageAuditor(adb=mock_adb)
 
-    async def mock_run_su(serial, cmd):
+    async def mock_run_su(serial, cmd, guard=None):
         if "ls -1" in cmd:
             return "app_accounts.db"
         if "head -c 16" in cmd:
@@ -149,7 +150,7 @@ async def test_storage_auditor_cache_and_audit_all():
     mock_adb = ADBManager()
     auditor = StorageAuditor(adb=mock_adb)
 
-    async def mock_run_su(serial, cmd):
+    async def mock_run_su(serial, cmd, guard=None):
         if "grep" in cmd:
             return "/data/data/com.test.app/cache/req1: Authorization: Bearer token123"
         return ""
@@ -165,7 +166,11 @@ async def test_storage_auditor_cache_and_audit_all():
 
 
 @pytest.mark.asyncio
-async def test_provider_auditor_leak_and_sqli():
+async def test_provider_auditor_scoped_shell_observation(monkeypatch):
+    import json
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "emulator-5554")
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": "content://com.test.app.provider/fixtures/synthetic"}]))
     mock_adb = ADBManager()
 
     async def mock_exec(cmd, timeout=4.0):
@@ -183,10 +188,10 @@ async def test_provider_auditor_leak_and_sqli():
     )
 
     assert len(results) == 1
-    assert len(findings) == 2
-    cwes = [f.cwe_id for f in findings]
-    assert "CWE-926" in cwes  # Exported Content Provider leak
-    assert "CWE-89" in cwes   # SQL syntax error leakage
+    assert len(findings) == 1
+    assert findings[0].cwe_id == "CWE-926"
+    assert findings[0].cvss_score == 0
+    assert "sec123" not in str(findings[0].to_dict())
 
 
 def test_traffic_auditor_owasp_api_top10():
@@ -271,6 +276,4 @@ def test_frida_runner_unified_agent_and_session():
     assert isinstance(result, dict)
     assert "package_name" in result
     assert result["package_name"] == "com.test.app"
-
-
 

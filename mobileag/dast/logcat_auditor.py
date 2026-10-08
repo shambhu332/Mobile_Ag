@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Final, Optional
 
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.dast.runtime_evidence import attributed_crashes, _PROCESS, _THREADTIME
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
@@ -53,66 +53,43 @@ class LogcatAuditor:
     def __init__(self) -> None:
         pass
 
-    def audit_lines(self, lines: list[str], package_name: str = "") -> list[Finding]:
+    def audit_lines(self, lines: list[str], package_name: str = "", process_pids=None) -> list[Finding]:
         """Analyze log lines and extract CWE-532 findings and fatal crash records."""
         findings: list[Finding] = []
-        full_text = "\n".join(lines)
-
-        # 1. Audit for sensitive leaks (CWE-532)
+        lines = lines[:10000]
+        # Without an exact package and matching Process/PID markers, the shared
+        # Android log buffer cannot be safely attributed to the tested app.
+        if not package_name:
+            return findings
+        pids = {m[2] for line in lines if (m := _PROCESS.search(line)) and
+                (m[1] == package_name or m[1].startswith(package_name + ':'))}
+        if process_pids is not None:
+            pids = {str(pid) for pid in process_pids if str(pid).isdecimal() and int(pid) > 0}
+        if not pids:
+            return findings
         for title, pattern, desc in _LEAK_PATTERNS:
             for idx, line in enumerate(lines):
-                match = pattern.search(line)
-                if match:
-                    # Sanitize token preview
-                    matched_val = match.group(0)
-                    masked = matched_val[:6] + "..." + matched_val[-4:] if len(matched_val) > 12 else "[MASKED]"
-                    snippet = line.replace(matched_val, masked).strip()
-
-                    cwe = "CWE-532"
-                    score, vector = get_default_cvss_for_cwe(cwe)
-
+                header = _THREADTIME.match(line)
+                if not header or header[1] not in pids:
+                    continue
+                if pattern.search(line):
+                    component = package_name
                     findings.append(Finding(
-                        title=f"{title}: {package_name or 'Runtime'}",
-                        description=f"{desc}\n\nEvidence observed in logcat:\n`{snippet}`",
-                        severity=Severity.HIGH,
-                        confidence=0.95,
-                        cwe_id=cwe,
-                        cvss_score=score,
-                        cvss_vector=vector,
-                        owasp_masvs="MASVS-STORAGE-2",
-                        affected_component=package_name or "Android Logcat Buffer",
-                        file_path="logcat",
-                        line_number=idx + 1,
-                        code_snippet=snippet,
-                        detection_method="LogcatAuditor (Dynamic)",
-                        status=FindingStatus.UNVERIFIED,
-                        remediation="Remove logging calls (Log.d, Log.v, Log.i, println) from production builds using ProGuard/R8 rules: `-assumenosideeffects class android.util.Log { *; }`.",
-                    ))
-                    break  # One finding per pattern category to avoid log flood
-
-        # 2. Audit for fatal crashes (CWE-703 / CWE-755)
-        crash_match = _CRASH_PATTERN.search(full_text)
-        if crash_match:
-            cwe = "CWE-755"
-            score, vector = get_default_cvss_for_cwe(cwe)
-            crash_snippet = crash_match.group(0)[:300]
-
+                        title=f'{title}: {component}',
+                        description=desc + ' Diagnostic observation only; log access, secret validity and security impact are unverified.',
+                        severity=Severity.INFO, confidence=0.4, cwe_id='CWE-532',
+                        cvss_score=0.0, cvss_vector='', affected_component=component,
+                        file_path='logcat', line_number=idx+1, code_snippet='[Sensitive log value omitted]',
+                        detection_method='LogcatAuditor (ADB diagnostic)', status=FindingStatus.UNVERIFIED,
+                        remediation='Remove sensitive logging; verify the production build and ordinary-app log access separately.'))
+                    break
+        if package_name and attributed_crashes(lines, package_name):
             findings.append(Finding(
-                title=f"Fatal Application Crash (Unhandled Exception): {package_name or 'Process'}",
-                description=f"A fatal runtime exception occurred causing an application crash:\n\n`{crash_snippet}`",
-                severity=Severity.MEDIUM,
-                confidence=1.0,
-                cwe_id=cwe,
-                cvss_score=5.3,
-                cvss_vector="CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-                owasp_masvs="MASVS-CODE-4",
-                affected_component=package_name or "Runtime Process",
-                file_path="logcat",
-                line_number=1,
-                code_snippet=crash_snippet,
-                detection_method="LogcatAuditor (Dynamic)",
-                status=FindingStatus.UNVERIFIED,
-                remediation="Wrap intent extra parsing and dynamic inputs in defensive try-catch blocks and validate parcelable formats before deserialization.",
-            ))
-
+                title=f'Fatal Application Crash observation: {package_name}',
+                description='A target-PID fatal log was observed. ADB-shell invocation is not ordinary-app exploit proof; timing is not causation.',
+                severity=Severity.INFO, confidence=0.5, cwe_id='CWE-755',
+                cvss_score=0.0, cvss_vector='', affected_component=package_name,
+                file_path='logcat', line_number=1, code_snippet='Target PID fatal exception (values omitted)',
+                detection_method='LogcatAuditor (ADB diagnostic)', status=FindingStatus.UNVERIFIED,
+                remediation='Reproduce with controlled inputs and an ordinary caller before assessing impact.'))
         return findings

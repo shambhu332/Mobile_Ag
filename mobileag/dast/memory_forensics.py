@@ -55,27 +55,33 @@ class MemoryForensicsAuditor:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
-    async def get_process_pid(self, serial: str, package_name: str) -> Optional[int]:
+    async def get_process_pid(self, serial: str, package_name: str, guard=None) -> Optional[int]:
         """Retrieve target package process PID on the device."""
+        if not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
+            raise ValueError('Invalid Android package name')
+        if guard: guard()
         code, stdout, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", f"pidof {package_name}"],
+            ["-s", serial, "shell", "pidof", package_name],
             timeout=3.0,
         )
+        if guard: guard()
         if code == 0 and stdout:
             pids = stdout.decode("utf-8", errors="replace").strip().split()
             if pids and pids[0].isdigit():
                 return int(pids[0])
 
-        # Fallback to ps -A
+        # Fallback to ps -A and exact process-name comparison; never interpolate
+        # a package name into grep regular-expression or shell syntax.
         code, stdout, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", f"ps -A | grep {package_name}"],
+            ["-s", serial, "shell", "ps", "-A"],
             timeout=3.0,
         )
+        if guard: guard()
         if code == 0 and stdout:
             lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
             for line in lines:
                 parts = line.split()
-                if len(parts) >= 2 and parts[1].isdigit():
+                if len(parts) >= 2 and parts[1].isdigit() and (parts[-1] == package_name or parts[-1].startswith(package_name + ':')):
                     return int(parts[1])
 
         return None
@@ -85,11 +91,14 @@ class MemoryForensicsAuditor:
         serial: str,
         pid: int,
         max_lines: int = 200,
+        guard=None,
     ) -> list[str]:
         """Extract memory string excerpts from process heap / memory mappings via root shell."""
         # Query strings from process memory maps
         cmd = f"su -c 'strings /proc/{pid}/mem 2>/dev/null | grep -E \"eyJ|Bearer|AIza|AKIA|password\" | head -n {max_lines}'"
+        if guard: guard()
         code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd], timeout=6.0)
+        if guard: guard()
 
         if code == 0 and stdout:
             return stdout.decode("utf-8", errors="replace").strip().splitlines()
@@ -97,6 +106,7 @@ class MemoryForensicsAuditor:
         # Fallback: check environ and cmdline
         cmd_env = f"su -c 'cat /proc/{pid}/environ 2>/dev/null'"
         _, out_env, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd_env], timeout=3.0)
+        if guard: guard()
         if out_env:
             return out_env.decode("utf-8", errors="replace").replace("\x00", "\n").splitlines()
 
@@ -106,14 +116,15 @@ class MemoryForensicsAuditor:
         self,
         serial: str,
         package_name: str,
+        guard=None,
     ) -> tuple[Optional[int], list[Finding]]:
         """Audit target application's active RAM for un-zeroized credentials and tokens."""
-        pid = await self.get_process_pid(serial, package_name)
+        pid = await self.get_process_pid(serial, package_name, guard)
         if not pid:
             logger.warning(f"Could not locate running process for package: {package_name}")
             return None, []
 
-        strings_dump = await self.extract_memory_strings(serial, pid)
+        strings_dump = await self.extract_memory_strings(serial, pid, guard=guard)
         findings: list[Finding] = []
 
         seen_categories: set[str] = set()
@@ -126,9 +137,6 @@ class MemoryForensicsAuditor:
                 m = pattern.search(line)
                 if m:
                     seen_categories.add(cat)
-                    matched_val = m.group(0)
-                    masked = matched_val[:4] + ("*" * (len(matched_val) - 8)) + matched_val[-4:] if len(matched_val) > 8 else "***"
-
                     cwe = "CWE-316"
                     score, vector = get_default_cvss_for_cwe(cwe)
 
@@ -137,7 +145,7 @@ class MemoryForensicsAuditor:
                         description=(
                             f"The running process (PID: `{pid}`) retains sensitive credentials or authentication "
                             f"tokens in cleartext heap/volatile memory without active zeroization.\n\n"
-                            f"Discovered secret type: **{cat}** (`{masked}`)\n\n"
+                            f"Discovered secret type: **{cat}**; the matched value is intentionally omitted.\n\n"
                             "When sensitive data is stored in immutable objects like `java.lang.String`, "
                             "the plaintext bytes remain in garbage collection pools indefinitely, exposing them "
                             "to memory dumps, swap file extraction, and debugger inspection."
@@ -162,9 +170,11 @@ class MemoryForensicsAuditor:
 
         return pid, findings
 
-    async def run_memory_audit(self, serial: str, package_name: str) -> dict[str, Any]:
+    async def run_memory_audit(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
         """Execute complete memory forensics pass and return structured summary."""
-        pid, findings = await self.audit_process_memory(serial, package_name)
+        if guard: guard()
+        pid, findings = await self.audit_process_memory(serial, package_name, guard)
+        if guard: guard()
         return {
             "package_name": package_name,
             "device_serial": serial,

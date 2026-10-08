@@ -224,17 +224,35 @@ class ADBManager:
             "component": component
         }
 
-    async def get_logcat_dump(self, serial: str, filter_pkg: Optional[str] = None, lines: int = 300) -> list[str]:
+    async def get_logcat_dump(self, serial: str, filter_pkg: Optional[str] = None, lines: int = 300,
+                              pid: Optional[int] = None) -> list[str]:
         """Retrieve the recent logcat buffer."""
-        cmd = ["-s", serial, "logcat", "-d", "-t", str(lines)]
+        # The auditor requires PID/TID attribution. Android's default brief format
+        # omits the structured fields and silently defeats target-process checks.
+        cmd = ["-s", serial, "logcat", "-v", "threadtime", "-d", "-t", str(lines)]
+        if pid is not None:
+            if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+                raise ValueError('A positive process ID is required')
+            cmd.append(f'--pid={pid}')
         code, stdout, _ = await self._exec_cmd(cmd, timeout=3.0)
         if code != 0:
             return []
 
         raw_lines = stdout.decode("utf-8", errors="replace").splitlines()
-        if filter_pkg:
-            return [l for l in raw_lines if filter_pkg in l]
+        # A package substring filter is neither an authorization boundary nor a
+        # correct process filter (fatal frames usually contain only PID/TID).
+        # Callers must attribute threadtime records to exact Process/PID records.
         return raw_lines
+
+    async def get_process_pids(self, serial: str, package_name: str) -> list[int]:
+        """Return bounded numeric PIDs for an exact validated Android package."""
+        if not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
+            raise ValueError('Invalid Android package name')
+        code, stdout, _ = await self._exec_cmd(['-s', serial, 'shell', 'pidof', package_name], timeout=3.0)
+        if code != 0:
+            return []
+        return list(dict.fromkeys(int(token) for token in stdout.decode('ascii', errors='ignore').split()
+                                  if token.isdecimal() and 0 < int(token) < 2**31))[:8]
 
     async def clear_logcat(self, serial: str) -> bool:
         """Clear the device logcat buffer."""
@@ -258,4 +276,3 @@ class ADBManager:
             "output": out_str or "(Command executed with no output)",
             "exit_code": code,
         }
-

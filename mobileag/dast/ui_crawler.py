@@ -33,14 +33,17 @@ class UICrawler:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
-    async def dump_ui_hierarchy(self, serial: str) -> str:
+    async def dump_ui_hierarchy(self, serial: str, guard=None) -> str:
         """Dump the current foreground window UIAutomator hierarchy XML."""
         # Do not overwrite a user's predictable uidump.xml or read stale output.
         path='/data/local/tmp/mobileag-observe-'+uuid.uuid4().hex+'.xml'
         try:
+            if guard: guard()
             code, _, _ = await self.adb._exec_cmd(["-s",serial,"shell","uiautomator","dump",path],timeout=6,output_limit=16384)
+            if guard: guard()
             if code:return ""
             code, stdout, _ = await self.adb._exec_cmd(["-s",serial,"shell","cat",path],timeout=4,output_limit=1024*1024)
+            if guard: guard()
             if code == 0 and 0 < len(stdout) <= 1024*1024:
                 return stdout.decode("utf-8",errors="replace").strip()
             return ""
@@ -113,13 +116,13 @@ class UICrawler:
         return 0
 
     async def crawl_app(self, serial: str, package_name: str, max_steps: int = 5,
-                        step_delay: float = 1.0) -> dict[str, Any]:
+                        step_delay: float = 1.0, guard=None) -> dict[str, Any]:
         if not 1 <= max_steps <= 20:
             raise ValueError("UI observation steps must be between 1 and 20")
         base = {"package_name": package_name, "device_serial": serial,
                 "screens_explored": 0, "dialogs_dismissed": 0, "inputs_filled": 0,
                 "buttons_clicked": 0, "mode": "observe_only", "planned_actions": []}
-        xml = await self.dump_ui_hierarchy(serial)
+        xml = await self.dump_ui_hierarchy(serial, guard=guard)
         elements = self.parse_ui_elements(xml)
         if not elements:
             return {**base, "status": "inconclusive", "reason": "Foreground UI is unavailable"}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 from typing import Any, Optional
 
 from mobileag.dast.adb_manager import ADBManager
@@ -35,34 +36,53 @@ class StorageAuditor:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
-    async def _run_su_cmd(self, serial: str, cmd: str) -> str:
+    @staticmethod
+    def _package_path(package_name: str) -> str:
+        if not isinstance(package_name, str) or not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
+            raise ValueError('Invalid Android package name')
+        return f'/data/data/{package_name}'
+
+    @staticmethod
+    def _listed_files(output: str, suffixes: tuple[str, ...] = ()) -> list[str]:
+        # Device-controlled directory entries must not become shell syntax.
+        return [name for name in output.splitlines()
+                if re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', name)
+                and name not in {'.', '..'}
+                and (not suffixes or name.endswith(suffixes))]
+
+    async def _run_su_cmd(self, serial: str, cmd: str, guard=None) -> str:
         """Run a command under root shell (su) or fallback to run-as."""
+        if guard: guard()
         # Try su first
         code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", f"su -c '{cmd}'"], timeout=5.0)
+        if guard: guard()
         if code == 0 and stdout:
             return stdout.decode("utf-8", errors="replace").strip()
 
         # Fallback to direct shell
         code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd], timeout=5.0)
+        if guard: guard()
         if code == 0 and stdout:
             return stdout.decode("utf-8", errors="replace").strip()
 
         return ""
 
-    async def audit_shared_preferences(self, serial: str, package_name: str) -> list[Finding]:
+    async def audit_shared_preferences(self, serial: str, package_name: str, guard=None) -> list[Finding]:
         """Audit /data/data/<pkg>/shared_prefs/*.xml for plaintext secrets and tokens."""
         findings: list[Finding] = []
-        prefs_dir = f"/data/data/{package_name}/shared_prefs"
+        prefs_dir = f"{self._package_path(package_name)}/shared_prefs"
 
-        list_out = await self._run_su_cmd(serial, f"ls -1 {prefs_dir}")
+        if guard: guard()
+        list_out = await self._run_su_cmd(serial, f"ls -1 {prefs_dir}", guard)
         if not list_out or "No such file" in list_out or "Permission denied" in list_out:
             return findings
 
-        xml_files = [f.strip() for f in list_out.splitlines() if f.strip().endswith(".xml")]
+        xml_files = self._listed_files(list_out, (".xml",))
 
         for xml_file in xml_files:
             file_path = f"{prefs_dir}/{xml_file}"
-            content = await self._run_su_cmd(serial, f"cat {file_path}")
+            if guard: guard()
+            content = await self._run_su_cmd(serial, f"cat {shlex.quote(file_path)}", guard)
             if not content:
                 continue
 
@@ -107,30 +127,33 @@ class StorageAuditor:
 
         return findings
 
-    async def audit_sqlite_databases(self, serial: str, package_name: str) -> list[Finding]:
+    async def audit_sqlite_databases(self, serial: str, package_name: str, guard=None) -> list[Finding]:
         """Audit /data/data/<pkg>/databases/ for unencrypted SQLite databases."""
         findings: list[Finding] = []
-        db_dir = f"/data/data/{package_name}/databases"
+        db_dir = f"{self._package_path(package_name)}/databases"
 
-        list_out = await self._run_su_cmd(serial, f"ls -1 {db_dir}")
+        if guard: guard()
+        list_out = await self._run_su_cmd(serial, f"ls -1 {db_dir}", guard)
         if not list_out or "No such file" in list_out or "Permission denied" in list_out:
             return findings
 
-        db_files = [f.strip() for f in list_out.splitlines() if f.strip().endswith(".db") or not "." in f.strip()]
+        db_files = [f for f in self._listed_files(list_out) if f.endswith('.db') or '.' not in f]
 
         for db_file in db_files:
             file_path = f"{db_dir}/{db_file}"
             # Check SQLite header using head -c 16
-            header = await self._run_su_cmd(serial, f"head -c 16 {file_path}")
+            if guard: guard()
+            header = await self._run_su_cmd(serial, f"head -c 16 {shlex.quote(file_path)}", guard)
 
             if "SQLite format 3" in header:
                 cwe = "CWE-312"
                 score, vector = get_default_cvss_for_cwe(cwe)
 
                 # Query table schema if sqlite3 binary is present on rooted emulator
+                if guard: guard()
                 tables_out = await self._run_su_cmd(
                     serial,
-                    f"sqlite3 {file_path} 'SELECT name FROM sqlite_master WHERE type=\"table\";' 2>/dev/null"
+                    f"sqlite3 {shlex.quote(file_path)} 'SELECT name FROM sqlite_master WHERE type=\"table\";' 2>/dev/null", guard
                 )
                 table_list = tables_out.replace("\n", ", ") if tables_out else "Unknown Tables"
 
@@ -159,14 +182,15 @@ class StorageAuditor:
 
         return findings
 
-    async def audit_cache_leakage(self, serial: str, package_name: str) -> list[Finding]:
+    async def audit_cache_leakage(self, serial: str, package_name: str, guard=None) -> list[Finding]:
         """Audit /data/data/<pkg>/cache for cached sensitive API responses."""
         findings: list[Finding] = []
-        cache_dir = f"/data/data/{package_name}/cache"
+        cache_dir = f"{self._package_path(package_name)}/cache"
 
+        if guard: guard()
         grep_out = await self._run_su_cmd(
             serial,
-            f"grep -rn -E 'Authorization:|Bearer |password' {cache_dir} 2>/dev/null | head -n 5"
+            f"grep -rn -E 'Authorization:|Bearer |password' {shlex.quote(cache_dir)} 2>/dev/null | head -n 5", guard
         )
         if grep_out and "Binary file" not in grep_out:
             cwe = "CWE-524"
@@ -194,11 +218,15 @@ class StorageAuditor:
 
         return findings
 
-    async def audit_all_storage(self, serial: str, package_name: str) -> dict[str, Any]:
+    async def audit_all_storage(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
         """Run full storage forensics pass across SharedPreferences, Databases, and Cache."""
-        pref_findings = await self.audit_shared_preferences(serial, package_name)
-        db_findings = await self.audit_sqlite_databases(serial, package_name)
-        cache_findings = await self.audit_cache_leakage(serial, package_name)
+        if guard: guard()
+        pref_findings = await self.audit_shared_preferences(serial, package_name, guard)
+        if guard: guard()
+        db_findings = await self.audit_sqlite_databases(serial, package_name, guard)
+        if guard: guard()
+        cache_findings = await self.audit_cache_leakage(serial, package_name, guard)
+        if guard: guard()
 
         all_findings = pref_findings + db_findings + cache_findings
         return {

@@ -153,7 +153,7 @@ class ReportEngine:
         for name in ('deep_links','webview','intent'):
             row=categories.get(name,{})
             rows.append(f"- {name}: static={row.get('static_status','not_recorded')}; runtime={row.get('runtime_status','not_recorded')}; proof={row.get('proof_status','not_recorded')}")
-        for name in ('auth_session', 'firebase'):
+        for name in ('auth_session', 'firebase', 'dependencies'):
             row = data.get('coverage', {}).get(name, {})
             rows.append(f"- {name}: static={row.get('static_status', 'not_recorded')}; runtime={row.get('runtime_status', 'not_recorded')}; proof={row.get('proof_status', 'not_recorded')}")
         return '\n'.join(rows)+'\n'

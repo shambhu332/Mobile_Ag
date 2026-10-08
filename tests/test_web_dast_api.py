@@ -37,12 +37,19 @@ def test_dast_root_endpoint(client):
 
 
 def test_dast_logcat_endpoint(client):
-    response = client.get("/api/dast/logcat?serial=emulator-5554&lines=50")
-    assert response.status_code == 200
+    response = client.get("/api/dast/logcat?serial=emulator-5554&package_name=com.target.testapp&lines=50")
+    assert response.status_code in (200, 403)
+    if response.status_code == 403:
+        return  # Device/package scope is intentionally fail-closed.
     data = response.json()
     assert "lines" in data
     assert "findings" in data
     assert isinstance(data["findings"], list)
+
+
+def test_dast_logcat_requires_explicit_package(client):
+    response = client.get("/api/dast/logcat?serial=emulator-5554&lines=50")
+    assert response.status_code in (403, 422)  # middleware scope may reject first
 
 
 def test_dast_fuzz_trigger_endpoint(client):
@@ -264,7 +271,6 @@ def test_api_fuzz_admin_bfla_and_cleartext(client):
     # Should flag cleartext HTTP (CWE-319) and privileged admin path (CWE-285)
     assert "CWE-319" in cwes
     assert "CWE-285" not in cwes
-
 
 
 

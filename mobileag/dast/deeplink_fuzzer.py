@@ -117,7 +117,7 @@ class DeepLinkFuzzer:
                         title=f"Review new target-process crash after link exercise: {evidence_uri(link_uri)}",
                         description=(
                             f"Firing deep link payload `{evidence_uri(test_uri)}` was followed by a newly observed target-process crash. Causation, reproducibility and ordinary-app exploitability are not established.\n\n"
-                            f"Logcat stack trace excerpt:\n`{crash_lines[0][:250]}`"
+                            "The stack trace and runtime values are intentionally omitted from the report."
                         ),
                         severity=Severity.INFO,
                         confidence=0.5,
@@ -128,7 +128,7 @@ class DeepLinkFuzzer:
                         affected_component=evidence_uri(link_uri),
                         file_path=evidence_uri(link_uri),
                         line_number=1,
-                        code_snippet=crash_lines[0].strip(),
+                        code_snippet="Target PID fatal exception (runtime values omitted)",
                         detection_method="DeepLinkFuzzer (Dynamic)",
                         status=FindingStatus.UNVERIFIED,
                         metadata={"proof_state":"not_proven","attacker_context":"adb_shell_diagnostic","log_attribution":"new_matching_process_pid"},

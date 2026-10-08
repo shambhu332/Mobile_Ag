@@ -30,6 +30,7 @@ class AsyncMITMProxy:
 
     def record_transaction(self, tx):
         # Capture is evidence storage, so do not retain raw credentials.
+        tx.url = redact(tx.url)
         tx.request_headers = redact(tx.request_headers)
         tx.response_headers = redact(tx.response_headers)
         tx.request_body = redact(tx.request_body)
@@ -97,6 +98,9 @@ class AsyncMITMProxy:
                         token=headers.get('proxy-authorization','').removeprefix('Bearer ')
                         if not token or not hmac.compare_digest(token,os.environ.get('MOBILEAG_PROXY_TOKEN','')):
                             await respond(407,b'Proxy authentication required');return
+                        # Credentials are needed only for this local proxy check. Never
+                        # forward or retain them in request evidence.
+                        headers.pop('proxy-authorization', None)
                         if event.method == b'CONNECT':
                             await respond(501,b'TLS interception is not supported');return
                     elif isinstance(event,h11.Data):

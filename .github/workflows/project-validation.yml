@@ -22,10 +22,11 @@ jobs:
           python -m pip install --no-deps --target "$TARGET" dist/*.whl
           cd "$(mktemp -d)"
           PYTHONPATH="$TARGET" python "$GITHUB_WORKSPACE/scripts/wheel-smoke.py" --target "$TARGET"
-      - name: Browser regression (synthetic, devices disabled)
+      - name: Browser regressions (synthetic, devices disabled)
         run: |
           npm ci --prefix assets --ignore-scripts
           python -m pip install playwright==1.63.0
           python -m playwright install --with-deps chromium
           CHROMIUM=$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')
           python tests/browser_product_regression.py --server-python "$(command -v python)" --chromium "$CHROMIUM" --axe assets/node_modules/axe-core/axe.min.js --output "$RUNNER_TEMP/browser-results"
+          python tests/browser_console_regression.py --server-python "$(command -v python)" --chromium "$CHROMIUM" --axe assets/node_modules/axe-core/axe.min.js --output "$RUNNER_TEMP/console-results"

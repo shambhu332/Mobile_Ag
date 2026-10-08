@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/static/accessibility.css" />
   <link rel="stylesheet" href="/static/interface.css" />
   <link rel="stylesheet" href="/static/experience.css" />
+  <link rel="stylesheet" href="/static/console.css" />
 
 
   <!-- Vis.js for Network Topology Graph -->
@@ -43,7 +44,7 @@
   </style>
 </head>
 
-<body class="bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased">
+<body class="console-shell bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased">
 
   <a class="skip-link" href="#main-workspace">Skip to workspace</a>
   <!-- ===================================================================== -->
@@ -59,13 +60,14 @@
         </div>
         <div>
           <h1 class="text-sm font-semibold text-white tracking-wide">MobileAg</h1>
-          <p class="text-[10px] font-mono text-slate-400">Local security workbench</p>
+          <p class="text-[10px] font-mono text-slate-400">Mobile security console</p>
         </div>
         <button id="workspace-menu-toggle" type="button" aria-controls="workspace-navigation" aria-expanded="true">Menu</button>
       </div>
 
       <!-- Main Navigation Menu -->
       <nav id="workspace-navigation" aria-label="Workspace sections" class="p-3 space-y-1">
+        <p class="console-nav-label">Workspace</p>
         <button id="nav-assessment" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="play" class="w-4 h-4"></i><span>Start Assessment</span></button>
 <button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
           <i data-lucide="network" class="w-4 h-4"></i>
@@ -96,7 +98,7 @@
 
 
 
-        <details id="advanced-tools"><summary class="text-slate-300 px-3 py-2">Advanced tools (optional)</summary><button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
+        <details id="advanced-tools" open><summary class="text-slate-300 px-3 py-2">Research tools</summary><button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
           <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
           <span>Device Diagnostics</span>
           <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
@@ -122,7 +124,7 @@
     </div>
 
     <!-- Bottom Telemetry & Status -->
-    <div class="p-4 border-t border-borderSubtle space-y-3">
+    <div class="console-sidebar-status p-4 border-t border-borderSubtle space-y-3">
       <div class="flex items-center justify-between text-[11px] font-mono">
         <span class="text-slate-400">Pipeline Status:</span>
         <span id="sidebar-status-text" class="text-emerald-400 font-semibold">Not checked</span>
@@ -1205,5 +1207,6 @@
   <script src="/static/interface.js"></script>
   <script src="/static/experience.js"></script>
   <script src="/static/auto-ready.js"></script>
+  <script src="/static/console.js"></script>
 </body>
 </html>

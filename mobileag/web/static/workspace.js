@@ -1,5 +1,5 @@
 /* MobileAg workspace.js — ordered local classic-script module; shared workspace state is in workspace.js. */
-    let activeView = 'surface';
+    let activeView = 'overview';
     let currentScan = null;
     let visNetwork = null;
     let visNodes = null;
@@ -65,7 +65,7 @@
         currentScan = page.items.length ? await (await fetch('/api/scans/' + encodeURIComponent(page.items[0].scan_id))).json() : null;
         if (!currentScan) {
           renderDashboard({package_name:"Upload an APK or IPA to begin", stats:{total:0}, findings:[]});
-          document.getElementById("nav-assessment").click();
+          document.getElementById("nav-overview").click();
           return;
         }
 

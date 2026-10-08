@@ -3,6 +3,7 @@
   const make=(tag,text,parent)=>{const el=document.createElement(tag);el.textContent=text||'';parent?.append(el);return el;};
   const button=(text,parent,run)=>{const el=make('button',text,parent);el.type='button';el.addEventListener('click',run);return el;};
   const views={
+    overview:['Security Overview','Upload an authorized app and inspect the selected scan. Static candidates are not verified vulnerabilities.','overview dashboard upload mobile',['assessment','scans']],
     assessment:['Start Assessment','Upload an owned APK, narrow scope, choose stages and explicitly approve execution.','upload apk scope start',['settings','scans']],
     surface:['Attack Surface','Inspect observed static coverage. Components, symbols and routes are candidates, not exploit proof.','graph manifest components coverage',['findings','taint']],
     findings:['Findings & Evidence','Filter candidates, compare source/sink evidence and record actual reproduced prerequisites and impact.','triage evidence candidates reproduction',['surface','api']],

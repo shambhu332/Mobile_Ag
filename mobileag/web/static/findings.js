@@ -111,8 +111,8 @@
       html = html.replace(/^### (.*$)/gim, '<h5 class="text-xs font-bold text-white mt-3 mb-1.5 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span> $1</h5>');
       html = html.replace(/^#### (.*$)/gim, '<h6 class="text-[11px] font-semibold text-sky-400 mt-2.5 mb-1">$1</h6>');
       html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
-      html = html.replace(/^\- (.*$)/gim, '<li class="ml-4 list-disc text-slate-300 text-[11px] leading-relaxed my-0.5">$1</li>');
-      html = html.replace(/^(\d+)\. (.*$)/gim, '<li class="ml-4 list-decimal text-slate-300 text-[11px] leading-relaxed my-1"><span class="text-slate-200">$2</span></li>');
+      html = html.replace(/^\- (.*$)/gim, '<ul><li class="ml-4 list-disc text-slate-300 text-[11px] leading-relaxed my-0.5">$1</li></ul>');
+      html = html.replace(/^(\d+)\. (.*$)/gim, '<ol start="$1"><li class="ml-4 list-decimal text-slate-300 text-[11px] leading-relaxed my-1"><span class="text-slate-200">$2</span></li></ol>');
       html = html.replace(/\n\n/g, '<div class="h-2"></div>');
       return html;
     }

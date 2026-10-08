@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,8 @@ class ReactNativeScanner:
 
     def __init__(self, entropy_threshold: float = 4.6) -> None:
         self.entropy_threshold = entropy_threshold
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
 
         self.secret_rules = [
             ("AWS Access Key", re.compile(r"AKIA[0-9A-Z]{16}"), "CWE-798", "Critical"),
@@ -60,8 +63,12 @@ class ReactNativeScanner:
             if c.is_file():
                 return c
 
-        found = list(root.rglob("index.android.bundle"))
-        return found[0] if found else None
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=16*1024*1024,
+                                    max_total_bytes=16*1024*1024)
+        for path, _ in inventory.read(root, names={"index.android.bundle"}):
+            return path
+        self.coverage = dict(inventory.coverage)
+        return None
 
     @staticmethod
     def calculate_entropy(data: str) -> float:
@@ -90,6 +97,8 @@ class ReactNativeScanner:
         # 1. Scan for secrets
         for name, pattern, cwe, sev in self.secret_rules:
             for match in pattern.finditer(content):
+                if len(findings) >= 1000:
+                    break
                 val = match.group(0)
                 offset = match.start()
                 snippet = "[REDACTED credential; inspect the bundle at the recorded offset]"
@@ -109,9 +118,13 @@ class ReactNativeScanner:
         # 2. Scan for internal/staging URLs
         for name, pattern, cwe, sev in self.url_rules:
             for match in pattern.finditer(content):
-                url = match.group(0)
+                parsed = urlsplit(match.group(0))
+                url = f"{parsed.scheme}://{parsed.netloc}"
                 offset = match.start()
-                snippet = self.format_bundle_snippet(content, match.start(), match.end())
+                snippet = "[URL path and query omitted; inspect bundle at recorded offset]"
+
+                if len(findings) >= 1000:
+                    break
 
                 findings.append({
                     "issue_id": f"RN-URL-{name.replace(' ', '-').upper()}",
@@ -128,9 +141,11 @@ class ReactNativeScanner:
         # 3. Scan for internal routes & API paths
         api_routes = set()
         for match in self.api_endpoint_pattern.finditer(content):
+            if len(api_routes) >= 5000:
+                break
             api_routes.add(match.group(1))
 
-        if any("admin" in r.lower() or "internal" in r.lower() for r in api_routes):
+        if len(findings) < 1000 and any("admin" in r.lower() or "internal" in r.lower() for r in api_routes):
             priv_routes = [r for r in api_routes if "admin" in r.lower() or "internal" in r.lower()]
             route_summary = ", ".join(priv_routes[:5])
             findings.append({
@@ -153,12 +168,23 @@ class ReactNativeScanner:
         if not path.is_file():
             return []
 
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            return self.scan_bundle_text(content, str(path))
-        except Exception as e:
-            logger.error(f"Failed to read bundle at {path}: {e}")
-            return []
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=16*1024*1024,
+                                    max_total_bytes=16*1024*1024)
+        records = list(inventory.read(path.parent, names={path.name}))
+        for candidate, data in records:
+            if candidate != path:
+                continue
+            self.coverage = dict(inventory.coverage)
+            findings = self.scan_bundle_text(data.decode("utf-8", errors="ignore"), str(path))
+            if len(findings) >= 1000:
+                self.coverage['limits_reached'] = True
+                self.coverage['static_status'] = 'partial'
+            self.coverage.update(runtime_status="not_tested", proof_status="not_proven",
+                                 exhaustive=False, candidate_count=len(findings),
+                                 limitations=["bounded bundle byte scan; no credential validation or runtime reachability proof"])
+            return findings
+        self.coverage = dict(inventory.coverage)
+        return []
 
     async def scan_directory_async(self, decompiled_dir: str | Path) -> list[Finding]:
         """Asynchronously locate bundle and return standard Finding objects."""
@@ -172,22 +198,13 @@ class ReactNativeScanner:
 
         for item in raw_findings:
             cwe = item["cwe"]
-            score, vector = get_default_cvss_for_cwe(cwe)
-            sev_map = {
-                "Critical": Severity.CRITICAL,
-                "High": Severity.HIGH,
-                "Medium": Severity.MEDIUM,
-                "Low": Severity.LOW,
-            }
-            severity = sev_map.get(item["severity"], Severity.MEDIUM)
-
             findings.append(Finding(
                 title=item["title"],
                 description=item["description"],
-                severity=severity,
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="assets/index.android.bundle",
                 detection_method="ReactNativeScanner",
                 status=FindingStatus.UNVERIFIED,

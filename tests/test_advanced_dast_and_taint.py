@@ -171,6 +171,16 @@ def test_taint_engine_sql_and_intent_redirection():
     assert "CWE-927" in cwes  # Intent Redirection
 
 
+@pytest.mark.asyncio
+async def test_taint_directory_scan_is_bounded_and_marks_skipped_inputs(tmp_path):
+    (tmp_path / "Huge.java").write_text("x" * (2 * 1024 * 1024 + 1))
+    engine = TaintEngine()
+    await engine.analyze_directory_async(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert engine.coverage["source_files_skipped"] == 1
+    assert engine.coverage["proof_status"] == "not_proven"
+
+
 # =============================================================================
 # 4. UICrawler Tests
 # =============================================================================

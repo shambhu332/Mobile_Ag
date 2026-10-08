@@ -62,7 +62,7 @@ The following API endpoints were discovered in the application:
 | Method | Endpoint | Authenticated |
 |---|---|---|
 {% for ep in api_endpoints %}
-| {{ ep.method|default('ANY') }} | `{{ ep.url }}` | {{ 'Yes' if ep.requires_auth else 'No' }} |
+| {{ ep.method|default('ANY') }} | `{{ ep.url }}` | {{ 'Unknown' if ep.requires_auth is none else ('Yes' if ep.requires_auth else 'No') }} |
 {% endfor %}
 
 {% endif %}

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,8 @@ class SmaliCallGraphEngine:
     def __init__(self) -> None:
         self.methods: dict[str, MethodNode] = {}
         self.class_hierarchy: dict[str, str] = {}  # class -> superclass
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
 
     def build_graph(self, base_dir: str | Path) -> dict[str, MethodNode]:
         """Scan directory (or smali directories) and construct the call graph."""
@@ -192,15 +195,20 @@ class SmaliCallGraphEngine:
             logger.warning("Smali directory does not exist: %s", base_dir)
             return self.methods
 
-        smali_files: list[Path] = []
-        if base_path.is_file() and base_path.suffix == ".smali":
-            smali_files.append(base_path)
-        else:
-            smali_files = list(base_path.glob("**/*.smali"))
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2*1024*1024,
+                                    max_total_bytes=64*1024*1024)
+        source_root = base_path.parent if base_path.is_file() else base_path
+        names = {base_path.name} if base_path.is_file() else ()
+        for sf, data in inventory.read(source_root, {".smali"}, names=names):
+            self._parse_smali_file(sf, data.decode("utf-8", errors="ignore"))
+            if len(self.methods) >= 100000:
+                inventory.coverage['limits_reached'] = True
+                break
 
-        logger.info("Found %d smali files for call graph construction", len(smali_files))
-        for sf in smali_files:
-            self._parse_smali_file(sf)
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+                             methods_analyzed=len(self.methods))
+        logger.info("Constructed bounded call graph with %d methods", len(self.methods))
 
         self._resolve_synthetic_and_lambda_bridges()
 
@@ -212,7 +220,7 @@ class SmaliCallGraphEngine:
         bridge_keys = [
             k for k, m in self.methods.items()
             if m.method_name.startswith("access$") or "lambda$" in m.method_name or "$$ExternalSynthetic" in m.class_name
-        ]
+        ][:1000]
 
         for b_key in bridge_keys:
             bridge_method = self.methods[b_key]
@@ -236,13 +244,19 @@ class SmaliCallGraphEngine:
                         if snk not in caller.sinks_called:
                             caller.sinks_called.append(snk)
 
-    def _parse_smali_file(self, smali_file: Path) -> None:
+    def _parse_smali_file(self, smali_file: Path, content: Optional[str] = None) -> None:
         """Parse class definition, methods, invoke instructions, and reflection in a Smali file."""
-        try:
-            content = smali_file.read_text(encoding="utf-8", errors="ignore")
-        except Exception as e:
-            logger.debug("Failed reading %s: %s", smali_file, e)
-            return
+        if content is None:
+            try:
+                inventory = SourceInventory(max_file_bytes=2*1024*1024, max_total_bytes=2*1024*1024)
+                records = inventory.read(smali_file.parent, {".smali"}, names={smali_file.name})
+                _, data = next(records, (None, None))
+                if data is None:
+                    return
+                content = data.decode("utf-8", errors="ignore")
+            except Exception as e:
+                logger.debug("Failed reading %s: %s", smali_file, e)
+                return
 
         current_class = ""
         current_method: Optional[MethodNode] = None
@@ -345,8 +359,12 @@ class SmaliCallGraphEngine:
         """Traverse the Call Graph to find paths from method sources to method sinks."""
         findings: list[CallChainFinding] = []
         visited_paths: set[str] = set()
+        truncated = False
 
         for method_key, method in self.methods.items():
+            if len(findings) >= 1000:
+                truncated = True
+                break
             if not method.sources_called:
                 continue
 
@@ -354,7 +372,9 @@ class SmaliCallGraphEngine:
             queue: list[tuple[str, list[str]]] = [(method_key, [method_key])]
             visited_in_walk: set[str] = {method_key}
 
-            while queue:
+            operations = 0
+            while queue and operations < 10000 and len(findings) < 1000:
+                operations += 1
                 curr_key, path = queue.pop(0)
                 curr_method = self.methods.get(curr_key)
 
@@ -391,6 +411,15 @@ class SmaliCallGraphEngine:
                         if next_inv in self.methods and next_inv not in visited_in_walk:
                             visited_in_walk.add(next_inv)
                             queue.append((next_inv, path + [next_inv]))
+                            if len(queue) >= 10000:
+                                truncated = True
+                                break
+
+            if queue and operations >= 10000:
+                truncated = True
+
+        if truncated:
+            self.coverage.update(static_status="partial", limits_reached=True)
 
         return findings
 
@@ -401,6 +430,9 @@ class SmaliCallGraphEngine:
 
         findings: list[Finding] = []
         for i, p in enumerate(paths, start=1):
+            if i > 1000:
+                self.coverage['limits_reached'] = True
+                break
             snippet = "\n".join([f"  [{idx+1}] {step}" for idx, step in enumerate(p.call_path)])
 
             findings.append(

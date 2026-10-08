@@ -4,6 +4,7 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List
 from pathlib import Path
+from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.ingestion.intent_filters import DATA_ATTRIBUTES, inventory_links
 
 logger = logging.getLogger(__name__)
@@ -96,9 +97,14 @@ class ManifestParser:
         metadata = path.parent / "apktool.yml"
         if not metadata.is_file() or metadata.is_symlink() or metadata.stat().st_size > 65536:
             return {}
+        inventory = SourceInventory(max_entries=100, max_file_bytes=65536, max_total_bytes=65536)
+        records = list(inventory.read(metadata.parent, names={metadata.name}))
+        raw = next((data for candidate, data in records if candidate == metadata), None)
+        if raw is None:
+            return {}
         values = {}
         section = ""
-        for line in metadata.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in raw.decode("utf-8", errors="replace").splitlines():
             if line and not line[0].isspace():
                 section = line.rstrip(":") if line in ("versionInfo:", "sdkInfo:") else ""
                 continue

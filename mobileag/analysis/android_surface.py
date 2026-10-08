@@ -4,6 +4,7 @@ import asyncio
 import re
 from pathlib import Path
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.analysis.bounded_sources import SourceInventory
 
 MAX_FILES=5000
 MAX_FILE_BYTES=2*1024*1024
@@ -80,22 +81,17 @@ class AndroidSurfaceAnalyzer:
     def scan(self, directory, manifest):
         findings=[];sites={'webview':[], 'intent':[], 'deep_links':[]};count=0;size=0;skipped=0;limited=False
         base=Path(directory) if directory else None
+        inventory=SourceInventory(max_entries=MAX_FILES,max_file_bytes=MAX_FILE_BYTES,max_total_bytes=MAX_SOURCE_BYTES)
         if base and base.is_dir():
-            for path in base.rglob('*'):
-                if path.suffix not in {'.java','.kt'}:continue
-                if count+skipped>=MAX_FILES:limited=True;break
-                try:
-                    if path.is_symlink() or not path.is_file() or path.stat().st_size>MAX_FILE_BYTES:skipped+=1;continue
-                    data=path.read_bytes()
-                    if size+len(data)>MAX_SOURCE_BYTES:limited=True;break
-                    size+=len(data);count+=1
-                    found,observed=self.analyze_source(data.decode('utf-8',errors='replace'),str(path.relative_to(base)))
-                    remaining=max(0,MAX_FINDINGS-len(findings))
-                    findings.extend(found[:remaining])
-                    if len(found)>remaining:limited=True
-                    for category in sites:sites[category].extend(observed[category][:max(0,500-len(sites[category]))])
-                except (OSError,UnicodeError):skipped+=1
-        status='not_analyzed' if not count else 'partial' if limited or skipped else 'analyzed_heuristically'
+            for path,data in inventory.read(base,{'.java','.kt'}):
+                count=inventory.coverage['source_files_analyzed'];size=inventory.coverage['source_bytes_analyzed']
+                found,observed=self.analyze_source(data.decode('utf-8',errors='replace'),str(path.relative_to(base)))
+                remaining=max(0,MAX_FINDINGS-len(findings))
+                findings.extend(found[:remaining])
+                if len(found)>remaining:inventory.coverage['limits_reached']=True
+                for category in sites:sites[category].extend(observed[category][:max(0,500-len(sites[category]))])
+        skipped=inventory.coverage['source_files_skipped'];limited=inventory.coverage['limits_reached']
+        status=inventory.coverage['static_status']
         categories={category:{'static_status':status,'source_sites':values,'candidate_count':sum(f.metadata['category']==category for f in findings),
             'runtime_status':'not_tested','proof_status':'not_proven',
             'limitations':['bounded lexical review; not full control-flow/dataflow','native/reflection/runtime-loaded behavior not exhaustively analyzed','no ordinary-app exploit validator executed']} for category,values in sites.items()}

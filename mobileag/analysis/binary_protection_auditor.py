@@ -8,7 +8,10 @@ Uses pyelftools to parse ELF headers and check for compile-time hardening contro
 """
 
 import asyncio
+import io
 import logging
+import os
+import stat
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,7 +23,7 @@ except ImportError:
     DynamicSection = None
 
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +32,20 @@ class BinaryProtectionAuditor:
     """Audits compiled native libraries (.so) for defensive ELF security mitigations."""
 
     def __init__(self) -> None:
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
         if ELFFile is None:
             logger.warning("pyelftools is not installed. Native binary protection auditing will be limited.")
 
     def find_native_libraries(self, decompiled_dir: str | Path) -> list[Path]:
         """Locate all .so files under lib/ or root directories."""
         root = Path(decompiled_dir)
-        so_files = list(root.rglob("lib/**/*.so"))
-        if not so_files:
-            so_files = list(root.rglob("*.so"))
-        return sorted(so_files)
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=64*1024*1024,
+                                    max_total_bytes=256*1024*1024)
+        return sorted(path for path, _ in inventory.read(root, {".so"}))
 
-    def audit_library_file(self, so_path: Path, base_dir: Optional[Path] = None) -> list[dict[str, Any]]:
+    def audit_library_file(self, so_path: Path, base_dir: Optional[Path] = None,
+                           data: Optional[bytes] = None) -> list[dict[str, Any]]:
         """Parse ELF headers of a single shared library and evaluate binary protections.
 
         Args:
@@ -57,58 +62,66 @@ class BinaryProtectionAuditor:
         lib_name = so_path.name
 
         try:
-            with so_path.open("rb") as f:
-                elf = ELFFile(f)
+            if data is None:
+                fd = os.open(so_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as stream:
+                    details = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(details.st_mode) or details.st_size > 64*1024*1024:
+                        return []
+                    data = stream.read(64*1024*1024 + 1)
+                if len(data) > 64*1024*1024:
+                    return []
+            elf = ELFFile(io.BytesIO(data))
 
-                # 1. Check PIE / ET_DYN
-                is_pie = elf.header.get("e_type") == "ET_DYN"
+            # 1. Check PIE / ET_DYN
+            is_pie = elf.header.get("e_type") == "ET_DYN"
 
-                # 2. Check Stack Canary
-                has_canary = False
-                for section_name in [".dynsym", ".symtab"]:
-                    sec = elf.get_section_by_name(section_name)
-                    if sec:
-                        for sym in sec.iter_symbols():
-                            if sym.name in ("__stack_chk_fail", "__intel_security_cookie"):
-                                has_canary = True
-                                break
-                    if has_canary:
-                        break
+            # 2. Check Stack Canary
+            has_canary = False
+            for section_name in [".dynsym", ".symtab"]:
+                sec = elf.get_section_by_name(section_name)
+                if sec:
+                    for sym in sec.iter_symbols():
+                        if sym.name in ("__stack_chk_fail", "__intel_security_cookie"):
+                            has_canary = True
+                            break
+                if has_canary:
+                    break
 
-                # 3. Check NX (PT_GNU_STACK)
-                has_nx = False
-                gnu_stack_found = False
-                for seg in elf.iter_segments():
-                    if seg["p_type"] == "PT_GNU_STACK":
-                        gnu_stack_found = True
-                        # PF_X is 0x1. If (flags & 1) == 0, stack is non-executable
-                        if (seg["p_flags"] & 0x1) == 0:
-                            has_nx = True
-                        break
+            # 3. Check NX (PT_GNU_STACK)
+            has_nx = False
+            gnu_stack_found = False
+            for seg in elf.iter_segments():
+                if seg["p_type"] == "PT_GNU_STACK":
+                    gnu_stack_found = True
+                    # PF_X is 0x1. If (flags & 1) == 0, stack is non-executable
+                    if (seg["p_flags"] & 0x1) == 0:
+                        has_nx = True
+                    break
 
-                # 4. Check RELRO
-                has_relro = False
-                full_relro = False
-                for seg in elf.iter_segments():
-                    if seg["p_type"] == "PT_GNU_RELRO":
-                        has_relro = True
-                        break
+            # 4. Check RELRO
+            has_relro = False
+            full_relro = False
+            for seg in elf.iter_segments():
+                if seg["p_type"] == "PT_GNU_RELRO":
+                    has_relro = True
+                    break
 
-                if has_relro:
-                    dyn_sec = elf.get_section_by_name(".dynamic")
-                    if dyn_sec and isinstance(dyn_sec, DynamicSection):
-                        for tag in dyn_sec.iter_tags():
-                            d_tag = tag.entry.d_tag
-                            d_val = getattr(tag.entry, "d_val", 0)
-                            if d_tag == "DT_BIND_NOW":
-                                full_relro = True
-                                break
-                            elif d_tag == "DT_FLAGS" and (d_val & 0x8):  # DF_BIND_NOW = 0x8
-                                full_relro = True
-                                break
-                            elif d_tag == "DT_FLAGS_1" and (d_val & 0x1):  # DF_1_NOW = 0x1
-                                full_relro = True
-                                break
+            if has_relro:
+                dyn_sec = elf.get_section_by_name(".dynamic")
+                if dyn_sec and isinstance(dyn_sec, DynamicSection):
+                    for tag in dyn_sec.iter_tags():
+                        d_tag = tag.entry.d_tag
+                        d_val = getattr(tag.entry, "d_val", 0)
+                        if d_tag == "DT_BIND_NOW":
+                            full_relro = True
+                            break
+                        elif d_tag == "DT_FLAGS" and (d_val & 0x8):  # DF_BIND_NOW = 0x8
+                            full_relro = True
+                            break
+                        elif d_tag == "DT_FLAGS_1" and (d_val & 0x1):  # DF_1_NOW = 0x1
+                            full_relro = True
+                            break
 
         except Exception as e:
             logger.debug(f"Failed to parse ELF file {so_path}: {e}")
@@ -124,9 +137,7 @@ class BinaryProtectionAuditor:
                 "severity": "Medium",
                 "title": f"Missing Stack Canary Protection in {lib_name}",
                 "description": (
-                    f"The native library '{lib_name}' was compiled without stack canary instrumentation "
-                    f"(__stack_chk_fail not present in symbol tables). Stack-based buffer overflows can directly "
-                    f"overwrite the function return pointer."
+                    f"No stack-canary symbol was observed in '{lib_name}'. This is a hardening indicator, not evidence of a reachable memory corruption flaw or exploit."
                 ),
                 "file_path": rel_path,
                 "remediation": "Recompile with '-fstack-protector-all' or '-fstack-protector-strong' compiler flags."
@@ -140,9 +151,7 @@ class BinaryProtectionAuditor:
                 "severity": "High",
                 "title": f"Executable Stack (Missing NX / DEP) in {lib_name}",
                 "description": (
-                    f"The native library '{lib_name}' does not enforce non-executable stack protection "
-                    f"(PT_GNU_STACK segment is missing or marked executable). An attacker can execute shellcode "
-                    f"injected directly into stack memory."
+                    f"The ELF does not expose a confirmed non-executable GNU stack marker for '{lib_name}'. Verify toolchain/platform defaults and actual load behavior; no code-execution path is established."
                 ),
                 "file_path": rel_path,
                 "remediation": "Recompile with '-z noexecstack' linker option."
@@ -156,8 +165,7 @@ class BinaryProtectionAuditor:
                 "severity": "Medium",
                 "title": f"No RELRO (Relocation Read-Only) in {lib_name}",
                 "description": (
-                    f"The native library '{lib_name}' lacks a PT_GNU_RELRO segment. The Global Offset Table (GOT) "
-                    f"remains completely writable during runtime, facilitating GOT overwrite exploitation."
+                    f"No PT_GNU_RELRO segment was observed in '{lib_name}'. This is a hardening observation and does not prove a writable GOT overwrite path or exploitable corruption."
                 ),
                 "file_path": rel_path,
                 "remediation": "Recompile using '-Wl,-z,relro -Wl,-z,now' for Full RELRO protection."
@@ -169,8 +177,7 @@ class BinaryProtectionAuditor:
                 "severity": "Low",
                 "title": f"Partial RELRO Detected in {lib_name}",
                 "description": (
-                    f"The native library '{lib_name}' uses Partial RELRO instead of Full RELRO. The GOT is located "
-                    f"before the BSS, but lazy binding allows GOT entries to remain writable."
+                    f"The ELF appears to use partial RELRO. Confirm dynamic tags and runtime loader behavior; no GOT overwrite primitive or impact is demonstrated."
                 ),
                 "file_path": rel_path,
                 "remediation": "Add '-Wl,-z,now' linker flag to enforce immediate symbol binding (Full RELRO)."
@@ -184,8 +191,7 @@ class BinaryProtectionAuditor:
                 "severity": "Medium",
                 "title": f"Position Independent Code (PIE) Missing in {lib_name}",
                 "description": (
-                    f"The binary '{lib_name}' was not compiled as a position-independent shared object (ET_DYN). "
-                    f"Without PIE, the binary cannot take full advantage of Address Space Layout Randomization (ASLR)."
+                    f"The ELF type does not appear to be ET_DYN for '{lib_name}'. Confirm the artifact type and Android loader behavior; this is a hardening/configuration signal, not exploit proof."
                 ),
                 "file_path": rel_path,
                 "remediation": "Compile with '-fPIC' and link with '-pie'."
@@ -196,10 +202,19 @@ class BinaryProtectionAuditor:
     def audit_directory(self, decompiled_dir: str | Path) -> list[dict[str, Any]]:
         """Synchronously audit all discovered .so libraries under a directory."""
         root = Path(decompiled_dir)
-        so_files = self.find_native_libraries(root)
         all_findings = []
-        for so_file in so_files:
-            all_findings.extend(self.audit_library_file(so_file, base_dir=root))
+        if ELFFile is None:
+            self.coverage = {"static_status": "unsupported", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False,
+                             "limitations": ["pyelftools is unavailable; ELF protections were not analyzed"]}
+            return all_findings
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=64*1024*1024,
+                                    max_total_bytes=256*1024*1024)
+        for so_file, data in inventory.read(root, {".so"}):
+            all_findings.extend(self.audit_library_file(so_file, base_dir=root, data=data))
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+                             candidate_count=len(all_findings))
         return all_findings
 
     async def audit_directory_async(self, decompiled_dir: str | Path) -> list[Finding]:
@@ -209,27 +224,20 @@ class BinaryProtectionAuditor:
 
         for item in raw_findings:
             cwe = item["cwe"]
-            score, vector = get_default_cvss_for_cwe(cwe)
-            sev_map = {
-                "Critical": Severity.CRITICAL,
-                "High": Severity.HIGH,
-                "Medium": Severity.MEDIUM,
-                "Low": Severity.LOW,
-            }
-            severity = sev_map.get(item["severity"], Severity.MEDIUM)
-
             findings.append(Finding(
                 title=item["title"],
                 description=item["description"],
-                severity=severity,
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component=Path(item["file_path"]).name,
                 detection_method="BinaryProtectionAuditor",
                 status=FindingStatus.UNVERIFIED,
                 remediation=item["remediation"],
                 file_path=item["file_path"],
+                metadata={"proof_state": "not_proven", "analysis_kind": "ELF_hardening_signal",
+                          "limitations": ["not a vulnerability exploitability test", "runtime loader behavior not tested"]},
             ))
 
         return findings

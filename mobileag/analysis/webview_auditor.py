@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
+from mobileag.analysis.bounded_sources import SourceInventory
 
 
 class WebViewAuditor:
@@ -17,8 +18,13 @@ class WebViewAuditor:
                 if finding.metadata.get("category") == "webview"]
 
     def _analyze_file(self, file_path: Path):
-        if file_path.is_symlink() or file_path.stat().st_size > 2 * 1024 * 1024:
-            return []
-        findings, _ = AndroidSurfaceAnalyzer().analyze_source(
-            file_path.read_text(errors="replace"), str(file_path))
-        return [finding for finding in findings if finding.metadata.get("category") == "webview"]
+        inventory = SourceInventory(max_file_bytes=2*1024*1024, max_total_bytes=2*1024*1024)
+        for candidate, data in inventory.read(file_path.parent, {file_path.suffix}, names={file_path.name}):
+            if candidate != file_path:
+                continue
+            findings, _ = AndroidSurfaceAnalyzer().analyze_source(
+                data.decode("utf-8", errors="replace"), str(file_path))
+            self.coverage = dict(inventory.coverage)
+            return [finding for finding in findings if finding.metadata.get("category") == "webview"]
+        self.coverage = dict(inventory.coverage)
+        return []

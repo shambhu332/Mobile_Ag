@@ -20,6 +20,7 @@ from mobileag.ingestion.framework_detector import FrameworkDetector
 from mobileag.ingestion.packer_detector import PackerDetector
 from mobileag.ingestion.obfuscation import ObfuscationAnalyzer
 from mobileag.analysis.api_mapper import APIMapper
+from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.call_graph import SmaliCallGraphEngine
 from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
@@ -190,15 +191,23 @@ class Orchestrator:
             state["decompiled_path"] = extraction.get("jadx_dir", "")
             state["resource_path"] = extraction.get("apktool_dir", "")
             state["smali_path"] = extraction.get("apktool_dir", "")
-            state["coverage"] = {
-                "java_files": len(list(Path(state["decompiled_path"]).rglob("*.java"))) if state["decompiled_path"] else 0,
-                "kotlin_files": len(list(Path(state["decompiled_path"]).rglob("*.kt"))) if state["decompiled_path"] else 0,
-                "smali_files": len(list(Path(state["smali_path"]).rglob("*.smali"))) if state["smali_path"] else 0,
+            inventory = SourceInventory(max_entries=20000)
+            file_counts = {"java": 0, "kotlin": 0, "smali": 0}
+            for path in inventory.paths(state["decompiled_path"], {".java", ".kt"}):
+                if path.suffix.lower() == ".java": file_counts["java"] += 1
+                elif path.suffix.lower() == ".kt": file_counts["kotlin"] += 1
+            smali_inventory = SourceInventory(max_entries=20000)
+            file_counts["smali"] = sum(1 for _ in smali_inventory.paths(state["smali_path"], {".smali"}))
+            state["coverage"].update({
+                "java_files": file_counts["java"],
+                "kotlin_files": file_counts["kotlin"],
+                "smali_files": file_counts["smali"],
+                "ingestion_inventory": {"source": dict(inventory.coverage), "smali": dict(smali_inventory.coverage)},
                 "resources": bool(state["resource_path"]),
                 "dependency_lookup": "skipped_offline" if self._settings.offline else "enabled",
                 "historical_learning": "not_configured",
                 "android_surface": AndroidSurfaceAnalyzer().scan(None,{} )["coverage"],
-            }
+            })
             state["package_name"] = extraction.get("package_name", "")
 
             # Parse manifest
@@ -277,6 +286,12 @@ class Orchestrator:
                 engines[name]="incomplete"
                 if name in {"auth_session", "firebase"}:
                     state["coverage"][name].update(static_status="incomplete", runtime_status="not_tested", proof_status="not_proven")
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native"}:
+                    state["coverage"][name] = {
+                        "static_status": "incomplete", "runtime_status": "not_tested",
+                        "proof_status": "not_proven", "exhaustive": False,
+                        "limitations": ["analysis engine failed; findings and coverage are incomplete"],
+                    }
                 if name=="android_surface":
                     for category in state["coverage"].get("android_surface",{}).get("categories",{}).values():
                         category["static_status"]="incomplete"
@@ -307,8 +322,30 @@ class Orchestrator:
                     for ep in endpoints
                 ]
                 all_findings.extend(findings)
+                state["coverage"][name] = dict(self._api_mapper.coverage)
+                engines[name] = self._api_mapper.coverage.get("static_status", "incomplete")
             elif isinstance(result, list):
                 all_findings.extend(result)
+                if name == "secrets":
+                    state["coverage"][name] = dict(self._secret_scanner.coverage)
+                    engines[name] = self._secret_scanner.coverage.get("static_status", "incomplete")
+                elif name == "code_review":
+                    state["coverage"][name] = dict(self._code_reviewer.coverage)
+                    engines[name] = self._code_reviewer.coverage.get("static_status", "incomplete")
+                elif name in {"native", "dependencies", "taint", "nsc", "binary_protection", "react_native"}:
+                    if name == "taint" and not self._settings.enable_deep_taint:
+                        state["coverage"][name] = {
+                            "static_status": "skipped_disabled", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "exhaustive": False,
+                            "limitations": ["deep taint scan is disabled by configuration"],
+                        }
+                    else:
+                        analyzer = {
+                            "native": self._native_analyzer, "dependencies": self._dependency_scanner,
+                            "taint": self._taint_engine, "nsc": self._nsc_auditor,
+                            "binary_protection": self._bin_protection, "react_native": self._rn_scanner,
+                        }[name]
+                        state["coverage"][name] = dict(getattr(analyzer, "coverage", {}))
 
             logger.info("[Stage 2] %s: %d findings",
                         name,
@@ -318,10 +355,15 @@ class Orchestrator:
         try:
             smali_findings = self._call_graph_engine.audit_smali_directory(state["smali_path"])
             all_findings.extend(smali_findings)
+            state["coverage"]["smali_call_graph"] = dict(self._call_graph_engine.coverage)
             engines["smali_call_graph"]="completed_heuristically"
             logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
         except Exception as e:
             engines["smali_call_graph"]="incomplete"
+            state["coverage"]["smali_call_graph"] = {
+                "static_status": "incomplete", "runtime_status": "not_tested",
+                "proof_status": "not_proven", "exhaustive": False,
+            }
             state["errors"].append("Smali call graph review incomplete")
             logger.warning("[Stage 2] Smali Call Graph audit warning: %s", e)
 

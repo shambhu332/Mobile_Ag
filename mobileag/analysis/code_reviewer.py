@@ -20,6 +20,7 @@ from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.analysis.android_surface import mask_non_code, method_spans
 from mobileag.analysis.source_syntax import call_sites, literal_flag_bits
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ class CodeReviewer:
 
     def __init__(self, router: Optional[LLMRouter] = None):
         self.router = router
+        self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
+                         "proof_status":"not_proven", "exhaustive":False}
 
         # ── Standard Single/Multi-Line Rules ──
         self.basic_rules = [
@@ -312,14 +315,10 @@ class CodeReviewer:
         """Synchronously scan source files with pattern and scope-aware rules."""
         findings: list[dict[str, Any]] = []
 
-        for file_path in base_path.rglob("*"):
-            if not file_path.is_file() or file_path.suffix not in {".java", ".kt"}:
-                continue
-
+        inventory = SourceInventory()
+        for file_path, data in inventory.read(base_path, {".java", ".kt"}):
             try:
-                if file_path.is_symlink():
-                    continue
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
                 stem = file_path.stem
                 lines = mask_non_code(content).splitlines()
@@ -327,6 +326,9 @@ class CodeReviewer:
 
                 # 1. Standard rules
                 for line_num, line in enumerate(lines, 1):
+                    if len(findings) >= 1000:
+                        inventory.coverage['limits_reached'] = True
+                        break
                     for name, pattern, cwe, sev, rem in self.basic_rules:
                         if pattern.search(line):
                             findings.append({
@@ -340,18 +342,27 @@ class CodeReviewer:
                                 "snippet": original_lines[line_num - 1].strip(),
                                 "remediation": rem
                             })
+                            if len(findings) >= 1000:
+                                inventory.coverage['limits_reached'] = True
+                                break
 
                 # 2. Lexical method-scope review, not an AST/control-flow proof
-                findings.extend(self._audit_intent_redirection(content, rel_path, stem))
-                findings.extend(self._audit_pending_intent_mutability(content, rel_path, stem))
-                findings.extend(self._audit_dynamic_receivers(content, rel_path, stem))
-                findings.extend(self._audit_trust_managers_and_verifiers(content, rel_path, stem))
-                findings.extend(self._audit_biometric_auth(content, rel_path, stem))
-                findings.extend(self._audit_keystore_specs(content, rel_path, stem))
+                for audit in (self._audit_intent_redirection, self._audit_pending_intent_mutability,
+                              self._audit_dynamic_receivers, self._audit_trust_managers_and_verifiers,
+                              self._audit_biometric_auth, self._audit_keystore_specs):
+                    findings.extend(audit(content, rel_path, stem)[:max(0, 1000-len(findings))])
+                    if len(findings) >= 1000:
+                        inventory.coverage['limits_reached'] = True
+                        break
 
             except Exception as e:
                 logger.debug(f"Could not inspect file {file_path}: {e}")
 
+            if len(findings) >= 1000:
+                break
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status='not_tested',proof_status='not_proven',exhaustive=False,
+                             candidate_count=len(findings),limits={**inventory.coverage['limits'],'findings':1000})
         return findings
 
     def _audit_keystore_specs(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
@@ -405,7 +416,10 @@ class CodeReviewer:
             findings.append(Finding(
                 title=item["title"],
                 description=item["description"],
-                severity=item["severity"],
+                # These rules are lexical indicators, not demonstrated attacker
+                # impact. Keep all candidates informational until a separate
+                # verification step establishes exploitability.
+                severity=Severity.INFO,
                 cwe_id=cwe,
                 cvss_score=0.0,
                 cvss_vector="",

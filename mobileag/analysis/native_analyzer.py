@@ -4,6 +4,7 @@ from pathlib import Path
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,8 @@ class NativeAnalyzer:
         """Initialize the native analyzer with an LLM router and Ghidra path."""
         self.router = router
         self.ghidra_path = ghidra_path
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
         self.unsafe_functions = {
             b"strcpy": ("CWE-120", "Unsafe string copy without bounds check"),
             b"sprintf": ("CWE-120", "Unsafe string formatting without bounds check"),
@@ -26,12 +29,10 @@ class NativeAnalyzer:
             b"ptrace": ("CWE-489", "Anti-debugging ptrace hook detection"),
         }
 
-    async def _inspect_so_binary(self, so_file: Path, base_path: Path) -> list[Finding]:
-        """Inspect a single .so library using direct binary byte scanning and strings fallback."""
+    def _inspect_so_binary(self, so_file: Path, base_path: Path, raw_data: bytes) -> list[Finding]:
+        """Inspect bounded bytes from one .so using a conservative string inventory."""
         findings: list[Finding] = []
         try:
-            # Direct binary inspection (100% portable, no subprocess requirement)
-            raw_data = await asyncio.to_thread(so_file.read_bytes)
             rel_path = str(so_file.relative_to(base_path)) if so_file.is_relative_to(base_path) else str(so_file)
             lib_name = so_file.name
 
@@ -58,26 +59,23 @@ class NativeAnalyzer:
 
         return findings
 
-    async def analyze(self, decompiled_path: str) -> list[Finding]:
-        """Analyze native libraries found in the decompiled application."""
-        logger.info(f"Starting native analysis in: {decompiled_path}")
+    def _sync_analyze(self, base_path: Path) -> list[Finding]:
         findings: list[Finding] = []
-        base_path = Path(decompiled_path)
-        
-        so_files = list(base_path.rglob("lib/**/*.so"))
-        if not so_files:
-            logger.info("No native .so libraries discovered.")
-            return findings
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=64*1024*1024, max_total_bytes=256*1024*1024)
+        for path, data in inventory.read(base_path, {".so"}):
+            findings.extend(self._inspect_so_binary(path, base_path, data))
+            if len(findings) >= 1000:
+                findings = findings[:1000]
+                inventory.coverage['limits_reached'] = True
+                break
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+                             candidate_count=len(findings), limits={**inventory.coverage['limits'], 'findings':1000})
+        return findings
 
-        # Run binary inspections concurrently with non-blocking async processes
-        tasks = [self._inspect_so_binary(so, base_path) for so in so_files]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for res in results:
-            if isinstance(res, list):
-                findings.extend(res)
-            elif isinstance(res, Exception):
-                logger.error(f"Native binary analysis task failed: {res}")
-
-        logger.info(f"Native analysis completed: {len(findings)} findings.")
+    async def analyze(self, decompiled_path: str) -> list[Finding]:
+        """Analyze bounded native-library bytes from a decompiled application."""
+        logger.info("Starting native analysis in: %s", decompiled_path)
+        findings = await asyncio.to_thread(self._sync_analyze, Path(decompiled_path))
+        logger.info("Native analysis completed: %d findings.", len(findings))
         return findings

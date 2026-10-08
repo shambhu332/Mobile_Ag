@@ -1,5 +1,7 @@
 import logging
+import fnmatch
 from pathlib import Path
+from mobileag.analysis.bounded_sources import SourceInventory
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ class FrameworkDetector:
         detected_evidence = []
         notes = []
 
-        if not base_dir.exists():
+        if not decompiled_path or not base_dir.is_dir():
             logger.error(f"Decompiled path does not exist: {decompiled_path}")
             return {
                 "framework": "Unknown",
@@ -73,16 +75,18 @@ class FrameworkDetector:
                 "analysis_notes": ["Decompiled directory not found."]
             }
 
+        inventory = SourceInventory(max_entries=5000)
+        paths = list(inventory.paths(base_dir))
+        relative_paths = [str(path.relative_to(base_dir)) for path in paths]
+
         for framework, data in frameworks.items():
             for pattern in data["evidence"]:
-                # Use glob to handle patterns like lib/*/libflutter.so
-                matches = list(base_dir.rglob(pattern.replace("*/", "*"))) if "*" in pattern else [base_dir / pattern]
-                
-                for match in matches:
-                    if match.exists() or list(base_dir.glob(f"**/{pattern}")):
-                        if framework not in detected_framework:
-                            detected_framework = framework
-                        detected_evidence.append(pattern)
+                prefix = pattern.rstrip("/") + "/"
+                if any(fnmatch.fnmatchcase(rel, pattern) or rel == pattern or rel.startswith(prefix)
+                       for rel in relative_paths):
+                    if framework not in detected_framework:
+                        detected_framework = framework
+                    detected_evidence.append(pattern)
 
         if detected_framework != "Native":
             notes.append(f"Detected {detected_framework} artifacts.")
@@ -93,5 +97,6 @@ class FrameworkDetector:
             "framework": detected_framework,
             "version_hint": version_hint,
             "detection_evidence": detected_evidence,
-            "analysis_notes": notes
+            "analysis_notes": notes,
+            "coverage": dict(inventory.coverage)
         }

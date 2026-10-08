@@ -50,10 +50,9 @@ async def test_manifest_auditor(mock_router):
         assert isinstance(f, Finding)
         assert f.status == FindingStatus.UNVERIFIED
         assert f.cwe_id.startswith("CWE-")
-        if f.severity == Severity.INFO:
-            assert f.cvss_score == 0.0
-        else:
-            assert f.cvss_score > 0.0
+        # Manifest attributes/components are static review leads, not impact proof.
+        assert f.severity == Severity.INFO
+        assert f.cvss_score == 0.0
 
 
 @pytest.mark.asyncio
@@ -76,6 +75,8 @@ async def test_secret_scanner(mock_router):
         for f in findings:
             assert isinstance(f, Finding)
             assert f.detection_method == "SecretScanner"
+            assert f.severity == Severity.INFO
+            assert f.cvss_score == 0.0
 
 
 @pytest.mark.asyncio
@@ -117,8 +118,25 @@ async def test_api_mapper(mock_router):
         endpoints, findings = await mapper.map_apis(tmpdir)
         assert len(endpoints) == 1
         assert endpoints[0]["url"] == "/api/v1/admin/users"
+        assert endpoints[0]["requires_auth"] is None
         assert len(findings) == 1
         assert findings[0].cwe_id == "CWE-285"
+        assert findings[0].severity == Severity.INFO
+        assert findings[0].cvss_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_bounded_secret_scan_caps_candidates_and_reports_partial_coverage(mock_router):
+    scanner = SecretScanner(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "many.java").write_text(
+            ('String key = "AKIA1234567890ABCDEF";\n' * 1001), encoding="utf-8"
+        )
+        findings = await scanner.scan(tmpdir)
+    assert len(findings) == 1000
+    assert scanner.coverage["limits_reached"] is True
+    assert scanner.coverage["static_status"] == "partial"
+    assert scanner.coverage["proof_status"] == "not_proven"
 
 
 @pytest.mark.asyncio
@@ -212,6 +230,8 @@ async def test_native_analyzer_direct_bytes(mock_router):
 
         findings = await analyzer.analyze(str(root))
         assert len(findings) >= 3
+        assert analyzer.coverage["static_status"] == "analyzed_heuristically"
+        assert analyzer.coverage["proof_status"] == "not_proven"
         cwes = {f.cwe_id for f in findings}
         assert "CWE-120" in cwes  # strcpy
         assert "CWE-78" in cwes   # system
@@ -243,4 +263,3 @@ async def test_network_security_config_auditor_async():
         cwes = {f.cwe_id for f in findings}
         assert "CWE-319" in cwes  # Cleartext
         assert "CWE-295" in cwes  # User trust anchor
-

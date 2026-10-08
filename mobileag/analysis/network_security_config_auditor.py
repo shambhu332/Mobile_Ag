@@ -8,12 +8,15 @@ cleartext traffic overrides, and expired certificate pinning sets.
 from datetime import datetime, timezone
 import asyncio
 import logging
+import os
+import stat
 from pathlib import Path
 from typing import Any, Optional
 import xml.etree.ElementTree as ET
 
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,20 @@ class NetworkSecurityConfigAuditor:
     """Audits Android Network Security Configuration XML files."""
 
     def __init__(self) -> None:
-        pass
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
+
+    @staticmethod
+    def _read_bounded(path: Path, limit: int = 2*1024*1024) -> bytes:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            details = os.fstat(stream.fileno())
+            if not stat.S_ISREG(details.st_mode) or details.st_size > limit:
+                raise ValueError("XML file exceeds safe size/type limits")
+            data = stream.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError("XML file exceeds safe size limit")
+        return data
 
     def locate_config_path(
         self,
@@ -54,8 +70,8 @@ class NetworkSecurityConfigAuditor:
 
         if manifest_file.exists():
             try:
-                tree = ET.parse(manifest_file)
-                app_elem = tree.getroot().find("application")
+                root_elem = ET.fromstring(self._read_bounded(manifest_file))
+                app_elem = root_elem.find("application")
                 if app_elem is not None:
                     attr_val = app_elem.attrib.get(f"{{{ANDROID_NS}}}networkSecurityConfig", "")
                     # Format: @xml/network_security_config or @7F120001
@@ -76,13 +92,12 @@ class NetworkSecurityConfigAuditor:
                 return candidate
 
         # 3. Fallback: Recursive search for the xml filename or any network_security_config
-        found = list(root_path.rglob(f"{xml_name}.xml"))
-        if found:
-            return found[0]
-
-        generic_found = list(root_path.rglob("network_security_config.xml"))
-        if generic_found:
-            return generic_found[0]
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2*1024*1024,
+                                    max_total_bytes=16*1024*1024)
+        for found, _ in inventory.read(root_path, names={f"{xml_name}.xml", "network_security_config.xml"}):
+            self.coverage = dict(inventory.coverage)
+            return found
+        self.coverage = dict(inventory.coverage)
 
         return None
 
@@ -101,19 +116,25 @@ class NetworkSecurityConfigAuditor:
             return []
 
         try:
-            tree = ET.parse(path)
-            root = tree.getroot()
+            root = ET.fromstring(self._read_bounded(path))
         except ET.ParseError as e:
             logger.error(f"Failed to parse Network Security Configuration XML at {path}: {e}")
+            self.coverage.update(static_status="partial", limits_reached=True,
+                                 limitations=["network security XML could not be parsed"])
             return [{
                 "issue_id": "NSC-XML-PARSE-ERROR",
                 "cwe": "CWE-112",
-                "severity": "Medium",
+                "severity": "Info",
                 "title": "Invalid Network Security Configuration XML",
                 "description": f"The XML file at {path.name} is malformed or could not be parsed: {e}",
                 "file_path": str(path),
                 "remediation": "Ensure the XML is valid and conforms to Android's network_security_config schema."
             }]
+        except (OSError, ValueError) as e:
+            logger.warning("Network security config was not analyzed: %s", e)
+            self.coverage.update(static_status="partial", limits_reached=True,
+                                 limitations=["configuration file could not be safely read within configured limits"])
+            return []
 
         findings: list[dict[str, Any]] = []
 
@@ -280,9 +301,13 @@ class NetworkSecurityConfigAuditor:
             return []
 
         raw_findings = await asyncio.to_thread(self.audit_file, config_path)
+        if self.coverage.get("static_status") != "partial":
+            self.coverage.update(static_status="analyzed_heuristically", source_files_analyzed=1,
+                                 runtime_status="not_tested", proof_status="not_proven", exhaustive=False)
         findings: list[Finding] = []
 
         sev_map = {
+            "Info": Severity.INFO,
             "Critical": Severity.CRITICAL,
             "High": Severity.HIGH,
             "Medium": Severity.MEDIUM,
@@ -291,7 +316,7 @@ class NetworkSecurityConfigAuditor:
 
         for item in raw_findings:
             cwe = item["cwe"]
-            score, vector = get_default_cvss_for_cwe(cwe)
+            score, vector = (0.0, "") if item["severity"] == "Info" else get_default_cvss_for_cwe(cwe)
             severity = sev_map.get(item["severity"], Severity.MEDIUM)
 
             findings.append(Finding(
@@ -310,4 +335,3 @@ class NetworkSecurityConfigAuditor:
             ))
 
         return findings
-

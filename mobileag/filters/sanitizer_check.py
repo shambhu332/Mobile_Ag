@@ -6,6 +6,7 @@ from typing import Optional
 
 from config.llm_config import TaskType
 from mobileag.llm.router import LLMRouter
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +129,13 @@ class SanitizerFilter:
             return ""
 
         try:
-            lines = fp.read_text(errors="replace").splitlines()
-        except OSError:
+            inventory = SourceInventory(max_file_bytes=2*1024*1024, max_total_bytes=2*1024*1024)
+            records = list(inventory.read(fp.parent, {fp.suffix}, names={fp.name}))
+            data = next((data for candidate, data in records if candidate == fp), None)
+            if data is None:
+                return ""
+            lines = data.decode("utf-8", errors="replace").splitlines()
+        except (OSError, UnicodeError):
             return ""
 
         if line_number and line_number > 0:

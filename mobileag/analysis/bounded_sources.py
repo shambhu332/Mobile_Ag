@@ -22,7 +22,50 @@ class SourceInventory:
                        'total_bytes': max_total_bytes},
         }
 
-    def read(self, directory, extensions):
+    def paths(self, directory, extensions=()):
+        """Yield bounded regular-file paths without reading file contents."""
+        allowed = {ext.lower() for ext in extensions}
+        if not directory:
+            return
+        root = Path(directory)
+        info = self.coverage
+        if root.is_symlink() or not root.is_dir():
+            return
+        pending = [root]
+        try:
+            while pending:
+                current = pending.pop()
+                try:
+                    with os.scandir(current) as entries:
+                        for entry in entries:
+                            if info['entries_examined'] >= self.max_entries:
+                                info['limits_reached'] = True
+                                return
+                            info['entries_examined'] += 1
+                            path = Path(entry.path)
+                            if entry.is_symlink():
+                                info['source_files_skipped'] += 1
+                            elif entry.is_dir(follow_symlinks=False):
+                                pending.append(path)
+                            elif (not allowed or path.suffix.lower() in allowed) and entry.is_file(follow_symlinks=False):
+                                info['source_files_analyzed'] += 1
+                                yield path
+                except OSError:
+                    info['source_files_skipped'] += 1
+        finally:
+            info['static_status'] = ('partial' if info['limits_reached'] or info['source_files_skipped']
+                                    else 'analyzed_heuristically' if info['source_files_analyzed']
+                                    else 'not_analyzed')
+
+    def read(self, directory, extensions=(), *, names=(), suffixes=()):
+        """Yield bounded regular files selected by extension, exact name or suffix.
+
+        Selection is case-insensitive. Limits and skipped/partial status are
+        retained in ``coverage`` even when traversal stops early.
+        """
+        allowed_extensions = {ext.lower() for ext in extensions}
+        allowed_names = {name.lower() for name in names}
+        allowed_suffixes = tuple(suffix.lower() for suffix in suffixes)
         if not directory:
             return
         root = Path(directory)
@@ -47,7 +90,9 @@ class SourceInventory:
                             if entry.is_dir(follow_symlinks=False):
                                 pending.append(path)
                                 continue
-                            if path.suffix.lower() not in extensions:
+                            if (path.suffix.lower() not in allowed_extensions
+                                    and path.name.lower() not in allowed_names
+                                    and not any(path.name.lower().endswith(suffix) for suffix in allowed_suffixes)):
                                 continue
                             try:
                                 # O_NOFOLLOW also closes the final-component symlink race.

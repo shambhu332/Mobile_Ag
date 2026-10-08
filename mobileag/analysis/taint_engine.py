@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from mobileag.analysis.android_surface import mask_non_code, method_spans
 from mobileag.analysis.source_syntax import call_sites
+from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,8 @@ class TaintEngine:
     """Straight-line source-to-sink review heuristic; not an exploit verifier."""
 
     def __init__(self) -> None:
-        pass
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
 
     def analyze_source_content(self, content: str, file_path: str = "") -> list[Finding]:
         """Analyze a single Java/Kotlin file's source code for source-to-sink taint propagation."""
@@ -242,21 +244,21 @@ class TaintEngine:
         all_findings: list[Finding] = []
         root_path = Path(decompiled_dir)
 
-        if not root_path.exists():
-            return all_findings
-
-        for ext in ("*.java", "*.kt"):
-            for file_path in root_path.rglob(ext):
-                try:
-                    if file_path.is_symlink():
-                        continue
-                    content = file_path.read_text(encoding="utf-8", errors="replace")
-                    rel_path = str(file_path.relative_to(root_path))
-                    findings = self.analyze_source_content(content, file_path=rel_path)
-                    all_findings.extend(findings)
-                except Exception as e:
-                    logger.debug(f"Failed to analyze taint in {file_path}: {e}")
-
+        inventory = SourceInventory()
+        for file_path, data in inventory.read(root_path, {".java", ".kt"}):
+            try:
+                content = data.decode("utf-8", errors="replace")
+                rel_path = str(file_path.relative_to(root_path))
+                all_findings.extend(self.analyze_source_content(content, file_path=rel_path))
+                if len(all_findings) >= 1000:
+                    all_findings = all_findings[:1000]
+                    inventory.coverage['limits_reached'] = True
+                    break
+            except Exception as e:
+                logger.debug("Failed to analyze taint in %s: %s", file_path, e)
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+                             candidate_count=len(all_findings), limits={**inventory.coverage['limits'], 'findings':1000})
         return all_findings
 
     async def analyze_directory_async(self, decompiled_dir: str | Path) -> list[Finding]:

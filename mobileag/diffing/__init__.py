@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from mobileag.analysis.bounded_sources import SourceInventory
 from typing import Any
 
 from mobileag.ingestion.apk_extractor import APKExtractor
@@ -197,12 +198,11 @@ class VersionDiff:
         if not directory:
             return set()
         root = Path(directory)
-        if not root.exists():
+        if not root.is_dir() or root.is_symlink():
             return set()
         return {
             str(f.relative_to(root))
-            for f in root.rglob("*")
-            if f.is_file()
+            for f in SourceInventory(max_entries=20000).paths(root)
         }
 
     @staticmethod

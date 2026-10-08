@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -19,60 +19,77 @@ class APIMapper:
         self.retrofit_pattern = re.compile(r'@(GET|POST|PUT|DELETE|PATCH)\(\s*"([^"]+)"\s*\)')
         self.url_pattern = re.compile(r'https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9._/?%&=-]*)?')
         self.graphql_pattern = re.compile(r'query\s*\{|mutation\s*\{')
+        self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
+                         "proof_status":"not_proven", "exhaustive":False}
 
     def _sync_map_apis(self, base_path: Path) -> tuple[list[dict], list[dict]]:
         """Synchronously scan source files for API definitions and URL references."""
         endpoints: list[dict] = []
         raw_findings: list[dict] = []
 
-        for file_path in base_path.rglob("*"):
-            if not file_path.is_file() or file_path.suffix not in {".java", ".kt"}:
-                continue
-                
+        inventory = SourceInventory()
+        for file_path, data in inventory.read(base_path, {".java", ".kt"}):
             try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
                 stem = file_path.stem
                 
                 # Extract Retrofit annotations
                 for method, path in self.retrofit_pattern.findall(content):
+                    if len(endpoints) >= 5000:
+                        inventory.coverage['limits_reached'] = True
+                        break
                     endpoints.append({
                         "method": method,
                         "url": path,
                         "class_name": stem,
-                        "requires_auth": "Authorization" in content
+                        # Header occurrences elsewhere in this class are not a
+                        # reliable endpoint-specific authorization signal.
+                        "requires_auth": None
                     })
                     
                     if "admin" in path.lower() or "privilege" in path.lower():
-                        raw_findings.append({
+                        if len(raw_findings) < 500:
+                            raw_findings.append({
                             "type": "privileged_endpoint",
                             "path": path,
                             "component": stem,
                             "file_path": rel_path
-                        })
+                            })
+                        else:
+                            inventory.coverage['limits_reached'] = True
 
                 # Extract hardcoded URLs
                 for url in self.url_pattern.findall(content):
                     lower_url = url.lower()
                     if "dev" in lower_url or "staging" in lower_url or "test." in lower_url:
-                        raw_findings.append({
+                        if len(raw_findings) < 500:
+                            raw_findings.append({
                             "type": "staging_url",
                             "url": url,
                             "component": stem,
                             "file_path": rel_path
-                        })
+                            })
+                        else:
+                            inventory.coverage['limits_reached'] = True
                     elif lower_url.startswith("http://") and not lower_url.startswith("http://localhost") and not lower_url.startswith("http://127.0.0.1"):
-                        raw_findings.append({
+                        if len(raw_findings) < 500:
+                            raw_findings.append({
                             "type": "cleartext_url",
                             "url": url,
                             "component": stem,
                             "file_path": rel_path
-                        })
+                            })
+                        else:
+                            inventory.coverage['limits_reached'] = True
 
-            except Exception as e:
+            except (OSError, UnicodeError) as e:
                 logger.debug(f"Could not read file {file_path}: {e}")
                 continue
-
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
+                             candidate_count=len(raw_findings), endpoints_count=len(endpoints),
+                             limits={**inventory.coverage['limits'], 'endpoints':5000,'findings':500})
         return endpoints, raw_findings
 
     async def map_apis(self, decompiled_path: str) -> tuple[list[dict], list[Finding]]:
@@ -86,14 +103,13 @@ class APIMapper:
         for item in raw_findings:
             if item["type"] == "privileged_endpoint":
                 cwe = "CWE-285"
-                score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Privileged Endpoint Referenced in Client Code: {item['path']}",
-                    description=f"Client application references administrative or privileged endpoint '{item['path']}'.",
-                    severity=Severity.HIGH,
+                    description=f"Client source contains an endpoint path resembling a privileged route ('{item['path']}'). This lexical name does not prove server-side privilege or authorization failure; no request was sent.",
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=item["component"],
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,
@@ -102,14 +118,13 @@ class APIMapper:
                 ))
             elif item["type"] == "staging_url":
                 cwe = "CWE-489"
-                score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Non-Production Staging/Dev Environment URL: {item['url']}",
-                    description=f"Decompiled code references development/staging endpoint: {item['url']}.",
-                    severity=Severity.MEDIUM,
+                    description=f"Decompiled code contains a URL resembling a development/staging host ({item['url']}); build reachability, ownership, and non-production exposure are not established.",
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=item["component"],
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,
@@ -118,14 +133,13 @@ class APIMapper:
                 ))
             elif item["type"] == "cleartext_url":
                 cwe = "CWE-319"
-                score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Hardcoded Cleartext HTTP URL: {item['url']}",
-                    description=f"Code references unencrypted HTTP URL: {item['url']}.",
-                    severity=Severity.MEDIUM,
+                    description=f"Code contains a literal HTTP URL ({item['url']}); runtime use, sensitive payloads, and effective platform cleartext policy were not tested.",
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=item["component"],
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,

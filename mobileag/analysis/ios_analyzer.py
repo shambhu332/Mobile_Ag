@@ -18,7 +18,9 @@ Provides static security auditing for iOS application bundles (.ipa):
 from __future__ import annotations
 
 import logging
+import os
 import plistlib
+import stat
 import struct
 import zipfile
 from dataclasses import dataclass, field
@@ -55,7 +57,20 @@ class IOSSecurityAnalyzer:
     """Enterprise Static Security Analyzer for iOS IPA Archives."""
 
     def __init__(self) -> None:
-        pass
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
+
+    @staticmethod
+    def _read_bounded(path: Path, limit: int) -> bytes:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            details = os.fstat(stream.fileno())
+            if not stat.S_ISREG(details.st_mode) or details.st_size > limit:
+                raise ValueError("File exceeds safe size/type limit")
+            data = stream.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError("File exceeds safe size limit")
+        return data
 
     def extract_ipa(self, ipa_path: str | Path, output_dir: str | Path) -> dict[str, Any]:
         """Unpack an iOS .ipa archive and locate the .app payload directory."""
@@ -80,9 +95,8 @@ class IOSSecurityAnalyzer:
         app_dir = app_dirs[0]
         app_name = app_dir.stem
         info_plist_path = app_dir / "Info.plist"
-        with info_plist_path.open("rb") as fp:
-            metadata = plistlib.load(fp)
-            executable = metadata.get("CFBundleExecutable", app_name)
+        metadata = plistlib.loads(self._read_bounded(info_plist_path, 2*1024*1024))
+        executable = metadata.get("CFBundleExecutable", app_name)
         if not isinstance(executable, str) or Path(executable).name != executable or executable in {".", ".."}:
             raise ValueError("Invalid CFBundleExecutable")
         binary_path = app_dir / executable
@@ -108,8 +122,7 @@ class IOSSecurityAnalyzer:
             return findings
 
         try:
-            with open(p_path, "rb") as fp:
-                plist = plistlib.load(fp)
+            plist = plistlib.loads(self._read_bounded(p_path, 2*1024*1024))
         except Exception as e:
             logger.warning("Could not parse Info.plist: %s", e)
             return findings
@@ -235,7 +248,7 @@ class IOSSecurityAnalyzer:
             return findings
 
         try:
-            raw_bytes = b_path.read_bytes()
+            raw_bytes = self._read_bounded(b_path, 128*1024*1024)
         except Exception as e:
             logger.warning("Failed reading binary for symbol audit: %s", e)
             return findings
@@ -372,9 +385,8 @@ class IOSSecurityAnalyzer:
             return headers, findings
 
         try:
-            with open(b_path, "rb") as fp:
-                data = fp.read(4096)
-                all_bytes = b_path.read_bytes()
+            all_bytes = self._read_bounded(b_path, 128*1024*1024)
+            data = all_bytes[:4096]
         except Exception as e:
             logger.warning("Could not read Mach-O binary %s: %e", binary_path, e)
             return headers, findings

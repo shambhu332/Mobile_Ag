@@ -71,7 +71,8 @@ def create_initial_state(
             "exhaustive":False,"automatic_exploit_proof":False},
             **{name: {"static_status": "not_started", "runtime_status": "not_tested",
                       "proof_status": "not_proven", "exhaustive": False}
-               for name in ("auth_session", "firebase")}},
+               for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping",
+                            "native", "dependencies", "taint", "nsc", "binary_protection", "react_native")}},
         json_report_path="",
         sarif_path="",
         framework_info={},

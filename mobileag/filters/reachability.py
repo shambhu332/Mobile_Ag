@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -70,27 +71,8 @@ class ReachabilityFilter:
         Uses `grep -rl` for speed.  Falls back to Python walk if grep
         is unavailable.
         """
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "grep", "-Frl", "--include=*.java", "--include=*.kt", "--",
-                class_name, str(source_root),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-            files = [
-                f for f in stdout.decode(errors="replace").strip().splitlines()
-                if f and Path(f).resolve() != (source_root / exclude_file).resolve()
-            ]
-            return len(files)
-        except FileNotFoundError:
-            # grep not available — fallback
-            return await self._python_grep(class_name, source_root, exclude_file)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            logger.warning("Reachability grep timed out for %s", class_name)
-            return 0
+        # Avoid an unbounded subprocess/output buffer on attacker-supplied trees.
+        return await self._python_grep(class_name, source_root, exclude_file)
 
     async def _python_grep(
         self,
@@ -100,14 +82,11 @@ class ReachabilityFilter:
     ) -> int:
         """Pure-Python fallback for reference counting."""
         count = 0
-        for ext in ("*.java", "*.kt"):
-            for fp in source_root.rglob(ext):
-                if str(fp) == exclude_file:
-                    continue
-                try:
-                    text = fp.read_text(errors="replace")
-                    if class_name in text:
-                        count += 1
-                except OSError:
-                    continue
+        excluded = (source_root / exclude_file).resolve()
+        inventory = SourceInventory()
+        for fp, data in inventory.read(source_root, {".java", ".kt"}):
+            if fp.resolve() == excluded:
+                continue
+            if class_name.encode("utf-8", errors="ignore") in data:
+                count += 1
         return count

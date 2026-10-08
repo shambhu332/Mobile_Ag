@@ -6,6 +6,7 @@ import pytest
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.code_reviewer import CodeReviewer
+from mobileag.reporting.finding import FindingStatus, Severity
 
 
 @pytest.fixture
@@ -79,6 +80,20 @@ def test_react_native_scanner_secrets_and_routes(rn_scanner):
         assert "RN-PRIVILEGED-ROUTES-EXPOSED" in issue_ids
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_react_native_candidates_are_bounded_and_not_overstated(tmp_path):
+    scanner = ReactNativeScanner()
+    bundle = tmp_path / "assets" / "index.android.bundle"
+    bundle.parent.mkdir()
+    bundle.write_text('const key="AKIAIOSFODNN7EXAMPLE";\n')
+    findings = await scanner.scan_directory_async(tmp_path)
+    assert findings
+    assert all(item.status == FindingStatus.UNVERIFIED for item in findings)
+    assert all(item.severity == Severity.INFO and item.cvss_score == 0 for item in findings)
+    assert scanner.coverage["proof_status"] == "not_proven"
+    assert scanner.coverage["static_status"] == "analyzed_heuristically"
 
 
 @pytest.mark.asyncio
@@ -200,4 +215,3 @@ async def test_code_reviewer_keystore_and_intent_extras(code_reviewer):
         assert "auth_token_param" in extras
         assert "user_id_key" in extras
         assert "is_admin" in extras
-

@@ -36,7 +36,7 @@ class APIEndpointNode:
     """Represents an API endpoint node."""
     url: str
     method: str = "GET"
-    requires_auth: bool = False
+    requires_auth: Optional[bool] = None
 
 @dataclass
 class SecretNode:

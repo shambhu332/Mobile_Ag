@@ -1,6 +1,7 @@
 import logging
 import zipfile
 from pathlib import Path
+from mobileag.analysis.bounded_sources import SourceInventory
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
@@ -56,12 +57,14 @@ class PackerDetector:
 
         # Fallback check on decompiled directory (smali paths, manifest)
         dec_path = Path(decompiled_path)
-        if not is_packed and dec_path.exists():
+        inventory = SourceInventory(max_entries=5000)
+        if not is_packed and decompiled_path and dec_path.is_dir():
+            paths = list(inventory.paths(dec_path))
             for packer, signatures in self.PACKER_SIGNATURES.items():
                 for sig in signatures:
                     # simplistic check for class names in smali paths or known files
                     sig_path_format = sig.replace('.', '/')
-                    if list(dec_path.rglob(f"*{sig}*")) or list(dec_path.rglob(f"*{sig_path_format}*")):
+                    if any(sig in str(p.relative_to(dec_path)) or sig_path_format in str(p.relative_to(dec_path)) for p in paths):
                         is_packed = True
                         packer_name = packer
                         evidence.append(sig)
@@ -75,5 +78,6 @@ class PackerDetector:
             "is_packed": is_packed,
             "packer_name": packer_name,
             "evidence": list(set(evidence)),
-            "unpack_instructions": unpack_instructions
+            "unpack_instructions": unpack_instructions,
+            "coverage": dict(inventory.coverage)
         }

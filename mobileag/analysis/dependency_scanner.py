@@ -7,6 +7,7 @@ import httpx
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -18,39 +19,45 @@ class DependencyScanner:
         """Initialize the dependency scanner with an LLM router."""
         self.router = router
         self.dep_pattern = re.compile(r"(?:implementation|api|compile)\s+['\"]([^:]+):([^:]+):([^'\"]+)['\"]")
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
 
     def _sync_find_gradle_dependencies(self, base_path: Path) -> list[tuple[str, str, str, str]]:
         """Synchronously scan build.gradle files and META-INF pom.properties for maven coordinates."""
         dependencies = []
-        # 1. Gradle files
-        for file_path in base_path.rglob("build.gradle*"):
+        seen = set()
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=1024*1024, max_total_bytes=16*1024*1024)
+        for file_path, data in inventory.read(base_path, names={"pom.properties"}, suffixes={"build.gradle", "build.gradle.kts"}):
             try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
-                for group, artifact, version in self.dep_pattern.findall(content):
-                    dependencies.append((group, artifact, version, rel_path))
-            except Exception as e:
-                logger.error(f"Error reading gradle file {file_path}: {e}")
-
-        # 2. Embedded APK pom.properties (META-INF/maven/**/pom.properties)
-        for pom_prop in base_path.rglob("pom.properties"):
-            try:
-                content = pom_prop.read_text(encoding="utf-8", errors="ignore")
-                group, artifact, version = "", "", ""
-                for line in content.splitlines():
-                    clean = line.strip()
-                    if clean.startswith("groupId="):
-                        group = clean.split("=", 1)[1].strip()
-                    elif clean.startswith("artifactId="):
-                        artifact = clean.split("=", 1)[1].strip()
-                    elif clean.startswith("version="):
-                        version = clean.split("=", 1)[1].strip()
-                if group and artifact and version:
-                    rel_path = str(pom_prop.relative_to(base_path))
-                    dependencies.append((group, artifact, version, rel_path))
-            except Exception as e:
-                logger.debug(f"Error reading pom.properties {pom_prop}: {e}")
-
+                parsed = []
+                if file_path.name.startswith("build.gradle"):
+                    parsed = [(g,a,v,rel_path) for g,a,v in self.dep_pattern.findall(content)]
+                else:
+                    values = {}
+                    for line in content.splitlines():
+                        clean = line.strip()
+                        if clean.startswith(("groupId=", "artifactId=", "version=")):
+                            key, value = clean.split("=", 1)
+                            values[key] = value.strip()
+                    if all(values.get(key) for key in ("groupId", "artifactId", "version")):
+                        parsed = [(values["groupId"], values["artifactId"], values["version"], rel_path)]
+                for dep in parsed:
+                    identity = dep[:3]
+                    if identity not in seen:
+                        seen.add(identity)
+                        dependencies.append(dep)
+                    if len(dependencies) >= 500:
+                        inventory.coverage['limits_reached'] = True
+                        break
+                if len(dependencies) >= 500:
+                    break
+            except (OSError, UnicodeError) as e:
+                logger.debug("Error reading dependency metadata %s: %s", file_path, e)
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+                             dependency_count=len(dependencies), limits={**inventory.coverage['limits'], 'dependencies':500})
         return dependencies
 
     async def _query_osv_package(
@@ -102,6 +109,9 @@ class DependencyScanner:
     async def scan(self, decompiled_path: str) -> list[Finding]:
         """Parse build files and query OSV for known CVEs in dependencies."""
         if getattr(self.router, "_settings", None) and self.router._settings.offline is True:
+            self.coverage = {"static_status": "skipped_offline", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False,
+                             "limitations": ["OSV lookup disabled by offline mode"]}
             return []
         logger.info(f"Starting dependency scan in: {decompiled_path}")
         findings: list[Finding] = []

@@ -4,7 +4,6 @@ from typing import Any
 from config.llm_config import TaskType
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +26,13 @@ class ManifestAuditor:
         # Check allowBackup (True by default on older Android)
         if app_data.get("allowBackup") is True:
             cwe = "CWE-530"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title="Application Data Backup Allowed",
-                description="The app has android:allowBackup set to true, allowing extraction of private app data via ADB backup.",
-                severity=Severity.MEDIUM,
+                description="The manifest declares android:allowBackup=true. This alone does not establish that sensitive data is included or retrievable on the target Android version; review backup rules, target OS behavior and the data actually stored.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="AndroidManifest.xml/application",
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
@@ -45,14 +43,13 @@ class ManifestAuditor:
         # Check debuggable
         if app_data.get("debuggable") is True:
             cwe = "CWE-489"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title="Application is Debuggable",
-                description="The app has android:debuggable set to true. Attackers can attach debuggers to inspect memory and inject code.",
-                severity=Severity.HIGH,
+                description="The manifest declares android:debuggable=true. Confirm the effective installed release build and ordinary-app/debug authorization conditions; this static flag alone does not demonstrate an exploitable production package.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="AndroidManifest.xml/application",
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
@@ -63,14 +60,13 @@ class ManifestAuditor:
         # Check cleartext traffic
         if app_data.get("usesCleartextTraffic") is True:
             cwe = "CWE-319"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title="Cleartext Traffic Enabled",
-                description="The app permits unencrypted cleartext HTTP traffic, risking interception and tampering via MitM attacks.",
-                severity=Severity.HIGH,
+                description="The manifest declares android:usesCleartextTraffic=true. Effective behavior can depend on target SDK and Network Security Config; verify a sensitive request actually uses cleartext before claiming interception impact.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="AndroidManifest.xml/application",
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
@@ -114,14 +110,13 @@ class ManifestAuditor:
             task_affinity = comp.get("taskAffinity")
             if task_affinity and exported:
                 cwe = "CWE-1021"
-                score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Task Affinity Hijacking Risk: {name}",
-                    description=f"Exported activity '{name}' defines a custom taskAffinity ('{task_affinity}'), creating susceptibility to StrandHogg / task hijacking.",
-                    severity=Severity.MEDIUM,
+                    description=f"Exported activity '{name}' declares taskAffinity '{task_affinity}'. This configuration alone does not demonstrate task hijacking; review launch mode, task behavior, platform version and a reproducible victim-flow impact.",
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=name,
                     detection_method="ManifestAuditor",
                     status=FindingStatus.UNVERIFIED,
@@ -133,14 +128,13 @@ class ManifestAuditor:
             if "FileProvider" in name or (comp.get("meta_data") and "android.support.FILE_PROVIDER_PATHS" in comp.get("meta_data", {})):
                 if exported:
                     cwe = "CWE-22"
-                    score, vector = get_default_cvss_for_cwe(cwe)
                     findings.append(Finding(
                         title=f"Exported FileProvider with Arbitrary File Access Risk: {name}",
-                        description=f"FileProvider '{name}' is set to android:exported='true'. FileProviders must never be exported directly.",
-                        severity=Severity.CRITICAL,
+                        description=f"A provider identified as FileProvider is declared exported. Inspect the resolved provider implementation, URI grant configuration, paths and effective installed manifest; this lexical manifest signal alone does not prove arbitrary file access.",
+                        severity=Severity.INFO,
                         cwe_id=cwe,
-                        cvss_score=score,
-                        cvss_vector=vector,
+                        cvss_score=0.0,
+                        cvss_vector="",
                         affected_component=name,
                         detection_method="ManifestAuditor",
                         status=FindingStatus.UNVERIFIED,
@@ -155,18 +149,16 @@ class ManifestAuditor:
             prot = (dperm.get("protectionLevel") or "").lower()
             if prot in ("normal", "", "none"):
                 cwe = "CWE-276"
-                score, vector = get_default_cvss_for_cwe(cwe)
                 findings.append(Finding(
                     title=f"Insecure Custom Permission with Normal Protection Level: {p_name}",
                     description=(
-                        f"Custom permission '{p_name}' defines protectionLevel='{prot or 'normal'}'. "
-                        "Any third-party app installed on the device can request and automatically obtain this permission "
-                        "without user prompting or signature verification, defeating component access control."
+                        f"Custom permission '{p_name}' declares protectionLevel='{prot or 'normal'}'. "
+                        "A normal permission does not protect a sensitive component from ordinary installed apps, but impact depends on whether a sensitive component actually uses this permission."
                     ),
-                    severity=Severity.HIGH,
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=f"AndroidManifest.xml/permission/{p_name}",
                     detection_method="ManifestAuditor",
                     status=FindingStatus.UNVERIFIED,
@@ -178,14 +170,13 @@ class ManifestAuditor:
         requested_perms = manifest_data.get("permissions", [])
         if "android.permission.SYSTEM_ALERT_WINDOW" in requested_perms:
             cwe = "CWE-1021"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title="Dangerous Permission Requested: SYSTEM_ALERT_WINDOW (Overlay / Tapjacking)",
-                description="The app requests SYSTEM_ALERT_WINDOW, allowing drawing overlays on top of other apps, exposing users to tapjacking and UI spoofing.",
-                severity=Severity.MEDIUM,
+                description="The manifest requests SYSTEM_ALERT_WINDOW. Runtime user authorization and actual overlay behavior are separate; the request alone does not establish that the app can draw overlays or cause tapjacking.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="AndroidManifest.xml/uses-permission",
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
@@ -195,14 +186,13 @@ class ManifestAuditor:
 
         if "android.permission.REQUEST_INSTALL_PACKAGES" in requested_perms:
             cwe = "CWE-250"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title="Excessive Privilege: REQUEST_INSTALL_PACKAGES Requested",
-                description="The app requests REQUEST_INSTALL_PACKAGES, enabling sideloading and prompt-based APK installation, facilitating drive-by malware delivery if compromised.",
-                severity=Severity.HIGH,
+                description="The manifest requests REQUEST_INSTALL_PACKAGES. OS/user authorization gates and an actual installation flow determine behavior; this request alone does not prove arbitrary installation or harmful impact.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component="AndroidManifest.xml/uses-permission",
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,

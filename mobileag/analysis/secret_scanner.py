@@ -8,7 +8,7 @@ from typing import Any
 from config.llm_config import TaskType
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,8 @@ class SecretScanner:
         """Initialize the secret scanner with an LLM router and entropy threshold."""
         self.router = router
         self.entropy_threshold = entropy_threshold
+        self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                         "proof_status": "not_proven", "exhaustive": False}
         
         self.secret_patterns = {
             "Google API Key": re.compile(r"AIza[0-9A-Za-z-_]{35}"),
@@ -69,41 +71,52 @@ class SecretScanner:
         raw_secret_matches = []
         crypto_matches = []
 
-        for file_path in base_path.rglob("*"):
-            if not file_path.is_file() or file_path.suffix not in target_exts:
-                continue
-                
+        inventory = SourceInventory()
+        for file_path, data in inventory.read(base_path, target_exts):
             try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
                 
                 for line_num, line in enumerate(content.splitlines(), start=1):
                     # Check regex patterns for secrets
-                    for name, pattern in self.secret_patterns.items():
-                        for match in pattern.finditer(line):
-                            raw_secret_matches.append({
-                                "name": name,
-                                "val": match.group(0),
-                                "file_path": rel_path,
-                                "line_num": line_num,
-                                "line": line.strip(),
-                                "stem": file_path.stem
-                            })
+                    if len(raw_secret_matches) < 1000:
+                        for name, pattern in self.secret_patterns.items():
+                            for match in pattern.finditer(line):
+                                raw_secret_matches.append({
+                                    "name": name,
+                                    "val": match.group(0),
+                                    "file_path": rel_path,
+                                    "line_num": line_num,
+                                    "line": line.strip(),
+                                    "stem": file_path.stem
+                                })
+                                if len(raw_secret_matches) >= 1000:
+                                    inventory.coverage['limits_reached'] = True
+                                    break
+                            if len(raw_secret_matches) >= 1000:
+                                break
 
                     # Check crypto patterns
-                    for name, pattern in self.crypto_patterns.items():
-                        if pattern.search(line):
-                            crypto_matches.append({
-                                "name": name,
-                                "file_path": rel_path,
-                                "line_num": line_num,
-                                "line": line.strip(),
-                                "stem": file_path.stem
-                            })
-            except Exception as e:
+                    if len(crypto_matches) < 1000:
+                        for name, pattern in self.crypto_patterns.items():
+                            if pattern.search(line):
+                                crypto_matches.append({
+                                    "name": name,
+                                    "file_path": rel_path,
+                                    "line_num": line_num,
+                                    "line": line.strip(),
+                                    "stem": file_path.stem
+                                })
+                                if len(crypto_matches) >= 1000:
+                                    inventory.coverage['limits_reached'] = True
+                                    break
+            except (OSError, UnicodeError) as e:
                 logger.debug(f"Could not read file {file_path}: {e}")
                 continue
-
+        self.coverage = dict(inventory.coverage)
+        self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
+                             candidate_count=len(raw_secret_matches)+len(crypto_matches),
+                             limits={'secret_candidates':1000,'crypto_candidates':1000,**inventory.coverage['limits']})
         return raw_secret_matches, crypto_matches
 
     async def scan(self, decompiled_path: str) -> list[Finding]:
@@ -118,14 +131,13 @@ class SecretScanner:
         # Process crypto findings directly
         for item in crypto_matches:
             cwe = "CWE-327"
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title=f"Weak Cryptography: {item['name']}",
-                description=f"The application uses weak cryptographic primitives or configurations: {item['name']}.",
-                severity=Severity.HIGH,
+                description=f"A source pattern resembling {item['name']} was found. Whether it is reachable, security-relevant or used for protection is not established.",
+                severity=Severity.INFO,
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component=item["stem"],
                 detection_method="SecretScanner",
                 status=FindingStatus.UNVERIFIED,
@@ -137,23 +149,18 @@ class SecretScanner:
 
         # Process and validate secrets with prompt sandboxing
         for item in raw_secrets:
-            masked = self._mask_secret(item["val"])
-            logger.debug(f"Candidate secret found: {item['name']} ({masked}) in {item['file_path']}")
+            logger.debug("Candidate %s pattern found in %s", item['name'], item['file_path'])
             
-            # Never send candidate credential bytes to a model. Keep a local
-            # review candidate; pattern presence does not prove a live secret.
-            is_real = True
-
-            if is_real:
-                cwe = "CWE-798"
-                score, vector = get_default_cvss_for_cwe(cwe)
-                findings.append(Finding(
+            # Never send candidate credential bytes to a model. Pattern presence
+            # is only a local review lead; it cannot establish validity/secrecy.
+            cwe = "CWE-798"
+            findings.append(Finding(
                     title=f"Hardcoded {item['name']}",
                     description=f"A {item['name']} pattern was identified; credential validity and secrecy require analyst review.",
-                    severity=Severity.CRITICAL,
+                    severity=Severity.INFO,
                     cwe_id=cwe,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=item["stem"],
                     detection_method="SecretScanner",
                     status=FindingStatus.UNVERIFIED,

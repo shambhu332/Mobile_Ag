@@ -2,6 +2,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ class ObfuscationAnalyzer:
     """
 
     def __init__(self) -> None:
-        pass
+        self.coverage = {"static_status": "not_analyzed", "exhaustive": False}
 
     def analyze(self, decompiled_path: str) -> Dict[str, Any]:
         """
@@ -23,18 +24,23 @@ class ObfuscationAnalyzer:
         Returns:
             Dictionary with obfuscation metrics and recommendations.
         """
+        self.coverage = {"static_status": "not_analyzed", "exhaustive": False}
         base_dir = Path(decompiled_path)
         
         proguard_detected = False
         string_encryption_detected = False
         api_anchor_classes = []
         
-        if not base_dir.exists():
+        if not decompiled_path or not base_dir.is_dir():
             logger.error("Decompiled directory does not exist.")
             return self._build_result("unknown", False, False, [], ["Cannot access decompiled code."])
 
         # Analyze a subset of files to save time
-        java_files = list(base_dir.rglob("*.java"))
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2*1024*1024,
+                                    max_total_bytes=32*1024*1024)
+        source_rows = list(inventory.read(base_dir, {".java"}))
+        self.coverage = dict(inventory.coverage)
+        java_files = [path for path, _ in source_rows]
         if not java_files:
             return self._build_result("none", False, False, [], ["No Java source files found."])
 
@@ -46,8 +52,7 @@ class ObfuscationAnalyzer:
         str_enc_pattern = re.compile(r'(Base64\.decode|Cipher\.getInstance|\^= \d+|<< \d+)')
 
         sample_size = min(total_files, 500)  # Check up to 500 files
-        for i in range(sample_size):
-            file_path = java_files[i]
+        for i, (file_path, data) in enumerate(source_rows[:sample_size]):
             
             # Check for ProGuard (short class names)
             if len(file_path.stem) <= 2:
@@ -59,7 +64,7 @@ class ObfuscationAnalyzer:
 
             # Check for string encryption in content
             try:
-                content = file_path.read_text(encoding='utf-8', errors='ignore')
+                content = data.decode('utf-8', errors='ignore')
                 if str_enc_pattern.search(content):
                     encrypted_string_patterns += 1
             except Exception:
@@ -106,5 +111,6 @@ class ObfuscationAnalyzer:
             "proguard_detected": proguard,
             "string_encryption_detected": str_enc,
             "api_anchor_classes": anchors,
-            "recommendations": recs
+            "recommendations": recs,
+            "coverage": dict(self.coverage)
         }

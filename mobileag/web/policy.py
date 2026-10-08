@@ -42,6 +42,13 @@ def check_action(policy, action, data):
             return False
     if action == 'fuzz' and any((str(c).split('/')[0] != package if '/' in str(c) else not str(c).startswith(package + '.') and not str(c).startswith('.')) for c in (data.get('activities') or [])):
         return False
+    if action == 'fuzz':
+        required = [('audit_storage', 'storage', True), ('audit_memory', 'memory', False),
+                    ('crawl_ui', 'crawl', False), ('apk_path', 'install', False),
+                    ('authorities', 'providers', False), ('deeplinks', 'deeplinks', False)]
+        if any(data.get(field, default) and not check_action(policy, child, data)
+               for field, child, default in required):
+            return False
     if package and package not in policy['packages']:
         return False
     return True

@@ -95,6 +95,9 @@ class ReportEngine:
             "findings": findings,
             "api_endpoints": state.get("api_endpoints", []),
             "errors": state.get("errors", []),
+            "coverage": state.get("coverage", {}),
+            "exhaustive_analysis": False,
+            "confirmation_policy": "Structured analyst attestation is not independent automated exploit proof.",
         }
 
     def _generate_markdown(self, data: dict) -> str:
@@ -104,7 +107,7 @@ class ReportEngine:
             
         try:
             template = self._env.get_template("report.md.j2")
-            return template.render(**data)
+            return template.render(**data)+self._coverage_markdown(data)
         except TemplateNotFound:
             return self._fallback_markdown(data)
         except Exception as exc:
@@ -141,4 +144,16 @@ class ReportEngine:
                 "\n---\n"
             ])
             
-        return "\n".join(md)
+        return "\n".join(md)+self._coverage_markdown(data)
+
+    @staticmethod
+    def _coverage_markdown(data):
+        rows=['\n## Coverage and proof boundaries\n', 'Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven by the tool.']
+        categories=data.get('coverage',{}).get('android_surface',{}).get('categories',{})
+        for name in ('deep_links','webview','intent'):
+            row=categories.get(name,{})
+            rows.append(f"- {name}: static={row.get('static_status','not_recorded')}; runtime={row.get('runtime_status','not_recorded')}; proof={row.get('proof_status','not_recorded')}")
+        for name in ('auth_session', 'firebase'):
+            row = data.get('coverage', {}).get(name, {})
+            rows.append(f"- {name}: static={row.get('static_status', 'not_recorded')}; runtime={row.get('runtime_status', 'not_recorded')}; proof={row.get('proof_status', 'not_recorded')}")
+        return '\n'.join(rows)+'\n'

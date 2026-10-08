@@ -65,7 +65,13 @@ def create_initial_state(
         decompiled_path="",
         resource_path="",
         smali_path="",
-        coverage={},
+        coverage={"android_surface":{
+            "categories":{name:{"static_status":"not_started","runtime_status":"not_tested","proof_status":"not_proven"}
+                          for name in ("deep_links","webview","intent")},
+            "exhaustive":False,"automatic_exploit_proof":False},
+            **{name: {"static_status": "not_started", "runtime_status": "not_tested",
+                      "proof_status": "not_proven", "exhaustive": False}
+               for name in ("auth_session", "firebase")}},
         json_report_path="",
         sarif_path="",
         framework_info={},

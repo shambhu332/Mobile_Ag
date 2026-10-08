@@ -145,6 +145,7 @@
     }
 
     function getOrGenerateProofEvidence(f) {
+      if(f.validation_evidence)return 'Structured analyst attestation (not independently verified):\n'+JSON.stringify(f.validation_evidence,null,2);
       return f.validation_notes
         ? 'Analyst-provided notes (not independently verified):\n' + f.validation_notes
         : 'No runtime validation evidence recorded. Static findings and generated guides are unverified review candidates.';
@@ -216,7 +217,7 @@
 
       // Update badge
       const badge = document.getElementById('detail-status-badge');
-      badge.textContent = f.status;
+      badge.textContent = f.status === 'CONFIRMED' ? (f.validation_evidence ? 'CONFIRMED · analyst attested' : 'CONFIRMED · legacy notes only') : f.status;
       badge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
         f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
         f.status === 'FALSE_POSITIVE' ? 'bg-red-950 text-red-400 border border-red-800' :
@@ -403,19 +404,19 @@
     }
 
     async function submitTriage(findingId, verdict) {
-      const notes=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes():'';if(notes===null)return;
+      const decision=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes(currentScan):{notes:''};if(decision===null)return;
       try {
         const res = await fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(findingId)}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes })
+          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, ...decision })
         });
         const data = await res.json();
 
         currentScan.revision = data.revision;
         // Update local memory only after durable server acknowledgement.
         const f = (currentScan.findings || []).find(item => item.id === findingId);
-        if (f) f.status = verdict;
+        if (f) { f.status = verdict; f.validation_notes=data.validation_notes; f.validation_evidence=data.validation_evidence; }
 
         inspectFinding(findingId);
         applyFindingsFilter();
@@ -426,12 +427,12 @@
     }
 
     async function submitTriageVerdict(findingId, verdict) {
-      const notes=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes():'';if(notes===null)return;
+      const decision=verdict==='CONFIRMED'?await window.MobileAgUI.askNotes(currentScan):{notes:''};if(decision===null)return;
       try {
         const response = await fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(findingId)}/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, notes })
+          body: JSON.stringify({ verdict, revision: currentScan.revision || 0, ...decision })
         });
 
         currentScan.revision = (await response.json()).revision;

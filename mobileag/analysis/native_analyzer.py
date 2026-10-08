@@ -4,7 +4,6 @@ from pathlib import Path
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +38,19 @@ class NativeAnalyzer:
             for func_bytes, (cwe, desc) in self.unsafe_functions.items():
                 if func_bytes in raw_data:
                     func_name = func_bytes.decode("utf-8", errors="ignore")
-                    score, vector = get_default_cvss_for_cwe(cwe)
                     findings.append(Finding(
-                        title=f"Unsafe C Function / Symbol in Native Library: {func_name}",
-                        description=f"The native library '{lib_name}' imports or defines '{func_name}': {desc}.",
-                        severity=Severity.HIGH if cwe == "CWE-78" else Severity.MEDIUM,
+                        title=f"Review native byte-string candidate: {func_name}",
+                        description=(f"Byte sequence '{func_name}' was observed in '{lib_name}'. This does not establish an ELF import, executable call, attacker-controlled argument, memory corruption or command injection. Ghidra/disassembly and runtime validation were not performed; ptrace can be expected anti-debug behavior."),
+                        severity=Severity.INFO,
                         cwe_id=cwe,
-                        cvss_score=score,
-                        cvss_vector=vector,
+                        cvss_score=0.0,
+                        cvss_vector="",
                         affected_component=lib_name,
                         detection_method="NativeAnalyzer",
                         status=FindingStatus.UNVERIFIED,
-                        remediation=f"Replace '{func_name}' with safe, bounds-checked alternatives (e.g. strncpy, snprintf, or C++ std::string equivalents).",
-                        file_path=rel_path
+                        remediation=f"Inspect whether '{func_name}' is an actual reachable call, its argument bounds and trust boundary. Change code only for a demonstrated unsafe usage; the byte string alone needs no remediation.",
+                        file_path=rel_path,
+                        metadata={"proof_state": "not_proven", "analysis_kind": "byte_string_inventory", "ghidra_executed": False}
                     ))
 
         except Exception as e:

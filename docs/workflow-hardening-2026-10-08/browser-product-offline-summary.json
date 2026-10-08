@@ -1,0 +1,19 @@
+{
+  "page_errors": [],
+  "api_requests_outside_loopback": [],
+  "runtime_requests_outside_loopback": [],
+  "cloud_model_calls": 0,
+  "device_operations": "Mocked and disabled; no real ADB/Frida commands",
+  "durable_feedback_status": "FALSE_POSITIVE",
+  "guided_assessment": {
+    "upload_did_not_start_tests": true,
+    "status": "awaiting_action_review",
+    "sast_executor": "synthetic callback; not actual decompiler proof",
+    "sast": "completed",
+    "dast_screens": 1,
+    "api": "not_selected",
+    "llm": "not_selected",
+    "scrollable": true
+  },
+  "passed": true
+}

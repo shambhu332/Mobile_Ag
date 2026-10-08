@@ -22,6 +22,11 @@ This is research tooling, not an autonomous exploit verifier. Read the limitatio
 
 ## Contribute
 
+Recent work adds bounded offline authentication/Firebase review, structured
+confirmation evidence and more conservative reports. See the
+[validated changes and remaining gaps](docs/workflow-hardening-2026-10-08/README.md)
+and [contributor starter tasks](docs/CONTRIBUTOR_ROADMAP.md).
+
 Help improve the workbench through **documentation, accessible UI, synthetic regression fixtures, and evidence-quality improvements**. Small, focused pull requests are welcome; a live device or paid AI account is not required for the mocked regression suite.
 
 1. Read the [contributor guide](CONTRIBUTING.md).

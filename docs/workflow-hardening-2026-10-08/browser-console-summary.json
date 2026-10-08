@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "browser": "155.0.8059.12",
+  "page_errors": [],
+  "external_requests": [],
+  "execution_posts": [],
+  "upload_posts": 1,
+  "severity_counts_match_recorded_findings": true,
+  "empty_state_has_no_invented_counts": true,
+  "upload_only_does_not_start_tests_or_select_device": true,
+  "live_device_testing": false,
+  "live_provider_testing": false
+}

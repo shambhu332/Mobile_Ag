@@ -1,6 +1,6 @@
 """Scope-aware code reviewer for Android Java and Kotlin source files.
 
-Combines lightweight lexical AST / method-block scoping with static taint analysis
+Combines lightweight lexical method-block scoping with pattern review
 to identify complex logic and configuration vulnerabilities:
 1. Intent Redirection (CWE-927 / CWE-940)
 2. PendingIntent Mutability (CWE-926)
@@ -18,7 +18,8 @@ from typing import Any, Optional
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.android_surface import mask_non_code, method_spans
+from mobileag.analysis.source_syntax import call_sites, literal_flag_bits
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +96,6 @@ class CodeReviewer:
             re.IGNORECASE
         )
 
-        # ── PendingIntent Mutability Patterns ──
-        self.pending_intent_call = re.compile(
-            r"""PendingIntent\.(getActivity|getBroadcast|getService|getForegroundService)\s*\(([^)]+)\)""",
-            re.MULTILINE
-        )
-
-        # ── Dynamic Receiver Patterns ──
-        self.register_receiver_call = re.compile(
-            r"""registerReceiver\s*\(([^;]+)\)""",
-            re.MULTILINE
-        )
-
         # ── Biometric Authentication Patterns ──
         self.biometric_auth_call = re.compile(
             r"""(?:[a-zA-Z0-9_]+\.)?authenticate\s*\(([^)]+)\)""",
@@ -116,30 +105,10 @@ class CodeReviewer:
     @staticmethod
     def _extract_method_blocks(content: str) -> list[MethodBlock]:
         """Extract method blocks using bracket depth counting."""
-        blocks: list[MethodBlock] = []
-        lines = content.splitlines()
-
-        method_sig_pattern = re.compile(r"(?:public|protected|private|static|fun)\s+.*?([a-zA-Z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\{")
-
-        for idx, line in enumerate(lines):
-            match = method_sig_pattern.search(line)
-            if match:
-                method_name = match.group(1)
-                start_line = idx + 1
-                brace_depth = 0
-                body_lines = []
-
-                for sub_idx in range(idx, len(lines)):
-                    cur_line = lines[sub_idx]
-                    body_lines.append(cur_line)
-                    brace_depth += cur_line.count("{") - cur_line.count("}")
-
-                    if brace_depth <= 0 and sub_idx > idx:
-                        end_line = sub_idx + 1
-                        blocks.append(MethodBlock(method_name, start_line, end_line, "\n".join(body_lines)))
-                        break
-
-        return blocks
+        code = mask_non_code(content)
+        return [MethodBlock(name, code.count("\n", 0, offset) + 1,
+                            code.count("\n", 0, offset + len(body)) + 1, body)
+                for name, offset, body in method_spans(code)]
 
     def _audit_intent_redirection(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
         """Identify untrusted incoming intent extraction forwarded directly to execution sinks."""
@@ -158,11 +127,11 @@ class CodeReviewer:
                 if sink_arg in extracted_vars:
                     cwe = "CWE-927"
                     findings.append({
-                        "title": f"Intent Redirection Vulnerability in {stem}.{block.name}()",
+                        "title": f"Review incoming Intent forwarding in {stem}.{block.name}()",
                         "description": (
                             f"Method '{block.name}' extracts a Parcelable/Intent '{sink_arg}' from an incoming Intent "
-                            f"and forwards it directly to a start component sink without validation. "
-                            "This allows external apps to use this component as a proxy to access private internal components."
+                            f"and a component-launch call mentions the same variable in this lexical method scope. "
+                            "Variable mutation, dominating validation, external component access, destination privileges and platform hardening are unresolved; no proxy access was demonstrated."
                         ),
                         "severity": Severity.HIGH,
                         "cwe": cwe,
@@ -175,72 +144,81 @@ class CodeReviewer:
 
         return findings
 
+    @staticmethod
+    def _call_review(source, call, rel_path, stem, title, description, cwe="CWE-926"):
+        return {
+            "title": f"{title} in {stem}", "description": description,
+            "severity": Severity.INFO, "cwe": cwe, "component": stem,
+            "file_path": rel_path, "line_number": source.count("\n", 0, call.offset) + 1,
+            "snippet": source[call.offset:call.end][:500],
+            "remediation": "Review the effective flags, intended recipients, component permissions and actual attacker-controlled impact before changing legitimate functionality.",
+        }
+
     def _audit_pending_intent_mutability(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
-        """Flag PendingIntent creation missing FLAG_IMMUTABLE or FLAG_MUTABLE."""
+        """Review the actual fourth argument, including multiline/nested calls.
+
+        Mutable capabilities can be intentional. Missing mutability is also a
+        target-SDK-dependent compatibility issue, never automatic exploit proof.
+        """
         findings = []
-        lines = content.splitlines()
-
-        for idx, line in enumerate(lines, 1):
-            for match in self.pending_intent_call.finditer(line):
-                args_str = match.group(2)
-                args = [a.strip() for a in args_str.split(",")]
-
-                if len(args) >= 4:
-                    flags_arg = args[-1]
-                    has_immutable = "FLAG_IMMUTABLE" in flags_arg or "0x04000000" in flags_arg or "67108864" in flags_arg
-                    has_mutable = "FLAG_MUTABLE" in flags_arg or "0x02000000" in flags_arg or "33554432" in flags_arg
-
-                    if not (has_immutable or has_mutable):
-                        cwe = "CWE-926"
-                        findings.append({
-                            "title": f"Missing PendingIntent Mutability Flag in {stem}",
-                            "description": (
-                                f"PendingIntent.{match.group(1)}() invocation does not declare FLAG_IMMUTABLE or FLAG_MUTABLE. "
-                                "On Android 12 (API 31)+, omitting explicit mutability flags can cause runtime crashes or "
-                                "allow malicious recipients to mutate intent extras."
-                            ),
-                            "severity": Severity.MEDIUM,
-                            "cwe": cwe,
-                            "component": stem,
-                            "file_path": rel_path,
-                            "line_number": idx,
-                            "snippet": line.strip(),
-                            "remediation": "Explicitly include PendingIntent.FLAG_IMMUTABLE in the flags argument."
-                        })
-
+        symbols = {"FLAG_IMMUTABLE": 0x04000000, "FLAG_MUTABLE": 0x02000000,
+                   "FLAG_UPDATE_CURRENT": 0x08000000, "FLAG_CANCEL_CURRENT": 0x10000000,
+                   "FLAG_NO_CREATE": 0x20000000, "FLAG_ONE_SHOT": 0x40000000,
+                   "FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT": 0x01000000}
+        pattern = r"\bPendingIntent\.(?:getActivity|getActivities|getBroadcast|getService|getForegroundService)"
+        for call in call_sites(content, pattern):
+            if len(call.args) not in (4, 5):
+                continue
+            bits, complete = literal_flag_bits(call.code_args[3], symbols)
+            if bits & symbols["FLAG_IMMUTABLE"] and not bits & symbols["FLAG_MUTABLE"]:
+                continue
+            if bits & symbols["FLAG_MUTABLE"]:
+                title = "Review mutable PendingIntent capability"
+                description = ("An explicit mutable PendingIntent flag is present. Mutable capabilities can be required for legitimate features; review the enclosed Intent's explicit destination, fill-in fields, URI grants, who obtains the token, and current OS/target-SDK restrictions. No recipient access or privilege escalation was demonstrated.")
+            elif complete:
+                title = "Review missing PendingIntent mutability declaration"
+                description = ("The literal flags contain neither FLAG_IMMUTABLE nor FLAG_MUTABLE. Apps targeting Android 12/API 31 or higher must declare mutability; behavior on older targets differs. Neither a reachable crash nor recipient-controlled mutation has been demonstrated.")
+            else:
+                title = "Review unresolved PendingIntent flags"
+                description = ("The flags expression cannot be resolved by this literal-only review. Trace its effective value and recipient access; missing mutability or exploitability is not established.")
+            findings.append(self._call_review(content, call, rel_path, stem, title, description))
         return findings
 
     def _audit_dynamic_receivers(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
-        """Flag registerReceiver calls on Android 13+ missing RECEIVER_EXPORTED / RECEIVER_NOT_EXPORTED."""
+        """Review overload-specific export flags, not incidental digits in a line."""
         findings = []
-        lines = content.splitlines()
-
-        for idx, line in enumerate(lines, 1):
-            if "registerReceiver(" in line:
-                has_exported_flag = "RECEIVER_EXPORTED" in line or "RECEIVER_NOT_EXPORTED" in line or "2" in line or "4" in line
-                if not has_exported_flag:
-                    cwe = "CWE-926"
-                    findings.append({
-                        "title": f"Unspecified Export Flag on Dynamic BroadcastReceiver in {stem}",
-                        "description": (
-                            "registerReceiver() is called without explicitly specifying Context.RECEIVER_EXPORTED or "
-                            "Context.RECEIVER_NOT_EXPORTED. On Android 13 (API 33)+, this can lead to runtime crashes "
-                            "or unintentional broadcast exposure."
-                        ),
-                        "severity": Severity.MEDIUM,
-                        "cwe": cwe,
-                        "component": stem,
-                        "file_path": rel_path,
-                        "line_number": idx,
-                        "snippet": line.strip(),
-                        "remediation": "Pass Context.RECEIVER_NOT_EXPORTED or Context.RECEIVER_EXPORTED in registerReceiver()."
-                    })
-
+        symbols = {"RECEIVER_EXPORTED": 2, "RECEIVER_NOT_EXPORTED": 4,
+                   "RECEIVER_VISIBLE_TO_INSTANT_APPS": 1}
+        pattern = r"\b(?:ContextCompat\.)?registerReceiver"
+        for call in call_sites(content, pattern):
+            compat = call.operation.startswith("ContextCompat.")
+            receiver_index = 1 if compat else 0
+            if len(call.code_args) <= receiver_index or call.code_args[receiver_index] == "null":
+                continue  # Sticky-broadcast query without registering a receiver.
+            flag_count = (4, 6) if compat else (3, 5)
+            no_flag_count = (3, 5) if compat else (2, 4)
+            if len(call.args) in flag_count:
+                bits, complete = literal_flag_bits(call.code_args[-1], symbols)
+                if bits & 4 and not bits & 2:
+                    continue
+                if bits & 2:
+                    title = "Review exported runtime receiver"
+                    description = ("RECEIVER_EXPORTED is present. This may be intentional; review the effective broadcast permission, protected system actions, sender identity and sensitive operations. No unauthorized broadcast impact was demonstrated.")
+                else:
+                    title = "Review missing runtime receiver export declaration" if complete else "Review unresolved runtime receiver flags"
+                    description = ("Export behavior is absent from the literal flags or unresolved. Apps targeting Android 14/API 34 or higher must specify export behavior for non-system broadcasts; system-only registrations are an exception. Review target SDK, actual actions and overload semantics; exposure or a reachable crash is not established.")
+            elif len(call.args) in no_flag_count:
+                title = "Review missing runtime receiver export declaration"
+                description = ("The selected overload has no export-flags argument. Apps targeting Android 14/API 34 or higher require explicit export behavior for non-system broadcasts; system-only registrations are an exception. Sender permissions, action provenance, reachability and impact remain untested.")
+            else:
+                continue
+            findings.append(self._call_review(content, call, rel_path, stem, title, description))
         return findings
 
     def _audit_trust_managers_and_verifiers(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
         """Identify empty X509TrustManager methods or permissive HostnameVerifier verify() implementations."""
         findings = []
+        content = mask_non_code(content)
 
         # Check TrustManager checkServerTrusted empty body
         trust_manager_match = re.search(
@@ -251,14 +229,14 @@ class CodeReviewer:
         if trust_manager_match:
             body = trust_manager_match.group(2).strip()
             # Clean comments
-            clean_body = re.sub(r"//.*|/\*.*?\*/", "", body, flags=re.DOTALL).strip()
+            clean_body = mask_non_code(body).strip()
             if not clean_body or clean_body == ";" or clean_body.startswith("return;"):
                 cwe = "CWE-295"
                 findings.append({
                     "title": f"Insecure Empty TrustManager Implementation in {stem}",
                     "description": (
                         f"Method '{trust_manager_match.group(1)}' has an empty body and performs no certificate validation. "
-                        "This completely disables TLS certificate validation, exposing network traffic to MitM interception."
+                        "Review whether this implementation is installed on an active TLS path and whether an untrusted researcher-controlled certificate is accepted; traffic interception is not demonstrated."
                     ),
                     "severity": Severity.CRITICAL,
                     "cwe": cwe,
@@ -277,7 +255,7 @@ class CodeReviewer:
         )
         if hostname_verifier_match:
             body = hostname_verifier_match.group(1).strip()
-            clean_body = re.sub(r"//.*|/\*.*?\*/", "", body, flags=re.DOTALL).strip()
+            clean_body = mask_non_code(body).strip()
             if clean_body == "return true;" or clean_body == "return (true);":
                 cwe = "CWE-297"
                 findings.append({
@@ -300,6 +278,7 @@ class CodeReviewer:
     def _audit_biometric_auth(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
         """Identify BiometricPrompt.authenticate() calls made without a CryptoObject."""
         findings = []
+        content = mask_non_code(content)
         if "BiometricPrompt" not in content:
             return findings
 
@@ -313,10 +292,10 @@ class CodeReviewer:
                 if len(args) == 1 or args[0] in ("null", "PromptInfo"):
                     cwe = "CWE-287"
                     findings.append({
-                        "title": f"Biometric Authentication Without Cryptographic Binding in {stem}",
+                        "title": f"Review biometric authentication without cryptographic binding in {stem}",
                         "description": (
                             "BiometricPrompt.authenticate() is invoked without binding to a BiometricPrompt.CryptoObject. "
-                            "Authentication relies solely on a boolean callback in userland, which is susceptible to runtime hooking."
+                            "This can be an intentional UI authentication flow. Review whether a sensitive cryptographic operation requires user authentication; root/hooks are not ordinary-app bypass proof."
                         ),
                         "severity": Severity.MEDIUM,
                         "cwe": cwe,
@@ -338,10 +317,13 @@ class CodeReviewer:
                 continue
 
             try:
+                if file_path.is_symlink():
+                    continue
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
                 stem = file_path.stem
-                lines = content.splitlines()
+                lines = mask_non_code(content).splitlines()
+                original_lines = content.splitlines()
 
                 # 1. Standard rules
                 for line_num, line in enumerate(lines, 1):
@@ -355,11 +337,11 @@ class CodeReviewer:
                                 "component": stem,
                                 "file_path": rel_path,
                                 "line_number": line_num,
-                                "snippet": line.strip(),
+                                "snippet": original_lines[line_num - 1].strip(),
                                 "remediation": rem
                             })
 
-                # 2. Scope-aware AST / Method analysis
+                # 2. Lexical method-scope review, not an AST/control-flow proof
                 findings.extend(self._audit_intent_redirection(content, rel_path, stem))
                 findings.extend(self._audit_pending_intent_mutability(content, rel_path, stem))
                 findings.extend(self._audit_dynamic_receivers(content, rel_path, stem))
@@ -375,21 +357,21 @@ class CodeReviewer:
     def _audit_keystore_specs(self, content: str, rel_path: str, stem: str) -> list[dict[str, Any]]:
         """Identify Android Keystore keys generated without user authentication binding."""
         findings = []
+        content = mask_non_code(content)
         if "KeyGenParameterSpec" not in content:
             return findings
 
         builder_matches = re.finditer(r"KeyGenParameterSpec\.Builder\s*\([^)]+\)(.*?)\.build\(\)", content, re.DOTALL)
         for m in builder_matches:
             block = m.group(1)
-            if "setUserAuthenticationRequired(true)" not in block:
+            if not re.search(r"\bsetUserAuthenticationRequired\s*\(\s*true\s*\)", block):
                 cwe = "CWE-305"
                 findings.append({
-                    "title": f"KeyStore Key Generated Without User Authentication Requirement in {stem}",
+                    "title": f"Review Keystore key user-authentication policy in {stem}",
                     "description": (
                         "A cryptographic key is generated in Android Keystore without enforcing "
                         "`setUserAuthenticationRequired(true)`. Keys generated without this parameter "
-                        "can be leveraged by background services or unauthorized local processes "
-                        "without prompting for biometric or lock-screen authentication."
+                        "may be intentionally used by background operations. Other ordinary apps do not gain access to this app UID's keys from this setting alone. Review the intended security policy and a reachable sensitive operation; unauthorized key use is not demonstrated."
                     ),
                     "severity": Severity.MEDIUM,
                     "cwe": cwe,
@@ -420,21 +402,22 @@ class CodeReviewer:
 
         for item in raw_findings:
             cwe = item["cwe"]
-            score, vector = get_default_cvss_for_cwe(cwe)
             findings.append(Finding(
                 title=item["title"],
                 description=item["description"],
                 severity=item["severity"],
                 cwe_id=cwe,
-                cvss_score=score,
-                cvss_vector=vector,
+                cvss_score=0.0,
+                cvss_vector="",
                 affected_component=item.get("component", "SourceCode"),
                 detection_method="CodeReviewer",
                 status=FindingStatus.UNVERIFIED,
                 remediation=item.get("remediation", ""),
                 file_path=item["file_path"],
                 line_number=item.get("line_number"),
-                code_snippet=item.get("snippet", "")
+                code_snippet=item.get("snippet", ""),
+                metadata={"proof_state": "not_proven", "analysis_kind": "bounded_lexical_candidate",
+                          "limitations": ["not an AST or full dataflow/guard analysis", "external authorization, effective runtime values and attacker impact require validation"]}
             ))
 
         logger.info(f"Scope-aware code review completed: {len(findings)} findings.")

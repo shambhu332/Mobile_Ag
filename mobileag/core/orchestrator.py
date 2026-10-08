@@ -22,6 +22,9 @@ from mobileag.ingestion.obfuscation import ObfuscationAnalyzer
 from mobileag.analysis.api_mapper import APIMapper
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.call_graph import SmaliCallGraphEngine
+from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
+from mobileag.analysis.auth_session_auditor import AuthSessionAuditor
+from mobileag.analysis.firebase_auditor import FirebaseAuditor
 from mobileag.analysis.code_reviewer import CodeReviewer
 from mobileag.analysis.dependency_scanner import DependencyScanner
 from mobileag.analysis.manifest_auditor import ManifestAuditor
@@ -69,6 +72,9 @@ class Orchestrator:
         self._api_mapper = APIMapper(self._router)
         self._native_analyzer = NativeAnalyzer(self._router, self._settings.GHIDRA_PATH)
         self._dependency_scanner = DependencyScanner(self._router)
+        self._android_surface = AndroidSurfaceAnalyzer()
+        self._auth_session_auditor = AuthSessionAuditor()
+        self._firebase_auditor = FirebaseAuditor()
         self._call_graph_engine = SmaliCallGraphEngine()
         self._taint_engine = TaintEngine()
         self._nsc_auditor = NetworkSecurityConfigAuditor()
@@ -138,7 +144,7 @@ class Orchestrator:
         await _notify("Ingestion Complete", f"Parsed manifest for {pkg} (Framework: {framework})", 25)
 
         # === Stage 2: Analysis ===
-        await _notify("Static Analysis", "Running 10 parallel SAST engines (Taint, Secrets, Keystore, Call Graph, ELF)...", 40)
+        await _notify("Static Analysis", "Running static review engines and Android surface coverage checks...", 40)
         state = await self._run_analysis(state)
 
         raw_count = len(state.get("raw_findings", []))
@@ -150,7 +156,7 @@ class Orchestrator:
                 await _notify("Finding Discovered", f.get("title", "Security Finding"), 78, f)
 
         # === Stage 3: Filtering ===
-        await _notify("5-Layer Filter", "Eliminating false positives through reachability and consensus verification...", 85)
+        await _notify("5-Layer Filter", "Prioritizing candidates using heuristic reachability and optional consensus (not exploit proof)...", 85)
         state = await self._run_filtering(state)
 
         confirmed_count = len(state.get("filtered_findings", []))
@@ -186,10 +192,12 @@ class Orchestrator:
             state["smali_path"] = extraction.get("apktool_dir", "")
             state["coverage"] = {
                 "java_files": len(list(Path(state["decompiled_path"]).rglob("*.java"))) if state["decompiled_path"] else 0,
+                "kotlin_files": len(list(Path(state["decompiled_path"]).rglob("*.kt"))) if state["decompiled_path"] else 0,
                 "smali_files": len(list(Path(state["smali_path"]).rglob("*.smali"))) if state["smali_path"] else 0,
                 "resources": bool(state["resource_path"]),
                 "dependency_lookup": "skipped_offline" if self._settings.offline else "enabled",
                 "historical_learning": "not_configured",
+                "android_surface": AndroidSurfaceAnalyzer().scan(None,{} )["coverage"],
             }
             state["package_name"] = extraction.get("package_name", "")
 
@@ -236,6 +244,9 @@ class Orchestrator:
 
         # Run all agents concurrently
         tasks = {
+            "auth_session": self._auth_session_auditor.analyze(state["decompiled_path"]),
+            "firebase": self._firebase_auditor.analyze(state["decompiled_path"], state["resource_path"]),
+            "android_surface": self._android_surface.analyze(state["decompiled_path"],state["manifest_data"]),
             "manifest": self._manifest_auditor.audit(
                 state["manifest_data"], state["package_name"]
             ),
@@ -256,15 +267,31 @@ class Orchestrator:
             *tasks.values(), return_exceptions=True
         )
 
+        engines=state.setdefault("coverage",{}).setdefault("engines",{})
         agent_names = list(tasks.keys())
         for i, result in enumerate(results):
             name = agent_names[i]
             if isinstance(result, Exception):
                 logger.error("[Stage 2] %s agent failed: %s", name, result)
                 state["errors"].append(f"{name} agent error: {result}")
+                engines[name]="incomplete"
+                if name in {"auth_session", "firebase"}:
+                    state["coverage"][name].update(static_status="incomplete", runtime_status="not_tested", proof_status="not_proven")
+                if name=="android_surface":
+                    for category in state["coverage"].get("android_surface",{}).get("categories",{}).values():
+                        category["static_status"]="incomplete"
                 continue
 
-            if name == "api_mapping":
+            engines[name]="skipped_disabled" if name=="taint" and not self._settings.enable_deep_taint else "completed_heuristically"
+            if name in {"auth_session", "firebase"}:
+                all_findings.extend(result["findings"])
+                state["coverage"][name] = result["coverage"]
+                engines[name] = result["coverage"]["static_status"]
+            elif name=="android_surface":
+                all_findings.extend(result["findings"])
+                state["coverage"]["android_surface"]=result["coverage"]
+                engines[name]=result["coverage"]["categories"]["webview"]["static_status"]
+            elif name == "api_mapping":
                 # API mapper returns (endpoints, findings)
                 endpoints, findings = result
                 state["api_endpoints"] = [
@@ -277,14 +304,17 @@ class Orchestrator:
 
             logger.info("[Stage 2] %s: %d findings",
                         name,
-                        len(result) if not isinstance(result, tuple) else len(result[1]))
+                        len(result["findings"]) if name in {"android_surface", "auth_session", "firebase"} else len(result) if not isinstance(result, tuple) else len(result[1]))
 
         # Deterministic Smali Call Graph reachability audit
         try:
             smali_findings = self._call_graph_engine.audit_smali_directory(state["smali_path"])
             all_findings.extend(smali_findings)
+            engines["smali_call_graph"]="completed_heuristically"
             logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
         except Exception as e:
+            engines["smali_call_graph"]="incomplete"
+            state["errors"].append("Smali call graph review incomplete")
             logger.warning("[Stage 2] Smali Call Graph audit warning: %s", e)
 
         for finding in all_findings:

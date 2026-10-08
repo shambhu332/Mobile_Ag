@@ -19,3 +19,8 @@ body{background:var(--ui-bg);color:#e7eef8}main{min-width:0;min-height:0}body>as
 #auto-ready-checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:10px;margin:14px 0;list-style:none;padding:0}
 #auto-ready-checklist li{border:1px solid var(--ui-border);border-radius:8px;background:#0b1320;padding:12px;overflow-wrap:anywhere}
 #view-dast button:disabled{opacity:.5;cursor:not-allowed}
+
+.ui-dialog input:not([type=checkbox]),.ui-dialog select{display:block;width:100%;padding:10px;background:#0b1320;color:#f8fafc;border:1px solid #64748b;border-radius:6px;margin-top:6px}
+.ui-dialog label:has(input[type=checkbox]){display:flex;align-items:flex-start;gap:10px;line-height:1.5}
+.ui-dialog input[type=checkbox]{margin-top:5px;accent-color:#0284c7;flex-shrink:0}
+#scan-category-coverage{margin:0}#scan-category-coverage p{overflow-wrap:anywhere;margin:8px 0}

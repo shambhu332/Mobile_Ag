@@ -13,6 +13,7 @@ from mobileag.llm.providers.base import LLMResponse
 from mobileag.analysis.secret_scanner import SecretScanner
 from mobileag.dast.ui_crawler import UICrawler
 from mobileag.web.repository import ScanRepository, private_write
+from tests.proof_fixtures import confirmation_evidence
 
 web = importlib.import_module('mobileag.web.app')
 
@@ -23,7 +24,7 @@ def client():
 
 def fixture_scan(sid='scan_one', status='completed'):
     return {'scan_id':sid, 'package_name':'org.example.synthetic', 'status':status,
-            'revision':0, 'created_at':'2026-10-05', 'stats':{'total':1},
+            'version':'1.0','artifact_sha256':'a'*64,'revision':0, 'created_at':'2026-10-05', 'stats':{'total':1},
             'findings':[{'id':'same-rule','status':'UNVERIFIED','title':'Synthetic review candidate'}]}
 
 
@@ -32,7 +33,7 @@ def test_scoped_triage_survives_new_repository_and_stale_worker(client):
     assert client.post('/api/findings/same-rule/feedback', json={'verdict':'FALSE_POSITIVE'}).status_code == 409
     route='/api/scans/scan_one/findings/same-rule/feedback'
     assert client.post(route, json={'verdict':'CONFIRMED','revision':0}).status_code == 422
-    result=client.post(route, json={'verdict':'CONFIRMED','notes':'Synthetic observed impact and prerequisites', 'revision':0})
+    result=client.post(route, json={'verdict':'CONFIRMED','notes':'Synthetic observed impact and prerequisites', 'revision':0, 'evidence':confirmation_evidence()})
     assert result.status_code == 200 and result.json()['revision'] == 1
     assert ScanRepository(web.OUTPUT_DIR).get('scan_one')['findings'][0]['status'] == 'CONFIRMED'
     assert ScanRepository(web.OUTPUT_DIR).get('scan_two')['findings'][0]['status'] == 'UNVERIFIED'

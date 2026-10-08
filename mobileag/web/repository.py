@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from mobileag.security.privacy import redact
+from mobileag.reporting.validation import bind_confirmation
 
 
 def private_write(path: Path, value: dict) -> None:
@@ -52,6 +53,9 @@ class ScanRepository:
                 CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, at TEXT NOT NULL, sha256 TEXT);
                 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, document TEXT NOT NULL);
             ''')
+            db.execute('BEGIN IMMEDIATE')
+            if 'evidence' not in {row['name'] for row in db.execute('PRAGMA table_info(decisions)')}:
+                db.execute('ALTER TABLE decisions ADD COLUMN evidence TEXT')
 
     @contextmanager
     def connection(self):
@@ -93,7 +97,7 @@ class ScanRepository:
                               (limit, offset)).fetchall()
         return [json.loads(r['document']) for r in rows], total
 
-    def triage(self, sid, fid, verdict, notes, expected_revision):
+    def triage(self, sid, fid, verdict, notes, expected_revision, evidence=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT document,revision FROM scans WHERE id=?', (sid,)).fetchone()
@@ -107,20 +111,25 @@ class ScanRepository:
             matches = [f for f in scan.get('findings', []) if f.get('id') == fid]
             if len(matches) != 1:
                 raise KeyError('Finding not found or not uniquely identified')
+            proof=bind_confirmation(evidence,scan) if verdict=='CONFIRMED' else None
             revision = row['revision'] + 1
             now = datetime.now(timezone.utc).isoformat()
             f = matches[0]
             f.update(status=verdict, validation_notes=redact(notes), validated_at=now)
+            if proof is not None:f["validation_evidence"]=redact(proof)
+            elif isinstance(f.get("validation_evidence"),dict):f["validation_evidence"]["active"]=False
             scan['revision'] = revision
             db.execute('UPDATE scans SET revision=?,document=? WHERE id=?',
                        (revision, json.dumps(redact(scan)), sid))
-            db.execute('INSERT INTO decisions(scan_id,finding_id,at,verdict,notes,revision,actor) VALUES(?,?,?,?,?,?,?)',
-                       (sid, fid, now, verdict, redact(notes), revision, 'local-operator'))
+            db.execute('INSERT INTO decisions(scan_id,finding_id,at,verdict,notes,revision,actor,evidence) VALUES(?,?,?,?,?,?,?,?)',
+                       (sid, fid, now, verdict, redact(notes), revision, 'local-operator',json.dumps(redact(proof)) if proof else None))
         return scan
 
     def history(self, sid):
         with self.connection() as db:
-            return [dict(r) for r in db.execute('SELECT finding_id,at,verdict,notes,revision,actor FROM decisions WHERE scan_id=? ORDER BY id', (sid,))]
+            rows=[dict(r) for r in db.execute('SELECT finding_id,at,verdict,notes,revision,actor,evidence FROM decisions WHERE scan_id=? ORDER BY id', (sid,))]
+            for row in rows:row['evidence']=json.loads(row['evidence']) if row['evidence'] else None
+            return rows
 
     def remove(self, sid):
         with self.connection() as db:

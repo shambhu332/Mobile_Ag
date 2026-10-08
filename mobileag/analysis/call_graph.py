@@ -1,11 +1,14 @@
-"""Deterministic Smali & Bytecode Call Graph and Reachability Analysis Engine.
+"""Smali syntactic call-path review heuristic, not value-flow or exploit proof.
 
 Parses decompiled DEX / Smali representations to build:
 1. Class Hierarchy and Inheritance Trees (Class -> Superclass & Interfaces)
 2. Whole-Program Inter-Procedural Call Graph (Method -> Invoked Methods)
 3. Android Component Lifecycle Entrypoints (onCreate, onReceive, onStartCommand)
-4. Source-to-Sink Reachability Solver for deterministic, offline vulnerability auditing
-   (without relying on third-party LLMs or brittle Java source regex).
+4. Bounded source-API-containing-method to sink-API call-path inventory.
+
+Register/argument flow, branch feasibility, dynamic dispatch and effective manifest
+authorization are not resolved by these paths. Lifecycle names alone are not
+externally reachable entrypoint proof.
 """
 
 from __future__ import annotations
@@ -17,7 +20,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ class MethodNode:
 
 @dataclass
 class CallChainFinding:
-    """Represents a validated source-to-sink reachability path across methods."""
+    """Represents a syntactic call path; value-flow and authorization are unverified."""
     source_method: str
     sink_method: str
     cwe_id: str
@@ -182,6 +184,9 @@ class SmaliCallGraphEngine:
 
     def build_graph(self, base_dir: str | Path) -> dict[str, MethodNode]:
         """Scan directory (or smali directories) and construct the call graph."""
+        # One engine instance serves multiple scans; never reuse the previous artifact graph.
+        self.methods.clear()
+        self.class_hierarchy.clear()
         base_path = Path(base_dir)
         if not base_path.exists():
             logger.warning("Smali directory does not exist: %s", base_dir)
@@ -370,7 +375,9 @@ class SmaliCallGraphEngine:
                                 cwe_id=sink_spec["cwe"],
                                 severity=sink_spec["severity"],
                                 title=sink_spec["title"],
-                                description=f"{sink_spec['desc']} (Call Chain: {' -> '.join(path[-3:])})",
+                                description=(f"A method containing source API {method.sources_called[0]} has a syntactic call path to {sink_name}. "
+                                             "Register/argument value flow, execution ordering, branch feasibility, parameterization, sanitization and external component authorization are not established. "
+                                             f"This is a review lead, not source-to-sink proof. (Call Chain: {' -> '.join(path[-3:])})"),
                                 call_path=path + [sink_name],
                                 file_path=method.file_path,
                                 line_number=method.line_number
@@ -394,25 +401,27 @@ class SmaliCallGraphEngine:
 
         findings: list[Finding] = []
         for i, p in enumerate(paths, start=1):
-            score, vector = get_default_cvss_for_cwe(p.cwe_id)
             snippet = "\n".join([f"  [{idx+1}] {step}" for idx, step in enumerate(p.call_path)])
 
             findings.append(
                 Finding(
                     id=f"smali-cg-{i:03d}",
-                    title=p.title,
+                    title=f"Review Smali call-path candidate: {p.cwe_id}",
                     description=p.description,
-                    severity=p.severity,
+                    severity=Severity.INFO,
                     cwe_id=p.cwe_id,
-                    cvss_score=score,
-                    cvss_vector=vector,
+                    cvss_score=0.0,
+                    cvss_vector="",
                     affected_component=p.source_method.split("->")[0],
                     file_path=p.file_path,
                     line_number=p.line_number,
                     code_snippet=f"Inter-Procedural Smali Call Chain:\n{snippet}",
                     remediation=f"Sanitize and validate untrusted input before forwarding across call chain to {p.sink_method}.",
                     status=FindingStatus.UNVERIFIED,
-                    confidence=0.96
+                    confidence=0.5,
+                    detection_method="SmaliCallGraphEngine (call-path heuristic)",
+                    metadata={"proof_state": "not_proven", "analysis_kind": "syntactic_call_path",
+                              "register_dataflow": "not_implemented", "manifest_authorization": "not_resolved"}
                 )
             )
 

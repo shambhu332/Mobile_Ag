@@ -1,0 +1,77 @@
+{
+  "scope": "Local MobileAg with synthetic tests; no live targets",
+  "base_commit": "143499ae69e1a1c2d726d7eaf503553f7f3a1365",
+  "working_tree": "Existing uncommitted edits preserved; not committed or pushed",
+  "python": "3.14.7",
+  "baseline": {
+    "passed": 378,
+    "failed": 29
+  },
+  "targeted_privacy_provider_dast": {
+    "passed": 29
+  },
+  "workflow_draft_boundaries": {
+    "passed": 15
+  },
+  "final_full_suite": {
+    "passed": 422,
+    "failed": 0,
+    "warnings": 19863,
+    "duration_seconds": 93.93
+  },
+  "compileall": "passed",
+  "git_diff_check": "passed",
+  "browser_product": "passed; local real server with synthetic fixtures",
+  "browser_console": "passed using existing Chromium executable; synthetic fixtures",
+  "not_complete": [
+    "MobSF integration",
+    "scoped live authentication and Firebase integrations",
+    "complete five-phase UI",
+    "real-device verification"
+  ],
+  "tools": {
+    "pytest": "8.4.2",
+    "pytest-asyncio": "0.24.0",
+    "fastapi": "0.141.1",
+    "pydantic": "2.13.5",
+    "playwright": "1.63.0"
+  },
+  "offline_integration": {
+    "integrated_engines": [
+      "auth_session",
+      "firebase"
+    ],
+    "targeted_passed": 32,
+    "final_report_targeted_passed": 6,
+    "full_suite_passed": 428,
+    "full_suite_failed": 0,
+    "warnings": 20447,
+    "duration_seconds": 33.07,
+    "runtime_validation": "not_tested",
+    "external_backend_requests": 0
+  },
+  "browser_product_after_offline_integration": "passed; synthetic fixtures and local loopback server",
+  "final_continuation_suite": {
+    "passed": 428,
+    "failed": 0,
+    "duration_seconds": 30.21,
+    "warnings": 20447,
+    "includes_final_report_coverage_changes": true
+  },
+  "publication_preparation": {
+    "tests_passed": 428,
+    "tests_failed": 0,
+    "duration_seconds": 29.09,
+    "dashboard_assets": "passed",
+    "wheel_build": "passed",
+    "installed_wheel_smoke": "passed",
+    "visibility_verified": "PRIVATE",
+    "excluded_local_paths": [
+      ".env.example",
+      "docs/djini-console-2026-10-08/validation/desktop-findings.png",
+      "docs/djini-console-2026-10-08/validation/desktop-settings.png",
+      "docs/djini-console-2026-10-08/validation/pytest-baseline-comparison.json"
+    ],
+    "staged_format_scan": "no full credential formats found; not exhaustive"
+  }
+}

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from mobileag.reporting.finding import Finding, Severity
+from mobileag import __version__
+from mobileag.security.privacy import redact
 
 
 class SARIFExporter:
@@ -21,7 +23,7 @@ class SARIFExporter:
 
     SCHEMA_URI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
     TOOL_NAME = "MobileAg Enterprise AppSec Scanner"
-    TOOL_VERSION = "2.2.0"
+    TOOL_VERSION = __version__
 
     @classmethod
     def severity_to_sarif_level(cls, severity: Severity | str) -> str:
@@ -45,6 +47,12 @@ class SARIFExporter:
         results: list[dict[str, Any]] = []
 
         for f in findings:
+            data = f.model_dump(mode='json') if isinstance(f, Finding) else f
+            status = data.get('status', 'UNVERIFIED')
+            if status in {'FALSE_POSITIVE', 'DUPLICATE'}:
+                continue
+            validation = data.get('validation_evidence') or {}
+            proof_basis = 'analyst_attested' if status == 'CONFIRMED' and validation.get('active') and validation.get('basis') == 'analyst_attested' else 'not_proven'
             # Handle both Finding objects and raw dicts
             if isinstance(f, Finding):
                 f_id = f.cwe_id or f.id
@@ -64,7 +72,7 @@ class SARIFExporter:
                 f_desc = f.get("description", "")
                 f_sev = f.get("severity", "MEDIUM")
                 f_cwe = f.get("cwe_id", "CWE-000")
-                f_cvss = f.get("cvss_score", 5.0)
+                f_cvss = f.get("cvss_score", 0.0)
                 f_masvs = f.get("owasp_masvs", "MASVS")
                 f_file = f.get("file_path", "AndroidManifest.xml")
                 f_line = f.get("line_number") or 1
@@ -120,6 +128,8 @@ class SARIFExporter:
                     "cwe": f_cwe,
                     "cvss": f_cvss,
                     "masvs": f_masvs,
+                    "status": status,
+                    "proof_basis": proof_basis,
                 },
             }
             results.append(result_item)
@@ -145,7 +155,7 @@ class SARIFExporter:
                 }
             ],
         }
-        return sarif_doc
+        return redact(sarif_doc)
 
     @classmethod
     def export_to_file(

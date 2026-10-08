@@ -2,6 +2,7 @@
 import re
 
 _PATTERNS = [
+    re.compile(r'''(?i)(["'](?:access_token|refresh_token|client_secret|passwd|password|token|secret|api_key|x-api-key|x-goog-api-key|x-auth-token|authorization|cookie|set-cookie)["']\s*:\s*)["'][^"']*["']'''),
     re.compile(r'\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]+|sk_(?:live|test)_[A-Za-z0-9]{12,}|xai-[A-Za-z0-9_-]+)\b'),
     re.compile(r'https://hooks\.slack\.com/services/[^\s\"\'<>]+'),
     re.compile(r'(?i)(?:https?://)[^/\s:@]+:[^/\s@]+@[^\s]+'),
@@ -19,7 +20,7 @@ def redact(value):
             value = pattern.sub('[REDACTED]', value)
         return value
     if isinstance(value, dict):
-        return {k: ('[REDACTED]' if str(k).lower() in {'authorization','cookie','set-cookie','password','token','secret','api_key'} else redact(v)) for k,v in value.items()}
+        return {k: ('[REDACTED]' if str(k).lower().replace('-', '_') in {'authorization','cookie','set_cookie','password','passwd','token','secret','api_key','access_token','refresh_token','client_secret','x_api_key','x_goog_api_key','x_auth_token'} else redact(v)) for k,v in value.items()}
     if isinstance(value, (tuple, list)):
         return [redact(v) for v in value]
     return value

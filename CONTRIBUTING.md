@@ -40,6 +40,10 @@ source .venv/bin/activate
 python -m pip install -c requirements/validated-python314.txt -e '.[test]'
 ```
 
+For Fish, activate with `source .venv/bin/activate.fish` instead.
+Keep API keys in an ignored local `.env` or a secret manager; never populate
+the tracked `.env.example` with real credentials.
+
 Start the dashboard locally when needed:
 
 ```bash
@@ -147,3 +151,24 @@ current behavior.
 Small, well-explained contributions are easier to review than unrelated changes
 bundled together. Be respectful, assume good intent, and discuss the code rather
 than the person.
+
+## Offline workflow starter checks
+
+The authentication/session and Firebase engines now run as bounded offline
+reviews in static scans. They do not contact discovered backends or prove an
+authentication bypass. Start with these synthetic regression tests:
+
+```bash
+python -m pytest -q tests/test_offline_workflow_integration.py \
+  tests/test_workflow_draft_boundaries.py tests/test_confirmation_evidence.py
+```
+
+Useful small contributions include a positive fixture, a negative fixture, and
+explicit partial/error coverage for one parser behavior. Preserve file/byte
+limits, credential redaction, zero automatically assigned CVSS for lexical
+leads, and `runtime_status=not_tested` unless a test actually ran.
+
+See [workflow hardening and remaining gaps](docs/workflow-hardening-2026-10-08/README.md).
+Live integrations need a separate design review with exact fixture scope,
+request budgets, revocation checks and synthetic evidence; do not enable the
+disabled draft APIs merely to make a feature appear complete.

@@ -21,6 +21,7 @@ from mobileag.web.security import SecurityMiddleware, authorized, check_device
 from mobileag.security.archives import validate_archive, MAX_UPLOAD
 from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
+from mobileag.reporting.validation import ConfirmationEvidence, EvidenceError
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Literal
@@ -55,6 +56,7 @@ from fastapi import Request, BackgroundTasks, Query, FastAPI, HTTPException, Web
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
 import httpx
 
@@ -128,6 +130,14 @@ app.state.session_deadline = time.monotonic() + 8*3600
 app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
 app.add_middleware(SecurityMiddleware, owner=app)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, exc: RequestValidationError):
+    # Pydantic errors may include entire rejected credentials in input/ctx.
+    return JSONResponse(status_code=422, content={'detail': [
+        {'loc': error['loc'], 'type': error['type'], 'msg': 'Invalid request field'}
+        for error in exc.errors()
+    ]})
 
 # Global in-memory data store for scans and runtime settings
 DEMO_SCAN_CACHE: Optional[dict[str, Any]] = None
@@ -470,6 +480,7 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
 class FeedbackRequest(BaseModel):
     verdict: Literal['CONFIRMED', 'FALSE_POSITIVE', 'DUPLICATE', 'UNVERIFIED']
     notes: str = Field(default='', max_length=10000)
+    evidence: Optional[ConfirmationEvidence] = None
     revision: Optional[int] = Field(default=None, ge=0)
 
 
@@ -490,15 +501,21 @@ async def submit_scan_feedback(scan_id: str, finding_id: str, feedback: Feedback
     await get_scan_details(scan_id)  # Import legacy documents on first access.
     try:
         scan = await asyncio.to_thread(repository().triage, scan_id, finding_id,
-                                      feedback.verdict, feedback.notes, feedback.revision)
+                                      feedback.verdict, feedback.notes, feedback.revision,
+                                      feedback.evidence.model_dump() if feedback.evidence else None)
     except KeyError as exc:
         raise HTTPException(404, str(exc))
+    except EvidenceError as exc:
+        raise HTTPException(422, str(exc))
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     if scan_id in ACTIVE_SCANS:
         ACTIVE_SCANS[scan_id] = scan
     return {'status': 'saved', 'scan_id': scan_id, 'finding_id': finding_id,
             'revision': scan['revision'], 'verdict': feedback.verdict,
+            'confirmation_basis': 'analyst_attested_not_independently_verified' if feedback.verdict=='CONFIRMED' else None,
+            'validation_evidence': next(f for f in scan['findings'] if f['id']==finding_id).get('validation_evidence'),
+            'validation_notes': next(f for f in scan['findings'] if f['id']==finding_id).get('validation_notes'),
             'persistence': 'local_sqlite'}
 
 
@@ -961,9 +978,16 @@ async def audit_dast_providers(req: ProviderAuditRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/deeplinks")
-async def audit_dast_deeplinks(req: DeepLinkAuditRequest) -> dict[str, Any]:
-    """Audit and fuzz deep links / custom schemes for OAuth theft, file access, and UXSS."""
-    results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links)
+async def audit_dast_deeplinks(req: DeepLinkAuditRequest, request: Request) -> dict[str, Any]:
+    """Explicit synthetic link diagnostics; no automatic exploit proof."""
+    from mobileag.web.policy import check_action
+    def guard():
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(),'deeplinks',req.model_dump()):
+            raise HTTPException(403,'Deep-link diagnostic scope revoked')
+    guard()
+    results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links,guard=guard)
+    guard()
     f_dicts = [f.to_dict() for f in findings]
     remember_findings(f_dicts)
     return {"status": "success", "results": results, "findings": f_dicts}
@@ -1075,10 +1099,19 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
     }
 
 
-async def run_dast_background_task(req: DastFuzzRequest) -> None:
+async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
     """Execute dynamic fuzzing, IPC audits, and storage forensics with WebSocket telemetry."""
     serial = req.serial
     pkg = req.package_name
+
+    def guard():
+        from mobileag.web.policy import check_action
+        if time.monotonic() >= app.state.session_deadline or not authorized(token, app.state.auth_token):
+            raise HTTPException(401, 'Session expired or revoked')
+        if not check_device(serial) or not check_action(repository().get_policy(), 'fuzz', req.model_dump()):
+            raise HTTPException(403, 'Dynamic assessment scope was revoked')
+
+    guard()
 
     await manager.broadcast({
         "type": "dast_progress",
@@ -1089,14 +1122,16 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
     })
 
     # Device verification
-    devs = await adb_manager.list_devices()
+    guard()
+    devs = await adb_manager.discover_devices()
     target_dev = next((d for d in devs if d.serial == serial), None)
-    is_root = target_dev.is_rooted if target_dev else False
+    if target_dev is None or target_dev.status != 'device':
+        raise HTTPException(409, 'Selected device is not online')
 
     await manager.broadcast({
         "type": "dast_progress",
         "stage": "Device Verified",
-        "message": f"Device {serial} confirmed (Rooted: {is_root})",
+        "message": f"Device {serial} is online; root status was not probed.",
         "progress": 20,
         "timestamp": datetime.now().isoformat(),
     })
@@ -1110,6 +1145,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 35,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False)
 
     # Activity intent fuzzing (with targeted extras if provided)
@@ -1122,6 +1158,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
         "timestamp": datetime.now().isoformat(),
     })
 
+    guard()
     _, findings = await intent_fuzzer.fuzz_activity_intents(
         serial, pkg, acts, targeted_extras=req.targeted_extras
     )
@@ -1135,6 +1172,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 65,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks)
         findings.extend(dl_findings)
 
@@ -1147,6 +1185,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 80,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         _, prov_findings = await provider_auditor.audit_providers(serial, pkg, req.authorities)
         findings.extend(prov_findings)
 
@@ -1159,6 +1198,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 85,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         storage_res = await storage_auditor.audit_all_storage(serial, pkg)
         for sf in storage_res.get("findings", []):
             findings.append(Finding(**sf))
@@ -1172,6 +1212,7 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 90,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5)
         await manager.broadcast({
             "type": "dast_progress",
@@ -1190,11 +1231,13 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
             "progress": 95,
             "timestamp": datetime.now().isoformat(),
         })
+        guard()
         mem_res = await memory_auditor.run_memory_audit(serial, pkg)
         for mf in mem_res.get("findings", []):
             findings.append(Finding(**mf))
 
     # Append to active findings
+    guard()
     for f in findings:
         f_dict = f.to_dict()
         remember_findings([f_dict])
@@ -1220,14 +1263,15 @@ async def run_dast_background_task(req: DastFuzzRequest) -> None:
 
 
 @app.post("/api/dast/fuzz")
-async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """Trigger dynamic activity intent fuzzing and crash monitoring."""
     if req.serial in DAST_JOBS or len(DAST_JOBS) >= 2:
         raise HTTPException(429, "Device job concurrency limit reached")
     DAST_JOBS.add(req.serial)
+    token = request.state.authenticated_token
     async def bounded_job():
         try:
-            await asyncio.wait_for(run_dast_background_task(req), timeout=180)
+            await asyncio.wait_for(run_dast_background_task(req, token), timeout=180)
         except Exception as exc:
             await manager.broadcast({"type":"dast_progress", "stage":"DAST failed", "message":str(exc), "progress":100})
         finally:

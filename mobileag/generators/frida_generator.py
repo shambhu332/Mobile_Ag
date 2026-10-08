@@ -25,7 +25,9 @@ Requirements:
 - The script must be syntactically valid JavaScript for the Frida runtime
 - Include Java.perform() wrapper for Java-layer hooks
 - Include Interceptor.attach() for native hooks
-- Add console.log() statements to display intercepted data
+- Log only synthetic canary events; do not log credentials, keys, tokens or personal data
+- Do not bypass or modify authorization to claim that an unprivileged exploit exists
+- This is an unexecuted review draft, not proof
 - Add comments explaining what each hook does
 - Include the frida command to run the script as a comment at the top
 - Handle errors gracefully with try/catch
@@ -66,15 +68,15 @@ class FridaGenerator:
         Returns:
             Complete Frida JavaScript hook script as a string.
         """
-        package_name = app_info.get("package_name", "com.target.app")
+        package_name = app_info.get("package_name") or "<package-not-recorded>"
 
         # Try template-based generation first
         template_script = self._try_template(finding, package_name)
         if template_script:
-            return template_script
+            return self._with_boundary(template_script)
 
         # Fall back to LLM generation
-        return await self._llm_generate(finding, package_name)
+        return self._with_boundary(await self._llm_generate(finding, package_name))
 
     def _try_template(self, finding: Finding, package_name: str) -> Optional[str]:
         """Try to render a Frida script from a Jinja2 template."""
@@ -162,7 +164,7 @@ Include the frida command to run it as a comment at the top."""
         """Generate Frida scripts for all high/critical findings.
 
         Args:
-            findings: List of confirmed findings.
+            findings: Review candidates, not independently verified.
             app_info: App metadata dict.
 
         Returns:
@@ -222,9 +224,16 @@ Java.perform(function() {{
             console.log("[*] Found method: " + method.getName());
         }});
 
-        console.log("[+] Hook installed successfully");
+        console.log("[*] Class method inventory only; no hook was installed and no exploit was verified");
     }} catch(e) {{
         console.log("[-] Error: " + e);
     }}
 }});
 """
+
+    @staticmethod
+    def _with_boundary(script: str) -> str:
+        return ("// GENERATED INSTRUMENTATION DRAFT: NOT EXECUTED OR VERIFIED.\n"
+                "// Review and explicitly approve target/process/action before execution.\n"
+                "// Root/shell or hooks changing authorization are diagnostic contexts, not ordinary-app exploit proof.\n"
+                "// Use only synthetic data. Model output may be invalid; no runtime or authorization validation is implied.\n" + script)

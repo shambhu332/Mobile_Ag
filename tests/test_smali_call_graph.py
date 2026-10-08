@@ -50,10 +50,15 @@ def test_smali_call_graph_parsing_and_reachability():
         assert len(findings) >= 1
         finding = findings[0]
         assert finding.cwe_id == "CWE-749"
-        assert "UXSS" in finding.title
+        # Syntactic call reachability is not proven register dataflow or UXSS.
+        assert "call-path candidate" in finding.title
         assert "MainActivity" in finding.code_snippet
         assert "loadUrl" in finding.code_snippet
-        assert finding.confidence >= 0.9
+        assert finding.confidence <= 0.5
+        assert finding.cvss_score == 0
+        assert finding.status.value == "UNVERIFIED"
+        assert finding.metadata["register_dataflow"] == "not_implemented"
+        assert finding.metadata["proof_state"] == "not_proven"
 
 
 def test_smali_call_graph_reflection_resolution():
@@ -136,4 +141,3 @@ def test_smali_call_graph_synthetic_bridge_resolution():
         findings = engine.audit_smali_directory(tmp_path)
         assert len(findings) >= 1
         assert any(f.cwe_id == "CWE-470" for f in findings)
-

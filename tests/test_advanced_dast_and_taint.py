@@ -107,16 +107,19 @@ async def test_deeplink_fuzzer_runtime_fuzz():
     mock_adb = ADBManager()
     mock_adb.clear_logcat = AsyncMock(return_value=True)
     mock_adb._exec_cmd = AsyncMock(return_value=(0, b"Starting: Intent { act=android.intent.action.VIEW }\n", b""))
-    mock_adb.get_logcat_dump = AsyncMock(return_value=[
+    target_logs=[
         "09-21 11:00:00.000 1234 1234 E AndroidRuntime: FATAL EXCEPTION: main",
+        "09-21 11:00:00.001 1234 1234 E AndroidRuntime: Process: com.test.app, PID: 1234",
         "java.lang.NullPointerException: Null query parameter in DeepLinkActivity",
-    ])
+    ]
+    mock_adb.get_logcat_dump = AsyncMock(side_effect=[[],target_logs]*5)
 
     fuzzer = DeepLinkFuzzer(adb=mock_adb)
     results, findings = await fuzzer.fuzz_deep_links("emulator-5554", "com.test.app", ["testapp://router"])
     assert len(results) >= 4
     assert len(findings) >= 1
     assert findings[0].cwe_id == "CWE-755"
+    assert findings[0].status.value == "UNVERIFIED" and findings[0].cvss_score == 0
 
 
 # =============================================================================

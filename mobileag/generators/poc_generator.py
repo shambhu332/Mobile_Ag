@@ -18,21 +18,10 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates" / "poc"
 
-_POC_SYSTEM_PROMPT = """You are a senior mobile security researcher writing vulnerability reports for bug bounty programs.
-Generate a detailed, step-by-step Proof of Concept (PoC) reproduction guide for the given finding.
-
-The guide MUST include:
-1. **Prerequisites** — tools needed, device setup, required access
-2. **Setup** — installing the app, configuring the test environment
-3. **Steps to Reproduce** — numbered, specific, copy-pasteable commands
-4. **Expected Result** — what the researcher should observe
-5. **Impact Assessment** — what an attacker could achieve
-6. **Remediation** — how the developer should fix it
-
-Format the output as clean Markdown. Be specific — include actual ADB commands,
-content URIs, intent commands, etc. wherever applicable.
-
-Do NOT include any disclaimers. This is for authorized security testing."""
+_POC_SYSTEM_PROMPT = """You are writing a bounded, non-destructive validation PLAN for an unverified mobile-security candidate, not a vulnerability report or proof.
+State that nothing has been executed by generation. Use only observed locations and exact approved target details supplied in context; do not invent schemes, authorities, endpoints, exported state, bridge names or successful impact. When inputs are missing, identify them as prerequisites rather than guessing executable commands.
+Use researcher-controlled accounts and synthetic data. Start with the relevant unprivileged attacker context on a current OS. Root, ADB shell and hooks that change authorization are diagnostics, never ordinary-app exploit proof. Avoid deletion, writes, credential extraction, broad enumeration or destinations not separately approved.
+Include attacker control, entrypoint, sensitive sink, required boundary crossing, successful authorized and rejected unauthorized controls, evidence to collect, cleanup and root-cause-specific remediation. A model opinion cannot establish security or exploitability. Output Markdown."""
 
 
 class PoCGenerator:
@@ -68,15 +57,15 @@ class PoCGenerator:
         Returns:
             Markdown-formatted PoC guide string.
         """
-        package_name = app_info.get("package_name", "com.target.app")
+        package_name = app_info.get("package_name") or "<package-not-recorded>"
 
         # Try template first
         template_guide = self._try_template(finding, package_name)
         if template_guide:
-            return template_guide
+            return self._with_boundary(template_guide)
 
         # Fall back to LLM
-        return await self._llm_generate(finding, package_name)
+        return self._with_boundary(await self._llm_generate(finding, package_name))
 
     def _try_template(self, finding: Finding, package_name: str) -> Optional[str]:
         """Try to render a PoC from a Jinja2 template."""
@@ -119,7 +108,7 @@ class PoCGenerator:
 
     async def _llm_generate(self, finding: Finding, package_name: str) -> str:
         """Use LLM to generate a custom PoC guide."""
-        user_prompt = f"""Generate a detailed PoC reproduction guide for this mobile security finding:
+        user_prompt = f"""Generate a bounded validation plan for this UNVERIFIED review candidate:
 
 **App Package:** {package_name}
 **Finding:** {finding.title}
@@ -129,15 +118,14 @@ class PoCGenerator:
 **Component:** {finding.affected_component}
 **Description:** {finding.description}
 
-**Vulnerable Code:**
+**Observed Code (not established vulnerable):**
 ```
 {finding.code_snippet[:2000]}
 ```
 
 **Remediation Hint:** {finding.remediation or 'Not provided'}
 
-Generate a complete PoC guide with prerequisites, setup, steps to reproduce,
-expected results, impact assessment, and remediation advice."""
+Generate a non-destructive research plan with missing prerequisites, positive/negative controls, evidence requirements and remediation. Do not claim outcomes, invent routes or require root by default."""
 
         response = await self._router.route(
             task_type=TaskType.POC_GENERATION,
@@ -157,10 +145,10 @@ expected results, impact assessment, and remediation advice."""
         findings: list[Finding],
         app_info: dict,
     ) -> list[dict]:
-        """Generate PoC guides for all confirmed high/critical findings.
+        """Generate unexecuted validation plans for candidate findings.
 
         Args:
-            findings: Confirmed findings list.
+            findings: Candidate findings list, not independently verified.
             app_info: App metadata dict.
 
         Returns:
@@ -191,32 +179,31 @@ expected results, impact assessment, and remediation advice."""
     @staticmethod
     def _fallback_guide(finding: Finding, package_name: str) -> str:
         """Minimal fallback guide when LLM is unavailable."""
-        return f"""# PoC: {finding.title}
+        return f"""# Validation plan: {finding.title}
 
-## Classification
-- **CWE:** {finding.cwe_id}
-- **Severity:** {finding.severity.value}
-- **CVSS:** {finding.cvss_score}
-- **Component:** {finding.affected_component}
+## Observed candidate
+- App package: `{package_name}`
+- Review location: `{finding.file_path}`:{finding.line_number or 'unknown'}
+- Component label: `{finding.affected_component}` (runtime entrypoint not verified)
+- Candidate classification: {finding.cwe_id}
 
-## Description
 {finding.description}
 
-## Prerequisites
-- Rooted Android device or emulator
-- ADB installed and connected
-- Target app ({package_name}) installed
+## Missing prerequisites
+Record the original artifact SHA-256, app version, current OS build, exact dedicated-device serial and explicit target/action scope. Use synthetic accounts/data and the relevant unprivileged attacker context. Root/shell/hooks are not ordinary-app exploitation proof.
 
-## Steps to Reproduce
-1. Install the target application: `adb install target.apk`
-2. Identify the vulnerable component: `{finding.affected_component}`
-3. Interact with the component to trigger the vulnerability
-4. Observe the behavior described above
+## Validation procedure
+1. Trace the actual entrypoint and attacker-controlled input to the sensitive sink and effective authorization/validation checks. Do not invent missing endpoints, authorities or URI schemes.
+2. Build one bounded, non-destructive synthetic-canary reproduction in the authorized fixture.
+3. Execute an allowed-input/authorized-caller positive control and rejected-input/unauthorized-caller negative control without modifying authorization.
+4. Record what was actually observed and the precise crossed security boundary. A static pattern, model opinion or successful diagnostic command is not proof.
+5. Preserve redacted evidence and clean up only researcher-created fixture state. If prerequisites or impact cannot be established, retain UNVERIFIED.
 
-## Impact
-This vulnerability ({finding.cwe_id}) in `{finding.affected_component}` could allow
-an attacker to exploit the application as described.
-
-## Remediation
-{finding.remediation or 'Apply proper security controls for the affected component.'}
+## Remediation after root-cause validation
+{finding.remediation or 'Apply controls matching the demonstrated boundary failure while preserving authorized behavior.'}
 """
+
+    @staticmethod
+    def _with_boundary(guide: str) -> str:
+        return ("**Generated validation plan - NOT EXECUTED and not independent exploit proof. "
+                "Review all instructions against the exact approved scope before any test.**\n\n" + guide)

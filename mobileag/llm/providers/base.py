@@ -19,6 +19,15 @@ class LLMResponse:
     latency_ms: float = 0.0
     error: Optional[str] = None
     success: bool = True
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def __post_init__(self):
+        # Preserve legacy tokens_used callers and SDK accounting fields.
+        total = self.total_tokens or self.tokens_used or (self.prompt_tokens + self.completion_tokens)
+        self.total_tokens = total
+        self.tokens_used = total
 
     @staticmethod
     def from_error(provider: str, model: str, error: str) -> "LLMResponse":

@@ -4,6 +4,7 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List
 from pathlib import Path
+from mobileag.ingestion.intent_filters import DATA_ATTRIBUTES, inventory_links
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +33,14 @@ class ManifestParser:
             data_elems = filter_elem.findall("data")
             data = []
             for d in data_elems:
-                data.append({
-                    "scheme": self._get_attrib(d, "scheme"),
-                    "host": self._get_attrib(d, "host"),
-                    "path": self._get_attrib(d, "path"),
-                    "pathPrefix": self._get_attrib(d, "pathPrefix"),
-                    "pathPattern": self._get_attrib(d, "pathPattern"),
-                    "mimeType": self._get_attrib(d, "mimeType"),
-                })
+                data.append({name:self._get_attrib(d,name) for name in DATA_ATTRIBUTES})
+            relative = [{'allow':self._get_attrib(group,'allow'),
+                         'data':[{name:self._get_attrib(d,name) for name in DATA_ATTRIBUTES}
+                                 for d in group.findall('data')]}
+                        for group in filter_elem.findall('uri-relative-filter-group')]
             filters.append({
+                "auto_verify": self._get_attrib(filter_elem,"autoVerify") or None,
+                "relative_uri_groups": relative,
                 "actions": [a for a in actions if a],
                 "categories": [c for c in categories if c],
                 "data": [d for d in data if any(d.values())]
@@ -75,6 +75,8 @@ class ManifestParser:
 
             components.append({
                 "name": name,
+                "alias_target": self._get_attrib(elem,"targetActivity") or None,
+                "exported_explicit": exported or None,
                 "type": tag.replace("-alias", ""),
                 "exported": exported_bool,
                 "permission": permission,
@@ -194,19 +196,7 @@ class ManifestParser:
 
         all_components = activities + services + receivers + providers
 
-        # Extract deep links
-        deep_links = []
-        for comp in all_components:
-            for ifilter in comp.get("intent_filters", []):
-                for d in ifilter.get("data", []):
-                    if d.get("scheme"):
-                        deep_links.append({
-                            "component": comp["name"],
-                            "uri": f"{d.get('scheme')}://{d.get('host') or ''}{d.get('path') or d.get('pathPrefix') or ''}",
-                            "scheme": d.get("scheme"),
-                            "host": d.get("host"),
-                            "path": d.get("path") or d.get("pathPrefix") or d.get("pathPattern")
-                        })
+        deep_links, link_coverage = inventory_links(all_components)
 
         application_dict = {
             "allowBackup": allow_backup_bool,
@@ -234,4 +224,5 @@ class ManifestParser:
             "providers": providers,
             "components": all_components,
             "deep_links": deep_links,
+            "deep_link_coverage": link_coverage,
         }

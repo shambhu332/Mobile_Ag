@@ -9,6 +9,10 @@ Choose one small task, open or comment on the corresponding issue, and agree on 
 | Accessibility | Add upload focus-recovery regression coverage | Verify keyboard selection/cancellation and return from the advanced IPA modal at desktop and 320px; no automatic scans, device selection, or consent. |
 | Static analysis | Add narrowly scoped manifest parser fixtures | Use hand-written synthetic fixtures; document expected and negative cases; distinguish declarations from runtime reachability and exploitability. |
 | Reporting | Improve candidate/evidence status documentation | Explain a synthetic example from candidate to recorded analyst evidence; do not equate shell/root observations, model opinions or severity with independent exploit proof. |
+| Offline authentication | Add one positive and one negative authentication-pattern fixture | Run `tests/test_offline_workflow_integration.py`; preserve comment handling, source limits, no credential-value persistence, zero automatic CVSS and unverified status. |
+| Firebase inventory | Expand one supported configuration parsing case | Use synthetic source/resources; return counts and review candidates only, mark malformed/truncated inputs partial, and make no backend requests. |
+| Evidence exports | Add redaction and status round-trip coverage | Check JSON, Markdown and SARIF with synthetic opaque secrets; preserve suppressed decisions and distinguish analyst attestation from independent proof. |
+| Scan coverage | Improve incomplete-engine explanations | Demonstrate a failed or bounded analyzer without a clean/security verdict; retain `runtime_status=not_tested` and explicit remaining limitations. |
 
 ## What makes a useful contribution?
 
@@ -19,3 +23,13 @@ Choose one small task, open or comment on the corresponding issue, and agree on 
 - No unrequested device/model/network activity, weakened approval gates, or disabled tests.
 
 Start with [CONTRIBUTING.md](../CONTRIBUTING.md). This roadmap does not guarantee that every task is unassigned; check repository issues first.
+
+## Larger integrations: agree on a design first
+
+MobSF lifecycle/import, live authentication matrices and Firebase fixture
+validation remain unfinished. Proposals must define artifact binding, exact
+allowed fixture paths/methods, request budgets, secret handling, cancellation,
+and positive/negative controls. Do not implement database-root reads, automatic
+account creation, credential spraying or unbounded concurrency as shortcuts.
+
+See the [current hardening record](workflow-hardening-2026-10-08/README.md).

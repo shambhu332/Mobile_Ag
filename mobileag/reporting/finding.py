@@ -73,6 +73,7 @@ class Finding(BaseModel):
 
     # ── Status & Filtering ──
     status: FindingStatus = FindingStatus.UNVERIFIED
+    validation_evidence: Optional[dict[str, Any]] = None
     false_positive_reasons: list[str] = Field(default_factory=list)
     filter_scores: dict[str, float] = Field(
         default_factory=dict,
@@ -110,7 +111,8 @@ class Finding(BaseModel):
     @model_validator(mode="after")
     def redact_evidence(self):
         from mobileag.security.privacy import redact
-        for name in ("title", "description", "code_snippet", "metadata"):
+        for name in ("title", "description", "code_snippet", "metadata", "validation_evidence",
+                     "poc_guide", "frida_script", "remediation", "file_path", "affected_component"):
             object.__setattr__(self, name, redact(getattr(self, name)))
         return self
 
@@ -132,6 +134,7 @@ class Finding(BaseModel):
             "frida_script": self.frida_script,
             "poc_guide": self.poc_guide,
             "status": self.status.value,
+            "validation_evidence": self.validation_evidence,
         }
 
     def to_dict(self) -> dict[str, Any]:

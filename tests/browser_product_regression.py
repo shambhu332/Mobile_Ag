@@ -25,6 +25,7 @@ import uvicorn
 from config.settings import Settings
 from mobileag.llm.router import LLMRouter
 from mobileag.analysis.secret_scanner import SecretScanner
+from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
 root=Path(os.environ['MOBILEAG_DATA_DIR'])
 async def fixture():
     source=root/'source';source.mkdir()
@@ -32,7 +33,7 @@ async def fixture():
     findings=await SecretScanner(LLMRouter(Settings(_env_file=None,offline=True))).scan(str(source))
     result=[f.model_dump(mode='json') for f in findings]
     result[0]['id']='synthetic-finding'
-    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','stats':{'total':1,'high':1},'findings':result,'coverage':{},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
+    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','artifact_sha256':'a'*64,'stats':{'total':1,'high':1},'findings':result,'coverage':{'android_surface':AndroidSurfaceAnalyzer().scan(str(source),{})['coverage']},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
 scan=asyncio.run(fixture());m=importlib.import_module('mobileag.web.app')
 m.repository().save(scan)
 m.attack_graph.verify_connection=AsyncMock(return_value=False)
@@ -265,6 +266,32 @@ def main():
                     wait_condition(page,'!document.querySelector("#triage-notes-dialog")')
                     assert page.locator('#triage-notes-dialog').count()==0
                     assert len([u for u in requests if u.endswith('/feedback')])==before_triage
+                    # Structured attestation form uses real auth/router/SQLite;
+                    # all claimed reproduction evidence is deliberately synthetic.
+                    page.get_by_role('button',name='Confirm TP',exact=True).click()
+                    page.locator('#triage-validation-notes').fill('Synthetic fixture attestation, not an actual exploit.')
+                    page.locator('#proof-attacker-context').select_option('ordinary_app')
+                    for name,value in {
+                        'os_build':'synthetic-browser-build','entry_point':'Synthetic exported fixture',
+                        'attacker_control':'Synthetic marker controlled by the fixture','sensitive_sink':'Synthetic fixture output',
+                        'security_boundary':'Synthetic caller boundary','observed_impact':'Fixture marker reached test output',
+                        'reproduction_steps':'Prepare the synthetic fixture\nSend the synthetic marker',
+                        'positive_control':'Authorized fixture marker accepted','negative_control':'Denied fixture marker rejected',
+                        'evidence_refs':'synthetic:positive\nsynthetic:negative'}.items():page.locator('#proof-'+name).fill(value)
+                    for name in ['unprivileged_attacker_confirmed','unmodified_authorization_confirmed','synthetic_data_confirmed','scope_confirmed']:page.locator('#proof-'+name).check()
+                    if args.axe:
+                        page.evaluate(Path(args.axe).read_text())
+                        assert not page.evaluate("async()=> (await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})).violations")
+                    assert all(page.locator('#proof-'+name).evaluate('(input)=>input.readOnly') for name in ['artifact_sha256','package_name','app_version'])
+                    page.locator('#triage-notes-dialog button[type=submit]').click()
+                    wait_condition(page,'currentScan.revision===1 && currentScan.findings[0].validation_evidence?.basis==="analyst_attested"')
+                    assert page.evaluate('currentScan.findings[0].validation_evidence.independently_verified') is False
+                    assert 'analyst attested' in page.locator('#detail-status-badge').inner_text()
+                    result['structured_confirmation']={'notes_only_submit_blocked':True,'artifact_binding_readonly':True,'synthetic_attestation_persisted':True,'never_claims_independent_proof':True}
+                    page.locator('#nav-surface').click()
+                    assert 'analyzed_heuristically' in page.locator('#scan-category-coverage').inner_text()
+                    assert 'not_tested' in page.locator('#scan-category-coverage').inner_text()
+                    result['category_coverage_visible']=True
                     page.locator('#nav-scans').click()
                     scan_url=url+'/api/scans?limit=25&summaries=true&offset=0'
                     page.route(scan_url,lambda route:route.fulfill(status=503,content_type='application/json',body='{"detail":"Synthetic history outage"}'))
@@ -568,7 +595,7 @@ def main():
                     # Actual durable triage API reached via the migrated UI callback.
                     page.locator('#nav-findings').click();page.evaluate('inspectFinding("synthetic-finding")')
                     page.locator('#detail-content button',has_text='False Positive').click()
-                    wait_condition(page,'currentScan.revision === 1')
+                    wait_condition(page,'currentScan.revision === 2')
                     result['durable_feedback_status']=page.evaluate("async () => (await (await fetch('/api/scans/scan_synthetic')).json()).findings[0].status")
                     page.locator('#nav-scans').click();page.wait_for_timeout(250)
                     page.locator('#scans-table-body button').first.click();page.wait_for_timeout(250)

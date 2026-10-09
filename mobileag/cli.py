@@ -220,7 +220,7 @@ def web(host: str, port: int):
 
 @main.command()
 @click.option("--package", required=True, help="Target package name (e.g. com.example.app)")
-@click.option("--serial", default=None, help="Device or emulator serial (default: auto-select first device)")
+@click.option("--serial", default=None, help="Legacy option; this full DAST command is disabled")
 @click.option("--apk", default=None, help="Path to APK to install before dynamic testing", type=click.Path(exists=True))
 @click.option("--activities", default=None, help="Comma-separated activity component names to exercise")
 @click.option("--deeplinks", default=None, help="Comma-separated deep-link URIs to test")

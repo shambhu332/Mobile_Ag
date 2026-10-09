@@ -57,6 +57,19 @@ async def test_adb_logcat_requests_attributable_threadtime_format():
 
 
 @pytest.mark.asyncio
+async def test_adb_install_defaults_are_non_granting_and_non_replacing(tmp_path):
+    from mobileag.dast.adb_manager import ADBManager
+    apk = tmp_path / 'fixture.apk'
+    apk.write_bytes(b'synthetic')
+    adb = ADBManager()
+    adb._exec_cmd = AsyncMock(return_value=(0, b'Success', b''))
+    await adb.install_apk('emulator-5554', apk)
+    command = adb._exec_cmd.await_args.args[0]
+    assert command[:3] == ['-s', 'emulator-5554', 'install']
+    assert '-g' not in command and '-r' not in command
+
+
+@pytest.mark.asyncio
 async def test_adb_target_logcat_uses_validated_exact_pid():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()

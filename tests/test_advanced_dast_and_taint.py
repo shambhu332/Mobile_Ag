@@ -1,6 +1,6 @@
 """Unit tests for Advanced DAST & Taint modules:
 - FridaRunner (SSL unpinning, crypto telemetry parsing, root bypass)
-- DeepLinkFuzzer (OAuth redirect, file disclosure, UXSS, parameter pollution)
+- DeepLinkFuzzer (bounded redirect, file, and JavaScript-scheme review markers)
 - TaintEngine (inter-procedural static source-to-sink dataflow tracking)
 - UICrawler (UI hierarchy parsing, dialog handling, form filling)
 - MemoryForensicsAuditor (process memory scraping, CWE-316 detection)
@@ -99,7 +99,7 @@ def test_deeplink_fuzzer_manifest_extraction_and_payloads():
     cwes = {p["cwe"] for p in payloads}
     assert "CWE-601" in cwes  # Open Redirect
     assert "CWE-22" in cwes   # File Traversal
-    assert "CWE-749" in cwes  # WebView Script Injection
+    assert "CWE-79" in cwes  # Inert JavaScript-scheme marker
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_deeplink_fuzzer_runtime_fuzz():
 # =============================================================================
 # 3. TaintEngine Tests (Static Source-to-Sink Dataflow)
 # =============================================================================
-def test_taint_engine_webview_uxss():
+def test_taint_engine_webview_navigation_uses_untrusted_content_classification():
     engine = TaintEngine()
     source_code = """
     package com.target.app;
@@ -142,9 +142,554 @@ def test_taint_engine_webview_uxss():
     """
     findings = engine.analyze_source_content(source_code, "VulnActivity.java")
     assert len(findings) == 1
-    assert findings[0].cwe_id == "CWE-749"
-    assert "UXSS" in findings[0].title
+    assert findings[0].cwe_id == "CWE-829"
+    assert "Navigation" in findings[0].title
+    assert "UXSS" not in findings[0].title
     assert "targetUrl" in findings[0].description
+
+
+def test_taint_engine_javascript_evaluation_uses_xss_classification():
+    source = '''class Handler { void render(Intent intent, WebView web) {
+        String script = intent.getStringExtra("script");
+        web.evaluateJavascript(script, null);
+    } }'''
+    findings = TaintEngine().analyze_source_content(source, "Handler.java")
+    assert any(item.cwe_id == "CWE-79" and "JavaScript Evaluation" in item.title
+               for item in findings)
+
+
+def test_taint_engine_does_not_treat_arbitrary_json_getstring_as_untrusted_source():
+    engine = TaintEngine()
+    source_code = '''
+    class Model { void render(JSONObject response, WebView web) {
+        String value = response.getString("url");
+        web.loadUrl("https://safe.invalid/" + value);
+    } }
+    '''
+    assert engine.analyze_source_content(source_code, "Model.java") == []
+
+
+def test_taint_engine_requires_intent_type_for_intent_extra_source():
+    assigned_custom_method = '''class Model { void render(Response response, WebView web) {
+        String value = response.getStringExtra("url"); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(assigned_custom_method, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    inline_custom_method = '''class Model { void render(Response response, WebView web) {
+        web.loadUrl(response.getStringExtra("url"));
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(inline_custom_method, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    inline_real_intent = '''class Handler { void render(Intent incoming, WebView web) {
+        web.loadUrl(incoming.getStringExtra("url"));
+    } }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        inline_real_intent, "Handler.java"))
+    fake_get_intent = '''class Model { void render(Response response, WebView web) {
+        String value = response.getIntent().getStringExtra("url"); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(fake_get_intent, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    fake_get_intent_inline = '''class Model { void render(Response response, WebView web) {
+        web.loadUrl(response.getIntent().getStringExtra("url"));
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(fake_get_intent_inline, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    activity_get_intent = '''class Handler { void render(WebView web) {
+        String value = getIntent().getStringExtra("url"); web.loadUrl(value);
+    } }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        activity_get_intent, "Handler.java"))
+    direct_inline = '''class Handler { void render(WebView web) {
+        web.loadUrl(getIntent().getStringExtra("url"));
+    } }'''
+    direct_inline_findings = TaintEngine().analyze_source_content(direct_inline, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "INTENT_EXTRA"
+               for item in direct_inline_findings)
+    qualified_activity = '''class Handler { void render(Activity activity, WebView web) {
+        web.loadUrl(activity.getIntent().getStringExtra("url"));
+    } }'''
+    qualified_findings = TaintEngine().analyze_source_content(qualified_activity, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "INTENT_EXTRA"
+               for item in qualified_findings)
+    direct_intent_sink = '''class Handler { void launch() { startActivity(getIntent()); } }'''
+    direct_intent_findings = TaintEngine().analyze_source_content(direct_intent_sink, "Handler.java")
+    assert any(item.cwe_id == "CWE-927" and item.metadata.get("source_kind") == "INTENT_SOURCE"
+               for item in direct_intent_findings)
+
+
+def test_taint_engine_does_not_treat_textview_gettext_as_clipboard_input():
+    source_code = '''
+    class Ui { void render(TextView view, WebView web) {
+        String value = view.getText().toString();
+        web.loadUrl(value);
+    } }
+    '''
+    assert not [finding for finding in TaintEngine().analyze_source_content(source_code, "Ui.java")
+                if finding.cwe_id == "CWE-829"]
+
+
+def test_taint_engine_retains_clipboard_named_gettext_source():
+    source_code = '''
+    class Ui { void render(ClipboardManager clipboard, WebView web) {
+        CharSequence value = clipboard.getText();
+        web.loadUrl(value.toString());
+    } }
+    '''
+    findings = TaintEngine().analyze_source_content(source_code, "Ui.java")
+    assert any(finding.cwe_id == "CWE-829" and finding.metadata.get("source_kind") == "CLIPBOARD_SOURCE"
+               for finding in findings)
+
+
+def test_taint_engine_requires_clipboard_type_for_clipboard_source_methods():
+    assigned = '''class Model { void render(Response response, WebView web) {
+        String value = response.getPrimaryClip().toString(); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(assigned, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    inline = '''class Model { void render(Response response, WebView web) {
+        web.loadUrl(response.getPrimaryClip().toString());
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(inline, "Model.java")
+                if item.cwe_id == "CWE-829"]
+
+
+def test_taint_engine_recognizes_inline_clipboard_gettext_but_not_generic_gettext():
+    clipboard = '''class Ui { void render(ClipboardManager clipManager, WebView web) {
+        web.loadUrl(clipManager.getText().toString());
+    } }'''
+    finding = next(item for item in TaintEngine().analyze_source_content(clipboard, "Ui.java")
+                   if item.cwe_id == "CWE-829")
+    assert "inline_input_source" in finding.metadata["source_kind"]
+
+
+def test_taint_engine_requires_intent_receiver_for_getdata_source():
+    model = '''class Model { void render(Response response, WebView web) {
+        String value = response.getData(); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(model, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    intent = '''class Handler { void render(Intent incomingIntent, WebView web) {
+        Uri value = incomingIntent.getData(); web.loadUrl(value.toString());
+    } }'''
+    findings = TaintEngine().analyze_source_content(intent, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "INTENT_EXTRA"
+               for item in findings)
+    neutrally_named = '''class Handler { void render(Intent source, WebView web) {
+        Uri value = source.getData();
+        String target = value.getQueryParameter("next"); web.loadUrl(target);
+    } }'''
+    neutral_findings = TaintEngine().analyze_source_content(neutrally_named, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in neutral_findings)
+
+
+def test_taint_engine_requires_intent_derived_uri_for_query_parameter():
+    response = '''class Model { void render(Response response, WebView web) {
+        String value = response.getQueryParameter("next"); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(response, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    uri = '''class Handler { void render(Intent incomingIntent, WebView web) {
+        Uri deepLink = incomingIntent.getData();
+        String value = deepLink.getQueryParameter("next"); web.loadUrl(value);
+    } }'''
+    findings = TaintEngine().analyze_source_content(uri, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in findings)
+    inline = '''class Handler { void render(Intent intent, WebView web) {
+        Uri route = intent.getData(); web.loadUrl(route.getQueryParameter("next"));
+    } }'''
+    inline_findings = TaintEngine().analyze_source_content(inline, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in inline_findings)
+
+    summarized = '''class Handler {
+        String query(Intent incomingIntent) {
+            Uri deepLink = incomingIntent.getData(); return deepLink.getQueryParameter("next");
+        }
+        void render(Intent incomingIntent, WebView web) { web.loadUrl(query(incomingIntent)); }
+    }'''
+    summary_findings = TaintEngine().analyze_source_content(summarized, "Handler.java")
+    assert any(item.metadata.get("source_kind") == "URI_QUERY_PARAM" for item in summary_findings)
+    safe_summary = '''class Handler {
+        String query(Intent incomingIntent) {
+            Uri deepLink = incomingIntent.getData();
+            deepLink = Uri.parse("https://safe.invalid/path?next=home");
+            return deepLink.getQueryParameter("next");
+        }
+        void render(Intent incomingIntent, WebView web) { web.loadUrl(query(incomingIntent)); }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(safe_summary, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    shadowed_helper = '''class Handler {
+        String query(Intent incomingIntent) {
+            Uri deepLink = incomingIntent.getData();
+            if (true) { Uri deepLink = Uri.parse("https://safe.invalid/path?next=home"); }
+            return deepLink.getQueryParameter("next");
+        }
+        void render(Intent incomingIntent, WebView web) { web.loadUrl(query(incomingIntent)); }
+    }'''
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in TaintEngine().analyze_source_content(shadowed_helper, "Handler.java"))
+    constant = '''class Model { void render(WebView web) {
+        Uri fixed = Uri.parse("https://safe.invalid/path?next=home");
+        String value = fixed.getQueryParameter("next"); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(constant, "Model.java")
+                if item.cwe_id == "CWE-829"]
+    parameter = '''class Model { void render(Uri internalRoute, WebView web) {
+        String value = internalRoute.getQueryParameter("next"); web.loadUrl(value);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(parameter, "Model.java")
+                if item.cwe_id == "CWE-829"]
+
+
+def test_intent_return_summary_requires_a_tainted_intent_argument():
+    callback = '''class Handler {
+        String read(Intent value) { return value.getStringExtra("url"); }
+        void onNewIntent(Intent incoming, WebView web) { web.loadUrl(read(incoming)); }
+    }'''
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "INTENT_EXTRA"
+               for item in TaintEngine().analyze_source_content(callback, "Handler.java"))
+    arbitrary = '''class Handler {
+        String read(Intent value) { return value.getStringExtra("url"); }
+        void render(WebView web) { web.loadUrl(read(new Intent())); }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(arbitrary, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+
+
+def test_taint_does_not_flow_through_unknown_returning_call_but_tracks_identity_helper():
+    constant_return = '''class Handler {
+        String choose(String ignored) { return "https://safe.invalid/"; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(choose(incoming.getStringExtra("url")));
+        }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(constant_return, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    identity = '''class Handler {
+        String identity(String value) { return value; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(identity(incoming.getStringExtra("url")));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(identity, "Handler.java"))
+    identity_through_local = '''class Handler {
+        String identity(String value) { String local = value; return local; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(identity(incoming.getStringExtra("url")));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        identity_through_local, "Handler.java"))
+    concatenation = '''class Handler {
+        String prefix(String value) { return "https://" + value; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(prefix(incoming.getStringExtra("host")));
+        }
+    }'''
+    concatenation_findings = TaintEngine().analyze_source_content(concatenation, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and
+               item.metadata.get("interprocedural_value_flow") == "same_file_tainted_return_summary"
+               for item in concatenation_findings)
+    multi_parameter = '''class Handler {
+        String join(String prefix, String value) { return prefix + value; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(join("https://", incoming.getStringExtra("host")));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        multi_parameter, "Handler.java"))
+    mixed_alias_parameters = '''class Handler {
+        String join(String prefix, String value) {
+            String localPrefix = prefix;
+            return localPrefix + value;
+        }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(join("https://", incoming.getStringExtra("host")));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        mixed_alias_parameters, "Handler.java"))
+    conditional_return = '''class Handler {
+        String choose(boolean useInput, String fixed, String value) {
+            return useInput ? value : fixed;
+        }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(choose(true, "https://safe.invalid/", incoming.getStringExtra("url")));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        conditional_return, "Handler.java"))
+    constant_arms = '''class Handler {
+        String choose(boolean useInput, String value) {
+            return useInput ? "https://safe.invalid/a" : "https://safe.invalid/b";
+        }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(choose(incoming.getBooleanExtra("flag", false), incoming.getStringExtra("url")));
+        }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(constant_arms, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    transparent_transform = '''class Handler {
+        String render(Uri route) { return route.toString(); }
+        void onNewIntent(Intent incoming, WebView web) {
+            Uri route = incoming.getData(); web.loadUrl(render(route));
+        }
+    }'''
+    assert any(item.cwe_id == "CWE-829" for item in TaintEngine().analyze_source_content(
+        transparent_transform, "Handler.java"))
+    multiline_identity = '''class Handler {
+        String identity(String value) { return value; }
+        void onNewIntent(Intent incoming, WebView web) {
+            web.loadUrl(identity(incoming.getStringExtra("url")));
+        }
+    }'''
+    identity_finding = next(item for item in TaintEngine().analyze_source_content(
+        multiline_identity, "Handler.java") if item.cwe_id == "CWE-829")
+    assert "line 3" in identity_finding.description
+    assert identity_finding.metadata["interprocedural_value_flow"] == "same_file_tainted_return_summary"
+
+
+def test_taint_engine_uri_source_binding_dies_on_safe_reassignment():
+    reassigned_before_read = '''class Handler { void render(Intent intent, WebView web) {
+        Uri route = intent.getData();
+        route = Uri.parse("https://safe.invalid/?next=home");
+        String next = route.getQueryParameter("next"); web.loadUrl(next);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(reassigned_before_read, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    extracted_before_reassignment = '''class Handler { void render(Intent intent, WebView web) {
+        Uri route = intent.getData();
+        String next = route.getQueryParameter("next");
+        route = Uri.parse("https://safe.invalid/"); web.loadUrl(next);
+    } }'''
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in TaintEngine().analyze_source_content(extracted_before_reassignment, "Handler.java"))
+    reassigned_to_external_uri = '''class Handler { void render(Intent intent, Intent nextIntent, WebView web) {
+        Uri route = intent.getData();
+        route = nextIntent.getData();
+        String next = route.getQueryParameter("next"); web.loadUrl(next);
+    } }'''
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in TaintEngine().analyze_source_content(reassigned_to_external_uri, "Handler.java"))
+    shadowed_local = '''class Handler { void render(Intent intent, WebView web) {
+        Uri route = intent.getData();
+        if (true) { Uri route = Uri.parse("https://safe.invalid/?next=home"); }
+        String next = route.getQueryParameter("next"); web.loadUrl(next);
+    } }'''
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in TaintEngine().analyze_source_content(shadowed_local, "Handler.java"))
+
+
+def test_taint_engine_tracks_uri_path_components_but_not_generic_model_methods():
+    uri = '''class Handler { void render(Intent intent, WebView web) {
+        Uri incoming = intent.getData();
+        String path = incoming.getPath();
+        web.loadUrl(path);
+    } }'''
+    findings = TaintEngine().analyze_source_content(uri, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_COMPONENT"
+               for item in findings)
+    inline = '''class Handler { void render(Intent intent, WebView web) {
+        Uri incoming = intent.getData(); web.loadUrl(incoming.getPath());
+    } }'''
+    inline_findings = TaintEngine().analyze_source_content(inline, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_COMPONENT"
+               for item in inline_findings)
+    helper = '''class Handler {
+        String readPath(Intent intent) { Uri incoming = intent.getData(); return incoming.getPath(); }
+        void render(Intent intent, WebView web) { web.loadUrl(readPath(intent)); }
+    }'''
+    helper_findings = TaintEngine().analyze_source_content(helper, "Handler.java")
+    assert any(item.metadata.get("source_kind") == "URI_COMPONENT" for item in helper_findings)
+    parameter_helper = '''class Handler {
+        String readPath(Uri route) { return route.getQueryParameter("next"); }
+        void render(Intent intent, WebView web) {
+            Uri route = intent.getData(); web.loadUrl(readPath(route));
+        }
+    }'''
+    parameter_findings = TaintEngine().analyze_source_content(parameter_helper, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"
+               for item in parameter_findings)
+    safe_argument = '''class Handler {
+        String readPath(Uri route) { return route.getQueryParameter("next"); }
+        void render(WebView web) {
+            Uri route = Uri.parse("https://safe.invalid/?next=home");
+            web.loadUrl(readPath(route));
+        }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(safe_argument, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    overloaded = '''class Handler {
+        String read(Uri route) { return route.getQueryParameter("next"); }
+        String read(String value) { return "https://safe.invalid"; }
+        void render(Intent intent, WebView web) {
+            String route = intent.getStringExtra("url");
+            web.loadUrl(read(route));
+        }
+    }'''
+    # The summary is name-keyed and cannot resolve Java overloads, so it must
+    # abstain rather than attribute the Uri overload's flow to the String call.
+    assert not [item for item in TaintEngine().analyze_source_content(overloaded, "Handler.java")
+                if item.cwe_id == "CWE-829" and item.metadata.get("source_kind") == "URI_QUERY_PARAM"]
+    model = '''class Handler { void render(RouteModel route, WebView web) {
+        String path = route.getPath(); web.loadUrl(path);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(model, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    collision = '''class Handler {
+        void inspect(Intent intent) { Uri route = intent.getData(); }
+        void render(RouteModel route, WebView web) {
+            String path = route.getPath(); web.loadUrl(path);
+        }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(collision, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+    nested_collision = '''class Handler {
+        void render(RouteModel route, WebView web) {
+            class Inner { void nested(Uri route) { } }
+            String path = route.getPath(); web.loadUrl(path);
+        }
+    }'''
+    assert not [item for item in TaintEngine().analyze_source_content(nested_collision, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+
+
+def test_taint_analysis_respects_shadowed_locals_but_joins_conditional_assignments():
+    shadowed = '''class Handler { void render(Intent intent, WebView web, boolean flag) {
+        String url = "https://safe.invalid";
+        if (flag) { String url = intent.getStringExtra("url"); }
+        web.loadUrl(url);
+    } }'''
+    assert not [item for item in TaintEngine().analyze_source_content(shadowed, "Handler.java")
+                if item.cwe_id == "CWE-829"]
+
+    conditional_assignment = '''class Handler { void render(Intent intent, WebView web, boolean flag) {
+        String url = "https://safe.invalid";
+        if (flag) { url = intent.getStringExtra("url"); }
+        web.loadUrl(url);
+    } }'''
+    findings = TaintEngine().analyze_source_content(conditional_assignment, "Handler.java")
+    assert any(item.cwe_id == "CWE-829" for item in findings)
+
+
+def test_taint_engine_keeps_explicit_preference_getstring_as_review_source():
+    engine = TaintEngine()
+    source_code = '''
+    class Model { void render(SharedPreferences preferences, WebView web) {
+        String value = preferences.getString("url", "");
+        web.loadUrl(value);
+    } }
+    '''
+    findings = engine.analyze_source_content(source_code, "Model.java")
+    finding = next(item for item in findings if item.cwe_id == "CWE-829")
+    assert finding.severity.value == "INFO"
+    assert finding.cvss_score == 0 and finding.status.value == "UNVERIFIED"
+    assert finding.title.startswith("Stored Preference Value Flow Candidate")
+    assert finding.metadata["source_control_status"] == "app_persisted_value_origin_not_established"
+    assert "attacker control is not proven" in finding.description
+
+
+@pytest.mark.parametrize("method,signature", [
+    ("onNewIntent", "Intent incoming"),
+    ("onReceive", "Context context, Intent incoming"),
+    ("onActivityResult", "int requestCode, int resultCode, Intent incoming"),
+    ("onStartCommand", "Intent incoming, int flags, int startId"),
+    ("onHandleIntent", "Intent incoming"),
+])
+def test_android_callback_intent_parameter_is_candidate_source(method, signature):
+    source = f"class Handler {{ void {method}({signature}) {{ startActivity(incoming); }} }}"
+    findings = TaintEngine().analyze_source_content(source, "Handler.java")
+    finding = next(item for item in findings if item.cwe_id == "CWE-927")
+    assert finding.metadata["source_kind"] == "ANDROID_CALLBACK_INTENT_PARAMETER"
+    assert finding.metadata["source_reachability"] == "callback_signature_only"
+    assert finding.metadata["interprocedural_value_flow"] == "direct_callback_parameter"
+    assert finding.status.value == "UNVERIFIED" and finding.cvss_score == 0
+
+
+def test_non_callback_intent_parameter_is_not_assumed_externally_controlled():
+    source = "class Handler { void localHelper(Intent incoming) { startActivity(incoming); } }"
+    assert TaintEngine().analyze_source_content(source, "Handler.java") == []
+
+
+def test_taint_flows_from_callback_through_same_file_sink_helper():
+    source = '''
+    class Handler {
+      void onNewIntent(Intent incoming) { launch(incoming); }
+      void launch(Intent target) { startActivity(target); }
+    }
+    '''
+    findings = TaintEngine().analyze_source_content(source, "Handler.java")
+    summary = next(item for item in findings if "parameter summary" in item.detection_method)
+    assert summary.cwe_id == "CWE-927"
+    assert summary.metadata["interprocedural_value_flow"] == "same_file_parameter_to_sink_summary"
+    assert summary.status.value == "UNVERIFIED" and summary.cvss_score == 0
+
+
+def test_java_ast_taint_catches_multiline_source_without_regex_fabrication():
+    source = '''class Handler { void open(Intent intent, WebView web) {
+        String target = intent
+            .getStringExtra("url");
+        web.loadUrl(target);
+    } }'''
+    engine = TaintEngine()
+    findings = engine.analyze_source_content(source, "Handler.java")
+    ast_finding = next(item for item in findings if item.detection_method.startswith("JavaAstTaintAnalyzer"))
+    assert ast_finding.cwe_id == "CWE-829"
+    assert ast_finding.metadata["analysis_kind"] == "java_ast_local_flow"
+    assert ast_finding.status.value == "UNVERIFIED" and ast_finding.cvss_score == 0
+    assert engine.ast_coverage["files_parsed"] == 1
+
+
+def test_java_ast_ignores_source_tokens_inside_string_literals():
+    source = '''class Handler { void open(WebView web) {
+        String target = "intent.getStringExtra(\\"url\\")";
+        web.loadUrl(target);
+    } }'''
+    findings = TaintEngine().analyze_source_content(source, "Handler.java")
+    assert not [item for item in findings if item.cwe_id == "CWE-829"]
+
+
+def test_java_ast_preference_flow_does_not_claim_attacker_control():
+    from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
+    analyzer = JavaAstTaintAnalyzer()
+    if not analyzer.available:
+        pytest.skip("optional Tree-sitter Java dependency is unavailable")
+    findings = analyzer.analyze('''class Model { void render(SharedPreferences preferences, WebView web) {
+        String value = preferences.getString("url", ""); web.loadUrl(value);
+    } }''', "Model.java")
+    finding = next(item for item in findings if item.cwe_id == "CWE-829")
+    assert finding.severity.value == "INFO" and finding.status.value == "UNVERIFIED"
+    assert finding.metadata["source_control_status"] == "app_persisted_value_origin_not_established"
+
+
+def test_java_ast_query_parameter_requires_intent_derived_uri():
+    from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
+    analyzer = JavaAstTaintAnalyzer()
+    if not analyzer.available:
+        pytest.skip("optional Tree-sitter Java dependency is unavailable")
+    model = analyzer.analyze('''class Model { void render(Response response, WebView web) {
+        String value = response.getQueryParameter("next"); web.loadUrl(value);
+    } }''', "Model.java")
+    assert not [item for item in model if item.cwe_id == "CWE-829"]
+    uri = analyzer.analyze('''class Handler { void render(Intent intent, WebView web) {
+        android.net.Uri link = intent.getData();
+        String value = link.getQueryParameter("next"); web.loadUrl(value);
+    } }''', "Handler.java")
+    assert any(item.cwe_id == "CWE-829" and item.metadata["source_kind"] == "URI_QUERY_PARAM"
+               for item in uri)
+    constant = analyzer.analyze('''class Model { void render(WebView web) {
+        Uri link = Uri.parse("https://safe.invalid/path?next=home");
+        String value = link.getQueryParameter("next"); web.loadUrl(value);
+    } }''', "Model.java")
+    assert not [item for item in constant if item.cwe_id == "CWE-829"]
+    internal = analyzer.analyze('''class Model { void render(Uri internalRoute, WebView web) {
+        String value = internalRoute.getQueryParameter("next"); web.loadUrl(value);
+    } }''', "Model.java")
+    assert not [item for item in internal if item.cwe_id == "CWE-829"]
 
 
 def test_taint_engine_sql_and_intent_redirection():
@@ -179,6 +724,23 @@ async def test_taint_directory_scan_is_bounded_and_marks_skipped_inputs(tmp_path
     assert engine.coverage["static_status"] == "partial"
     assert engine.coverage["source_files_skipped"] == 1
     assert engine.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.asyncio
+async def test_taint_directory_scan_marks_source_analysis_exceptions_as_partial(tmp_path):
+    source = tmp_path / "Broken.java"
+    source.write_text("class Broken {}")
+    engine = TaintEngine()
+
+    def fail_analysis(_content, file_path=""):
+        raise RuntimeError("synthetic parser failure")
+
+    engine.analyze_source_content = fail_analysis
+    await engine.analyze_directory_async(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert engine.coverage["analysis_failures"] == 1
+    assert engine.coverage["failed_source_files"] == ["Broken.java"]
+    assert engine.coverage["exhaustive"] is False
 
 
 # =============================================================================
@@ -341,4 +903,4 @@ def test_web_taint_endpoint(client):
     data = response.json()
     assert data["status"] == "success"
     assert len(data["findings"]) == 1
-    assert data["findings"][0]["cwe_id"] == "CWE-749"
+    assert data["findings"][0]["cwe_id"] == "CWE-829"

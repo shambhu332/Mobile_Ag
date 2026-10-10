@@ -10,12 +10,15 @@
 | Obfuscation | {{ app_info.obfuscation_level }} |
 
 ## 2. Executive Summary
-The security analysis identified **{{ stats.total }}** review candidates (not validated exploits):
-- 🔴 **CRITICAL:** {{ stats.critical }}
-- 🟠 **HIGH:** {{ stats.high }}
-- 🟡 **MEDIUM:** {{ stats.medium }}
-- 🔵 **LOW:** {{ stats.low }}
-- ⚪ **INFO:** {{ stats.info }}
+**Analysis coverage:** {{ assessment_coverage }} — {{ analysis_mode }}.
+{% if coverage_gaps %}
+Coverage gaps: {% for gap in coverage_gaps %}`{{ gap }}`{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+The security analysis identified **{{ stats.total }}** review items (not validated exploits):
+- **Confirmed (analyst-attested):** {{ stats.confirmed }}
+- **Unverified candidates:** {{ stats.unverified_candidates }}
+- Confirmed severity totals — Critical {{ stats.critical }}, High {{ stats.high }}, Medium {{ stats.medium }}, Low {{ stats.low }}, Info {{ stats.info }}.
+- Unverified candidate labels (provisional) — Critical {{ stats.candidate_severity.critical }}, High {{ stats.candidate_severity.high }}, Medium {{ stats.candidate_severity.medium }}, Low {{ stats.candidate_severity.low }}, Info {{ stats.candidate_severity.info }}.
 
 {% if errors %}
 ### Warnings during scan
@@ -30,7 +33,7 @@ The security analysis identified **{{ stats.total }}** review candidates (not va
 
 {% for finding in findings %}
 ### {{ loop.index }}. {{ finding.title }}
-**Severity:** {{ finding.severity }} | **CVSS 3.1:** {{ finding.cvss_score }} | **Confidence:** {{ finding.confidence|default('N/A') }}
+**Severity:** {{ finding.severity }} | **CVSS 3.1:** {{ finding.cvss_score }} | **Review priority (heuristic):** {{ finding.review_priority|default('Not measured') }}
 
 **Status:** {{ finding.status }}
 **CWE:** {{ finding.cwe_id }}

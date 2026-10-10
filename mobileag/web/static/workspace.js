@@ -113,8 +113,15 @@
 
       // KPI cards
       document.getElementById('kpi-total').textContent = (scan.findings || []).length;
-      document.getElementById('kpi-critical-high').textContent = (scan.stats.critical || 0) + (scan.stats.high || 0);
-      document.getElementById('kpi-med-low').textContent = (scan.stats.medium || 0) + (scan.stats.low || 0);
+      // These cards are explicitly labelled "Confirmed". Derive them from
+      // per-finding triage status rather than trusting potentially stale or
+      // legacy aggregate stats that may count provisional candidates.
+      const confirmedFindings = (scan.findings || []).filter(finding =>
+        String(finding.status || '').toUpperCase() === 'CONFIRMED');
+      document.getElementById('kpi-critical-high').textContent = confirmedFindings.filter(finding =>
+        ['CRITICAL', 'HIGH'].includes(String(finding.severity || '').toUpperCase())).length;
+      document.getElementById('kpi-med-low').textContent = confirmedFindings.filter(finding =>
+        ['MEDIUM', 'LOW'].includes(String(finding.severity || '').toUpperCase())).length;
       document.getElementById('kpi-masvs').textContent = 'Not assessed';
       document.getElementById('kpi-consensus').textContent = 'Not measured';
       document.getElementById('nav-findings-count').textContent = (scan.findings || []).length;

@@ -48,16 +48,16 @@ class CodeReviewer:
             (
                 "WebView AllowFileAccess Enabled",
                 re.compile(r"setAllowFileAccess\(\s*true\s*\)", re.IGNORECASE),
-                "CWE-276",
-                Severity.HIGH,
-                "Disable file access in WebViews (setAllowFileAccess(false)) to prevent local file exfiltration."
+                "CWE-669",
+                Severity.INFO,
+                "Review WebView local-file access. The setting alone does not demonstrate disclosure; assess platform/API behavior, whether untrusted content executes, and which sensitive files are actually reachable. Prefer WebViewAssetLoader or a narrowly scoped content provider."
             ),
             (
                 "WebView Exposed JavascriptInterface",
                 re.compile(r"addJavascriptInterface\(", re.IGNORECASE),
                 "CWE-749",
-                Severity.HIGH,
-                "Ensure targetSdkVersion >= 17, annotate exposed methods with @JavascriptInterface, or migrate to WebMessagePorts."
+                Severity.INFO,
+                "Review the JavaScript bridge. Registration alone is not proof of exposure: inspect annotated methods, Android/API compatibility, loaded origins, and whether untrusted content can invoke sensitive app functionality. Prefer origin-restricted messaging APIs where possible."
             ),
             (
                 "SQL Injection (Concatenated Queries)",
@@ -67,11 +67,11 @@ class CodeReviewer:
                 "Use parameterized queries with selectionArgs placeholders instead of raw dynamic concatenation."
             ),
             (
-                "Content Provider Path Traversal",
+                "File-Open Path Review Candidate",
                 re.compile(r"openFile\([^)]*\)", re.IGNORECASE),
-                "CWE-22",
-                Severity.HIGH,
-                "Canonicalize and validate URI path segments using File.getCanonicalPath() against an allowed directory base."
+                "CWE-Unknown",
+                Severity.INFO,
+                "An openFile method or call is present. This pattern alone does not establish attacker-controlled paths, traversal, sensitive-file access, or external reachability. Trace the exact URI/path into filesystem operations and verify separator-aware canonical containment and guards before assigning CWE-22."
             ),
             (
                 "Sensitive Data Logcat Exposure",
@@ -331,9 +331,13 @@ class CodeReviewer:
                         break
                     for name, pattern, cwe, sev, rem in self.basic_rules:
                         if pattern.search(line):
+                            if name.startswith("WebView") or name == "File-Open Path Review Candidate":
+                                description = rem
+                            else:
+                                description = f"Identified code pattern for {name}."
                             findings.append({
                                 "title": f"Potential {name}",
-                                "description": f"Identified code pattern for {name}.",
+                                "description": description,
                                 "severity": sev,
                                 "cwe": cwe,
                                 "component": stem,

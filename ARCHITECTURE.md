@@ -36,7 +36,7 @@ flowchart TD
         L --> M[Sanitizer Filter]
         M --> N[Consensus Filter - Multi-LLM Vote]
         N --> O[Historical Match Filter - Qdrant]
-        O --> P[Confidence Scorer]
+        O --> P[Heuristic Review-Priority Ranker]
     end
 
     subgraph Output ["5. Knowledge, Reporting & UI"]
@@ -84,7 +84,7 @@ Mobile_Ag/
 │   │   └── traffic_auditor.py
 │   ├── diffing/             # APK Version Differential Analysis
 │   │   └── version_diff.py
-│   ├── filters/             # 5-Layer False-Positive Elimination Pipeline
+│   ├── filters/             # Advisory candidate ranking; not exploit verification
 │   │   ├── confidence.py
 │   │   ├── consensus_vote.py
 │   │   ├── historical_match.py
@@ -135,5 +135,5 @@ Mobile_Ag/
 | **Phase 1** | Configuration & Router | Multi-provider routing (Gemini, GPT, Claude, DeepSeek, Grok), state initialization, CVSS 3.1 calculation. |
 | **Phase 2** | Ingestion & Analysis (SAST) | Decompilation, manifest auditing, hardcoded key scanning, code review, Keystore specifications, network security config, native binary protections (canaries/NX/PIE), dependency scanning. |
 | **Phase 3** | Dynamic Testing (DAST) | Rooted emulator/device interaction (`su -c`), component & intent boundary fuzzing with hybrid extra key binding, logcat sensitive leak audits, traffic caching/cleartext inspection, sandbox storage forensics (`/data/data/<pkg>`), and Content Provider exploitation checks. |
-| **Phase 4** | Filtering & Knowledge | 5-layer false positive elimination (Reachability, Sanitizer, Consensus, Vector similarity, Scorer), Neo4j attack graph, Qdrant vector memory. |
+| **Phase 4** | Candidate ranking & knowledge | Optional reachability/sanitizer/model/history signals rank review candidates; unavailable stages are recorded and candidates are not silently discarded. Ranking is not calibrated confidence or exploit proof. Neo4j/Qdrant are optional. |
 | **Phase 5** | Orchestration, UI & Output | Central orchestrator, version diffing (`v1` vs `v2`), Markdown/JSON report engine, interactive Web Security Dashboard with real-time WebSockets, and CLI interface. |

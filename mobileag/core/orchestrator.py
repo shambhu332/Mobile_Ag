@@ -49,7 +49,7 @@ class Orchestrator:
     Pipeline stages:
         1. Ingestion — APK extraction, manifest parsing, framework/packer detection
         2. Analysis — 6 parallel agents scan for vulnerabilities
-        3. Filtering — 5-layer false positive elimination
+        3. Candidate ranking — optional heuristic signals; no automatic finding confirmation
         4. Generation — Frida scripts + PoC guides for candidate findings
         5. Reporting — Final report assembly
     """
@@ -157,11 +157,11 @@ class Orchestrator:
                 await _notify("Finding Discovered", f.get("title", "Security Finding"), 78, f)
 
         # === Stage 3: Filtering ===
-        await _notify("5-Layer Filter", "Prioritizing candidates using heuristic reachability and optional consensus (not exploit proof)...", 85)
+        await _notify("Candidate Ranking", "Ranking review candidates with available heuristic signals (not exploit proof)...", 85)
         state = await self._run_filtering(state)
 
-        confirmed_count = len(state.get("filtered_findings", []))
-        await _notify("Filtering Complete", f"Retained {confirmed_count} review candidates", 92)
+        candidate_count = len(state.get("filtered_findings", []))
+        await _notify("Filtering Complete", f"Retained {candidate_count} unverified review candidates", 92)
 
         # === Stage 4: Generation ===
         await _notify("Generators", "Synthesizing Frida hooks and Markdown PoC guides...", 95)
@@ -172,7 +172,7 @@ class Orchestrator:
 
         state["current_phase"] = "partial" if state["errors"] else "complete"
         (output_path / "state.json").write_text(json.dumps(redact(state), indent=2, default=str))
-        await _notify("Scan Complete", f"Scan {sid} complete: {confirmed_count} candidate findings.", 98)
+        await _notify("Scan Complete", f"Scan {sid} complete: {candidate_count} unverified review candidates.", 98)
         logger.info(
             "Scan %s complete: %d candidate findings",
             sid, len(state["filtered_findings"]),
@@ -374,22 +374,22 @@ class Orchestrator:
         return state
 
     async def _run_filtering(self, state: ScanState) -> ScanState:
-        """Stage 3: Filter findings through 5-layer pipeline."""
+        """Stage 3: rank and annotate unverified candidate findings."""
         state["current_phase"] = "filtering"
-        logger.info("[Stage 3] Filtering — 5-layer FP elimination...")
+        logger.info("[Stage 3] Candidate ranking — findings remain unverified...")
 
         raw_findings = [
             Finding(**f) for f in state["raw_findings"]
         ]
 
-        confirmed = await self._filter_pipeline.filter_findings(
+        review_candidates = await self._filter_pipeline.filter_findings(
             raw_findings, state["decompiled_path"]
         )
 
-        state["filtered_findings"] = [f.model_dump() for f in confirmed]
+        state["filtered_findings"] = [f.model_dump() for f in review_candidates]
         logger.info(
             "[Stage 3] Done — %d/%d findings retained",
-            len(confirmed), len(raw_findings),
+            len(review_candidates), len(raw_findings),
         )
         return state
 
@@ -398,7 +398,7 @@ class Orchestrator:
         state["current_phase"] = "generation"
         logger.info("[Stage 4] Generation — Frida scripts + PoC guides...")
 
-        confirmed = [Finding(**f) for f in state["filtered_findings"]]
+        review_candidates = [Finding(**f) for f in state["filtered_findings"]]
         app_info = {
             "package_name": state["package_name"],
             "framework": state["framework_info"].get("framework", "native"),
@@ -408,7 +408,7 @@ class Orchestrator:
         # Generate Frida scripts
         try:
             frida_results = await self._frida_generator.generate_batch(
-                confirmed, app_info
+                review_candidates, app_info
             )
             state["generated_frida_scripts"] = frida_results
             logger.info("[Stage 4] Generated %d Frida scripts", len(frida_results))
@@ -419,7 +419,7 @@ class Orchestrator:
         # Generate PoC guides
         try:
             poc_results = await self._poc_generator.generate_batch(
-                confirmed, app_info
+                review_candidates, app_info
             )
             state["generated_poc_guides"] = poc_results
             logger.info("[Stage 4] Generated %d PoC guides", len(poc_results))

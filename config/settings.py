@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     enable_consensus_voting: bool = True
 
     # ── Analysis Thresholds ──
-    confidence_threshold: float = 0.6
+    review_priority_threshold: float = 0.6
+    # Deprecated compatibility setting. Prefer REVIEW_PRIORITY_THRESHOLD.
+    confidence_threshold: Optional[float] = None
     max_llm_retries: int = 3
     consensus_min_votes: int = 2
     entropy_threshold: float = 4.5

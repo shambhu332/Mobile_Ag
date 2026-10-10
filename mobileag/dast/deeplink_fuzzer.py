@@ -3,7 +3,7 @@
 Identifies and actively exercises deep links, custom schemes, and intent filters to detect:
 1. Open Redirect / OAuth Token Hijacking via deep links (CWE-601)
 2. Local Sandbox File Disclosure via file:// URIs (CWE-22)
-3. Cross-Site Scripting / JavaScript Execution in internal WebViews (CWE-79 / CWE-749)
+3. WebView script injection review markers (CWE-79)
 4. Unhandled intent URI parsing crashes & DoS (CWE-755)
 """
 
@@ -49,7 +49,7 @@ class DeepLinkFuzzer:
             {'category':'Redirect parameter marker','cwe':'CWE-601','uri':uri('redirect_uri','urn:mobileag:synthetic-marker'),'desc':'Inert redirect marker; token theft is not tested or proven.'},
             {'category':'URI parameter marker','cwe':'CWE-601','uri':uri('url','urn:mobileag:synthetic-marker'),'desc':'Inert URI marker; remote content is not contacted by this payload.'},
             {'category':'Nonexistent file marker','cwe':'CWE-22','uri':uri('url','file:///mobileag-synthetic-nonexistent.txt'),'desc':'Nonexistent synthetic path; no real sensitive file is selected.'},
-            {'category':'No-op script marker','cwe':'CWE-749','uri':uri('url','javascript:void(0)'),'desc':'No-op marker; log reflection is not execution proof.'},
+            {'category':'No-op script marker','cwe':'CWE-79','uri':uri('url','javascript:void(0)'),'desc':'Inert JavaScript-scheme marker; log reflection or launch is not script-execution proof.'},
             {'category':'Synthetic parameter marker','cwe':'CWE-926','uri':uri('mobileag_canary','synthetic'),'desc':'Synthetic marker only; no role/admin/debug change.'},
         ]
 

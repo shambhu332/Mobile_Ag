@@ -156,12 +156,37 @@ async def test_comments_cannot_silently_remove_review_candidates(tmp_path):
     from mobileag.reporting.finding import Finding, Severity
     settings=Settings(_env_file=None,offline=True,confidence_threshold=1.0)
     pipeline=FilterPipeline(LLMRouter(settings),settings=settings)
+    priorities=[]
     for comments in ('','// checkCallingPermission SecureRandom ContentValues ? Base64.encode'):
         file=tmp_path/'Synthetic.java';file.write_text(comments+'\nclass Synthetic {}')
         finding=Finding(title='Synthetic',description='Synthetic',severity=Severity.HIGH,file_path=str(file),line_number=2,cwe_id='CWE-89')
         results=await pipeline.filter_findings([finding],str(tmp_path))
         assert len(results)==1 and results[0].status.value=='UNVERIFIED'
-        assert results[0].metadata['below_confidence_threshold'] is True
+        assert results[0].metadata['below_review_priority_threshold'] is True
+        priorities.append(results[0].review_priority)
+        assert results[0].review_priority is not None
+        assert results[0].metadata['filter_stages']['historical']['status']=='unavailable'
+        assert results[0].metadata['filter_stages']['consensus']['status']=='not_run'
+        assert results[0].metadata['assessment'].startswith('Heuristic review priority')
+        assert results[0].false_positive_reasons == []
+        assert results[0].metadata['review_priority_disposition'] == 'below_threshold_candidate_retained'
+    assert priorities[0] == priorities[1]
+
+
+@pytest.mark.asyncio
+async def test_filter_ranking_does_not_demote_analyst_status_or_overwrite_triage(tmp_path):
+    from mobileag.filters.pipeline import FilterPipeline
+    from mobileag.reporting.finding import Finding, FindingStatus, Severity
+    settings=Settings(_env_file=None,offline=True,confidence_threshold=1.0)
+    pipeline=FilterPipeline(LLMRouter(settings),settings=settings)
+    finding=Finding(title='Attested finding',description='Synthetic',severity=Severity.HIGH,
+                    status=FindingStatus.CONFIRMED,false_positive_reasons=['analyst triage record'],
+                    file_path='Synthetic.java',line_number=1,cwe_id='CWE-89')
+    results=await pipeline.filter_findings([finding],str(tmp_path))
+    assert len(results)==1
+    assert results[0].status is FindingStatus.CONFIRMED
+    assert results[0].false_positive_reasons == ['analyst triage record']
+    assert results[0].metadata['review_priority_disposition']=='below_threshold_candidate_retained'
 
 
 def test_private_snapshot_and_database_permissions(tmp_path):

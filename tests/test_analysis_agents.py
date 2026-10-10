@@ -97,7 +97,10 @@ async def test_code_reviewer(mock_router):
 
         findings = await reviewer.review(tmpdir, {})
         assert len(findings) >= 1
-        assert any(f.cwe_id == "CWE-276" for f in findings)
+        file_access = next(f for f in findings if "AllowFileAccess" in f.title)
+        assert file_access.cwe_id == "CWE-669"
+        assert file_access.severity.value == "INFO"
+        assert file_access.cvss_score == 0 and file_access.status.value == "UNVERIFIED"
 
 
 @pytest.mark.asyncio

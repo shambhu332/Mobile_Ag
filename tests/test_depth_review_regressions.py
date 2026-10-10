@@ -116,6 +116,28 @@ def test_traffic_patterns_are_candidates_not_confirmed_risk_scores():
     assert 'not proof' in cors.description
 
 
+def test_dynamic_cookie_review_flags_only_likely_session_cookies_and_redacts_values():
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+    risky = TrafficAuditor().audit_transactions([HTTPTransaction(
+        url='https://api.fixture.invalid/account', response_headers={
+            'Set-Cookie': 'session_id=syntheticCookieSecret; Path=/',
+            'Cache-Control': 'no-store',
+            'Strict-Transport-Security': 'max-age=31536000'})])
+    cookie_findings = [f for f in risky if f.title.startswith('Session Cookie Attribute Review:')]
+    assert len(cookie_findings) == 1
+    finding = cookie_findings[0]
+    assert finding.status.value == 'UNVERIFIED' and finding.cvss_score == 0
+    assert 'Secure' in finding.description and 'HttpOnly' in finding.description
+    assert 'syntheticCookieSecret' not in repr(finding.to_dict())
+
+    safe = TrafficAuditor().audit_transactions([HTTPTransaction(
+        url='https://api.fixture.invalid/account', response_headers={
+            'Set-Cookie': 'session_id=synthetic; Path=/; Secure; HttpOnly; SameSite=Lax',
+            'Cache-Control': 'no-store',
+            'Strict-Transport-Security': 'max-age=31536000'})])
+    assert safe == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('scenario', ['stale', 'other_process', 'launch_failed', 'new_target'])
 async def test_intent_crash_requires_fresh_target_evidence(monkeypatch, scenario):

@@ -40,6 +40,8 @@ class ReportEngine:
         
         # Prepare data for templates
         report_data = self._prepare_data(state)
+        state["assessment_coverage"] = report_data["assessment_coverage"]
+        state["coverage_gaps"] = report_data["coverage_gaps"]
         
         # Save JSON
         json_path = output_dir / f"report_{scan_id}.json"
@@ -73,15 +75,53 @@ class ReportEngine:
         }
         findings.sort(key=lambda x: (severity_order.get(x["severity"], 99), -x.get("cvss_score", 0.0)))
         
-        # Calculate stats
+        # Impact labels on unverified candidates are provisional. Keep the
+        # legacy top-level severity counters, but define them as confirmed-only
+        # and expose candidate counts separately so dashboards cannot present
+        # heuristic labels as demonstrated vulnerability totals.
+        confirmed_findings = [f for f in findings if f.get("status") == FindingStatus.CONFIRMED.value]
+        candidate_findings = [f for f in findings if f.get("status", FindingStatus.UNVERIFIED.value) == FindingStatus.UNVERIFIED.value]
         stats = {
-            "critical": sum(1 for f in findings if f["severity"] == Severity.CRITICAL.value),
-            "high": sum(1 for f in findings if f["severity"] == Severity.HIGH.value),
-            "medium": sum(1 for f in findings if f["severity"] == Severity.MEDIUM.value),
-            "low": sum(1 for f in findings if f["severity"] == Severity.LOW.value),
-            "info": sum(1 for f in findings if f["severity"] == Severity.INFO.value),
+            "critical": sum(1 for f in confirmed_findings if f["severity"] == Severity.CRITICAL.value),
+            "high": sum(1 for f in confirmed_findings if f["severity"] == Severity.HIGH.value),
+            "medium": sum(1 for f in confirmed_findings if f["severity"] == Severity.MEDIUM.value),
+            "low": sum(1 for f in confirmed_findings if f["severity"] == Severity.LOW.value),
+            "info": sum(1 for f in confirmed_findings if f["severity"] == Severity.INFO.value),
             "total": len(findings),
+            "confirmed": len(confirmed_findings),
+            "unverified_candidates": len(candidate_findings),
+            "candidate_severity": {
+                severity.lower(): sum(1 for f in candidate_findings if f.get("severity") == severity)
+                for severity in (Severity.CRITICAL.value, Severity.HIGH.value, Severity.MEDIUM.value,
+                                 Severity.LOW.value, Severity.INFO.value)
+            },
         }
+
+        # Pipeline completion and assessment coverage are different claims.
+        # A finished job may still have skipped, failed, or budget-limited engines.
+        incomplete_markers = {"partial", "incomplete", "error", "unavailable", "unsupported",
+                              "fallback_lexical", "skipped", "skipped_offline", "skipped_disabled",
+                              "not_analyzed", "not_started"}
+        coverage_gaps: list[str] = []
+        static_status_count = 0
+
+        def inspect_coverage(value: object, path: str = "coverage") -> None:
+            nonlocal static_status_count
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    child_path = f"{path}.{key}"
+                    if key == "static_status" and isinstance(child, str):
+                        static_status_count += 1
+                        if child in incomplete_markers:
+                            coverage_gaps.append(f"{child_path}={child}")
+                    else:
+                        inspect_coverage(child, child_path)
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    inspect_coverage(child, f"{path}[{index}]")
+
+        coverage = state.get("coverage", {})
+        inspect_coverage(coverage)
         
         return {
             "scan_id": state["scan_id"],
@@ -96,8 +136,13 @@ class ReportEngine:
             "api_endpoints": state.get("api_endpoints", []),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
+            "assessment_coverage": ("unknown" if not static_status_count else
+                                    "partial" if coverage_gaps else "recorded_no_static_gaps"),
+            "coverage_gaps": sorted(set(coverage_gaps)),
+            "analysis_mode": "static analysis; runtime coverage is reported separately",
             "exhaustive_analysis": False,
             "confirmation_policy": "Structured analyst attestation is not independent automated exploit proof.",
+            "candidate_count_semantics": "Confirmed severity counts include only analyst-attested findings; candidate_severity counts are provisional labels for unverified review items. Confirmation is not independently verified by the tool.",
         }
 
     def _generate_markdown(self, data: dict) -> str:
@@ -125,11 +170,16 @@ class ReportEngine:
             f"**Date:** {data['date']}",
             f"**Framework:** {app['framework']}",
             f"\n## Summary",
-            f"- Critical: {stats['critical']}",
-            f"- High: {stats['high']}",
-            f"- Medium: {stats['medium']}",
-            f"- Low: {stats['low']}",
-            f"- Info: {stats['info']}",
+            "Severity totals below count confirmed findings only; candidate labels are provisional review classifications, not verified impact.",
+            f"- Confirmed — Critical: {stats['critical']}",
+            f"- Confirmed — High: {stats['high']}",
+            f"- Confirmed — Medium: {stats['medium']}",
+            f"- Confirmed — Low: {stats['low']}",
+            f"- Confirmed — Info: {stats['info']}",
+            f"- Unverified candidates: {stats['unverified_candidates']}",
+            "- Unverified candidate labels: " + ", ".join(
+                f"{severity.title()} {count}" for severity, count in stats["candidate_severity"].items()
+            ),
             f"- Total: {stats['total']}",
             "\n## Findings\n"
         ]

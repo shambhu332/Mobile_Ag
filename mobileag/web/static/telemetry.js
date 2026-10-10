@@ -90,8 +90,14 @@
         const navCount = document.getElementById('nav-findings-count');
         if (navCount) navCount.textContent = totalCount;
 
-        const critHigh = currentScan.findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH').length;
-        const medLow = currentScan.findings.filter(f => f.severity === 'MEDIUM' || f.severity === 'LOW').length;
+        // Match the KPI labels and server report semantics: only explicit
+        // analyst-confirmed status contributes to confirmed severity totals.
+        const confirmedFindings = currentScan.findings.filter(f =>
+          String(f.status || '').toUpperCase() === 'CONFIRMED');
+        const critHigh = confirmedFindings.filter(f =>
+          ['CRITICAL', 'HIGH'].includes(String(f.severity || '').toUpperCase())).length;
+        const medLow = confirmedFindings.filter(f =>
+          ['MEDIUM', 'LOW'].includes(String(f.severity || '').toUpperCase())).length;
         const critHighEl = document.getElementById('kpi-critical-high');
         if (critHighEl) critHighEl.textContent = critHigh;
         const medLowEl = document.getElementById('kpi-med-low');

@@ -18,14 +18,14 @@ public class VulnerableWebActivity extends AppCompatActivity {
         WebView webView = findViewById(R.id.webview);
         webView.getSettings().setJavaScriptEnabled(true);
 
-        // Untrusted source: Intent extra string
+        // Modeled source: Intent extra string (external reachability is unverified)
         String targetUrl = getIntent().getStringExtra("target_url");
 
         // Intermediate variable propagation
-        String validatedUrl = targetUrl;
+        String candidateUrl = targetUrl;
 
-        // Critical Sink: Unvalidated WebView URL execution (CWE-749 UXSS)
-        webView.loadUrl(validatedUrl);
+        // Navigation sink candidate: validate scheme/host and effective guards (CWE-829 mapping is provisional)
+        webView.loadUrl(candidateUrl);
     }
 }`,
       sqli: `package com.target.app;

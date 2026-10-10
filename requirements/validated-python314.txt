@@ -1,5 +1,5 @@
 # Tested Linux Python 3.14 environment snapshot, not a vulnerability attestation.
-# Install with pip install -c requirements/validated-python314.txt ".[test]".
+# Install with pip install -c requirements/validated-python314.txt ".[test,java-ast]".
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
@@ -93,6 +93,8 @@ tiktoken==0.14.0
 tinycss2==1.5.1
 tinyhtml5==2.1.0
 truststore==0.10.4
+tree-sitter==0.26.0
+tree-sitter-java==0.23.5
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.8.0

@@ -152,6 +152,25 @@ def run_browser(args, url, out, result, wait_condition):
                         String(finding.severity || '').toUpperCase() === severity).length))
             """)
             assert result['severity_counts_match_recorded_findings']
+            result['confirmed_kpis_ignore_unverified_and_stale_aggregates'] = page.evaluate("""() => {
+                const confirmed = (currentScan.findings || []).filter(finding =>
+                    String(finding.status || '').toUpperCase() === 'CONFIRMED');
+                const expectedHigh = confirmed.filter(finding =>
+                    ['CRITICAL','HIGH'].includes(String(finding.severity || '').toUpperCase())).length;
+                const expectedMedLow = confirmed.filter(finding =>
+                    ['MEDIUM','LOW'].includes(String(finding.severity || '').toUpperCase())).length;
+                return Number(document.querySelector('#kpi-critical-high').textContent) === expectedHigh
+                    && Number(document.querySelector('#kpi-med-low').textContent) === expectedMedLow
+                    && currentScan.stats.high !== expectedHigh;
+            }""")
+            assert result['confirmed_kpis_ignore_unverified_and_stale_aggregates']
+            page.evaluate("""() => handleLiveEvent({stage:'synthetic',message:'synthetic test event',finding:{id:'synthetic-live-candidate',
+                title:'Synthetic unverified critical candidate',severity:'CRITICAL',status:'UNVERIFIED'}})""")
+            assert page.locator('#kpi-critical-high').inner_text() == '0'
+            page.evaluate("""() => handleLiveEvent({stage:'synthetic',message:'synthetic test event',finding:{id:'synthetic-live-confirmed',
+                title:'Synthetic analyst-confirmed high',severity:'HIGH',status:'CONFIRMED'}})""")
+            assert page.locator('#kpi-critical-high').inner_text() == '1'
+            result['live_confirmed_kpis_are_status_aware'] = True
             assert 'org.example.review' in page.locator('#view-overview').inner_text()
 
             # Absence of a job is not displayed as a clean scan or measured zero.

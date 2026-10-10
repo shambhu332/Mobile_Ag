@@ -31,6 +31,71 @@ class TrafficAuditor:
         self._sensitive_param_re = re.compile(
             r"(?i)^(token|access_token|auth|password|pwd|api_key|secret|session_id|jwt)$"
         )
+        self._session_cookie_re = re.compile(
+            r"(?i)(?:^|[-_])(?:session|sess|auth|access|refresh|id)[-_]?(?:id|token)?$"
+        )
+
+    def _audit_session_cookies(self, tx: HTTPTransaction, parsed) -> list[Finding]:
+        """Flag risky attributes on likely session cookies without retaining values.
+
+        This is deliberately a review candidate: cookie names are application-specific,
+        and HttpOnly/SameSite requirements depend on whether a browser/WebView consumes it.
+        """
+        raw = next((v for k, v in tx.response_headers.items()
+                    if k.lower() == "set-cookie"), "")
+        if not raw:
+            return []
+
+        findings = []
+        # A comma can occur in Expires, so split only on new-cookie boundaries.
+        cookies = re.split(r",(?=\s*[^;,=\s]+\s*=)", raw)
+        for cookie in cookies[:20]:
+            parts = [part.strip() for part in cookie.split(";")]
+            if not parts or "=" not in parts[0]:
+                continue
+            name = parts[0].split("=", 1)[0].strip()
+            if not self._session_cookie_re.search(name):
+                continue
+            attrs = {part.split("=", 1)[0].strip().lower() for part in parts[1:] if part}
+            missing = []
+            if parsed.scheme == "https" and "secure" not in attrs:
+                missing.append("Secure")
+            if "httponly" not in attrs:
+                missing.append("HttpOnly")
+            if "samesite" not in attrs:
+                missing.append("SameSite")
+            if not missing:
+                continue
+            # Pick the most directly applicable classification when multiple flags
+            # are absent; the complete missing-attribute list remains in evidence.
+            cwe_id = ("CWE-614" if "Secure" in missing else
+                      "CWE-1004" if "HttpOnly" in missing else "CWE-1275")
+            findings.append(Finding(
+                title=f"Session Cookie Attribute Review: {name}",
+                description=(
+                    f"A response from {parsed.netloc}{parsed.path} set a cookie whose name "
+                    f"resembles a session/authentication cookie and omitted: {', '.join(missing)}. "
+                    "Cookie names are heuristic; confirm that this value is a session credential "
+                    "and whether a browser or WebView consumes it. Cookie values are not recorded."
+                ),
+                severity=Severity.INFO,
+                confidence=0.4,
+                cwe_id=cwe_id,
+                cvss_score=0.0,
+                cvss_vector="",
+                owasp_masvs="MASVS-NETWORK-1",
+                affected_component=parsed.netloc,
+                file_path=f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+                line_number=1,
+                code_snippet=f"Set-Cookie: {name}=<redacted>; missing {', '.join(missing)}",
+                detection_method="TrafficAuditor (Dynamic)",
+                status=FindingStatus.UNVERIFIED,
+                remediation=(
+                    "For browser/WebView session cookies, set Secure over HTTPS, HttpOnly, and an "
+                    "appropriate SameSite policy; validate required behavior for the actual client."
+                ),
+            ))
+        return findings
 
     def audit_transactions(self, transactions: list[HTTPTransaction]) -> list[Finding]:
         """Evaluate a list of recorded HTTP transactions for security policy violations."""
@@ -38,6 +103,9 @@ class TrafficAuditor:
 
         for tx in transactions:
             parsed = urlparse(tx.url)
+
+            # Likely session-cookie flags are based on observed Set-Cookie headers.
+            findings.extend(self._audit_session_cookies(tx, parsed))
 
             # 1. Cleartext HTTP Traffic (CWE-319)
             if parsed.scheme == "http" and not (parsed.hostname in ("localhost", "127.0.0.1")):

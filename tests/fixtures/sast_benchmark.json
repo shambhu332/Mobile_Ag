@@ -1,0 +1,284 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic smoke benchmark for the bounded Java AST plus Java/Kotlin lexical source-to-sink candidate engine. Not a measure of whole-product recall.",
+  "cases": [
+    {
+      "id": "intent_extra_to_webview_loadurl",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-829"
+      ],
+      "source": "class Fixture { void open(Intent intent, WebView web) { String target = intent.getStringExtra(\"target\"); web.loadUrl(target); } }"
+    },
+    {
+      "id": "intent_extra_to_sql_rawquery",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-89"
+      ],
+      "source": "class Fixture { void query(Intent intent, SQLiteDatabase db) { String item = intent.getStringExtra(\"item\"); db.rawQuery(\"select * from items where id=\" + item, null); } }"
+    },
+    {
+      "id": "interprocedural_intent_to_webview_return_summary",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-829"
+      ],
+      "source": "class Fixture { String read(Intent intent) { return intent.getStringExtra(\"target\"); } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(read(incoming)); } }"
+    },
+    {
+      "id": "on_new_intent_direct_forward_candidate",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-927"
+      ],
+      "source": "class Fixture { void onNewIntent(Intent incoming) { startActivity(incoming); } }"
+    },
+    {
+      "id": "callback_intent_through_same_file_sink_helper",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-927"
+      ],
+      "source": "class Fixture { void onNewIntent(Intent incoming) { launch(incoming); } void launch(Intent target) { startActivity(target); } }"
+    },
+    {
+      "id": "constant_webview_url_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void open(WebView web) { String target = \"https://safe.invalid/\"; web.loadUrl(target); } }"
+    },
+    {
+      "id": "parameterized_sql_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void query(Intent intent, SQLiteDatabase db) { String item = intent.getStringExtra(\"item\"); db.rawQuery(\"select * from items where id=?\", new String[]{item}); } }"
+    },
+    {
+      "id": "ordinary_helper_intent_parameter_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void localHelper(Intent value) { startActivity(value); } }"
+    },
+    {
+      "id": "kotlin_intent_extra_to_webview",
+      "language": "kt",
+      "expected_cwes": [
+        "CWE-829"
+      ],
+      "source": "class Fixture { fun open(intent: Intent, web: WebView) { val target = intent.getStringExtra(\"url\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "kotlin_model_getstring_is_not_assumed_tainted",
+      "language": "kt",
+      "expected_cwes": [],
+      "source": "class Fixture { fun open(model: JsonObject, web: WebView) { val target = model.getString(\"url\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "java_multiline_source_expression_ast",
+      "language": "java",
+      "expected_cwes": [
+        "CWE-829"
+      ],
+      "source": "class Fixture { void open(Intent intent, WebView web) { String target = intent\n .getStringExtra(\"url\"); web.loadUrl(target); } }"
+    },
+    {
+      "id": "intent_uri_path_to_webview",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { void open(Intent intent, WebView web) { Uri incoming = intent.getData(); String path = incoming.getPath(); web.loadUrl(path); } }"
+    },
+    {
+      "id": "generic_route_model_path_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void open(RouteModel route, WebView web) { String path = route.getPath(); web.loadUrl(path); } }"
+    },
+    {
+      "id": "intent_script_to_webview_evaluate_javascript",
+      "language": "java",
+      "expected_cwes": ["CWE-79"],
+      "source": "class Fixture { void render(Intent intent, WebView web) { String script = intent.getStringExtra(\"script\"); web.evaluateJavascript(script, null); } }"
+    },
+    {
+      "id": "constant_uri_query_to_webview_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void render(WebView web) { Uri fixed = Uri.parse(\"https://safe.invalid/path?next=home\"); String next = fixed.getQueryParameter(\"next\"); web.loadUrl(next); } }"
+    },
+    {
+      "id": "intent_uri_parameter_helper_to_webview",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String query(Uri route) { return route.getQueryParameter(\"next\"); } void render(Intent intent, WebView web) { Uri route = intent.getData(); web.loadUrl(query(route)); } }"
+    },
+    {
+      "id": "constant_uri_reassignment_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void render(Intent intent, WebView web) { Uri route = intent.getData(); route = Uri.parse(\"https://safe.invalid/path?next=home\"); String next = route.getQueryParameter(\"next\"); web.loadUrl(next); } }"
+    },
+    {
+      "id": "constant_uri_helper_reassignment_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { String query(Intent intent) { Uri route = intent.getData(); route = Uri.parse(\"https://safe.invalid/path?next=home\"); return route.getQueryParameter(\"next\"); } void render(Intent intent, WebView web) { web.loadUrl(query(intent)); } }"
+    },
+    {
+      "id": "outer_intent_uri_survives_inner_shadowing",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String query(Intent intent) { Uri route = intent.getData(); if (true) { Uri route = Uri.parse(\"https://safe.invalid/path?next=home\"); } return route.getQueryParameter(\"next\"); } void render(Intent intent, WebView web) { web.loadUrl(query(intent)); } }"
+    },
+    {
+      "id": "intent_extra_through_string_prefix_helper",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String prefix(String value) { return \"https://\" + value; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(prefix(incoming.getStringExtra(\"host\"))); } }"
+    },
+    {
+      "id": "intent_extra_to_constant_helper_return_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { String choose(String ignored) { return \"https://safe.invalid/\"; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "intent_extra_through_helper_local_alias",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String identity(String value) { String local = value; return local; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(identity(incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "intent_extra_in_second_concat_helper_parameter",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String join(String prefix, String value) { return prefix + value; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(join(\"https://\", incoming.getStringExtra(\"host\"))); } }"
+    },
+    {
+      "id": "intent_uri_through_uri_to_string_helper",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String render(Uri route) { return route.toString(); } void onNewIntent(Intent incoming, WebView web) { Uri route = incoming.getData(); web.loadUrl(render(route)); } }"
+    },
+    {
+      "id": "intent_extra_through_mixed_alias_and_parameter_concat",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String join(String prefix, String value) { String localPrefix = prefix; return localPrefix + value; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(join(\"https://\", incoming.getStringExtra(\"host\"))); } }"
+    },
+    {
+      "id": "intent_extra_through_conditional_return_parameter",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String choose(boolean useInput, String fixed, String value) { return useInput ? value : fixed; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(true, \"https://safe.invalid/\", incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "conditional_helper_ignores_unrelated_tainted_argument_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { String choose(boolean first, String left, String right, String unused) { return first ? left : right; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(true, \"https://safe.invalid/\", \"https://fixed.invalid/\", incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "conditional_helper_tracks_only_selected_input_parameters",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String choose(boolean first, String left, String right, String unused) { return first ? left : right; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(true, \"https://safe.invalid/\", incoming.getStringExtra(\"url\"), \"unused\")); } }"
+    },
+    {
+      "id": "if_return_helper_tracks_tainted_fallback_parameter",
+      "language": "java",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Fixture { String choose(boolean first, String left, String right, String unused) { if (first) return left; return right; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(true, \"https://safe.invalid/\", incoming.getStringExtra(\"url\"), \"unused\")); } }"
+    },
+    {
+      "id": "if_return_helper_ignores_unrelated_tainted_argument_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { String choose(boolean first, String left, String right, String unused) { if (first) return left; return right; } void onNewIntent(Intent incoming, WebView web) { web.loadUrl(choose(true, \"https://safe.invalid/\", \"https://fixed.invalid/\", incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "tainted_ternary_condition_with_constant_result_arms_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void render(Intent incoming, WebView web) { String target = incoming.getStringExtra(\"flag\").equals(\"yes\") ? \"https://safe-a.invalid/\" : \"https://safe-b.invalid/\"; web.loadUrl(target); } }"
+    },
+    {
+      "id": "tainted_alias_in_ternary_condition_with_constant_arms_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void render(Intent incoming, WebView web) { String flag = incoming.getStringExtra(\"flag\"); String target = flag.equals(\"yes\") ? \"https://safe-a.invalid/\" : \"https://safe-b.invalid/\"; web.loadUrl(target); } }"
+    },
+    {
+      "id": "lookalike_loadurl_on_unrelated_class_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Dummy { void loadUrl(String value) {} } class Fixture { void render(Intent incoming, Dummy web) { String target = incoming.getStringExtra(\"url\"); web.loadUrl(target); } }"
+    },
+    {
+      "id": "lookalike_rawquery_on_unrelated_class_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class DummyStore { void rawQuery(String query) {} } class Fixture { void query(Intent incoming, DummyStore store) { String sql = incoming.getStringExtra(\"query\"); store.rawQuery(sql); } }"
+    },
+    {
+      "id": "lookalike_startactivity_on_unrelated_class_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class FakeLauncher { void startActivity(Intent value) {} } class Fixture { void onNewIntent(Intent incoming, FakeLauncher launcher) { Intent next = incoming.getParcelableExtra(\"next\"); launcher.startActivity(next); } }"
+    },
+    {
+      "id": "same_named_unrelated_helper_does_not_inherit_sink_summary_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class RealLauncher { void open(Intent next) { context.startActivity(next); } } class PlainHandler { void open(String value) {} } class Fixture { void onNewIntent(Intent incoming, PlainHandler helper) { helper.open(incoming.getStringExtra(\"url\")); } }"
+    },
+    {
+      "id": "external_typed_receiver_does_not_inherit_unrelated_sink_summary_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class RealLauncher { void open(Intent next) { context.startActivity(next); } } class Fixture { void onNewIntent(Intent incoming, ExternalHelper helper) { helper.open(incoming.getParcelableExtra(\"next\")); } }"
+    },
+    {
+      "id": "external_typed_field_does_not_inherit_unrelated_sink_summary_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class RealLauncher { void open(Intent next) { context.startActivity(next); } } class Fixture { ExternalHelper helper; void onNewIntent(Intent incoming) { helper.open(incoming.getParcelableExtra(\"next\")); } }"
+    },
+    {
+      "id": "external_typed_receiver_does_not_inherit_unrelated_return_summary_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class LocalParser { String parse(Intent input) { return input.getStringExtra(\"url\"); } } class Fixture { void onNewIntent(Intent incoming, ExternalParser parser, WebView web) { web.loadUrl(parser.parse(incoming.getStringExtra(\"url\"))); } }"
+    },
+    {
+      "id": "method_invoke_data_argument_is_not_dynamic_reflection_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void onNewIntent(Intent incoming, Method method) { String value = incoming.getStringExtra(\"value\"); method.invoke(this, value); } }"
+    },
+    {
+      "id": "intent_extra_to_class_for_name_target_selection",
+      "language": "java",
+      "expected_cwes": ["CWE-470"],
+      "source": "class Fixture { void onNewIntent(Intent incoming) { String className = incoming.getStringExtra(\"className\"); Class<?> selected = Class.forName(className); } }"
+    },
+    {
+      "id": "intent_extra_to_class_get_method_target_selection",
+      "language": "java",
+      "expected_cwes": ["CWE-470"],
+      "source": "class Fixture { void onNewIntent(Intent incoming, Class<?> type) { String methodName = incoming.getStringExtra(\"methodName\"); type.getMethod(methodName); } }"
+    },
+    {
+      "id": "kotlin_nullable_intent_extra_to_webview_safe_call",
+      "language": "kotlin",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Handler { fun open(incoming: Intent?, web: WebView) { val target = incoming?.getStringExtra(\"url\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "kotlin_custom_model_extra_method_is_not_android_intent_negative",
+      "language": "kotlin",
+      "expected_cwes": [],
+      "source": "class Handler { fun open(incoming: FakeIntent?, web: WebView) { val target = incoming?.getStringExtra(\"url\"); web.loadUrl(target) } }"
+    }
+  ]
+}

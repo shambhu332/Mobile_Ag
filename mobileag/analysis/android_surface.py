@@ -33,10 +33,10 @@ def method_spans(code):
 
 RULES = [
     ('webview','file_origin_universal_access',r'\bsetAllowUniversalAccessFromFileURLs\s*\(\s*true\s*\)',
-     'Review universal access from WebView file origins','CWE-749',
+     'Review universal access from WebView file origins','CWE-669',
      'Disable universal access from file URLs. Use an HTTPS asset-loader origin and explicitly constrain untrusted content.'),
     ('webview','file_origin_file_access',r'\bsetAllowFileAccessFromFileURLs\s*\(\s*true\s*\)',
-     'Review cross-file access from WebView file origins','CWE-22',
+     'Review cross-file access from WebView file origins','CWE-669',
      'Disable cross-file access; verify that attacker-controlled content cannot read a sensitive synthetic file.'),
     ('webview','mixed_content',r'\bsetMixedContentMode\s*\(\s*(?:(?:\w+\.)?MIXED_CONTENT_ALWAYS_ALLOW|0)\s*\)',
      'Review WebView mixed-content allowance','CWE-319',

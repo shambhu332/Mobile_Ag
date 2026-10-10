@@ -21,6 +21,8 @@ class ScanState(TypedDict):
     resource_path: str
     smali_path: str
     coverage: dict[str, Any]
+    assessment_coverage: str
+    coverage_gaps: list[str]
     json_report_path: str
     sarif_path: str
     decompiled_path: str
@@ -37,7 +39,7 @@ class ScanState(TypedDict):
 
     # ── Findings Pipeline ──
     raw_findings: list[dict[str, Any]]         # Pre-filter findings
-    filtered_findings: list[dict[str, Any]]    # Post 5-layer filter
+    filtered_findings: list[dict[str, Any]]    # Retained unverified review candidates (legacy field name)
 
     # ── Generated Outputs ──
     generated_frida_scripts: list[dict[str, Any]]  # Frida hooks (text files)
@@ -73,6 +75,8 @@ def create_initial_state(
                       "proof_status": "not_proven", "exhaustive": False}
                for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping",
                             "native", "dependencies", "taint", "nsc", "binary_protection", "react_native")}},
+        assessment_coverage="not_assessed",
+        coverage_gaps=[],
         json_report_path="",
         sarif_path="",
         framework_info={},

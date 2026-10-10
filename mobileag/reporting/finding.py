@@ -28,7 +28,7 @@ class FindingStatus(str, Enum):
 class Finding(BaseModel):
     """A single security finding with full metadata.
 
-    Each finding tracks its source, severity, confidence, LLM consensus,
+    Each finding tracks its source, severity, legacy detector confidence, LLM consensus,
     and optionally includes generated Frida hooks and PoC guides.
     """
 
@@ -39,7 +39,14 @@ class Finding(BaseModel):
 
     # ── Classification ──
     severity: Severity = Severity.MEDIUM
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0, description="0.0 to 1.0 confidence score")
+    confidence: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description="Legacy detector-local value only; not calibrated and not used as pipeline confidence",
+    )
+    review_priority: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Uncalibrated heuristic ranking only; not probability of exploitability",
+    )
     cwe_id: str = Field(default="CWE-Unknown", description="e.g. CWE-926")
     cvss_score: float = Field(default=0.0, ge=0.0, le=10.0)
     cvss_vector: str = Field(default="")
@@ -122,7 +129,7 @@ class Finding(BaseModel):
             "id": self.id[:8],
             "title": self.title,
             "severity": self.severity.value,
-            "confidence": f"{self.confidence:.0%}",
+            "review_priority": self.review_priority,
             "cwe": self.cwe_id,
             "cvss": self.cvss_score,
             "component": self.affected_component,

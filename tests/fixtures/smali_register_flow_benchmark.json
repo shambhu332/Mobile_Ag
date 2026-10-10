@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic smoke benchmark for same-method Smali move-result/move-object register flow. Does not measure whole-program or APK recall.",
+  "cases": [
+    {
+      "id": "intent_extra_direct_to_webview",
+      "expected_cwes": ["CWE-829"],
+      "source": ".class public Lfixture/Direct;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n sget-object v0, Lfixture/Direct;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "intent_extra_through_move_object_alias_and_range",
+      "expected_cwes": ["CWE-829"],
+      "source": ".class public Lfixture/Alias;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n # comment before result is allowed\n move-result-object v2\n move-object v3, v2\n sget-object v0, Lfixture/Alias;->web:Landroid/webkit/WebView;\n invoke-virtual/range {v0 .. v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "unrelated_constant_sink_negative",
+      "expected_cwes": [],
+      "source": ".class public Lfixture/Constant;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n const-string v2, \"https://safe.invalid\"\n sget-object v0, Lfixture/Constant;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "overwritten_array_value_sink_negative",
+      "expected_cwes": [],
+      "source": ".class public Lfixture/Array;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 5\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n aget-object v2, v3, v4\n sget-object v0, Lfixture/Array;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "unreachable_sink_after_return_negative",
+      "expected_cwes": [],
+      "source": ".class public Lfixture/Dead;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n return-void\n sget-object v0, Lfixture/Dead;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n.end method"
+    }
+  ]
+}

@@ -1,1 +1,1 @@
-"""5-layer false positive elimination pipeline."""
+"""Advisory finding-candidate ranking signals."""

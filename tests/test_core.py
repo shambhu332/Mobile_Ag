@@ -23,8 +23,8 @@ def test_finding_creation():
     assert len(finding.id) > 10
 
 
-def test_confidence_scorer():
-    """Test the confidence scoring aggregation logic."""
+def test_review_priority_uses_only_available_signals_not_severity():
+    """Ranking is heuristic and cannot be increased by impact severity."""
     scorer = ConfidenceScorer()
     
     # Perfect score scenario
@@ -35,9 +35,10 @@ def test_confidence_scorer():
         "historical": 1.0,
     }
     
-    # CRITICAL severity gives max bonus
     final = scorer.score(scores, "CRITICAL")
-    assert final > 0.9
+    assert final == 1.0
+    assert scorer.score(scores, "INFO") == final
+    assert scorer.score({}) == 0.0
     
     # Weak score scenario
     low_scores = {

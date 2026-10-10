@@ -259,7 +259,7 @@
 
           <div class="bg-panel border border-red-900/40 rounded-xl p-3.5 flex items-center justify-between">
             <div>
-              <p class="text-[11px] font-mono text-red-400 uppercase">Critical / High</p>
+              <p class="text-[11px] font-mono text-red-400 uppercase">Confirmed Critical / High</p>
               <h3 id="kpi-critical-high" class="text-2xl font-bold font-mono text-red-400 mt-0.5">0</h3>
             </div>
             <div class="w-9 h-9 rounded-lg bg-red-950/40 border border-red-800/40 flex items-center justify-center text-red-400">
@@ -269,7 +269,7 @@
 
           <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
             <div>
-              <p class="text-[11px] font-mono text-orange-400 uppercase">Medium / Low</p>
+              <p class="text-[11px] font-mono text-orange-400 uppercase">Confirmed Medium / Low</p>
               <h3 id="kpi-med-low" class="text-2xl font-bold font-mono text-orange-400 mt-0.5">0</h3>
             </div>
             <div class="w-9 h-9 rounded-lg bg-orange-950/30 border border-orange-800/30 flex items-center justify-center text-orange-400">
@@ -661,7 +661,7 @@
                   <button data-onclick="static40" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Dispatch Intent VIEW">
                     <i data-lucide="external-link" class="w-3.5 h-3.5 text-sky-400"></i>
                   </button>
-                  <button data-onclick="static41" class="px-2.5 py-1.5 bg-sky-900/50 hover:bg-sky-800 border border-sky-700/60 rounded-lg text-sky-300 text-[11px] font-mono flex items-center gap-1" title="Run Deep Link Matrix Fuzzing (OAuth, Traversal, UXSS)">
+                  <button data-onclick="static41" class="px-2.5 py-1.5 bg-sky-900/50 hover:bg-sky-800 border border-sky-700/60 rounded-lg text-sky-300 text-[11px] font-mono flex items-center gap-1" title="Run bounded deep-link URI and JavaScript-scheme marker checks">
                     <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Fuzz Matrix
                   </button>
                 </div>
@@ -930,7 +930,7 @@
 
           <div class="flex items-center gap-3">
             <select id="taint-sample-selector" data-onchange="static61" class="bg-card border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-mono">
-              <option value="uxss">Preset 1: WebView UXSS (CWE-749)</option>
+              <option value="uxss">Preset 1: Untrusted WebView navigation review (CWE-829 candidate)</option>
               <option value="sqli">Preset 2: SQL Injection (CWE-89)</option>
               <option value="redirect">Preset 3: Intent Redirection (CWE-927)</option>
               <option value="traversal">Preset 4: Path Traversal (CWE-22)</option>
@@ -985,7 +985,7 @@
                 <div id="taint-stat-sev" class="text-base font-bold font-mono text-slate-400">NONE</div>
               </div>
               <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
-                <div class="text-[10px] font-mono text-slate-400">Confidence</div>
+                <div class="text-[10px] font-mono text-slate-400">Heuristic review priority</div>
                 <div id="taint-stat-conf" class="text-base font-bold font-mono text-slate-300">Not measured</div>
               </div>
             </div>

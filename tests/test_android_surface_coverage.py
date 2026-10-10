@@ -59,6 +59,9 @@ def test_source_new_checks_do_not_claim_exploit():
     findings,sites=AndroidSurfaceAnalyzer().analyze_source(source,'Fixture.java')
     ids={f.metadata['check_id'] for f in findings}
     assert ids=={'file_origin_universal_access','file_origin_file_access','mixed_content','ssl_error_proceed','weak_uri_guard','parsed_intent_launch','launch_protection_opt_out'}
+    cwes={f.metadata['check_id']:f.cwe_id for f in findings}
+    assert cwes['file_origin_universal_access']=='CWE-669'
+    assert cwes['file_origin_file_access']=='CWE-669'
     assert all(f.status==FindingStatus.UNVERIFIED and f.severity==Severity.INFO and f.cvss_score==0 and f.metadata['proof_state']=='not_proven' for f in findings)
     assert sites['webview'] and sites['intent']
 
@@ -114,3 +117,42 @@ def test_reports_include_category_coverage():
     assert data['exhaustive_analysis'] is False and data['coverage']['android_surface']['categories']['intent']['proof_status']=='not_proven'
     assert 'Coverage and proof boundaries' in engine._generate_markdown(data)
     assert 'not_started' in engine._generate_markdown(data)
+
+
+def test_report_separates_unverified_candidates_from_analyst_attested_confirmations():
+    state=create_initial_state('synthetic','unused')
+    state['filtered_findings']=[
+        {'id':'u','status':'UNVERIFIED','severity':'HIGH','cvss_score':0},
+        {'id':'c','status':'CONFIRMED','severity':'INFO','cvss_score':0},
+    ]
+    data=ReportEngine()._prepare_data(state)
+    assert data['stats']['total']==2
+    assert data['stats']['confirmed']==1
+    assert data['stats']['unverified_candidates']==1
+    assert data['stats']['high']==0  # severity counters are confirmed-only
+    assert data['stats']['info']==1
+    assert data['stats']['candidate_severity']['high']==1
+    assert 'not independently verified' in data['candidate_count_semantics']
+    report = ReportEngine()._generate_markdown(data)
+    assert 'Confirmed severity totals' in report
+    assert 'Unverified candidate labels (provisional)' in report
+
+
+def test_report_marks_incomplete_static_coverage_separately_from_job_completion():
+    state=create_initial_state('synthetic','unused')
+    state['coverage']['secrets']['static_status']='partial'
+    data=ReportEngine()._prepare_data(state)
+    assert data['assessment_coverage']=='partial'
+    assert 'coverage.secrets.static_status=partial' in data['coverage_gaps']
+    assert state['assessment_coverage']=='not_assessed'
+    state['coverage']['secrets']['static_status']='unsupported'
+    assert ReportEngine()._prepare_data(state)['assessment_coverage']=='partial'
+
+
+@pytest.mark.asyncio
+async def test_generate_report_persists_assessment_coverage_in_state(tmp_path):
+    state=create_initial_state('synthetic','unused',str(tmp_path))
+    state['coverage']['secrets']['static_status']='partial'
+    await ReportEngine().generate_reports(state)
+    assert state['assessment_coverage']=='partial'
+    assert 'coverage.secrets.static_status=partial' in state['coverage_gaps']

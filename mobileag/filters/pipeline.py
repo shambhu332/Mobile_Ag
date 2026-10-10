@@ -1,4 +1,4 @@
-"""5-layer false positive elimination pipeline orchestrator."""
+"""Advisory candidate-ranking pipeline; stages do not prove or eliminate findings."""
 
 import logging
 from typing import Optional, Any
@@ -17,14 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class FilterPipeline:
-    """Runs each finding through 5 filter layers to eliminate false positives.
+    """Attach optional heuristic ranking signals to findings.
 
-    Layers:
-        1. Reachability — is the code actually reachable?
-        2. Sanitizer — is input properly validated?
-        3. Consensus — do multiple LLMs agree it's vulnerable?
-        4. Historical — were similar past findings TP or FP?
-        5. Confidence — aggregate all scores into final confidence
+    Stages are advisory signals only. They do not validate exploitability or
+    silently discard unverified candidates.
 
     All findings remain unverified review candidates; low heuristic scores never silently discard them.
     """
@@ -44,14 +40,16 @@ class FilterPipeline:
         )
         self._historical = HistoricalFilter(qdrant)
         self._scorer = ConfidenceScorer()
-        self._threshold = self._settings.confidence_threshold
+        self._threshold = (self._settings.confidence_threshold
+                           if self._settings.confidence_threshold is not None
+                           else self._settings.review_priority_threshold)
 
     async def filter_findings(
         self,
         findings: list[Finding],
         decompiled_path: str,
     ) -> list[Finding]:
-        """Run all findings through the 5-layer filter pipeline.
+        """Attach available heuristic signals and retain candidates for review.
 
         Args:
             findings: Raw findings from analysis agents.
@@ -61,7 +59,7 @@ class FilterPipeline:
             All review candidates, ranked by heuristic scores; low scores do not prove a false positive.
         """
         logger.info("Starting filter pipeline for %d findings", len(findings))
-        confirmed: list[Finding] = []
+        candidates: list[Finding] = []
 
         for i, finding in enumerate(findings):
             logger.info(
@@ -71,6 +69,19 @@ class FilterPipeline:
 
             filter_scores: dict[str, float] = {}
             filter_reasons: dict[str, str] = {}
+            filter_stages: dict[str, dict[str, str]] = {}
+
+            def record(name: str, score: float, reason: str) -> None:
+                unavailable = any(token in reason.lower() for token in (
+                    "insufficient data", "not found", "could not read", "no historical",
+                    "no embedding", "not configured", "disabled", "offline",
+                    "check failed", "could not parse", "unknown:",
+                ))
+                status = "unavailable" if unavailable else "evaluated_heuristically"
+                filter_stages[name] = {"status": status, "reason": reason}
+                filter_reasons[name] = reason
+                if not unavailable:
+                    filter_scores[name] = score
 
             # Layer 1: Reachability
             try:
@@ -82,11 +93,10 @@ class FilterPipeline:
                     file_path=finding.file_path,
                     decompiled_path=decompiled_path,
                 )
-                filter_scores["reachability"] = score
-                filter_reasons["reachability"] = reason
+                record("reachability", score, reason)
             except Exception as exc:
                 logger.warning("Reachability filter error: %s", exc)
-                filter_scores["reachability"] = 0.5
+                filter_stages["reachability"] = {"status": "failed", "reason": type(exc).__name__}
 
             # Layer 2: Sanitizer check
             try:
@@ -98,11 +108,10 @@ class FilterPipeline:
                     code_snippet=finding.code_snippet,
                     decompiled_path=decompiled_path,
                 )
-                filter_scores["sanitizer"] = score
-                filter_reasons["sanitizer"] = reason
+                record("sanitizer", score, reason)
             except Exception as exc:
                 logger.warning("Sanitizer filter error: %s", exc)
-                filter_scores["sanitizer"] = 0.5
+                filter_stages["sanitizer"] = {"status": "failed", "reason": type(exc).__name__}
 
             # Layer 3: Consensus vote
             try:
@@ -115,12 +124,17 @@ class FilterPipeline:
                     code_snippet=finding.code_snippet,
                     affected_component=finding.affected_component,
                 )
-                filter_scores["consensus"] = score
-                filter_reasons["consensus"] = reason
                 finding.consensus_votes = votes
+                if votes:
+                    record("consensus", score, reason)
+                else:
+                    filter_stages["consensus"] = {"status": "unavailable", "reason": "No valid model votes were returned"}
+                    filter_reasons["consensus"] = "No valid model votes were returned"
             except Exception as exc:
                 logger.warning("Consensus filter error: %s", exc)
-                filter_scores["consensus"] = 0.5
+                reason = "Consensus disabled or offline" if not self._settings.enable_consensus_voting or self._settings.offline else type(exc).__name__
+                filter_stages["consensus"] = {"status": "not_run" if "disabled" in reason.lower() or "offline" in reason.lower() else "failed", "reason": reason}
+                filter_reasons["consensus"] = reason
 
             # Layer 4: Historical match
             try:
@@ -129,42 +143,39 @@ class FilterPipeline:
                     finding_cwe=finding.cwe_id,
                     embedding=None,  # Embedding computed separately if Qdrant available
                 )
-                filter_scores["historical"] = score
-                filter_reasons["historical"] = reason
+                record("historical", score, reason)
             except Exception as exc:
                 logger.warning("Historical filter error: %s", exc)
-                filter_scores["historical"] = 0.5
+                filter_stages["historical"] = {"status": "failed", "reason": type(exc).__name__}
 
-            # Layer 5: Final confidence scoring
-            final_confidence = self._scorer.score(filter_scores, finding.severity.value)
+            # Ranking only: severity is impact, not evidence of exploitability.
+            review_priority = self._scorer.score(filter_scores)
 
             finding.metadata["filter_reasons"] = filter_reasons
-            finding.metadata["assessment"] = "Heuristic scores, not exploit verification"
-            # Update finding
+            finding.metadata["filter_stages"] = filter_stages
+            finding.metadata["assessment"] = "Heuristic review priority, not calibrated confidence or exploit verification"
             finding.filter_scores = filter_scores
-            finding.confidence = final_confidence
+            finding.review_priority = review_priority
+            finding.metadata.pop("below_review_priority_threshold", None)
 
-            if final_confidence >= self._threshold:
-                finding.status = FindingStatus.UNVERIFIED
-                confirmed.append(finding)
+            if review_priority >= self._threshold:
+                finding.metadata["review_priority_disposition"] = "above_threshold"
+                candidates.append(finding)
                 logger.info(
-                    "CANDIDATE: %s (confidence: %.1f%%) — %s",
-                    finding.title, final_confidence * 100, finding.cwe_id,
+                    "CANDIDATE: %s (heuristic review priority: %.1f%%) — %s",
+                    finding.title, review_priority * 100, finding.cwe_id,
                 )
             else:
-                finding.status = FindingStatus.UNVERIFIED
-                finding.metadata["below_confidence_threshold"] = True
-                confirmed.append(finding)  # Never silently discard an unverified candidate.
-                finding.false_positive_reasons = [
-                    f"{k}: {v}" for k, v in filter_reasons.items()
-                ]
+                finding.metadata["below_review_priority_threshold"] = True
+                finding.metadata["review_priority_disposition"] = "below_threshold_candidate_retained"
+                candidates.append(finding)  # Never silently discard an unverified candidate.
                 logger.info(
-                    "LOW-CONFIDENCE CANDIDATE RETAINED: %s (confidence: %.1f%% < threshold %.1f%%)",
-                    finding.title, final_confidence * 100, self._threshold * 100,
+                    "LOW-PRIORITY CANDIDATE RETAINED: %s (heuristic review priority: %.1f%% < threshold %.1f%%)",
+                    finding.title, review_priority * 100, self._threshold * 100,
                 )
 
         logger.info(
             "Filter pipeline complete: %d/%d findings retained",
-            len(confirmed), len(findings),
+            len(candidates), len(findings),
         )
-        return confirmed
+        return candidates

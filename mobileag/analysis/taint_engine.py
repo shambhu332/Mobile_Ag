@@ -41,20 +41,20 @@ _SOURCE_PATTERNS = [
     (
         "INTENT_EXTRA",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[A-Za-z_$][\w$]*\.|(?:this\.)?getIntent\(\)\.)getData(?:String)?\s*\(""",
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[A-Za-z_$][\w$]*(?:\?\s*)?\.|(?:this\.)?getIntent\(\)\.)getData(?:String)?\s*\(""",
             re.IGNORECASE,
         ),
     ),
     (
         "URI_QUERY_PARAM",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*getQueryParameter\s*\("""
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*getQueryParameter\s*\("""
         ),
     ),
     (
         "URI_COMPONENT",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment)\s*\(""",
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment)\s*\(""",
             re.IGNORECASE,
         ),
     ),
@@ -626,7 +626,7 @@ class TaintEngine:
                                           value_rhs, re.IGNORECASE)
                     external_data = bool((was_uri or typed_uri) and data_read and
                                          (data_read.group("receiver") is None or data_read.group("receiver") in intent_names))
-                    now_uri = (lhs in _intent_data_uri_names(value_rhs, intent_names) or external_data
+                    now_uri = (lhs in _intent_data_uri_names(f"val {lhs} = {value_rhs}", intent_names) or external_data
                                or ((was_uri or typed_uri) and alias_from_uri))
                     uri_stack = uri_binding_scopes.setdefault(lhs, [])
                     uri_declaration = typed_uri and bool(re.search(
@@ -943,7 +943,7 @@ class TaintEngine:
                                           value_rhs, re.IGNORECASE)
                     intent_data_read = bool((was_uri or typed_uri) and data_read and
                                             (data_read.group("receiver") is None or data_read.group("receiver") in intent_names))
-                    now_uri = (uri_lhs in _intent_data_uri_names(value_rhs, intent_names) or intent_data_read
+                    now_uri = (uri_lhs in _intent_data_uri_names(f"val {uri_lhs} = {value_rhs}", intent_names) or intent_data_read
                                or ((was_uri or typed_uri) and alias_from_uri))
                     uri_stack = uri_binding_scopes.setdefault(uri_lhs, [])
                     uri_declaration = typed_uri and bool(re.search(r"(?:\b(?:val|var)\s+|(?:final\s+)?(?:android\.net\.)?Uri\s+)$", prefix))

@@ -12,7 +12,7 @@ evaluate = _module.evaluate
 def test_synthetic_taint_smoke_benchmark():
     corpus = json.loads((Path(__file__).parent / "fixtures/sast_benchmark.json").read_text())
     result = evaluate(corpus)
-    assert result["tp"] == 22
+    assert result["tp"] == 23
     assert result["fp"] == 0
     assert result["fn"] == 0
     assert result["known_fn"] == 0

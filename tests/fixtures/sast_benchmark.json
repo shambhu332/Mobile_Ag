@@ -279,6 +279,18 @@
       "language": "kotlin",
       "expected_cwes": [],
       "source": "class Handler { fun open(incoming: FakeIntent?, web: WebView) { val target = incoming?.getStringExtra(\"url\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "kotlin_nullable_intent_uri_query_safe_call",
+      "language": "kotlin",
+      "expected_cwes": ["CWE-829"],
+      "source": "class Handler { fun open(incoming: Intent?, web: WebView) { val link = incoming?.data; val target = link?.getQueryParameter(\"next\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "kotlin_nullable_intent_uri_custom_type_negative",
+      "language": "kotlin",
+      "expected_cwes": [],
+      "source": "class Handler { fun open(incoming: FakeIntent?, web: WebView) { val link = incoming?.data; val target = link?.getQueryParameter(\"next\"); web.loadUrl(target) } }"
     }
   ]
 }

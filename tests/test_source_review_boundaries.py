@@ -21,6 +21,25 @@ def test_kotlin_nullable_intent_safe_call_is_modeled_but_fake_type_is_not():
     assert not engine.analyze_source_content(fake_model, "Handler.kt")
 
 
+@pytest.mark.parametrize("accessor", ["getQueryParameter(\"next\")", "getHost()"])
+def test_kotlin_nullable_intent_uri_safe_calls_are_tainted_but_constants_are_not(accessor):
+    engine = TaintEngine()
+    linked_uri = f'''class Handler {{ fun open(incoming: Intent?, web: WebView) {{
+        val link = incoming?.data
+        val target = link?.{accessor}
+        web.loadUrl(target)
+    }} }}'''
+    constant_uri = f'''class Handler {{ fun open(web: WebView) {{
+        val link = Uri.parse("https://safe.invalid/path?next=home")
+        val target = link?.{accessor}
+        web.loadUrl(target)
+    }} }}'''
+    fake_intent = linked_uri.replace("Intent?", "FakeIntent?")
+    assert any(f.cwe_id == "CWE-829" for f in engine.analyze_source_content(linked_uri, "Handler.kt"))
+    assert not engine.analyze_source_content(constant_uri, "Handler.kt")
+    assert not engine.analyze_source_content(fake_intent, "Handler.kt")
+
+
 def test_balanced_calls_keep_nested_commas_and_ignore_comments_strings():
     source = '''// PendingIntent.getActivity(a,0,i,0)
 String text = "PendingIntent.getActivity(a,0,i,0)";

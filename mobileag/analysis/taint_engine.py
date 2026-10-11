@@ -46,6 +46,13 @@ _SOURCE_PATTERNS = [
         ),
     ),
     (
+        "INTENT_EXTRA_PROPERTY",
+        re.compile(
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*(?:data|dataString)\b""",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "URI_QUERY_PARAM",
         re.compile(
             r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*getQueryParameter\s*\("""
@@ -858,6 +865,22 @@ class TaintEngine:
                 r"\b(?:val|var)\s+([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?Intent\b", local_code))
             intent_names.update(re.findall(
                 r"\b([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?Intent\b", local_code))
+            # Kotlin commonly relies on inferred types for local Intent aliases
+            # (`val forwarded = incoming`). Propagate only simple identifier-to-
+            # identifier assignments within this method; do not infer arbitrary
+            # expressions, fields, or custom lookalike classes as Android Intents.
+            alias_assignment = re.compile(
+                r"\b(?:val|var)\s+(?P<lhs>[A-Za-z_$][\w$]*)\s*=\s*(?P<rhs>[A-Za-z_$][\w$]*)\b|"
+                r"(?P<lhs2>[A-Za-z_$][\w$]*)\s*=\s*(?P<rhs2>[A-Za-z_$][\w$]*)\s*;")
+            changed = True
+            while changed:
+                changed = False
+                for alias in alias_assignment.finditer(local_code):
+                    lhs = alias.group("lhs") or alias.group("lhs2")
+                    rhs = alias.group("rhs") or alias.group("rhs2")
+                    if rhs in intent_names and lhs not in intent_names:
+                        intent_names.add(lhs)
+                        changed = True
             activity_matches = re.findall(
                 r"\b(?:android\.(?:app|x\.fragment\.app)|androidx\.appcompat\.app)\.(?:Activity|FragmentActivity|ComponentActivity|AppCompatActivity)\s+([A-Za-z_$][\w$]*)|\b(?:Activity|FragmentActivity|ComponentActivity|AppCompatActivity)\s+([A-Za-z_$][\w$]*)",
                 local_code)
@@ -978,10 +1001,14 @@ class TaintEngine:
                                    for kind, pat in _SOURCE_PATTERNS if pat.search(source_candidate)), None)
                     if source and source[0] == "INTENT_SOURCE" and not _has_modeled_get_intent(clean, activity_names):
                         source = None
-                    if source and source[0] == "INTENT_EXTRA":
+                    if source and source[0] in {"INTENT_EXTRA", "INTENT_EXTRA_PROPERTY"}:
                         intent_read = _INTENT_EXTRA_CALL_RE.search(clean)
-                        if ((intent_read and intent_read.group("receiver") not in intent_names)
-                                or (not intent_read and not _has_modeled_get_intent(clean, activity_names))):
+                        property_read = source[1] if source[0] == "INTENT_EXTRA_PROPERTY" else None
+                        if property_read and property_read.group("receiver") not in intent_names:
+                            source = None
+                        elif ((intent_read and intent_read.group("receiver") not in intent_names)
+                                or (not intent_read and not property_read
+                                    and not _has_modeled_get_intent(clean, activity_names))):
                             source = None
                     if source and source[0] == "CLIPBOARD_SOURCE":
                         clipboard_read = _CLIPBOARD_CALL_RE.search(clean)

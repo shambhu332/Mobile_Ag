@@ -909,3 +909,20 @@ def test_web_taint_endpoint(client):
     assert data["status"] == "success"
     assert len(data["findings"]) == 1
     assert data["findings"][0]["cwe_id"] == "CWE-829"
+
+
+def test_inferred_kotlin_intent_alias_and_exact_java_intent_type():
+    engine = TaintEngine()
+    kotlin = '''class Route { fun open(input: Intent, view: WebView) {
+        val forwarded = input
+        val address = forwarded.dataString
+        view.loadUrl(address)
+    } }'''
+    assert 'CWE-829' in {finding.cwe_id for finding in engine.analyze_source_content(kotlin, 'Route.kt')}
+
+    lookalike = '''class Route { void open(FakeIntent input, WebView view) {
+        FakeIntent forwarded = input;
+        String address = forwarded.getStringExtra("url");
+        view.loadUrl(address);
+    } }'''
+    assert 'CWE-829' not in {finding.cwe_id for finding in engine.analyze_source_content(lookalike, 'Route.java')}

@@ -300,11 +300,11 @@ class JavaAstTaintAnalyzer:
                 if current.type == "formal_parameter":
                     type_node = current.child_by_field_name("type")
                     name_node = current.child_by_field_name("name")
-                    if type_node and name_node and text(type_node).endswith("Intent"):
+                    if type_node and name_node and text(type_node).split("<", 1)[0].rstrip("?[]").rsplit(".", 1)[-1] == "Intent":
                         names.add(text(name_node))
                 elif current.type == "local_variable_declaration":
                     type_node = current.child_by_field_name("type")
-                    if type_node and text(type_node).endswith("Intent"):
+                    if type_node and text(type_node).split("<", 1)[0].rstrip("?[]").rsplit(".", 1)[-1] == "Intent":
                         for declarator in current.named_children:
                             if declarator.type == "variable_declarator":
                                 name_node = declarator.child_by_field_name("name")
@@ -357,7 +357,7 @@ class JavaAstTaintAnalyzer:
                     for param in params.named_children:
                         ptype = param.child_by_field_name("type")
                         pname = param.child_by_field_name("name")
-                        if ptype and pname and text(ptype).endswith("Intent"):
+                        if ptype and pname and text(ptype).split("<", 1)[0].rstrip("?[]").rsplit(".", 1)[-1] == "Intent":
                             env[text(pname)] = Trace("ANDROID_CALLBACK_INTENT_PARAMETER", param.start_point.row + 1, text(param))
             uri_names = uri_names or set()
             intent_names = intent_names or set()

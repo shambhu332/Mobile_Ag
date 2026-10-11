@@ -14,11 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mobileag.analysis.taint_engine import TaintEngine
 
 
-def evaluate(corpus: dict) -> dict:
+def _evaluate_backend(corpus: dict, *, use_ast: bool | None) -> dict:
     tp = fp = fn = known_fn = 0
     unexpected_fn = 0
     per_case = []
+    by_cwe: dict[str, dict[str, int]] = {}
     engine = TaintEngine()
+    if use_ast is False:
+        # Exercise the supported lexical fallback even when the optional parser
+        # is installed, so benchmark results do not depend on the host setup.
+        engine._java_ast.available = False
+    backend = ("java_ast_plus_lexical" if engine._java_ast.available
+               else "lexical_fallback")
     for case in corpus["cases"]:
         expected = set(case["expected_cwes"])
         observed = {finding.cwe_id for finding in engine.analyze_source_content(
@@ -27,6 +34,11 @@ def evaluate(corpus: dict) -> dict:
         known_misses = set(case.get("known_misses", []))
         case_known_fn = len((expected - observed) & known_misses)
         case_unexpected_fn = case_fn - case_known_fn
+        for cwe in expected | observed:
+            counts = by_cwe.setdefault(cwe, {"tp": 0, "fp": 0, "fn": 0})
+            counts["tp"] += int(cwe in expected and cwe in observed)
+            counts["fp"] += int(cwe not in expected and cwe in observed)
+            counts["fn"] += int(cwe in expected and cwe not in observed)
         tp += case_tp
         fp += case_fp
         fn += case_fn
@@ -35,24 +47,51 @@ def evaluate(corpus: dict) -> dict:
         per_case.append({"id": case["id"], "expected": sorted(expected), "observed": sorted(observed),
                          "tp": case_tp, "fp": case_fp, "fn": case_fn,
                          "known_fn": case_known_fn, "unexpected_fn": case_unexpected_fn})
+    cwe_metrics = {
+        cwe: {**counts,
+              "precision": counts["tp"] / (counts["tp"] + counts["fp"])
+              if counts["tp"] + counts["fp"] else None,
+              "recall": counts["tp"] / (counts["tp"] + counts["fn"])
+              if counts["tp"] + counts["fn"] else None}
+        for cwe, counts in sorted(by_cwe.items())
+    }
     return {
         "benchmark": "synthetic_android_taint_smoke",
         "schema_version": corpus["schema_version"],
-        "detector": "TaintEngine (Java AST when available; lexical fallback)",
+        "detector": "TaintEngine",
+        "backend": backend,
         "scope_note": corpus["description"],
         "tp": tp, "fp": fp, "fn": fn, "known_fn": known_fn,
         "unexpected_fn": unexpected_fn,
         "precision": tp / (tp + fp) if tp + fp else None,
         "recall": tp / (tp + fn) if tp + fn else None,
+        "by_cwe": cwe_metrics,
         "cases": per_case,
     }
+
+
+def evaluate(corpus: dict) -> dict:
+    """Report automatic-host behavior and a deterministic lexical-only run.
+
+    The lexical result matters even on machines with Tree-sitter installed:
+    deployments without the optional extra otherwise silently have different
+    coverage. Top-level metrics preserve the historical auto-mode API.
+    """
+    automatic = _evaluate_backend(corpus, use_ast=None)
+    lexical = _evaluate_backend(corpus, use_ast=False)
+    automatic["backend_results"] = {
+        "automatic": {k: v for k, v in automatic.items() if k != "backend_results"},
+        "lexical_fallback": lexical,
+    }
+    return automatic
 
 
 def main() -> None:
     corpus_path = Path(__file__).resolve().parents[1] / "tests/fixtures/sast_benchmark.json"
     report = evaluate(json.loads(corpus_path.read_text(encoding="utf-8")))
     print(json.dumps(report, indent=2))
-    raise SystemExit(1 if report["fp"] or report["unexpected_fn"] else 0)
+    backend_runs = report["backend_results"].values()
+    raise SystemExit(1 if any(run["fp"] or run["unexpected_fn"] for run in backend_runs) else 0)
 
 
 if __name__ == "__main__":

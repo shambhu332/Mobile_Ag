@@ -35,7 +35,7 @@ _SOURCE_PATTERNS = [
     (
         "INTENT_EXTRA",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_$().]+(?:\?\s*)?\.)?(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|getExtras|getCharSequenceExtra|getStringArrayListExtra)\s*\("""
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_$().]+(?:\?\s*)?\s*\.\s*)?(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra)\s*\("""
         ),
     ),
     (
@@ -116,7 +116,7 @@ _SINK_SPECS = [
         "cwe": "CWE-22",
         "severity": Severity.HIGH,
         "title": "Untrusted Taint Flow to File Operation (Path Traversal)",
-        "pattern": re.compile(r"""\b(?:new\s+File|openFileOutput|openFileInput|new\s+FileInputStream|new\s+FileOutputStream|Files\.write|Files\.newInputStream|Files\.newOutputStream)\s*\("""),
+        "pattern": re.compile(r"""\b(?:new\s+File|File|openFileOutput|openFileInput|new\s+FileInputStream|new\s+FileOutputStream|Files\.write|Files\.newInputStream|Files\.newOutputStream)\s*\("""),
         "masvs": "MASVS-STORAGE-2",
         "remediation": "Resolve the canonical target and enforce separator-aware directory containment, not a raw string prefix; constrain relative names and review symlink/TOCTOU behavior for the actual operation.",
     },
@@ -159,23 +159,27 @@ _INLINE_SOURCE_RE = re.compile(
 )
 _INLINE_GETINTENT_ACCESSOR_RE = re.compile(
     r"(?<![\w$.])(?:this\.)?getIntent\s*\(\)\s*\.\s*"
-    r"(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|getExtras|"
-    r"getCharSequenceExtra|getStringArrayListExtra|getData(?:String)?)\s*\(", re.IGNORECASE)
+    r"(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|"
+    r"getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|"
+    r"getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|"
+    r"getCharSequenceArrayExtra|getCharSequenceArrayListExtra|getData(?:String)?)\s*\(", re.IGNORECASE)
 _QUALIFIED_GETINTENT_RE = re.compile(
     r"(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*getIntent\s*\(\)", re.IGNORECASE)
 _QUALIFIED_GETINTENT_ACCESSOR_RE = re.compile(
     r"(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*getIntent\s*\(\)\s*\.\s*"
-    r"(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|getExtras|"
-    r"getCharSequenceExtra|getStringArrayListExtra|getData(?:String)?)\s*\(", re.IGNORECASE)
+    r"(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|"
+    r"getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|"
+    r"getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|"
+    r"getCharSequenceArrayExtra|getCharSequenceArrayListExtra|getData(?:String)?)\s*\(", re.IGNORECASE)
 _KOTLIN_SAFE_DOT = r"(?:\?\s*)?\."
 _URI_QUERY_PARAMETER_CALL_RE = re.compile(rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*getQueryParameter\s*\(", re.IGNORECASE)
 _URI_COMPONENT_CALL_RE = re.compile(rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment)\s*\(", re.IGNORECASE)
 _INTENT_EXTRA_CALL_RE = re.compile(
-    rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|getExtras|getCharSequenceExtra|getStringArrayListExtra|getData(?:String)?)\s*\(",
+    rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra|getData(?:String)?)\s*\(",
     re.IGNORECASE,
 )
 _INLINE_INTENT_EXTRA_RE = re.compile(
-    rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*(?:getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|getExtras|getCharSequenceExtra|getStringArrayListExtra|getData(?:String)?)\s*\(",
+    rf"(?P<receiver>[A-Za-z_$][\w$]*)\s*{_KOTLIN_SAFE_DOT}\s*(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra|getData(?:String)?)\s*\(",
     re.IGNORECASE,
 )
 _CLIPBOARD_CALL_RE = re.compile(
@@ -440,7 +444,7 @@ class TaintEngine:
         """
         summaries: dict[str, tuple[str, int, str, int | tuple[int, ...] | None, int]] = {}
         direct_sources = {
-            "INTENT_EXTRA": r"getStringExtra|getIntExtra|getBooleanExtra|getParcelableExtra|getSerializableExtra|(?:[A-Za-z_$][\w$]*|getIntent\(\))\.getData(?:String)?",
+            "INTENT_EXTRA": r"getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra|(?:[A-Za-z_$][\w$]*|getIntent\(\))\.getData(?:String)?",
             "URI_QUERY_PARAM": r"[A-Za-z_$][\w$]*\.getQueryParameter",
             "URI_COMPONENT": r"[A-Za-z_$][\w$]*\.(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment)",
             "SHARED_PREFS_SOURCE": r"(?:prefs|preferences|sharedPrefs|sharedPreferences)\s*\.\s*getString|getSharedPreferences\s*\([^)]*\)\s*\.\s*getString",
@@ -1280,6 +1284,11 @@ class TaintEngine:
                         and match.start() + 1 < len(current)
                         and current[match.start() + 1] not in {".", ":"})
                     if (current.rstrip().endswith(("=", "+", ".", ","))
+                            # Java/Kotlin commonly wrap a chained call after
+                            # the receiver (``value\n .get...``). Preserve that
+                            # expression as one lexical statement so the
+                            # fallback can see the source and assignment.
+                            or next_text.startswith((".", "?."))
                             or (next_text.startswith("?") and not next_text.startswith(("?.", "?:")))
                             or conditional_count > current.count(":")):
                         continue

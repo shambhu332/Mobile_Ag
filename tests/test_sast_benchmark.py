@@ -12,10 +12,23 @@ evaluate = _module.evaluate
 def test_synthetic_taint_smoke_benchmark():
     corpus = json.loads((Path(__file__).parent / "fixtures/sast_benchmark.json").read_text())
     result = evaluate(corpus)
-    assert result["tp"] == 23
+    assert result["tp"] == 30
     assert result["fp"] == 0
     assert result["fn"] == 0
     assert result["known_fn"] == 0
     assert result["unexpected_fn"] == 0
     assert result["precision"] == 1.0
     assert result["recall"] == 1.0
+    backends = result["backend_results"]
+    assert backends["automatic"]["backend"] in {"java_ast_plus_lexical", "lexical_fallback"}
+    fallback = backends["lexical_fallback"]
+    assert fallback["backend"] == "lexical_fallback"
+    # The multiline flow must be found even without the optional parser.
+    assert fallback["fn"] == 0
+    assert fallback["known_fn"] == 0
+    assert fallback["unexpected_fn"] == 0
+    assert fallback["recall"] == 1.0
+    assert fallback["cases"]
+    assert {"CWE-22", "CWE-78", "CWE-470"} <= set(fallback["by_cwe"])
+    assert all(metrics["fp"] == 0 and metrics["fn"] == 0
+               for metrics in fallback["by_cwe"].values())

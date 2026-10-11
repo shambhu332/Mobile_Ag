@@ -96,9 +96,15 @@ class JavaAstTaintAnalyzer:
             return result
         direct_sources = {
             "getStringExtra": "INTENT_EXTRA", "getIntExtra": "INTENT_EXTRA",
-            "getBooleanExtra": "INTENT_EXTRA", "getParcelableExtra": "INTENT_EXTRA",
-            "getSerializableExtra": "INTENT_EXTRA", "getExtras": "INTENT_EXTRA",
-            "getCharSequenceExtra": "INTENT_EXTRA", "getStringArrayListExtra": "INTENT_EXTRA",
+            "getLongExtra": "INTENT_EXTRA", "getFloatExtra": "INTENT_EXTRA",
+            "getDoubleExtra": "INTENT_EXTRA", "getBooleanExtra": "INTENT_EXTRA",
+            "getByteArrayExtra": "INTENT_EXTRA", "getStringArrayExtra": "INTENT_EXTRA",
+            "getStringArrayListExtra": "INTENT_EXTRA", "getIntegerArrayListExtra": "INTENT_EXTRA",
+            "getParcelableExtra": "INTENT_EXTRA", "getParcelableArrayExtra": "INTENT_EXTRA",
+            "getParcelableArrayListExtra": "INTENT_EXTRA", "getSerializableExtra": "INTENT_EXTRA",
+            "getBundleExtra": "INTENT_EXTRA", "getExtras": "INTENT_EXTRA",
+            "getCharSequenceExtra": "INTENT_EXTRA", "getCharSequenceArrayExtra": "INTENT_EXTRA",
+            "getCharSequenceArrayListExtra": "INTENT_EXTRA",
             "getIntent": "INTENT_SOURCE",
             "getPrimaryClip": "CLIPBOARD_SOURCE",
         }
@@ -137,9 +143,7 @@ class JavaAstTaintAnalyzer:
             name = node.child_by_field_name("name")
             return text(name) if name else ""
 
-        intent_getters = {"getStringExtra", "getIntExtra", "getBooleanExtra", "getParcelableExtra",
-                          "getSerializableExtra", "getExtras", "getCharSequenceExtra",
-                          "getStringArrayListExtra"}
+        intent_getters = set(direct_sources) - {"getIntent", "getPrimaryClip"}
 
         def trace_for(node, env: dict[str, Trace | None], uri_names: set[str],
                       intent_names: set[str], clipboard_names: set[str]) -> Trace | None:

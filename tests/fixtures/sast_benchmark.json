@@ -291,6 +291,72 @@
       "language": "kotlin",
       "expected_cwes": [],
       "source": "class Handler { fun open(incoming: FakeIntent?, web: WebView) { val link = incoming?.data; val target = link?.getQueryParameter(\"next\"); web.loadUrl(target) } }"
+    },
+    {
+      "id": "intent_extra_to_file_path",
+      "language": "java",
+      "expected_cwes": ["CWE-22"],
+      "source": "class Fixture { void open(Intent incoming) { String path = incoming.getStringExtra(\"path\"); File target = new File(path); } }"
+    },
+    {
+      "id": "intent_extra_to_runtime_exec",
+      "language": "java",
+      "expected_cwes": ["CWE-78"],
+      "source": "class Fixture { void run(Intent incoming) throws Exception { String command = incoming.getStringExtra(\"command\"); Runtime.getRuntime().exec(command); } }"
+    },
+    {
+      "id": "intent_extra_to_process_builder",
+      "language": "java",
+      "expected_cwes": ["CWE-78"],
+      "source": "class Fixture { void run(Intent incoming) { String command = incoming.getStringExtra(\"command\"); new ProcessBuilder(command); } }"
+    },
+    {
+      "id": "intent_extra_to_dex_class_loader",
+      "language": "java",
+      "expected_cwes": ["CWE-470"],
+      "source": "class Fixture { void load(Intent incoming) { String path = incoming.getStringExtra(\"path\"); new DexClassLoader(path, null, null, getClass().getClassLoader()); } }"
+    },
+    {
+      "id": "constant_runtime_exec_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void run() throws Exception { Runtime.getRuntime().exec(\"fixed-command\"); } }"
+    },
+    {
+      "id": "constant_file_path_negative",
+      "language": "java",
+      "expected_cwes": [],
+      "source": "class Fixture { void open() { File target = new File(\"fixed-name\"); } }"
+    },
+    {
+      "id": "kotlin_intent_extra_to_file_constructor",
+      "language": "kotlin",
+      "expected_cwes": ["CWE-22"],
+      "source": "class Fixture { fun open(intent: Intent) { val path = intent.getStringExtra(\"path\"); val target = File(path) } }"
+    },
+    {
+      "id": "kotlin_constant_file_constructor_negative",
+      "language": "kotlin",
+      "expected_cwes": [],
+      "source": "class Fixture { fun open() { val target = File(\"fixed-name\") } }"
+    },
+    {
+      "id": "intent_long_extra_to_dynamic_sql",
+      "language": "java",
+      "expected_cwes": ["CWE-89"],
+      "source": "class Fixture { void query(Intent intent, SQLiteDatabase db) { long id = intent.getLongExtra(\"id\", 0L); db.rawQuery(\"select * from items where id=\" + id, null); } }"
+    },
+    {
+      "id": "kotlin_nullable_long_extra_to_dynamic_sql",
+      "language": "kotlin",
+      "expected_cwes": ["CWE-89"],
+      "source": "class Fixture { fun query(intent: Intent?, db: SQLiteDatabase) { val id = intent?.getLongExtra(\"id\", 0L); db.rawQuery(\"select * from items where id=\" + id, null) } }"
+    },
+    {
+      "id": "custom_model_long_extra_not_tainted_negative",
+      "language": "kotlin",
+      "expected_cwes": [],
+      "source": "class Fixture { fun query(model: FakeIntent, db: SQLiteDatabase) { val id = model.getLongExtra(\"id\", 0L); db.rawQuery(\"select * from items where id=\" + id, null) } }"
     }
   ]
 }

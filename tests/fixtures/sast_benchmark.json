@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "label_revision": 2,
   "description": "Synthetic smoke benchmark for the bounded Java AST plus Java/Kotlin lexical source-to-sink candidate engine. Not a measure of whole-product recall.",
   "cases": [
     {
@@ -343,7 +344,8 @@
     {
       "id": "intent_long_extra_to_dynamic_sql",
       "language": "java",
-      "expected_cwes": ["CWE-89"],
+      "expected_cwes": [],
+      "label_note": "Corrected: primitive long conversion cannot introduce attacker-selected SQL grammar; authorization is a separate question.",
       "source": "class Fixture { void query(Intent intent, SQLiteDatabase db) { long id = intent.getLongExtra(\"id\", 0L); db.rawQuery(\"select * from items where id=\" + id, null); } }"
     },
     {

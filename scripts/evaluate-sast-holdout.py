@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Evaluate a separate labeled holdout corpus without using it for tuning.
+"""Evaluate the separate public regression corpus (initially held out).
+
+It has since been inspected and corrected; it is not a blind holdout.
 
 The report is per CWE and language for both automatic and lexical-only
 backends. These bounded synthetic fixtures measure only the named analyzer,
@@ -104,7 +106,7 @@ def evaluate(corpus: dict) -> dict:
             android_total[key] += count
         android_cases.append({"id": case["id"], "expected": sorted(expected), "observed": sorted(observed), **scores})
 
-    return {"benchmark": "synthetic_android_security_heldout", "schema_version": corpus["schema_version"],
+    return {"benchmark": "synthetic_android_security_heldout", "blind_holdout": False, "schema_version": corpus["schema_version"],
             "scope_note": corpus["description"], "case_count": len(corpus["cases"]),
             "fixture_coverage_by_language": coverage,
             "limitations": ["synthetic source and manifest fixtures only", "CWE/case matching, not finding-instance matching",

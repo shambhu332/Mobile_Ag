@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Initial held-out synthetic cases for source-to-sink candidate behavior; distinct from the detector smoke corpus. Not a whole-APK accuracy estimate.",
+  "description": "Public synthetic regression corpus, initially held out but subsequently reviewed and corrected. Not a blind holdout or whole-APK accuracy estimate.",
   "cases": [
     {
       "id": "java_data_string_to_webview",
@@ -13,10 +13,9 @@
     {
       "id": "java_float_extra_to_sql_concat",
       "language": "java",
-      "expected_cwes": [
-        "CWE-89"
-      ],
-      "source": "class Query { void run(Intent input, SQLiteDatabase db) { float amount = input.getFloatExtra(\"amount\", 0f); db.rawQuery(\"select * from payment where amount > \" + amount, null); } }"
+      "expected_cwes": [],
+      "source": "class Query { void run(Intent input, SQLiteDatabase db) { float amount = input.getFloatExtra(\"amount\", 0f); db.rawQuery(\"select * from payment where amount > \" + amount, null); } }",
+      "label_note": "Corrected: primitive float conversion does not provide attacker-controlled SQL syntax; not an SQL injection. Corpus is now a public regression set, not a blind holdout."
     },
     {
       "id": "java_new_file_two_arg_path",
@@ -222,5 +221,6 @@
       },
       "source": ""
     }
-  ]
+  ],
+  "label_revision": 2
 }

@@ -72,3 +72,27 @@ def literal_flag_bits(expression: str, symbols: dict[str, int]) -> tuple[int, bo
         else:
             complete = False
     return bits, complete
+
+
+def numeric_sql_concatenation(expression: str, source: str) -> bool:
+    """Recognize only Java literal/primitive-number/boolean concatenation.
+
+    Primitive conversions cannot introduce attacker-selected SQL grammar. This
+    deliberately excludes char, objects, arrays, method calls, field access,
+    casts and inferred types. Conflicting/unknown declarations fail closed.
+    It is sink-specific: numeric input may remain relevant to authorization.
+    """
+    code = mask_non_code(expression)
+    declarations = mask_non_code(source)
+    saw_identifier = False
+    for part in code.split('+'):
+        part = part.strip()
+        if not part or re.fullmatch(r'\d+(?:\.\d+)?[fFdDlL]?', part):
+            continue
+        if not re.fullmatch(r'[A-Za-z_$][\w$]*', part):
+            return False
+        types = set(re.findall(r'\b([A-Za-z_$][\w$]*(?:\[\])?)\s+' + re.escape(part) + r'\b', declarations))
+        if not types or not types <= {'byte', 'short', 'int', 'long', 'float', 'double', 'boolean'}:
+            return False
+        saw_identifier = True
+    return saw_identifier

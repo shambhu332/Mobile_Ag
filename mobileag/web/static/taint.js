@@ -180,6 +180,7 @@ public class DiagnosticHandler {
 
       if (badge) badge.textContent = `${findings.length} Flow${findings.length === 1 ? '' : 's'}`;
       if (statSinks) statSinks.textContent = findings.length;
+      if (statConf) statConf.textContent = 'Not measured';
 
       if (findings.length === 0) {
         if(statConf)statConf.textContent='Not measured';
@@ -194,9 +195,8 @@ public class DiagnosticHandler {
         return;
       }
 
-      const hasCrit = findings.some(f => f.severity === 'CRITICAL');
-      const hasHigh = findings.some(f => f.severity === 'HIGH');
-      if (statSev) statSev.textContent = hasCrit ? 'CRITICAL' : (hasHigh ? 'HIGH' : 'MEDIUM');
+      const highest = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].find(s => findings.some(f => f.severity === s));
+      if (statSev) statSev.textContent = highest || 'NOT ASSESSED';
 
       container.innerHTML = findings.map((f, idx) => {
         const sevColor = f.severity === 'CRITICAL' ? 'bg-red-950/80 text-red-300 border-red-800' :
@@ -216,8 +216,8 @@ public class DiagnosticHandler {
                 <p class="text-[11px] text-slate-400 font-sans mt-1 leading-relaxed">${escapeHtml(f.description.split('\\n\\n')[0] || f.description)}</p>
               </div>
               <div class="text-right shrink-0">
-                <div class="text-[10px] text-slate-400">CVSS v3.1</div>
-                <div class="text-sm font-bold text-red-400">${f.cvss_score ? f.cvss_score.toFixed(1) : '8.8'}</div>
+                <div class="text-[10px] text-slate-400">Reported CVSS</div>
+                <div class="text-sm font-bold text-red-400">${Number.isFinite(f.cvss_score) && f.cvss_score > 0 && f.cvss_score <= 10 ? f.cvss_score.toFixed(1) : 'Not assessed'}</div>
               </div>
             </div>
 

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic source flow candidates, not demonstrated WebView exploits. Public regression fixtures, not blind holdout.",
+  "cases": [
+    {
+      "id": "java_webview_candidate",
+      "family": "webview_external_url",
+      "variant": "candidate",
+      "language": "java",
+      "source": "class Route {\n void open(Intent input, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(address);\n  view.loadUrl(\"https://fixed.example/\");\n }\n}",
+      "expected": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 4
+        }
+      ]
+    },
+    {
+      "id": "java_webview_patched",
+      "family": "webview_external_url",
+      "variant": "patched",
+      "language": "java",
+      "source": "class Route {\n void open(Intent input, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(\"https://fixed.example/\");\n  view.loadUrl(\"https://fixed.example/\");\n }\n}",
+      "expected": []
+    },
+    {
+      "id": "java_webview_safe_lookalike",
+      "family": "webview_external_url",
+      "variant": "safe_lookalike",
+      "language": "java",
+      "source": "class Route {\n void open(FakeIntent input, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(address);\n  view.loadUrl(\"https://fixed.example/\");\n }\n}",
+      "expected": []
+    },
+    {
+      "id": "kotlin_webview_candidate",
+      "family": "webview_external_url",
+      "variant": "candidate",
+      "language": "kotlin",
+      "source": "class Route {\n fun open(input: Intent, view: WebView) {\n  val address = input.dataString\n  view.loadUrl(address)\n  view.loadUrl(\"https://fixed.example/\")\n }\n}",
+      "expected": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 4
+        }
+      ]
+    },
+    {
+      "id": "kotlin_webview_patched",
+      "family": "webview_external_url",
+      "variant": "patched",
+      "language": "kotlin",
+      "source": "class Route {\n fun open(input: Intent, view: WebView) {\n  val address = input.dataString\n  view.loadUrl(\"https://fixed.example/\")\n  view.loadUrl(\"https://fixed.example/\")\n }\n}",
+      "expected": []
+    },
+    {
+      "id": "kotlin_webview_safe_lookalike",
+      "family": "webview_external_url",
+      "variant": "safe_lookalike",
+      "language": "kotlin",
+      "source": "class Route {\n fun open(input: FakeIntent, view: WebView) {\n  val address = input.dataString\n  view.loadUrl(address)\n  view.loadUrl(\"https://fixed.example/\")\n }\n}",
+      "expected": []
+    }
+  ]
+}

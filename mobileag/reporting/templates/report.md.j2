@@ -43,6 +43,12 @@ The security analysis identified **{{ stats.total }}** review items (not validat
 **Severity:** {{ finding.severity }} | **CVSS 3.1:** {{ finding.cvss_score }} | **Review priority (heuristic):** {{ finding.review_priority|default('Not measured') }}
 
 **Status:** {{ finding.status }}
+{% if finding.evidence_assessment is defined %}
+**Evidence basis:** {{ finding.evidence_assessment.basis }} (not independently verified).
+**Artifact binding:** {{ finding.evidence_assessment.artifact_binding }}.
+**Missing evidence:** {{ finding.evidence_assessment.missing_fields|join(', ') or 'No required fields missing; truth still requires review' }}.
+**Next investigation step:** {{ finding.investigation_plan.next_step }}. This suggestion does not authorize execution.
+{% endif %}
 **CWE:** {{ finding.cwe_id }}
 **Component:** `{{ finding.affected_component }}`
 {% if finding.file_path %}**Location:** `{{ finding.file_path }}`{% if finding.line_number %}:{{ finding.line_number }}{% endif %}{% endif %}

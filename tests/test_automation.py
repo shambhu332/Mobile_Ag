@@ -192,7 +192,7 @@ async def test_real_loopback_api_auth_redaction_rate_and_retest(setup,server):
     state['broken']=False
     after=await svc.create(request(captures=[capture],parent_run_id=before['id']),token)
     after=await batch(svc,after,token,approved_api_cases=[anonymous])
-    assert svc.get_report(after['id'])['regression'][0]['verification_status']=='Fixed'
+    assert svc.get_report(after['id'])['regression'][0]['verification_status']=='Assertion now passes'
     assert 'not proof' in svc.get_report(after['id'])['regression'][0]['boundary']
 
 @pytest.mark.asyncio

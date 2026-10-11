@@ -26,6 +26,7 @@ from typing import Any, Optional, Sequence
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.security.privacy import redact
+from mobileag.reporting.evidence_contract import prepare_finding
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,8 @@ class ProfessionalReportExporter:
                 normalised.append(f.to_dict())
             else:
                 normalised.append({"title": str(f)})
+
+        normalised = [prepare_finding(f) for f in normalised]
 
         # Filter out false positives / duplicates
         active = [
@@ -189,7 +192,7 @@ class ProfessionalReportExporter:
             "### CVSS Score Statistics\n",
             f"- **Maximum CVSS:** {max_cvss:.1f}",
             f"- **Average CVSS:** {avg_cvss:.1f}",
-            f"- **Total Unique Findings:** {len(findings)}",
+            f"- **Review items (not deduplicated root causes):** {len(findings)}",
             "",
             "### Top CWE Categories\n",
             "| CWE ID | Count |",
@@ -240,6 +243,8 @@ class ProfessionalReportExporter:
                 f"| **CVSS Score** | {cvss} |",
                 f"| **CVSS Vector** | `{cvss_vec}` |",
                 f"| **Status** | {status} |",
+                f"| **Evidence basis** | {f.get('evidence_assessment', {}).get('basis', 'not_proven')} |",
+                f"| **Artifact binding** | {f.get('evidence_assessment', {}).get('artifact_binding', 'not_verified')} |",
                 f"| **Detection** | {detection} |",
                 f"| **Component** | `{component}` |",
             ])

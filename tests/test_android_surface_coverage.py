@@ -121,9 +121,14 @@ def test_reports_include_category_coverage():
 
 def test_report_separates_unverified_candidates_from_analyst_attested_confirmations():
     state=create_initial_state('synthetic','unused')
+    from mobileag.reporting.validation import bind_confirmation
+    from tests.proof_fixtures import confirmation_evidence
+    binding={'artifact_sha256':'a'*64,'package_name':'org.example.synthetic','version':'1.0'}
+    state.update(binding)
+    proof=bind_confirmation(confirmation_evidence(),binding)
     state['filtered_findings']=[
         {'id':'u','status':'UNVERIFIED','severity':'HIGH','cvss_score':0},
-        {'id':'c','status':'CONFIRMED','severity':'INFO','cvss_score':0},
+        {'id':'c','status':'CONFIRMED','severity':'INFO','cvss_score':0,'validation_evidence':proof},
     ]
     data=ReportEngine()._prepare_data(state)
     assert data['stats']['total']==2

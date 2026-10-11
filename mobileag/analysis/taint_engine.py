@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mobileag.analysis.android_surface import mask_non_code, method_spans
-from mobileag.analysis.source_syntax import call_sites
+from mobileag.analysis.source_syntax import call_sites, numeric_sql_concatenation
 from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
@@ -1070,6 +1070,9 @@ class TaintEngine:
                         # launch request codes and WebView header maps are not the
                         # launched Intent/loaded URL value.
                         relevant = call.code_args[:1] if sink["type"] in {"SQLI", "INTENT_REDIRECTION", "WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT", "UNSAFE_REFLECTION"} else call.code_args
+                        if (file_path.lower().endswith(".java") and sink["type"] == "SQLI"
+                                and call.args and numeric_sql_concatenation(call.args[0], content)):
+                            continue
                         context = " ".join(relevant)
                         direct_value_context = _mask_call_inputs(context)
                         trace = next((t for v, t in visible.items()
@@ -1202,6 +1205,13 @@ class TaintEngine:
                             remediation=sink["remediation"],
                             metadata={"proof_state": "not_proven", "analysis_kind": "bounded_lexical_flow",
                                       "source_kind": trace.source_type if trace else "inline_input_source",
+                                      "source_sink_trace": {
+                                          "source": {"kind": trace.source_type if trace else "inline_input_source",
+                                                     "line": trace.source_line if trace else line_idx},
+                                          "sink": {"operation": sink["type"], "line": line_idx},
+                                          "propagation_steps": trace.propagation_steps if trace else [],
+                                          "guards": "not_resolved", "runtime_verified": False,
+                                      },
                                       "source_control_status": "app_persisted_value_origin_not_established" if stored_preference else "modeled_source_not_reachability_proof",
                                       "source_reachability": "callback_signature_only" if trace and trace.source_type == "ANDROID_CALLBACK_INTENT_PARAMETER" else "not_established",
                                       "control_flow": "not_implemented",
@@ -1263,6 +1273,13 @@ class TaintEngine:
                                 status=FindingStatus.UNVERIFIED, remediation=sink["remediation"],
                                 metadata={"proof_state": "not_proven", "analysis_kind": "bounded_lexical_flow",
                                           "source_kind": trace.source_type,
+                                          "source_sink_trace": {
+                                              "source": {"kind": trace.source_type, "line": trace.source_line},
+                                              "sink": {"operation": sink["type"], "line": None},
+                                              "helper_call": {"name": helper, "line": line_idx},
+                                              "propagation_steps": trace.propagation_steps,
+                                              "guards": "not_resolved", "runtime_verified": False,
+                                          },
                                           "source_control_status": "app_persisted_value_origin_not_established" if stored_preference else "modeled_source_not_reachability_proof",
                                           "source_reachability": "callback_signature_only" if trace.source_type == "ANDROID_CALLBACK_INTENT_PARAMETER" else "not_established",
                                           "control_flow": "not_implemented",

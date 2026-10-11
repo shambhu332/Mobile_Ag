@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.analysis.source_syntax import numeric_sql_concatenation
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,11 @@ class JavaAstTaintAnalyzer:
                 remediation=remediation[cwe],
                 metadata={"proof_state": "not_proven", "analysis_kind": "java_ast_local_flow",
                           "source_kind": trace.kind,
+                          "source_sink_trace": {
+                              "source": {"kind": trace.kind, "line": trace.line},
+                              "sink": {"operation": sink_name, "line": line},
+                              "guards": "not_resolved", "runtime_verified": False,
+                          },
                           "source_control_status": "app_persisted_value_origin_not_established" if stored_preference else "modeled_source_not_reachability_proof",
                           "source_reachability": "callback_signature_only" if trace.kind == "ANDROID_CALLBACK_INTENT_PARAMETER" else "not_established",
                           "control_flow": "path_insensitive",
@@ -416,6 +422,8 @@ class JavaAstTaintAnalyzer:
                             return
                     args = args_of(node)
                     relevant = args[:1] if name in {"loadUrl", "evaluateJavascript", "postUrl", "rawQuery", "execSQL", "startActivity", "startActivityForResult", "startService", "startForegroundService", "sendBroadcast", "sendOrderedBroadcast", "exec", "forName", "loadClass", "getMethod", "getDeclaredMethod"} else args
+                    if name in {"rawQuery", "execSQL"} and args and numeric_sql_concatenation(text(args[0]), content):
+                        return
                     trace = next((candidate for arg in relevant if (candidate := trace_for(arg, env, uri_names, intent_names, clipboard_names))), None)
                     if trace:
                         emit(node, trace, name)

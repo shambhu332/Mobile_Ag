@@ -48,11 +48,12 @@ class SARIFExporter:
 
         for f in findings:
             data = f.model_dump(mode='json') if isinstance(f, Finding) else f
+            from mobileag.reporting.evidence_contract import prepare_finding
+            data = prepare_finding(data)
             status = data.get('status', 'UNVERIFIED')
             if status in {'FALSE_POSITIVE', 'DUPLICATE'}:
                 continue
-            validation = data.get('validation_evidence') or {}
-            proof_basis = 'analyst_attested' if status == 'CONFIRMED' and validation.get('active') and validation.get('basis') == 'analyst_attested' else 'not_proven'
+            proof_basis = data['evidence_assessment']['basis']
             # Handle both Finding objects and raw dicts
             if isinstance(f, Finding):
                 f_id = f.cwe_id or f.id
@@ -130,6 +131,8 @@ class SARIFExporter:
                     "masvs": f_masvs,
                     "status": status,
                     "proof_basis": proof_basis,
+                    "evidence_assessment": data["evidence_assessment"],
+                    "investigation_plan": data["investigation_plan"],
                 },
             }
             results.append(result_item)

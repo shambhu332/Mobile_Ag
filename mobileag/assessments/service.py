@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime,timezone
 from mobileag.assessments.store import AssessmentStore
+from mobileag.reporting.coverage import guided_coverage
 from mobileag.web.policy import validate_policy,check_action,check_replay
 from mobileag.web.security import check_device,configured_list
 from mobileag.automation.android import digest
@@ -71,11 +72,15 @@ class AssessmentService:
             'limitations':['SAST candidates are not confirmed vulnerabilities.','DAST maps in-package UI; taps require later exact action approval.','API tests are read-only operator-imported requests, not transparent capture.','AI receives aggregate counts only, never executes actions.']}
         # The UI explicitly approves replacing global scope. Saved policy is also
         # used by every subsequent legacy operation; not a client-only allowlist.
+        doc['coverage_ledger']=guided_coverage(doc)
         self.store().save(doc);self.repository().save_policy(policy)
         self.tasks[doc['id']]=asyncio.create_task(self.run(doc,req,token,apk))
         return doc
     def persist(self,doc):
-        latest=self.store().get(doc['id']);doc['cancel_requested']=latest.get('cancel_requested',False);self.store().save(doc)
+        latest=self.store().get(doc['id'])
+        doc['cancel_requested']=latest.get('cancel_requested',False)
+        doc['coverage_ledger']=guided_coverage(doc)
+        self.store().save(doc)
     async def run(self,doc,req,token,apk):
         try:
             async with asyncio.timeout(480):
@@ -86,7 +91,8 @@ class AssessmentService:
                 async def linked(sid):doc['scan_id']=sid;self.persist(doc)
                 scan=await self.static_runner(apk,linked)
                 self.guard(doc,token)
-                doc['stages']['sast'].update(status=scan['status'],scan_id=scan['scan_id'])
+                doc['stages']['sast'].update(status=scan['status'],scan_id=scan['scan_id'],
+                    assessment_coverage=scan.get('assessment_coverage','unknown'))
                 self.persist(doc)
                 if scan.get('package_name')!=req.package_name:raise PermissionError('Static package differs from explicitly approved package')
                 if scan['status']!='completed':raise ValueError('Static analysis incomplete; live stages not started')
@@ -123,7 +129,8 @@ class AssessmentService:
                     auto=await self.automation().create(CreateRun(serial=req.serial,package_name=req.package_name,component=req.component,
                         environment='dedicated_staging',dedicated_device_confirmed=True,dedicated_account_confirmed=True,max_steps=req.max_steps,max_requests=0),token)
                     doc['automation_run_id']=auto['id'];screens=len(auto['screens'])
-                    doc['stages']['dast'].update(status='awaiting_action_review' if screens else 'paused',screens=screens,run_id=auto['id']);self.persist(doc)
+                    doc['stages']['dast'].update(status='awaiting_action_review' if screens else 'paused',screens=screens,run_id=auto['id'],
+                        device_metadata=auto.get('device_metadata',{}),authentication_state=auto.get('auth_state','unknown'));self.persist(doc)
                 if req.llm_provider:
                     self.guard(doc,token);doc['stages']['llm']['status']='running';self.persist(doc)
                     try:
@@ -165,10 +172,36 @@ class AssessmentService:
         from mobileag.automation.engine import AutomationService
         helper=AutomationService(self.output,lambda:policy,self.session_valid,lambda *a:None)
         return helper.captures({'captures':[],'tests':[],'steps':[],'correlations':[]},req.captures)
+    def record_authorization_pair(self,rid,pair,token):
+        from mobileag.analysis.authorization_pair import compare_authorization_pair
+        doc=self.store().get(rid)
+        self.guard(doc,token)
+        if rid in self.tasks or doc['status']=='running':
+            raise ValueError('Wait for assessment stages to finish before importing evidence')
+        if pair.artifact_sha256 != doc['artifact_sha256']:
+            raise ValueError('Evidence artifact differs from this assessment')
+        captures=doc['stages'].get('api',{}).get('inventory',[])
+        capture=next((c for c in captures if c.get('id')==pair.capture_id),None)
+        if (not capture or not capture.get('protected') or capture.get('origin') not in doc['scope']['origins']
+                or capture.get('method') not in doc['scope']['methods']
+                or doc['stages']['api']['status']=='not_selected'):
+            raise PermissionError('Pair must reference an approved protected API capture')
+        rows=doc.setdefault('authorization_comparisons',[])
+        if len(rows)>=20:
+            raise ValueError('Authorization evidence budget exhausted')
+        evidence_ids={ref for row in rows for ref in row['evidence_refs']}
+        result=compare_authorization_pair(pair)
+        if evidence_ids.intersection(result['evidence_refs']):
+            raise ValueError('Evidence IDs already recorded; use a new capture set')
+        rows.append(result)
+        self.persist(doc)
+        return result
+
     def report(self,rid):
         doc=self.store().get(rid)
         if doc.get('automation_run_id'):
             doc['latest_navigation_report']=self.automation().get_report(doc['automation_run_id'])
+        doc['coverage_ledger']=guided_coverage(doc)
         return doc
     def cancel(self,rid):
         doc=self.store().get(rid)

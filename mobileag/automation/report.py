@@ -11,15 +11,29 @@ def layout_svg(snapshot):
         parts.append(f'<rect x="{x}" y="{y}" width="{x2-x}" height="{y2-y}" fill="none" stroke="#334155"/><text x="{x+2}" y="{y+14}" font-size="12" fill="#111">{i}: {html.escape(e["class"])}</text>')
     return ''.join(parts)+'</svg>'
 
-def regression(before,after):
-    previous={r['test_id']:r for r in before['results']}
-    current={r['test_id']:r for r in after['results']}
-    return [{'test_id':tid,'before':old['result'],'after':current.get(tid,{}).get('result','not_executed'),
-        'verification_status':('Unable to verify' if tid not in current or not current[tid].get('executed') or current[tid]['result']=='inconclusive'
-            else 'Fixed' if old['result']=='failed' and current[tid]['result']=='passed'
-            else 'Not fixed' if current[tid]['result']=='failed' else 'Unchanged'),
-        'boundary':'Test assertion comparison, not proof a security root cause was fixed'}
-        for tid,old in previous.items()]
+def regression(before, after):
+    """Compare assertions only. Missing observations cannot establish a fix."""
+    previous = {r['test_id']: r for r in before['results']}
+    current = {r['test_id']: r for r in after['results']}
+    changed_context = [key for key in ('package_name', 'environment', 'auth_state')
+                       if before.get(key) != after.get(key)]
+    rows = []
+    for tid, old in previous.items():
+        new = current.get(tid, {})
+        comparable = (not changed_context and old.get('executed') is True
+                      and new.get('executed') is True
+                      and old.get('assertion') == new.get('assertion')
+                      and old.get('result') in {'failed', 'passed'}
+                      and new.get('result') in {'failed', 'passed'})
+        status = ('Unable to verify' if not comparable else
+                  'Assertion now passes' if old['result'] == 'failed' and new['result'] == 'passed' else
+                  'Assertion fails' if new['result'] == 'failed' else 'Assertion unchanged')
+        rows.append({'test_id': tid, 'before': old['result'],
+                     'after': new.get('result', 'not_executed'),
+                     'verification_status': status, 'context_changes': changed_context,
+                     'root_cause_fix_status': 'not_verified',
+                     'boundary': 'Test assertion comparison, not proof a security root cause was fixed'})
+    return rows
 
 def report(doc,parent=None):
     results={r['test_id']:r for r in doc['results']}

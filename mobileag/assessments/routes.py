@@ -1,5 +1,6 @@
 from fastapi import APIRouter,HTTPException,Request
 from mobileag.assessments.models import Assessment
+from mobileag.analysis.authorization_pair import AuthorizationPair
 from mobileag.automation.routes import PrivateValidationRoute
 from mobileag.llm.broker import catalog
 
@@ -17,6 +18,12 @@ def build_router(service,token):
     @router.get('/{rid}')
     async def get(rid:str):
         try:return service().report(rid)
+        except KeyError:raise HTTPException(404,'Assessment not found')
+    @router.post('/{rid}/authorization-evidence')
+    async def authorization_evidence(rid:str,req:AuthorizationPair,request:Request):
+        try:return service().record_authorization_pair(rid,req,token(request))
+        except PermissionError:raise HTTPException(403,'Evidence outside current assessment scope')
+        except ValueError:raise HTTPException(422,'Invalid, duplicate or over-budget paired evidence')
         except KeyError:raise HTTPException(404,'Assessment not found')
     @router.post('/{rid}/cancel')
     async def cancel(rid:str):

@@ -10,6 +10,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 from mobileag.core.state import ScanState
 from mobileag.reporting.finding import Severity, FindingStatus
+from mobileag.reporting.evidence_contract import prepare_finding
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,15 @@ class ReportEngine:
             if f.get("status") not in {FindingStatus.FALSE_POSITIVE.value, FindingStatus.DUPLICATE.value}
         ]
         
+        # Export gate also covers raw dictionaries that bypassed API triage.
+        provenance = state.get("artifact_provenance", {})
+        artifact = {
+            "artifact_sha256": provenance.get("sha256") or state.get("artifact_sha256"),
+            "package_name": state.get("package_name"),
+            "app_version": state.get("manifest_data", {}).get("version_name") or state.get("version"),
+        }
+        findings = [prepare_finding(f, artifact) for f in findings]
+
         # Sort by severity
         severity_order = {
             Severity.CRITICAL.value: 0,
@@ -99,9 +109,6 @@ class ReportEngine:
 
         # Pipeline completion and assessment coverage are different claims.
         # A finished job may still have skipped, failed, or budget-limited engines.
-        incomplete_markers = {"partial", "incomplete", "error", "unavailable", "unsupported",
-                              "fallback_lexical", "skipped", "skipped_offline", "skipped_disabled",
-                              "not_analyzed", "not_started"}
         coverage_gaps: list[str] = []
         static_status_count = 0
         non_exhaustive_paths: list[str] = []
@@ -112,9 +119,9 @@ class ReportEngine:
             if isinstance(value, dict):
                 for key, child in value.items():
                     child_path = f"{path}.{key}"
-                    if key == "static_status" and isinstance(child, str):
+                    if key == "static_status":
                         static_status_count += 1
-                        if child in incomplete_markers:
+                        if not isinstance(child, str) or child not in {"completed", "analyzed", "not_applicable"}:
                             coverage_gaps.append(f"{child_path}={child}")
                     elif key == "exhaustive" and child is False:
                         non_exhaustive_paths.append(path)
@@ -130,6 +137,8 @@ class ReportEngine:
 
         coverage = state.get("coverage", {})
         inspect_coverage(coverage)
+        if state.get("errors"):
+            coverage_gaps.append("scan.errors_present")
         
         return {
             "scan_id": state["scan_id"],

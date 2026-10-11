@@ -19,6 +19,8 @@ def _evaluate_backend(corpus: dict, *, use_ast: bool | None) -> dict:
     unexpected_fn = 0
     per_case = []
     by_cwe: dict[str, dict[str, int]] = {}
+    by_language: dict[str, dict[str, int]] = {}
+    fixture_coverage: dict[str, dict[str, int]] = {}
     engine = TaintEngine()
     if use_ast is False:
         # Exercise the supported lexical fallback even when the optional parser
@@ -27,6 +29,10 @@ def _evaluate_backend(corpus: dict, *, use_ast: bool | None) -> dict:
     backend = ("java_ast_plus_lexical" if engine._java_ast.available
                else "lexical_fallback")
     for case in corpus["cases"]:
+        language = case.get("language", "unknown")
+        fixture = fixture_coverage.setdefault(language, {"cases": 0, "positive_cases": 0, "negative_cases": 0})
+        fixture["cases"] += 1
+        fixture["positive_cases" if case["expected_cwes"] else "negative_cases"] += 1
         expected = set(case["expected_cwes"])
         observed = {finding.cwe_id for finding in engine.analyze_source_content(
             case["source"], f"benchmark/{case['id']}.{case['language']}")}
@@ -39,6 +45,10 @@ def _evaluate_backend(corpus: dict, *, use_ast: bool | None) -> dict:
             counts["tp"] += int(cwe in expected and cwe in observed)
             counts["fp"] += int(cwe not in expected and cwe in observed)
             counts["fn"] += int(cwe in expected and cwe not in observed)
+        language_counts = by_language.setdefault(language, {"tp": 0, "fp": 0, "fn": 0})
+        language_counts["tp"] += case_tp
+        language_counts["fp"] += case_fp
+        language_counts["fn"] += case_fn
         tp += case_tp
         fp += case_fp
         fn += case_fn
@@ -66,6 +76,15 @@ def _evaluate_backend(corpus: dict, *, use_ast: bool | None) -> dict:
         "precision": tp / (tp + fp) if tp + fp else None,
         "recall": tp / (tp + fn) if tp + fn else None,
         "by_cwe": cwe_metrics,
+        "by_language": {
+            language: {**counts,
+                       "precision": counts["tp"] / (counts["tp"] + counts["fp"])
+                       if counts["tp"] + counts["fp"] else None,
+                       "recall": counts["tp"] / (counts["tp"] + counts["fn"])
+                       if counts["tp"] + counts["fn"] else None}
+            for language, counts in sorted(by_language.items())
+        },
+        "fixture_coverage_by_language": fixture_coverage,
         "cases": per_case,
     }
 

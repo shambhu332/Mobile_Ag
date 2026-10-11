@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "description": "Initial held-out synthetic cases for source-to-sink candidate behavior; distinct from the detector smoke corpus. Not a whole-APK accuracy estimate.",
+  "cases": [
+    {"id":"java_data_string_to_webview","language":"java","expected_cwes":["CWE-829"],"source":"class Route { void open(Intent incoming, WebView view) { String address = incoming.getDataString(); view.loadUrl(address); } }"},
+    {"id":"java_float_extra_to_sql_concat","language":"java","expected_cwes":["CWE-89"],"source":"class Query { void run(Intent input, SQLiteDatabase db) { float amount = input.getFloatExtra(\"amount\", 0f); db.rawQuery(\"select * from payment where amount > \" + amount, null); } }"},
+    {"id":"java_new_file_two_arg_path","language":"java","expected_cwes":["CWE-22"],"source":"class Store { void open(Intent input, File root) { String name = input.getStringExtra(\"name\"); File destination = new File(root, name); } }"},
+    {"id":"java_tainted_intent_forwarding_callback","language":"java","expected_cwes":["CWE-927"],"source":"class Relay { void onNewIntent(Intent incoming) { Intent forwarded = incoming; startActivity(forwarded); } }"},
+    {"id":"kotlin_data_string_to_webview","language":"kotlin","expected_cwes":["CWE-829"],"source":"class Route { fun open(input: Intent?, view: WebView) { val address = input?.dataString; view.loadUrl(address) } }"},
+    {"id":"java_fixed_url_negative","language":"java","expected_cwes":[],"source":"class Route { void open(WebView view) { String address = \"https://fixed.example/\"; view.loadUrl(address); } }"},
+    {"id":"kotlin_custom_intent_lookalike_negative","language":"kotlin","expected_cwes":[],"source":"class Route { fun open(input: FakeIntent, view: WebView) { val address = input.getStringExtra(\"url\"); view.loadUrl(address) } }"},
+    {"id":"java_tainted_then_constant_reassignment_negative","language":"java","expected_cwes":[],"source":"class Route { void open(Intent input, WebView view) { String address = input.getStringExtra(\"url\"); address = \"https://fixed.example/\"; view.loadUrl(address); } }"},
+    {"id":"kotlin_fixed_file_name_negative","language":"kotlin","expected_cwes":[],"source":"class Store { fun open() { val destination = File(\"fixed-name\") } }"},
+    {"id":"java_bound_sql_args_negative","language":"java","expected_cwes":[],"source":"class Query { void run(Intent input, SQLiteDatabase db) { String value = input.getStringExtra(\"value\"); db.rawQuery(\"select * from record where value=?\", new String[]{value}); } }"}
+  ]
+}

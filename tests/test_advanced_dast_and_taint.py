@@ -926,3 +926,11 @@ def test_inferred_kotlin_intent_alias_and_exact_java_intent_type():
         view.loadUrl(address);
     } }'''
     assert 'CWE-829' not in {finding.cwe_id for finding in engine.analyze_source_content(lookalike, 'Route.java')}
+
+    reassigned = '''class Route { fun open(input: Intent, fake: FakeIntent, view: WebView) {
+        var forwarded = input
+        forwarded = fake
+        val address = forwarded.getStringExtra("url")
+        view.loadUrl(address)
+    } }'''
+    assert 'CWE-829' not in {finding.cwe_id for finding in engine.analyze_source_content(reassigned, 'Route.kt')}

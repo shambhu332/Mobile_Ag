@@ -870,7 +870,7 @@ class TaintEngine:
             # identifier assignments within this method; do not infer arbitrary
             # expressions, fields, or custom lookalike classes as Android Intents.
             alias_assignment = re.compile(
-                r"\b(?:val|var)\s+(?P<lhs>[A-Za-z_$][\w$]*)\s*=\s*(?P<rhs>[A-Za-z_$][\w$]*)\b|"
+                r"\bval\s+(?P<lhs>[A-Za-z_$][\w$]*)\s*=\s*(?P<rhs>[A-Za-z_$][\w$]*)\b|"
                 r"(?P<lhs2>[A-Za-z_$][\w$]*)\s*=\s*(?P<rhs2>[A-Za-z_$][\w$]*)\s*;")
             changed = True
             while changed:

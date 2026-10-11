@@ -209,11 +209,16 @@ class Orchestrator:
                 "android_surface": AndroidSurfaceAnalyzer().scan(None,{} )["coverage"],
             })
             state["package_name"] = extraction.get("package_name", "")
+            state["artifact_provenance"] = extraction.get("artifact_provenance", {})
 
             # Parse manifest
             manifest_path = extraction.get("manifest_path", "")
             if manifest_path:
                 state["manifest_data"] = self._manifest_parser.parse(manifest_path)
+                state["artifact_provenance"].setdefault("app", {}).update({
+                    key: state["manifest_data"].get(key)
+                    for key in ("version_name", "version_code", "min_sdk", "target_sdk")
+                })
                 # Extract components and deep links from manifest
                 state["components"] = state["manifest_data"].get("components", [])
                 state["deep_links"] = state["manifest_data"].get("deep_links", [])

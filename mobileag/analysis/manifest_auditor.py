@@ -88,6 +88,27 @@ class ManifestAuditor:
             name = comp.get("name", "UnknownComponent")
             comp_type = comp.get("type", "component").capitalize()
 
+            # Android 12+ rejects target-31+ APK components with intent filters
+            # that omit android:exported. This is a build/installability lead,
+            # not a claim of external reachability or vulnerability.
+            target_sdk = str(manifest_data.get("target_sdk", ""))
+            if (exported is None and not comp.get("exported_explicit")
+                    and comp.get("intent_filters") and target_sdk.isdecimal()
+                    and int(target_sdk) >= 31):
+                findings.append(Finding(
+                    title=f"Missing android:exported on {comp_type}: {name}",
+                    description=(f"Target SDK {target_sdk} and an intent filter are present, but the component omits "
+                                 "android:exported. Android 12+ requires this value for target-31+ apps; the APK may "
+                                 "fail installation rather than expose this component. Confirm the merged release manifest."),
+                    severity=Severity.INFO, cwe_id="CWE-Unknown", cvss_score=0.0,
+                    affected_component=name, detection_method="ManifestAuditor",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Set android:exported explicitly to the intended value in the merged release manifest.",
+                    file_path="AndroidManifest.xml",
+                    metadata={"analysis_kind": "manifest_installability", "proof_state": "not_proven",
+                              "target_sdk": target_sdk},
+                ))
+
             if exported and not permission:
                 # Exposure is an attack-surface observation, not proof of a
                 # missing authorization check. Launcher/public components may

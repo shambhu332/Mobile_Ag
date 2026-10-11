@@ -8,6 +8,13 @@
 |---|---|
 | Framework | {{ app_info.framework }} |
 | Obfuscation | {{ app_info.obfuscation_level }} |
+| App version | {{ app_info.version_name or 'not recorded' }} (code {{ app_info.version_code or 'not recorded' }}) |
+| Android SDK | min {{ app_info.min_sdk or 'not recorded' }}, target {{ app_info.target_sdk or 'not recorded' }} |
+{% if artifact_provenance and artifact_provenance.get('sha256') %}
+| APK SHA-256 | `{{ artifact_provenance.sha256 }}` |
+| Artifact size (bytes) | {{ artifact_provenance.get('size_bytes', 'unknown') }} |
+{% for tool_name, tool in artifact_provenance.get('tools', {}).items() %}| {{ tool_name }} version | {{ tool.get('version') or 'unavailable' }} |
+{% endfor %}{% endif %}
 
 ## 2. Executive Summary
 **Analysis coverage:** {{ assessment_coverage }} — {{ analysis_mode }}.

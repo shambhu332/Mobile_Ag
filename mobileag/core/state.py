@@ -13,6 +13,7 @@ class ScanState(TypedDict):
     # ── Scan Identity ──
     scan_id: str
     apk_path: str
+    artifact_provenance: dict[str, Any]
     package_name: str
     output_dir: str
 
@@ -61,6 +62,7 @@ def create_initial_state(
     return ScanState(
         scan_id=scan_id,
         apk_path=apk_path,
+        artifact_provenance={},
         package_name="",
         output_dir=output_dir,
         manifest_data={},

@@ -46,6 +46,10 @@ class SecretScanner:
             "Hardcoded IV": re.compile(r"IvParameterSpec\([^{]*\{[0-9,\s]+\}\)"),
             "Static Seed SecureRandom": re.compile(r"SecureRandom\(.*\.getBytes\(\)\)"),
         }
+        self._token_literal = re.compile(r"[\"']([A-Za-z0-9_+/=-]{24,})[\"']")
+        self._entropy_context = re.compile(
+            r"(?i)(?:secret|token|api[_-]?key|access[_-]?key|password|credential|private[_-]?key)"
+        )
 
     @staticmethod
     def _mask_secret(val: str) -> str:
@@ -65,14 +69,23 @@ class SecretScanner:
             entropy -= p_x * math.log(p_x, 2)
         return entropy
 
-    def _sync_scan_files(self, base_path: Path) -> tuple[list[dict], list[dict]]:
+    def _sync_scan_files(self, base_path: Path) -> tuple[list[dict], list[dict], list[dict]]:
         """Synchronously scan files on disk for secret and crypto matches."""
-        target_exts = {".java", ".kt", ".xml", ".json", ".properties"}
+        # Credentials are often shipped in packaged resources and cross-platform
+        # bundles, not only decompiled JVM source. The inventory remains size/
+        # entry bounded; React Native .bundle files use their dedicated scanner.
+        target_exts = {
+            ".java", ".kt", ".xml", ".json", ".properties", ".js", ".ts",
+            ".dart", ".plist", ".yaml", ".yml", ".toml", ".conf", ".cfg",
+            ".ini", ".gradle", ".kts",
+        }
         raw_secret_matches = []
         crypto_matches = []
+        entropy_matches = []
 
         inventory = SourceInventory()
-        for file_path, data in inventory.read(base_path, target_exts):
+        for file_path, data in inventory.read(base_path, target_exts,
+                                               suffixes=(".gradle.kts",)):
             try:
                 content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
@@ -96,6 +109,24 @@ class SecretScanner:
                             if len(raw_secret_matches) >= 1000:
                                 break
 
+                    # Catch unknown token formats conservatively. These are
+                    # inventory leads only (INFO/CWE-Unknown); never retain the
+                    # candidate literal in report evidence.
+                    known_spans = [match.span() for pattern in self.secret_patterns.values()
+                                   for match in pattern.finditer(line)]
+                    for match in self._token_literal.finditer(line):
+                        value = match.group(1)
+                        if (len(entropy_matches) < 1000
+                                and self.calculate_entropy(value) >= self.entropy_threshold
+                                and self._entropy_context.search(line[max(0, match.start() - 160):match.start(1)])
+                                and not any(match.start(1) < end and match.end(1) > start
+                                            for start, end in known_spans)):
+                            entropy_matches.append({"file_path": rel_path, "line_num": line_num,
+                                                    "stem": file_path.stem})
+                        if len(entropy_matches) >= 1000:
+                            inventory.coverage['limits_reached'] = True
+                            break
+
                     # Check crypto patterns
                     if len(crypto_matches) < 1000:
                         for name, pattern in self.crypto_patterns.items():
@@ -115,9 +146,11 @@ class SecretScanner:
                 continue
         self.coverage = dict(inventory.coverage)
         self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
-                             candidate_count=len(raw_secret_matches)+len(crypto_matches),
-                             limits={'secret_candidates':1000,'crypto_candidates':1000,**inventory.coverage['limits']})
-        return raw_secret_matches, crypto_matches
+                             candidate_count=len(raw_secret_matches)+len(crypto_matches)+len(entropy_matches),
+                             entropy_candidate_count=len(entropy_matches),
+                             limits={'secret_candidates':1000,'crypto_candidates':1000,
+                                     'entropy_candidates':1000,**inventory.coverage['limits']})
+        return raw_secret_matches, crypto_matches, entropy_matches
 
     async def scan(self, decompiled_path: str) -> list[Finding]:
         """Scan files for hardcoded secrets and weak cryptography."""
@@ -126,7 +159,7 @@ class SecretScanner:
         base_path = Path(decompiled_path)
         
         # Offload file I/O and regex iteration to worker thread
-        raw_secrets, crypto_matches = await asyncio.to_thread(self._sync_scan_files, base_path)
+        raw_secrets, crypto_matches, entropy_matches = await asyncio.to_thread(self._sync_scan_files, base_path)
 
         # Process crypto findings directly
         for item in crypto_matches:
@@ -145,6 +178,20 @@ class SecretScanner:
                 file_path=item["file_path"],
                 line_number=item["line_num"],
                 code_snippet=item["line"]
+            ))
+
+        for item in entropy_matches:
+            findings.append(Finding(
+                title="Review High-Entropy String Literal",
+                description=("A long quoted token-like string exceeds the configured Shannon-entropy threshold. "
+                             "This is an unknown-format secret review lead only; hashes, identifiers and public keys "
+                             "can also be high entropy. Value validity and secrecy are not established."),
+                severity=Severity.INFO, cwe_id="CWE-Unknown", cvss_score=0.0,
+                affected_component=item["stem"], detection_method="SecretScanner (entropy heuristic)",
+                status=FindingStatus.UNVERIFIED, remediation="Verify whether the value is a credential; rotate only if it is a valid exposed secret.",
+                file_path=item["file_path"], line_number=item["line_num"],
+                code_snippet="[REDACTED high-entropy candidate; inspect original source locally]",
+                metadata={"analysis_kind": "high_entropy_literal", "proof_state": "not_proven"},
             ))
 
         # Process and validate secrets with prompt sandboxing

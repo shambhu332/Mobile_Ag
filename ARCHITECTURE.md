@@ -1,7 +1,7 @@
 # MobileAg Architecture & Component Map
 
 ## Overview
-MobileAg is an enterprise mobile application security analysis framework combining static code analysis (SAST), dynamic application security testing (DAST) on live/rooted Android environments, multi-model LLM consensus auditing, and real-time AppSec dashboard visualization.
+MobileAg is an authorized mobile-app security workbench. Its default APK workflow is offline static analysis; device/API testing uses separate explicitly scoped actions and is not automatically implied by an APK scan. Static analyzers emit review candidates, not exploit confirmations. Optional LLM, reachability, sanitizer, and historical signals only annotate/rank candidates.
 
 ```mermaid
 flowchart TD
@@ -12,7 +12,7 @@ flowchart TD
         A --> E[Obfuscation Analyzer]
     end
 
-    subgraph Analysis ["2. Static Analysis Phase (SAST)"]
+    subgraph Analysis ["2. Static Review (bounded, offline by default)"]
         B & E --> F[Manifest Auditor]
         A --> G[Secret Scanner]
         A --> H[Code Reviewer & Keystore Audit]
@@ -21,30 +21,27 @@ flowchart TD
         A --> K[Dependency Scanner]
         A --> NSC[Network Security Config Auditor]
         A --> RN[React Native & Hermes Scanner]
+        A --> T[Taint Candidate Analysis]
+        A --> CG[Smali Call-Graph Heuristics]
     end
 
-    subgraph DAST ["3. Dynamic Testing Phase (DAST)"]
-        DEV[ADB Root Manager] --> FUZZ[Intent & Component Fuzzer]
+    subgraph DAST ["3. Separately scoped dynamic actions"]
+        DEV[Explicitly selected, approved device or origin] --> FUZZ[Intent & Component Review]
         DEV --> LOG[Logcat Sensitive Leak Auditor]
-        DEV --> PROXY[Traffic & MITM Auditor]
+        DEV --> PROXY[Bounded Traffic Capture / Review]
         DEV --> STORE[Sandbox Storage Forensics]
         DEV --> PROV[Dynamic Content Provider Auditor]
     end
 
-    subgraph Filtering ["4. Filtering & Consensus Phase"]
-        F & G & H & I & J & K & NSC & RN --> L[Reachability Filter]
-        L --> M[Sanitizer Filter]
-        M --> N[Consensus Filter - Multi-LLM Vote]
-        N --> O[Historical Match Filter - Qdrant]
-        O --> P[Heuristic Review-Priority Ranker]
+    subgraph Review ["4. Candidate review and evidence"]
+        F & G & H & I & J & K & NSC & RN & T & CG --> RAW[UNVERIFIED static candidates]
+        RAW --> P[Optional heuristic review-priority signals]
+        P --> HUMAN[Human validation / structured evidence]
     end
 
     subgraph Output ["5. Knowledge, Reporting & UI"]
-        P & FUZZ & STORE & PROV --> GRAPH[Neo4j Attack Surface Graph]
-        P & FUZZ & STORE & PROV --> S[Report Engine - Markdown/JSON]
-        P & FUZZ & STORE & PROV --> WEB[Enterprise Web Dashboard & Live WebSockets]
-        P --> Q[Frida Template Engine]
-        P --> R[PoC Guide Engine]
+        P & FUZZ & STORE & PROV --> REPORT[Coverage-aware Markdown/JSON/SARIF]
+        P & FUZZ & STORE & PROV --> WEB[Local Dashboard]
     end
 ```
 
@@ -132,8 +129,8 @@ Mobile_Ag/
 
 | Phase | Component | Responsibilities |
 |---|---|---|
-| **Phase 1** | Configuration & Router | Multi-provider routing (Gemini, GPT, Claude, DeepSeek, Grok), state initialization, CVSS 3.1 calculation. |
-| **Phase 2** | Ingestion & Analysis (SAST) | Decompilation, manifest auditing, hardcoded key scanning, code review, Keystore specifications, network security config, native binary protections (canaries/NX/PIE), dependency scanning. |
-| **Phase 3** | Dynamic Testing (DAST) | Rooted emulator/device interaction (`su -c`), component & intent boundary fuzzing with hybrid extra key binding, logcat sensitive leak audits, traffic caching/cleartext inspection, sandbox storage forensics (`/data/data/<pkg>`), and Content Provider exploitation checks. |
-| **Phase 4** | Candidate ranking & knowledge | Optional reachability/sanitizer/model/history signals rank review candidates; unavailable stages are recorded and candidates are not silently discarded. Ranking is not calibrated confidence or exploit proof. Neo4j/Qdrant are optional. |
-| **Phase 5** | Orchestration, UI & Output | Central orchestrator, version diffing (`v1` vs `v2`), Markdown/JSON report engine, interactive Web Security Dashboard with real-time WebSockets, and CLI interface. |
+| **Phase 1** | Ingestion & provenance | Archive validation, APK hash and bounded tool-version capture, APKTool/JADX extraction, manifest/build metadata, framework and obfuscation inventory. APK splits and failed/limited extraction must remain explicit coverage gaps. |
+| **Phase 2** | Static review | Bounded analyzers inspect decoded source, resources, manifest, native bytes and bundle/config artifacts. Findings are heuristic candidates; unsupported formats and incomplete parsing are coverage gaps. |
+| **Phase 3** | Candidate annotation | Optional reachability/sanitizer/model/history signals annotate and rank candidates; they do not prove or remove findings. Unavailable/skipped stages must be recorded. |
+| **Phase 4** | Explicit dynamic actions | ADB/device, API and traffic actions require exact authorization and selection. Root/shell output, instrumentation or a crash is not ordinary-app exploit proof. |
+| **Phase 5** | Evidence & reporting | Coverage-aware Markdown/JSON/SARIF, local dashboard, structured analyst evidence, version diff, and optional attack-surface knowledge integrations. Candidate severity labels remain provisional until validated. |

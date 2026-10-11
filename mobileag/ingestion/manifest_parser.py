@@ -58,10 +58,16 @@ class ManifestParser:
             task_affinity = self._get_attrib(elem, "taskAffinity")
             intent_filters = self._parse_intent_filters(elem)
             
-            # Default export logic if not explicitly set
+            # Default export logic is version-dependent. Apps targeting API 31+
+            # must explicitly set android:exported on components with intent
+            # filters; retain an unknown value rather than report an effective
+            # exported surface for an APK that cannot be installed as declared.
             if not exported:
                 if tag == "provider":
                     exported_bool = int(target_sdk) < 17 if target_sdk.isdecimal() else None
+                elif (intent_filters and target_sdk.isdecimal()
+                      and int(target_sdk) >= 31):
+                    exported_bool = None
                 else:
                     exported_bool = bool(intent_filters)
             else:

@@ -87,3 +87,23 @@ def test_android_sdk_defaults_and_inherited_permissions(tmp_path, target, export
     assert parsed['providers'][0]['exported'] is exported
     assert parsed['providers'][0]['permission'] == 'org.example.GUARD'
     assert parsed['application']['usesCleartextTraffic'] is cleartext
+
+
+@pytest.mark.asyncio
+async def test_target_31_missing_exported_with_filter_is_not_reported_as_reachable(tmp_path):
+    from mobileag.analysis.manifest_auditor import ManifestAuditor
+
+    path = tmp_path / 'AndroidManifest.xml'
+    path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <uses-sdk android:targetSdkVersion="35"/><application>
+        <activity android:name=".MissingExported"><intent-filter>
+          <action android:name="org.example.ACTION"/>
+        </intent-filter></activity>
+      </application></manifest>''')
+    parsed = ManifestParser().parse(str(path))
+    component = parsed['components'][0]
+    assert component['exported'] is None
+    assert parsed['target_sdk'] == '35'
+    findings = await ManifestAuditor(None).audit(parsed, parsed['package_name'])
+    assert any('Missing android:exported' in finding.title for finding in findings)
+    assert not any('Review Exported' in finding.title for finding in findings)

@@ -60,11 +60,11 @@ python -m mobileag.cli ios --ipa owned.ipa --format markdown
 
 `--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Source/snippet cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. The dashboard has a separately consented aggregate-metadata-only review stage described below. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
 
-For Tree-sitter Java AST-assisted taint candidates, install the optional extra
-with `python -m pip install -e '.[test,java-ast]'`. Without it, taint review
-falls back to bounded lexical heuristics and coverage records the parser state.
-The AST pass is local/path-insensitive; it does not prove Android reachability or
-exploitability.
+Java Tree-sitter AST support is installed by the default package dependencies
+and used by taint review when parsing succeeds. Per-scan coverage records the
+available backend and parse fallbacks; Kotlin and unparsed Java still use bounded
+lexical heuristics. The AST pass remains bounded/local and does not prove Android
+reachability or exploitability.
 
 ### Authorized dynamic testing
 

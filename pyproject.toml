@@ -11,7 +11,6 @@ mobileag = ["data/*.json", "web/templates/*.html", "web/static/*.js", "web/stati
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "build"]
 frida = ["frida"]
-java-ast = ["tree-sitter>=0.24,<0.27", "tree-sitter-java>=0.23,<0.24"]
 
 [project]
 name = "mobileag"
@@ -43,6 +42,10 @@ dependencies = [
     "uvicorn[standard]",
     "python-multipart",
     "pyelftools",
+    # AST support is part of default taint review; do not silently make normal
+    # installations lexical-only.
+    "tree-sitter>=0.24,<0.27",
+    "tree-sitter-java>=0.23,<0.24",
 ]
 
 [project.scripts]

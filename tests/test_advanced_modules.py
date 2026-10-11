@@ -78,8 +78,24 @@ def test_react_native_scanner_secrets_and_routes(rn_scanner):
         assert "RN-URL-INTERNAL-STAGING/DEV-URL" in issue_ids
         assert "RN-URL-LOCALHOST-REFERENCE" in issue_ids
         assert "RN-PRIVILEGED-ROUTES-EXPOSED" in issue_ids
+        route_lead = next(f for f in findings if f["issue_id"] == "RN-PRIVILEGED-ROUTES-EXPOSED")
+        assert route_lead["cwe"] == "CWE-Unknown"
+        assert "does not establish" in route_lead["description"]
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+def test_react_native_entropy_lead_is_redacted_and_low_entropy_is_ignored():
+    scanner = ReactNativeScanner(entropy_threshold=4.5)
+    token = "aB3dE5gH7jK9mN2pQ4rS6tV8xY1zC0wL"
+    findings = scanner.scan_bundle_text(
+        f'const authToken="{token}"; const filler="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";',
+        "synthetic.bundle")
+
+    entropy = [item for item in findings if item["issue_id"] == "RN-HIGH-ENTROPY-LITERAL"]
+    assert len(entropy) == 1
+    assert entropy[0]["cwe"] == "CWE-Unknown"
+    assert token not in entropy[0]["code_snippet"]
 
 
 @pytest.mark.asyncio

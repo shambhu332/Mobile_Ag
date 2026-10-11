@@ -37,7 +37,8 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        for entry in entries:
+                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        for entry in ordered_entries:
                             if info['entries_examined'] >= self.max_entries:
                                 info['limits_reached'] = True
                                 return
@@ -78,7 +79,8 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        for entry in entries:
+                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        for entry in ordered_entries:
                             if info['entries_examined'] >= self.max_entries:
                                 info['limits_reached'] = True
                                 return

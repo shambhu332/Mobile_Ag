@@ -95,12 +95,14 @@ class ReactNativeScanner:
         findings: list[dict[str, Any]] = []
 
         # 1. Scan for secrets
+        known_secret_spans = []
         for name, pattern, cwe, sev in self.secret_rules:
             for match in pattern.finditer(content):
                 if len(findings) >= 1000:
                     break
                 val = match.group(0)
                 offset = match.start()
+                known_secret_spans.append(match.span())
                 snippet = "[REDACTED credential; inspect the bundle at the recorded offset]"
 
                 findings.append({
@@ -114,6 +116,29 @@ class ReactNativeScanner:
                     "code_snippet": snippet,
                     "remediation": "Move secrets to secure server-side infrastructure or fetch tokens at runtime via authenticated session."
                 })
+
+        # Conservative unknown-format token lead. Do not include the literal
+        # in evidence: minified bundles routinely contain hashes and IDs.
+        token_literal = re.compile(r"[\"']([A-Za-z0-9_+/=-]{24,})[\"']")
+        entropy_count = 0
+        for match in token_literal.finditer(content):
+            value_start, value_end = match.span(1)
+            context = content[max(0, match.start() - 160):match.start(1)]
+            if (entropy_count >= 200 or len(findings) >= 1000
+                    or any(value_start < end and value_end > start for start, end in known_secret_spans)
+                    or not re.search(r"(?i)(?:secret|token|api[_-]?key|access[_-]?key|password|credential|private[_-]?key)", context)
+                    or self.calculate_entropy(match.group(1)) < self.entropy_threshold):
+                continue
+            findings.append({
+                "issue_id": "RN-HIGH-ENTROPY-LITERAL",
+                "cwe": "CWE-Unknown", "severity": "Info",
+                "title": "Review High-Entropy String Literal in React Native Bundle",
+                "description": "A quoted token-like value exceeds the configured entropy threshold; hashes and public identifiers may also match. Validity/secrecy are not established.",
+                "file_path": file_path_str, "offset": value_start,
+                "code_snippet": "[REDACTED high-entropy candidate; inspect bundle locally]",
+                "remediation": "Verify whether this value is a credential; rotate only if it is valid and exposed.",
+            })
+            entropy_count += 1
 
         # 2. Scan for internal/staging URLs
         for name, pattern, cwe, sev in self.url_rules:
@@ -150,10 +175,10 @@ class ReactNativeScanner:
             route_summary = ", ".join(priv_routes[:5])
             findings.append({
                 "issue_id": "RN-PRIVILEGED-ROUTES-EXPOSED",
-                "cwe": "CWE-285",
-                "severity": "Medium",
-                "title": f"Privileged API Routes Declared in Bundle: {route_summary}",
-                "description": f"Client bundle registers privileged or internal API routes: {route_summary}.",
+                "cwe": "CWE-Unknown",
+                "severity": "Info",
+                "title": f"Review Sensitive-Looking API Route Names: {route_summary}",
+                "description": f"Client bundle contains route strings with sensitive-looking names ({route_summary}). This does not establish server-side authorization behavior.",
                 "file_path": file_path_str,
                 "offset": 0,
                 "code_snippet": f"Routes: {route_summary}",

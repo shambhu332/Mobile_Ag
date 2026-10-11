@@ -80,6 +80,43 @@ async def test_secret_scanner(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_secret_scanner_includes_packaged_xml_and_javascript_resources(mock_router):
+    scanner = SecretScanner(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "strings.xml").write_text(
+            '<resources><string name="key">AKIA1234567890ABCDEF</string></resources>',
+            encoding="utf-8")
+        (root / "config.js").write_text(
+            'const apiKey = "AIzaSyD-1234567890123456789012345678901";',
+            encoding="utf-8")
+
+        findings = await scanner.scan(tmpdir)
+
+    paths = {finding.file_path for finding in findings if finding.cwe_id == "CWE-798"}
+    assert paths == {"strings.xml", "config.js"}
+    assert all("AKIA1234567890ABCDEF" not in finding.code_snippet for finding in findings)
+
+
+@pytest.mark.asyncio
+async def test_entropy_secret_lead_is_redacted_and_low_entropy_control_is_ignored(mock_router):
+    scanner = SecretScanner(mock_router, entropy_threshold=4.5)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source = Path(tmpdir, "settings.properties")
+        source.write_text(
+            'authToken="aB3dE5gH7jK9mN2pQ4rS6tV8xY1zC0wL"\n'
+            'constant="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n', encoding="utf-8")
+
+        findings = await scanner.scan(tmpdir)
+
+    entropy = [finding for finding in findings if "entropy heuristic" in finding.detection_method]
+    assert len(entropy) == 1
+    assert entropy[0].cwe_id == "CWE-Unknown"
+    assert "aB3dE5gH7jK9mN2pQ4rS6tV8xY1zC0wL" not in entropy[0].code_snippet
+    assert scanner.coverage["entropy_candidate_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_code_reviewer(mock_router):
     """Verify CodeReviewer detects patterns and builds valid Finding instances."""
     reviewer = CodeReviewer(mock_router)
@@ -123,9 +160,23 @@ async def test_api_mapper(mock_router):
         assert endpoints[0]["url"] == "/api/v1/admin/users"
         assert endpoints[0]["requires_auth"] is None
         assert len(findings) == 1
-        assert findings[0].cwe_id == "CWE-285"
+        assert findings[0].cwe_id == "CWE-Unknown"
         assert findings[0].severity == Severity.INFO
         assert findings[0].cvss_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
+    mapper = APIMapper(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "Urls.java").write_text(
+            'String a = "https://developer.example.com/api";\n'
+            'String b = "https://dev-api.example.com/v1";\n', encoding="utf-8")
+        _endpoints, findings = await mapper.map_apis(tmpdir)
+
+    staging = [finding for finding in findings if "Staging/Dev" in finding.title]
+    assert len(staging) == 1
+    assert "dev-api.example.com" in staging[0].title
 
 
 @pytest.mark.asyncio

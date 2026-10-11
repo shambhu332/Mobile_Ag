@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
@@ -51,7 +52,7 @@ class APIMapper:
                     if "admin" in path.lower() or "privilege" in path.lower():
                         if len(raw_findings) < 500:
                             raw_findings.append({
-                            "type": "privileged_endpoint",
+                            "type": "sensitive_route_name",
                             "path": path,
                             "component": stem,
                             "file_path": rel_path
@@ -61,8 +62,13 @@ class APIMapper:
 
                 # Extract hardcoded URLs
                 for url in self.url_pattern.findall(content):
-                    lower_url = url.lower()
-                    if "dev" in lower_url or "staging" in lower_url or "test." in lower_url:
+                    hostname = (urlsplit(url).hostname or "").lower()
+                    host_labels = {part for part in re.split(r"[.-]+", hostname) if part}
+                    environment_labels = {
+                        "dev", "development", "stage", "staging", "test", "testing",
+                        "qa", "internal", "sandbox", "preprod",
+                    }
+                    if host_labels & environment_labels:
                         if len(raw_findings) < 500:
                             raw_findings.append({
                             "type": "staging_url",
@@ -72,7 +78,8 @@ class APIMapper:
                             })
                         else:
                             inventory.coverage['limits_reached'] = True
-                    elif lower_url.startswith("http://") and not lower_url.startswith("http://localhost") and not lower_url.startswith("http://127.0.0.1"):
+                    elif (urlsplit(url).scheme.lower() == "http"
+                          and hostname not in {"localhost", "127.0.0.1", "::1"}):
                         if len(raw_findings) < 500:
                             raw_findings.append({
                             "type": "cleartext_url",
@@ -101,13 +108,14 @@ class APIMapper:
         endpoints, raw_findings = await asyncio.to_thread(self._sync_map_apis, base_path)
 
         for item in raw_findings:
-            if item["type"] == "privileged_endpoint":
-                cwe = "CWE-285"
+            if item["type"] == "sensitive_route_name":
+                # A route name in a client does not demonstrate server-side
+                # authorization behavior; keep this as an inventory lead.
                 findings.append(Finding(
-                    title=f"Privileged Endpoint Referenced in Client Code: {item['path']}",
-                    description=f"Client source contains an endpoint path resembling a privileged route ('{item['path']}'). This lexical name does not prove server-side privilege or authorization failure; no request was sent.",
+                    title=f"Review Sensitive-Looking Endpoint Path: {item['path']}",
+                    description=f"Client source contains a path with a sensitive-looking name ('{item['path']}'). Names do not establish server-side privilege, authentication requirements or authorization failure; no request was sent.",
                     severity=Severity.INFO,
-                    cwe_id=cwe,
+                    cwe_id="CWE-Unknown",
                     cvss_score=0.0,
                     cvss_vector="",
                     affected_component=item["component"],

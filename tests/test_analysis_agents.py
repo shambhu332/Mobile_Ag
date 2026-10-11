@@ -180,6 +180,13 @@ async def test_manifest_auditor_fileprovider_and_permissions(mock_router):
                 "exported": True,
                 "meta_data": {"android.support.FILE_PROVIDER_PATHS": "@xml/file_paths"},
             }
+,
+            {
+                "name": "com.test.app.ExportedService",
+                "type": "service",
+                "exported": True,
+                "permission": "com.test.app.permission.READ_INTERNAL_DATA",
+            }
         ],
     }
 
@@ -266,3 +273,28 @@ async def test_network_security_config_auditor_async():
         cwes = {f.cwe_id for f in findings}
         assert "CWE-319" in cwes  # Cleartext
         assert "CWE-295" in cwes  # User trust anchor
+
+
+@pytest.mark.asyncio
+async def test_manifest_findings_require_effective_component_context(mock_router):
+    auditor = ManifestAuditor(mock_router)
+    weak_permission = "org.example.permission.ACCESS"
+    unused = {
+        "application": {},
+        "components": [{"name": "org.example.Provider", "type": "provider", "exported": True,
+                        "permission": "org.example.permission.SIGNATURE",
+                        "meta_data": {"android.support.FILE_PROVIDER_PATHS": "@xml/paths"}}],
+        "declared_permissions": [{"name": weak_permission, "protectionLevel": "normal"}],
+    }
+    findings = await auditor.audit(unused, "org.example")
+    assert not any(f.cwe_id in {"CWE-22", "CWE-276"} for f in findings)
+
+    used_weak = {
+        "application": {},
+        "components": [{"name": "org.example.ExportedService", "type": "service", "exported": True,
+                        "permission": weak_permission}],
+        "declared_permissions": [{"name": weak_permission, "protectionLevel": "normal"}],
+    }
+    findings = await auditor.audit(used_weak, "org.example")
+    weak = [f for f in findings if f.cwe_id == "CWE-276"]
+    assert len(weak) == 1 and weak[0].status == FindingStatus.UNVERIFIED

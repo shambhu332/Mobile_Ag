@@ -126,7 +126,7 @@ class ManifestAuditor:
 
             # FileProvider misconfiguration check
             if "FileProvider" in name or (comp.get("meta_data") and "android.support.FILE_PROVIDER_PATHS" in comp.get("meta_data", {})):
-                if exported:
+                if exported and not permission:
                     cwe = "CWE-22"
                     findings.append(Finding(
                         title=f"Exported FileProvider with Arbitrary File Access Risk: {name}",
@@ -142,18 +142,24 @@ class ManifestAuditor:
                         file_path="AndroidManifest.xml"
                     ))
 
-        # Check custom declared permissions for weak protectionLevel (CWE-276)
+        # A weak custom permission is relevant here only when an exported
+        # component actually uses it. An unused declaration alone protects
+        # nothing and is not a security finding.
         declared_perms = manifest_data.get("declared_permissions", [])
+        used_exported_permissions = {
+            comp.get("permission") for comp in components
+            if comp.get("exported") is True and comp.get("permission")
+        }
         for dperm in declared_perms:
             p_name = dperm.get("name", "")
             prot = (dperm.get("protectionLevel") or "").lower()
-            if prot in ("normal", "", "none"):
+            if p_name in used_exported_permissions and prot in ("normal", "", "none"):
                 cwe = "CWE-276"
                 findings.append(Finding(
-                    title=f"Insecure Custom Permission with Normal Protection Level: {p_name}",
+                    title=f"Exported Component Uses Normal-Protection Custom Permission: {p_name}",
                     description=(
-                        f"Custom permission '{p_name}' declares protectionLevel='{prot or 'normal'}'. "
-                        "A normal permission does not protect a sensitive component from ordinary installed apps, but impact depends on whether a sensitive component actually uses this permission."
+                        f"An exported component uses custom permission '{p_name}' with protectionLevel='{prot or 'normal'}'. "
+                        "Normal-level permissions are generally grantable to ordinary installed apps; verify the effective merged manifest, component sensitivity, and runtime authorization before assessing impact."
                     ),
                     severity=Severity.INFO,
                     cwe_id=cwe,

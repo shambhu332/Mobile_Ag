@@ -8,6 +8,7 @@ not APK-level or field precision/recall.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(os.environ.get("MOBILEAG_SOURCE_ROOT", ROOT)).resolve()))
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
+from mobileag.analysis.manifest_auditor import ManifestAuditor
 
 
 def evaluate(corpus: dict) -> dict:
@@ -70,6 +72,24 @@ def evaluate(corpus: dict) -> dict:
                 if total["tp"] + total["fn"] else None,
                 "by_cwe": rates(by_cwe), "by_language": rates(by_language), "cases": cases}
 
+    manifest_cases = []
+    manifest_total = {"tp": 0, "fp": 0, "fn": 0}
+    async def evaluate_manifest_cases():
+        auditor = ManifestAuditor(None)
+        for case in corpus["cases"]:
+            if "manifest_data" not in case:
+                continue
+            expected = set(case.get("expected_manifest_cwes", []))
+            findings = await auditor.audit(case["manifest_data"], case["manifest_data"].get("package_name", "synthetic"))
+            # Score only the two manifest rules under test; broad exported-
+            # component inventory is an attack-surface note, not this rule's label.
+            observed = {finding.cwe_id for finding in findings if finding.cwe_id in {"CWE-22", "CWE-276"}}
+            scores = {"tp": len(expected & observed), "fp": len(observed - expected), "fn": len(expected - observed)}
+            for key, count in scores.items():
+                manifest_total[key] += count
+            manifest_cases.append({"id": case["id"], "expected": sorted(expected), "observed": sorted(observed), **scores})
+    asyncio.run(evaluate_manifest_cases())
+
     android_cases = []
     android_total = {"tp": 0, "fp": 0, "fn": 0}
     android = AndroidSurfaceAnalyzer()
@@ -87,8 +107,13 @@ def evaluate(corpus: dict) -> dict:
     return {"benchmark": "synthetic_android_security_heldout", "schema_version": corpus["schema_version"],
             "scope_note": corpus["description"], "case_count": len(corpus["cases"]),
             "fixture_coverage_by_language": coverage,
-            "limitations": ["synthetic source snippets only", "CWE/case matching, not finding-instance matching",
+            "limitations": ["synthetic source and manifest fixtures only", "CWE/case matching, not finding-instance matching",
                             "no APK packaging, manifest reachability, runtime behavior, or exploitability measured"],
+            "manifest": {**manifest_total, "precision": manifest_total["tp"] / (manifest_total["tp"] + manifest_total["fp"])
+                         if manifest_total["tp"] + manifest_total["fp"] else None,
+                         "recall": manifest_total["tp"] / (manifest_total["tp"] + manifest_total["fn"])
+                         if manifest_total["tp"] + manifest_total["fn"] else None,
+                         "cases": manifest_cases},
             "android_surface": {**android_total, "precision": android_total["tp"] / (android_total["tp"] + android_total["fp"])
                                 if android_total["tp"] + android_total["fp"] else None,
                                 "recall": android_total["tp"] / (android_total["tp"] + android_total["fn"])

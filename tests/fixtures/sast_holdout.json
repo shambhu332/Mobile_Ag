@@ -125,6 +125,102 @@
       "expected_android_checks": [],
       "source": "class Settings { fun configure(settings: WebSettings) { settings.setSafeBrowsingEnabled(true) } }",
       "android_negative_control": true
+    },
+    {
+      "id": "manifest_exported_fileprovider_unprotected",
+      "language": "manifest",
+      "expected_cwes": [],
+      "expected_manifest_cwes": [
+        "CWE-22"
+      ],
+      "manifest_data": {
+        "package_name": "org.example",
+        "application": {},
+        "components": [
+          {
+            "name": "androidx.core.content.FileProvider",
+            "type": "provider",
+            "exported": true,
+            "meta_data": {
+              "android.support.FILE_PROVIDER_PATHS": "@xml/paths"
+            }
+          }
+        ]
+      },
+      "source": ""
+    },
+    {
+      "id": "manifest_normal_permission_used_exported",
+      "language": "manifest",
+      "expected_cwes": [],
+      "expected_manifest_cwes": [
+        "CWE-276"
+      ],
+      "manifest_data": {
+        "package_name": "org.example",
+        "application": {},
+        "components": [
+          {
+            "name": "org.example.Service",
+            "type": "service",
+            "exported": true,
+            "permission": "org.example.permission.ACCESS"
+          }
+        ],
+        "declared_permissions": [
+          {
+            "name": "org.example.permission.ACCESS",
+            "protectionLevel": "normal"
+          }
+        ]
+      },
+      "source": ""
+    },
+    {
+      "id": "manifest_fileprovider_signature_protected_negative",
+      "language": "manifest",
+      "expected_cwes": [],
+      "expected_manifest_cwes": [],
+      "manifest_data": {
+        "package_name": "org.example",
+        "application": {},
+        "components": [
+          {
+            "name": "androidx.core.content.FileProvider",
+            "type": "provider",
+            "exported": true,
+            "permission": "org.example.permission.SIGNATURE",
+            "meta_data": {
+              "android.support.FILE_PROVIDER_PATHS": "@xml/paths"
+            }
+          }
+        ]
+      },
+      "source": ""
+    },
+    {
+      "id": "manifest_unused_custom_permission_negative",
+      "language": "manifest",
+      "expected_cwes": [],
+      "expected_manifest_cwes": [],
+      "manifest_data": {
+        "package_name": "org.example",
+        "application": {},
+        "components": [
+          {
+            "name": "org.example.Launcher",
+            "type": "activity",
+            "exported": true
+          }
+        ],
+        "declared_permissions": [
+          {
+            "name": "org.example.permission.UNUSED",
+            "protectionLevel": "normal"
+          }
+        ]
+      },
+      "source": ""
     }
   ]
 }

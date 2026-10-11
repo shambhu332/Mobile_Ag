@@ -2,7 +2,7 @@
 
 ## Scope and caveats
 
-`tests/fixtures/sast_holdout.json` is a separate, synthetic, 10-case source-to-sink corpus with five positive and five negative cases. It is a **development holdout**, not a blinded or independently collected benchmark: fixtures were authored after recent analyzer work and intentionally span those feature areas. Do not use its score as field accuracy or claim whole-APK recall. It measures CWE-per-case behavior, not instance-level matching, manifest reachability, or exploitability.
+`tests/fixtures/sast_holdout.json` is a separate, synthetic development corpus spanning source-to-sink, Android surface, and manifest cases. It is a **development holdout**, not a blinded or independently collected benchmark: fixtures were authored after recent analyzer work and intentionally span those feature areas. Do not use its score as field accuracy or claim whole-APK recall. It measures CWE-per-case behavior, not instance-level matching, manifest reachability, or exploitability.
 
 Run the existing smoke corpus and the holdout separately:
 
@@ -68,3 +68,15 @@ scored TP=0, FP=0, FN=2; the updated analyzer scored TP=2, FP=0, FN=0. Results
 remain lexical configuration observations: build variant, API behavior,
 content exposure, reachability, and impact are not established. All generated
 findings stay INFO/UNVERIFIED with no exploit proof.
+
+
+## Manifest analysis false-positive control
+
+Manifest review now reports a weak custom permission only when an exported
+component actually uses that declared permission. A FileProvider-like component
+with an explicit component permission is not reported as unprotected solely
+because it is exported. On four synthetic manifest controls (two expected rule
+hits and two negatives), baseline `8b43176` scored TP=2/FP=2/FN=0; the updated
+review scored TP=2/FP=0/FN=0. This validates only these manifest heuristics, not
+merged-manifest correctness, provider path exposure, permission inheritance in
+all Android configurations, or ordinary-app exploitability.

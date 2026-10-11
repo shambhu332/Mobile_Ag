@@ -104,6 +104,8 @@ class ReportEngine:
                               "not_analyzed", "not_started"}
         coverage_gaps: list[str] = []
         static_status_count = 0
+        non_exhaustive_paths: list[str] = []
+        limit_paths: list[str] = []
 
         def inspect_coverage(value: object, path: str = "coverage") -> None:
             nonlocal static_status_count
@@ -114,6 +116,12 @@ class ReportEngine:
                         static_status_count += 1
                         if child in incomplete_markers:
                             coverage_gaps.append(f"{child_path}={child}")
+                    elif key == "exhaustive" and child is False:
+                        non_exhaustive_paths.append(path)
+                        coverage_gaps.append(f"{path}.exhaustive=false")
+                    elif key == "limits_reached" and child is True:
+                        limit_paths.append(path)
+                        coverage_gaps.append(f"{path}.limits_reached=true")
                     else:
                         inspect_coverage(child, child_path)
             elif isinstance(value, list):
@@ -136,6 +144,13 @@ class ReportEngine:
             "api_endpoints": state.get("api_endpoints", []),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
+            "coverage_summary": {
+                "static_status_count": static_status_count,
+                "non_exhaustive_analysis_count": len(set(non_exhaustive_paths)),
+                "non_exhaustive_paths": sorted(set(non_exhaustive_paths)),
+                "limits_reached_count": len(set(limit_paths)),
+                "limits_reached_paths": sorted(set(limit_paths)),
+            },
             "assessment_coverage": ("unknown" if not static_status_count else
                                     "partial" if coverage_gaps else "recorded_no_static_gaps"),
             "coverage_gaps": sorted(set(coverage_gaps)),
@@ -199,6 +214,14 @@ class ReportEngine:
     @staticmethod
     def _coverage_markdown(data):
         rows=['\n## Coverage and proof boundaries\n', 'Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven by the tool.']
+        summary = data.get('coverage_summary', {})
+        rows.append(f"- Assessment coverage: {data.get('assessment_coverage', 'not_recorded')}; static statuses recorded: {summary.get('static_status_count', 0)}; non-exhaustive analyses: {summary.get('non_exhaustive_analysis_count', 0)}; limits reached: {summary.get('limits_reached_count', 0)}")
+        gaps = data.get('coverage_gaps', [])
+        if gaps:
+            rows.append('- Recorded coverage gaps/limits:')
+            rows.extend(f"  - `{gap}`" for gap in gaps[:20])
+            if len(gaps) > 20:
+                rows.append(f"  - ... {len(gaps) - 20} additional gap(s) are listed in the JSON report")
         categories=data.get('coverage',{}).get('android_surface',{}).get('categories',{})
         for name in ('deep_links','webview','intent'):
             row=categories.get(name,{})

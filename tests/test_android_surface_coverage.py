@@ -149,6 +149,22 @@ def test_report_marks_incomplete_static_coverage_separately_from_job_completion(
     assert ReportEngine()._prepare_data(state)['assessment_coverage']=='partial'
 
 
+def test_report_exposes_non_exhaustive_and_budget_limited_coverage():
+    state=create_initial_state('synthetic','unused')
+    state['coverage']['taint'].update(static_status='analyzed_heuristically', exhaustive=False)
+    state['coverage']['taint']['limits_reached']=True
+    data=ReportEngine()._prepare_data(state)
+    assert data['assessment_coverage']=='partial'
+    assert 'coverage.taint.exhaustive=false' in data['coverage_gaps']
+    assert 'coverage.taint.limits_reached=true' in data['coverage_gaps']
+    summary=data['coverage_summary']
+    assert summary['non_exhaustive_analysis_count'] >= 1
+    assert summary['limits_reached_paths']==['coverage.taint']
+    markdown=ReportEngine()._generate_markdown(data)
+    assert 'non-exhaustive analyses:' in markdown
+    assert '`coverage.taint.limits_reached=true`' in markdown
+
+
 @pytest.mark.asyncio
 async def test_generate_report_persists_assessment_coverage_in_state(tmp_path):
     state=create_initial_state('synthetic','unused',str(tmp_path))

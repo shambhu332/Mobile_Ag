@@ -44,3 +44,27 @@ Report generation now treats `exhaustive: false` and `limits_reached: true` as r
 - Match findings by normalized location and dataflow instance, not only CWE-per-case.
 - Expand Android component, provider, WebView, native, obfuscated, split-APK, and multi-DEX coverage.
 - Report skipped files, parser/decompiler failures, tool versions, hashes, and bounded inventory for every run.
+
+## Follow-up shared modeling and Android-surface checks
+
+The shared taint model now recognizes Kotlin inferred simple `Intent` aliases and
+`data`/`dataString` properties, while Java AST source typing now requires the
+exact framework type `Intent` (qualified names and generics remain accepted).
+This fixes a holdout false positive where a user-defined `FakeIntent` class had
+been accepted because its name ended in `Intent`.
+
+On the same expanded synthetic holdout (six CWE-positive taint cases, seven
+negative cases), revision `eb99357` scored automatic TP=4, FP=1, FN=2 and
+lexical TP=4, FP=0, FN=2. The working analyzer scored automatic TP=6, FP=0,
+FN=0 and lexical TP=6, FP=0, FN=0. The two misses were Kotlin dataString source
+flows; the prior AST-only false positive was the custom lookalike type. These
+results are small-corpus development evidence only, not general accuracy.
+
+Android surface review now reports explicit WebView remote-debugging enabled
+and Safe Browsing disabled configuration calls as unverified review candidates.
+Each has true/false and comment/string controls. On four separately labeled
+synthetic Android cases (two positives, two negatives), the prior analyzer
+scored TP=0, FP=0, FN=2; the updated analyzer scored TP=2, FP=0, FN=0. Results
+remain lexical configuration observations: build variant, API behavior,
+content exposure, reachability, and impact are not established. All generated
+findings stay INFO/UNVERIFIED with no exploit proof.

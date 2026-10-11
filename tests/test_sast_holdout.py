@@ -23,6 +23,10 @@ def test_holdout_corpus_is_separate_paired_and_stratified():
     assert report["case_count"] == len(corpus["cases"])
     assert report["fixture_coverage_by_language"]["java"]["positive_cases"] > 0
     assert report["fixture_coverage_by_language"]["kotlin"]["negative_cases"] > 0
+    assert report["android_surface"]["tp"] == 2
+    assert report["android_surface"]["fp"] == 0
+    assert report["android_surface"]["fn"] == 0
+    assert len(report["android_surface"]["cases"]) == 4
     assert report["limitations"]
     for backend in report["backends"].values():
         assert len(backend["cases"]) == len(corpus["cases"])

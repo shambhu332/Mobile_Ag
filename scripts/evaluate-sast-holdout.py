@@ -16,6 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(os.environ.get("MOBILEAG_SOURCE_ROOT", ROOT)).resolve()))
 from mobileag.analysis.taint_engine import TaintEngine
+from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
 
 
 def evaluate(corpus: dict) -> dict:
@@ -69,11 +70,30 @@ def evaluate(corpus: dict) -> dict:
                 if total["tp"] + total["fn"] else None,
                 "by_cwe": rates(by_cwe), "by_language": rates(by_language), "cases": cases}
 
-    return {"benchmark": "synthetic_android_taint_heldout", "schema_version": corpus["schema_version"],
+    android_cases = []
+    android_total = {"tp": 0, "fp": 0, "fn": 0}
+    android = AndroidSurfaceAnalyzer()
+    for case in corpus["cases"]:
+        expected = set(case.get("expected_android_checks", []))
+        if not expected and not case.get("android_negative_control", False):
+            continue
+        findings, _ = android.analyze_source(case["source"], f"holdout/{case['id']}.{case['language']}")
+        observed = {finding.metadata.get("check_id") for finding in findings}
+        scores = {"tp": len(expected & observed), "fp": len(observed - expected), "fn": len(expected - observed)}
+        for key, count in scores.items():
+            android_total[key] += count
+        android_cases.append({"id": case["id"], "expected": sorted(expected), "observed": sorted(observed), **scores})
+
+    return {"benchmark": "synthetic_android_security_heldout", "schema_version": corpus["schema_version"],
             "scope_note": corpus["description"], "case_count": len(corpus["cases"]),
             "fixture_coverage_by_language": coverage,
             "limitations": ["synthetic source snippets only", "CWE/case matching, not finding-instance matching",
                             "no APK packaging, manifest reachability, runtime behavior, or exploitability measured"],
+            "android_surface": {**android_total, "precision": android_total["tp"] / (android_total["tp"] + android_total["fp"])
+                                if android_total["tp"] + android_total["fp"] else None,
+                                "recall": android_total["tp"] / (android_total["tp"] + android_total["fn"])
+                                if android_total["tp"] + android_total["fn"] else None,
+                                "cases": android_cases},
             "backends": {"automatic": run(use_ast=True), "lexical_fallback": run(use_ast=False)}}
 
 

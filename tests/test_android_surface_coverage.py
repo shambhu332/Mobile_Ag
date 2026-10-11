@@ -172,3 +172,29 @@ async def test_generate_report_persists_assessment_coverage_in_state(tmp_path):
     await ReportEngine().generate_reports(state)
     assert state['assessment_coverage']=='partial'
     assert 'coverage.secrets.static_status=partial' in state['coverage_gaps']
+
+
+def test_webview_debugging_and_safe_browsing_checks_have_positive_and_negative_controls():
+    analyzer = AndroidSurfaceAnalyzer()
+    positive = '''class ReleaseConfig {
+      void configure() {
+        WebView.setWebContentsDebuggingEnabled(true);
+        settings.setSafeBrowsingEnabled(false);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(positive, 'Positive.java')
+    assert {finding.metadata['check_id'] for finding in findings} == {
+        'web_contents_debugging_enabled', 'safe_browsing_disabled'}
+    assert all(finding.status == FindingStatus.UNVERIFIED and finding.severity == Severity.INFO
+               and finding.metadata['proof_state'] == 'not_proven' for finding in findings)
+
+    negative = '''class ReleaseConfig {
+      // WebView.setWebContentsDebuggingEnabled(true);
+      String sample = "settings.setSafeBrowsingEnabled(false)";
+      void configure() {
+        WebView.setWebContentsDebuggingEnabled(false);
+        settings.setSafeBrowsingEnabled(true);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(negative, 'Negative.java')
+    assert findings == []

@@ -44,6 +44,12 @@ RULES = [
     ('intent','launch_protection_opt_out',r'\bremoveLaunchSecurityProtection\s*\(',
      'Review intent launch-security opt-out','CWE-927',
      'Avoid opting out of platform launch protection; validate nested intent destinations and URI grants.'),
+    ('webview','web_contents_debugging_enabled',r'\bsetWebContentsDebuggingEnabled\s*\(\s*true\s*\)',
+     'Review WebView debugging enabled','CWE-489',
+     'Disable WebView remote debugging in release builds; confirm the effective build variant and reachable WebView data before assessing impact.'),
+    ('webview','safe_browsing_disabled',r'\bsetSafeBrowsingEnabled\s*\(\s*false\s*\)',
+     'Review WebView Safe Browsing disabled','CWE-693',
+     'Keep Safe Browsing enabled unless a documented compatibility requirement exists; verify platform/API behavior and user exposure.'),
 ]
 
 

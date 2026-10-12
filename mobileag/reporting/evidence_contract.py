@@ -1,4 +1,4 @@
-"""Export-time evidence gate and deterministic investigation requirements.
+"""Presentation-time evidence gate and deterministic investigation requirements.
 
 This validates record structure, not truth. No networking, device operations,
 LLM calls, confidence-based confirmation or mutation of stored triage occurs.
@@ -70,4 +70,31 @@ def prepare_finding(value: dict, artifact: dict | None = None) -> dict:
                                      'observation_requires_modified_authorization'],
         'automatic_confirmation': False,
     }
+    return result
+
+
+def prepare_scan(scan: dict) -> dict:
+    """Validate finding presentation against authoritative scan metadata.
+
+    Stored decisions and immutable legacy artifacts remain untouched. A missing
+    scan binding fails closed; finding-supplied hashes are never substitutes.
+    """
+    result = deepcopy(scan)
+    artifact = {
+        'artifact_sha256': scan.get('artifact_sha256'),
+        'package_name': scan.get('package_name'),
+        'app_version': scan.get('version'),
+    }
+    result['findings'] = [prepare_finding(f, artifact) for f in scan.get('findings', [])]
+    return result
+
+
+def prepare_observation(finding: dict) -> dict:
+    """Live/device observations cannot create analyst confirmation records."""
+    value = deepcopy(finding)
+    if value.get('status') == 'CONFIRMED':
+        value['reported_status'] = 'CONFIRMED'
+    value['status'] = 'UNVERIFIED'
+    result = prepare_finding(value)
+    result['evidence_assessment']['validation_errors'].append('observation_not_analyst_triage')
     return result

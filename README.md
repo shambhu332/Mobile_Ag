@@ -13,6 +13,8 @@ Review static candidates, inspect evidence, configure optional AI review, and ru
 - Markdown, JSON and SARIF reports with explicit unverified finding status.
 - Opt-in, scoped ADB diagnostics and bounded Frida initialization checks.
 - Authenticated HTTP/WebSocket APIs, bounded uploads, and scope-controlled HTTP replay.
+- [Dashboard UI tools and evidence review](docs/dashboard-ui-2026-10-11/README.md), with session controls, guided navigation, HTTP/curl reads and visible evidence/coverage gaps.
+- [Dashboard self-connection, section navigation and read-only curl](docs/dashboard-self-navigation-2026-10-11/README.md) with ephemeral tokens and no automatic scan/device actions.
 
 This is research tooling, not an autonomous exploit verifier. Read the limitations below before relying on a report.
 

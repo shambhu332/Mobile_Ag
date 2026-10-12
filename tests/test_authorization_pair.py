@@ -84,3 +84,41 @@ async def test_import_is_bound_scoped_private_and_cannot_start_network(setup, mo
     driver.snapshot.assert_not_called()
     svc.broker.transport.assert_not_called()
     with pytest.raises(PermissionError): svc.record_authorization_pair(doc['id'], pair, 'wrong-token')
+
+
+@pytest.mark.parametrize('location', ['owner_baseline', 'other_account_baseline', 'cross_account'])
+def test_ambiguous_duplicate_json_keys_never_produce_disclosure_candidate(location):
+    data = payload()
+    data[location]['response_json'] = '{"data":{"marker":"ignored","marker":"' + data['owner_marker'] + '"}}'
+    result = compare_authorization_pair(AuthorizationPair.model_validate(data))
+    assert result['outcome'] != 'cross_account_disclosure_candidate'
+    if location != 'cross_account':
+        assert result['baseline_controls_satisfied'] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure,expected', [('artifact', 422), ('running', 422), ('cancelled', 409), ('policy_revoked', 403), ('server_revoked', 403), ('unprotected', 403), ('wrong_method', 403)])
+async def test_pair_import_rechecks_artifact_lifecycle_and_current_scope(setup, monkeypatch, failure, expected):
+    svc, apk, _, driver, token = setup
+    origin = 'https://synthetic.invalid'
+    monkeypatch.setenv('MOBILEAG_ALLOWED_ORIGINS', origin)
+    request = plan(apk, scope={'devices': [], 'packages': [plan(apk).package_name], 'origins': [origin], 'methods': ['GET'], 'actions': []})
+    doc = await finish(svc, request, token)
+    data = payload(); data['artifact_sha256'] = doc['artifact_sha256']
+    doc['stages']['api']['status'] = 'completed_with_observations'
+    doc['stages']['api']['inventory'] = [{'id': data['capture_id'], 'protected': True, 'origin': origin, 'method': 'GET'}]
+    if failure == 'artifact': data['artifact_sha256'] = 'f'*64
+    elif failure == 'running': doc['status'] = 'running'
+    elif failure == 'cancelled': doc.update(status='cancelled', cancel_requested=True)
+    elif failure == 'policy_revoked':
+        policy = svc.repository().get_policy(); policy['origins'] = []; svc.repository().save_policy(policy)
+    elif failure == 'server_revoked': monkeypatch.delenv('MOBILEAG_ALLOWED_ORIGINS')
+    elif failure == 'unprotected': doc['stages']['api']['inventory'][0]['protected'] = False
+    elif failure == 'wrong_method': doc['stages']['api']['inventory'][0]['method'] = 'POST'
+    svc.store().save(doc)
+    client = TestClient(web.app, headers={'Authorization': 'Bearer ' + token})
+    response = client.post('/api/assessments/' + doc['id'] + '/authorization-evidence', json=data)
+    assert response.status_code == expected
+    assert 'authorization_comparisons' not in svc.store().get(doc['id'])
+    driver.snapshot.assert_not_called()
+    svc.broker.transport.assert_not_called()

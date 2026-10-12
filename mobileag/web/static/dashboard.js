@@ -10,6 +10,8 @@
 
     async function loadPrivacyPolicy() {
       const badge = document.getElementById('privacy-mode');
+      // The focused overview removed this legacy badge; avoid an unused settings request.
+      if (!badge) return;
       try {
         const cfg = await (await fetch('/api/settings')).json();
         badge.textContent = 'Web static: offline (no model/OSV)';

@@ -1,0 +1,23 @@
+/* Dashboard operation controls: explicit, keyboard-accessible, local-only. */
+.console-shell #dashboard-tools-open{margin-left:auto;border-color:#b7cbe5;background:#eff6ff;color:#174c9c;min-height:44px}
+.console-shell #dashboard-tools-open[data-connected=false]{background:#f3f5f8;color:#596579;border-color:#d6dde7}
+.console-shell .dashboard-tools{width:min(960px,94vw);max-height:88vh;overflow:auto;padding:24px;border:1px solid #dce2ea;border-radius:16px;line-height:1.6}
+.console-shell .dashboard-tools::backdrop{background:#17203380;backdrop-filter:blur(3px)}
+.dashboard-tools-header{display:flex;justify-content:space-between;gap:16px;align-items:start}
+.console-shell .dashboard-tools h2{margin:0;font-size:24px;letter-spacing:-.5px;color:#172033}.console-shell .dashboard-tools h3{margin:0 0 10px;font-size:17px;color:#172033}
+.console-shell .dashboard-tools p{font-size:14px;margin:10px 0;color:#596579;overflow-wrap:anywhere}.console-shell .dashboard-tools .dashboard-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.4px;color:#1d4ed8;margin:0 0 4px}
+.dashboard-tools-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:20px}.dashboard-tool-card{min-width:0;padding:20px;border:1px solid #dce2ea;border-radius:12px;background:#fafbfd}.dashboard-read-card{grid-column:1/-1}
+.console-shell .dashboard-tools button,.console-shell .dashboard-tools select{min-height:44px;font-size:14px;border:1px solid #becbdc;border-radius:8px;padding:10px 12px;background:#fff;color:#263247}
+.console-shell .dashboard-tools button:focus-visible,.console-shell .dashboard-tools select:focus-visible,.console-shell #dashboard-tour button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
+.dashboard-tool-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.dashboard-nav-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.dashboard-nav-grid button{text-align:left;overflow-wrap:anywhere}
+.console-shell #dashboard-read-run{background:#2563eb;color:#fff;border-color:#2563eb}.dashboard-read-fields{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:18px}.dashboard-read-fields label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;min-width:0}.dashboard-read-fields select{width:100%;min-width:0}
+.console-shell #dashboard-read-result{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f0f4f9;color:#263247;border:1px solid #d5deea;border-radius:8px;padding:16px;font-size:12px;line-height:1.65}
+.console-shell .dashboard-tools .dashboard-note{font-size:12px;border-top:1px solid #dde4ee;padding-top:12px}
+#dashboard-tour:not([hidden]){flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px solid #dce2ea;padding-top:12px;color:#263247}#dashboard-tour-status{flex:1 1 320px;overflow-wrap:anywhere;font-size:13px}
+.evidence-review{margin:14px 0;padding:16px;border:1px solid #d5deea;border-radius:10px;background:#f8fafc;color:#263247}.evidence-review h3{font-size:16px;margin-bottom:8px}.evidence-review p,.evidence-review li{font-size:13px;line-height:1.7;overflow-wrap:anywhere}.evidence-review ul{list-style:disc;padding-left:20px}.evidence-review pre{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px;font-size:12px}
+@media(max-width:767px){.console-shell #dashboard-tools-open{margin-left:0;width:100%}.console-shell .dashboard-tools{width:94vw;padding:16px}.dashboard-tools-grid,.dashboard-read-fields{grid-template-columns:minmax(0,1fr)}.dashboard-read-card{grid-column:auto}.dashboard-tool-card{padding:16px}.dashboard-nav-grid{grid-template-columns:minmax(0,1fr)}.dashboard-tool-actions button{flex:1 1 100%}.console-shell .dashboard-tools h2{font-size:21px}.dashboard-tools-header{gap:10px}}
+@media(prefers-reduced-motion:reduce){.dashboard-tools *{scroll-behavior:auto!important;transition:none!important}}
+/* Override generic triage-dialog form action layout for this workbench. */
+.console-shell .dashboard-tools .dashboard-read-fields{display:grid;grid-template-columns:2fr 1fr;gap:12px;justify-content:normal}
+.console-shell .dashboard-tools .dashboard-tool-actions{display:flex;justify-content:flex-start;flex-wrap:wrap;gap:8px}
+@media(max-width:767px){.console-shell .dashboard-tools .dashboard-read-fields{grid-template-columns:minmax(0,1fr)}}

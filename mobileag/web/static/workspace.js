@@ -10,6 +10,31 @@
     let wsConnection = null;
     let copilotOpen = false;
 
+    // Display server-validated attestations, never a model/live status alone.
+    // These remain analyst claims, not independently verified exploit proof.
+    function isAnalystAttested(finding) {
+      const evidence = finding.evidence_assessment;
+      return finding.status === 'CONFIRMED' && evidence?.basis === 'analyst_attested'
+        && evidence.artifact_binding === 'checked'
+        && evidence.independently_verified === false
+        && Array.isArray(evidence.validation_errors) && evidence.validation_errors.length === 0;
+    }
+
+    function liveObservation(finding) {
+      return {...finding, status: 'UNVERIFIED',
+        reported_status: finding.reported_status || finding.status,
+        evidence_assessment: {basis: 'not_proven', artifact_binding: 'not_verified',
+          independently_verified: false, validation_errors: ['observation_not_analyst_triage']}};
+    }
+
+    function refreshAttestationKpis(scan) {
+      const attested = (scan?.findings || []).filter(isAnalystAttested);
+      for (const [id, severities] of [['kpi-critical-high', ['CRITICAL', 'HIGH']], ['kpi-med-low', ['MEDIUM', 'LOW']]]) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = attested.filter(f => severities.includes(String(f.severity || '').toUpperCase())).length;
+      }
+    }
+
     // Toast Notification System
     function showToast(message, type = 'info') {
       const container = document.getElementById('toast-container');
@@ -116,14 +141,10 @@
       // These cards are explicitly labelled "Confirmed". Derive them from
       // per-finding triage status rather than trusting potentially stale or
       // legacy aggregate stats that may count provisional candidates.
-      const confirmedFindings = (scan.findings || []).filter(finding =>
-        String(finding.status || '').toUpperCase() === 'CONFIRMED');
-      document.getElementById('kpi-critical-high').textContent = confirmedFindings.filter(finding =>
-        ['CRITICAL', 'HIGH'].includes(String(finding.severity || '').toUpperCase())).length;
-      document.getElementById('kpi-med-low').textContent = confirmedFindings.filter(finding =>
-        ['MEDIUM', 'LOW'].includes(String(finding.severity || '').toUpperCase())).length;
-      document.getElementById('kpi-masvs').textContent = 'Not assessed';
-      document.getElementById('kpi-consensus').textContent = 'Not measured';
+      refreshAttestationKpis(scan);
+      // Optional legacy metrics are absent from the focused workbench UI.
+      const masvsKpi=document.getElementById('kpi-masvs');if(masvsKpi)masvsKpi.textContent='Not assessed';
+      const consensusKpi=document.getElementById('kpi-consensus');if(consensusKpi)consensusKpi.textContent='Not measured';
       document.getElementById('nav-findings-count').textContent = (scan.findings || []).length;
 
       // Render Modules

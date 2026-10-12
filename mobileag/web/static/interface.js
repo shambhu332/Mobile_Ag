@@ -67,8 +67,8 @@
   window.addEventListener('workspace-view-changed',updateView);window.addEventListener('workspace-scan-changed',updateScan);updateView();updateScan();
   document.getElementById('scans-table-body').closest('table').createCaption().textContent='Recorded scan jobs — completion does not imply vulnerability verification.';
   for(const [value,title]of [['LOW','Low'],['INFO','Info']]){const button=make('button',title,document.getElementById('sev-all').parentElement);button.id='sev-'+value.toLowerCase();button.className='sev-btn';button.type='button';button.addEventListener('click',()=>setSeverityFilter(value));}
-  for(const id of ['findings-search-input','api-search-input'])document.getElementById(id).type='search';
-  const drawer=document.getElementById('copilot-drawer');drawer.hidden=true;drawer.setAttribute('role','region');drawer.setAttribute('aria-label','Local evidence summary');
-  document.getElementById('copilot-messages').setAttribute('role','log');
+  for(const id of ['findings-search-input','api-search-input']){const input=document.getElementById(id);if(input)input.type='search';}
+  const drawer=document.getElementById('copilot-drawer');if(drawer){drawer.hidden=true;drawer.setAttribute('role','region');drawer.setAttribute('aria-label','Local evidence summary');}
+  const messages=document.getElementById('copilot-messages');if(messages)messages.setAttribute('role','log');
   window.addEventListener('keydown',event=>{if(event.key==='Escape'){const menu=document.getElementById('export-dropdown');if(!menu.classList.contains('hidden')){menu.classList.add('hidden');document.getElementById('export-menu-button').setAttribute('aria-expanded','false');document.getElementById('export-menu-button').focus();}if(copilotOpen)toggleCopilotDrawer();}});
 })();

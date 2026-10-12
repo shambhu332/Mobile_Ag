@@ -217,7 +217,7 @@
 
       // Update badge
       const badge = document.getElementById('detail-status-badge');
-      badge.textContent = f.status === 'CONFIRMED' ? (f.validation_evidence ? 'CONFIRMED · analyst attested' : 'CONFIRMED · legacy notes only') : f.status;
+      badge.textContent = isAnalystAttested(f) ? 'CONFIRMED · analyst attested' : f.status;
       badge.className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
         f.status === 'CONFIRMED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
         f.status === 'FALSE_POSITIVE' ? 'bg-red-950 text-red-400 border border-red-800' :
@@ -348,7 +348,7 @@
             </span>
             <span class="px-2 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">Analyst evidence</span>
           </div>
-          <div class="bg-black/90 p-3.5 rounded-lg border border-borderSubtle font-mono text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner">
+          <div tabindex="0" role="region" aria-label="Validation evidence notes" class="bg-black/90 p-3.5 rounded-lg border border-borderSubtle font-mono text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner">
             <code>${escapeHtml(proofEvidence)}</code>
           </div>
           <p class="text-[11px] text-slate-400 font-sans">Generated scripts, static reachability and LLM votes do not establish runtime exploitation.</p>
@@ -399,6 +399,7 @@
         </div>
       `;
 
+      window.MobileAgEvidence?.finding(detailContainer, f);
       switchFindingSubTab(currentFindingSubTab || 'poc');
       window.lucide?.createIcons();
     }
@@ -412,11 +413,13 @@
           body: JSON.stringify({ verdict, revision: currentScan.revision || 0, ...decision })
         });
         const data = await res.json();
+        if (data.status !== 'saved' || !data.finding) throw new Error('Invalid triage acknowledgement');
 
         currentScan.revision = data.revision;
         // Update local memory only after durable server acknowledgement.
         const f = (currentScan.findings || []).find(item => item.id === findingId);
-        if (f) { f.status = verdict; f.validation_notes=data.validation_notes; f.validation_evidence=data.validation_evidence; }
+        if (f) Object.assign(f, data.finding);
+        refreshAttestationKpis(currentScan);
 
         inspectFinding(findingId);
         applyFindingsFilter();
@@ -435,14 +438,17 @@
           body: JSON.stringify({ verdict, revision: currentScan.revision || 0, ...decision })
         });
 
-        currentScan.revision = (await response.json()).revision;
+        const data = await response.json();
+        if (data.status !== 'saved' || !data.finding) throw new Error('Invalid triage acknowledgement');
+        currentScan.revision = data.revision;
         const df = dastFindings.find(item => item.id === findingId);
-        if (df) df.status = verdict;
+        if (df) Object.assign(df, data.finding);
 
         if (currentScan && currentScan.findings) {
           const sf = currentScan.findings.find(item => item.id === findingId);
-          if (sf) sf.status = verdict;
+          if (sf) Object.assign(sf, data.finding);
         }
+        refreshAttestationKpis(currentScan);
 
         renderDastFindings();
         showToast(`DAST Triage updated: ${verdict}`, 'success');

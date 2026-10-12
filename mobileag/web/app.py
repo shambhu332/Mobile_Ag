@@ -85,6 +85,7 @@ from mobileag.dast import (
 from mobileag.knowledge.neo4j_graph import AttackGraph
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.reporting.evidence_contract import prepare_scan, prepare_observation
 from mobileag.reporting.sarif_exporter import SARIFExporter
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,7 @@ RUNTIME_FINDINGS: list[dict[str, Any]] = []
 DAST_JOBS: set[str] = set()
 
 def remember_findings(findings):
-    RUNTIME_FINDINGS.extend(redact(findings))
+    RUNTIME_FINDINGS.extend(redact([prepare_observation(f) for f in findings]))
     del RUNTIME_FINDINGS[:-1000]
 
 RUNTIME_SETTINGS: dict[str, Any] = {}
@@ -402,7 +403,7 @@ async def list_scans(offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, 
         if summaries:
             rows = [{k:s.get(k) for k in ('scan_id','app_name','package_name','version','created_at','status','progress','stats','revision','artifact_sha256','coverage','errors')} for s in rows]
             return {'items': rows, 'total': total, 'offset': offset, 'limit': limit}
-        return rows  # Bounded compatibility mode; new UI always requests summaries.
+        return [redact(prepare_scan(s)) for s in rows]  # Presentation only; preserve stored triage.
     return await asyncio.to_thread(read)
 
 
@@ -411,7 +412,7 @@ async def list_scans(offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, 
 async def get_scan_details(scan_id: str) -> dict[str, Any]:
     validate_scan_id(scan_id)
     if scan_id in ACTIVE_SCANS and ACTIVE_SCANS[scan_id].get('status') == 'running':
-        return redact(ACTIVE_SCANS[scan_id])
+        return redact(prepare_scan(ACTIVE_SCANS[scan_id]))
     def read():
         repo = repository()
         scan = repo.get(scan_id)
@@ -425,7 +426,7 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     scan = await asyncio.to_thread(read)
     if scan is None:
         raise HTTPException(404, 'Scan not found')
-    return redact(scan)
+    return redact(prepare_scan(scan))
 
 
 
@@ -511,7 +512,9 @@ async def submit_scan_feedback(scan_id: str, finding_id: str, feedback: Feedback
         raise HTTPException(409, str(exc))
     if scan_id in ACTIVE_SCANS:
         ACTIVE_SCANS[scan_id] = scan
+    effective = next(f for f in prepare_scan(scan)['findings'] if f['id'] == finding_id)
     return {'status': 'saved', 'scan_id': scan_id, 'finding_id': finding_id,
+            'finding': redact(effective),
             'revision': scan['revision'], 'verdict': feedback.verdict,
             'confirmation_basis': 'analyst_attested_not_independently_verified' if feedback.verdict=='CONFIRMED' else None,
             'validation_evidence': next(f for f in scan['findings'] if f['id']==finding_id).get('validation_evidence'),
@@ -792,6 +795,10 @@ def require_current_session(request: Request):
     token = request.state.authenticated_token
     if time.monotonic() >= app.state.session_deadline or not authorized(token, app.state.auth_token):
         raise HTTPException(401, "Session expired or revoked")
+
+
+from mobileag.dashboard.routes import build_router as build_dashboard_router
+app.include_router(build_dashboard_router(require_current_session))
 
 
 @app.get("/api/dast/devices")
@@ -1301,7 +1308,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
     # Append to active findings
     guard()
     for f in findings:
-        f_dict = redact(f.to_dict())
+        f_dict = redact(prepare_observation(f.to_dict()))
         remember_findings([f_dict])
         await manager.broadcast({
             "type": "dast_finding",
@@ -1441,7 +1448,7 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
                 apk_path=req.apk_path, activities=activities, deeplinks=links, audit_storage=False, audit_memory=False)
             if dynamic.get("status") != "completed":
                 raise RuntimeError("DAST failed or incomplete")
-            scan["findings"].extend(redact(dynamic.get("findings", [])))
+            scan["findings"].extend(redact([prepare_observation(f) for f in dynamic.get("findings", [])]))
         scan["stats"] = {level:sum(f.get("severity", "").lower() == level for f in scan["findings"])
                          for level in ("critical","high","medium","low","info")}
         scan["stats"]["total"] = len(scan["findings"])

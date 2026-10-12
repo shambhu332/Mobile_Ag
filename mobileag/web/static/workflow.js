@@ -9,7 +9,7 @@
   make('h2','Session and authorized scope',panel);
   make('p','Scope is enforced by the server. UI allowlists can only narrow environment permissions. Root, shell, install and Frida approvals are device-wide, not package-isolated. Web static jobs always run offline.',panel);
   const actions=make('div','',panel); actions.className='workflow-actions';
-  button('Rotate session token',actions,async()=>{const data=await (await fetch('/api/session/rotate',{method:'POST'})).json();accessToken=data.token;notice('Session rotated. Old tokens are invalid. Reconnect telemetry using the current session.');if(wsConnection)wsConnection.close();connectTelemetryWebSocket();});
+  button('Rotate session token',actions,async()=>{const data=await (await fetch('/api/session/rotate',{method:'POST'})).json();accessToken=data.token;window.dispatchEvent(new Event('workspace-session-connected'));notice('Session rotated. Old tokens are invalid. Reconnect telemetry using the current session.');if(wsConnection)wsConnection.close();connectTelemetryWebSocket();});
   button('Log out',actions,async()=>{await fetch('/api/session/logout',{method:'POST'});accessToken='';window.dispatchEvent(new Event('workspace-session-invalidated'));if(wsConnection)wsConnection.close();notice('Logged out. Reconnect with the new token in the server terminal.');});
   const form=make('form','',panel);const fields={};
   for(const name of ['devices','packages','origins','methods','actions']){

@@ -1,0 +1,66 @@
+{
+  "scope": "synthetic loopback only",
+  "page_errors": [],
+  "blocked_requests": [],
+  "screens": {
+    "desktop": "validation/desktop-tools.png",
+    "mobile": "validation/mobile-tools.png"
+  },
+  "http_and_curl_reads": "passed",
+  "navigation_only_tour": "passed",
+  "paired_import_rejection_clears_raw_input": "passed",
+  "disconnect_blocks_stale_response": "passed",
+  "status": "passed",
+  "jobs_started": 0,
+  "credential_persistence": false,
+  "accessibility": "axe WCAG A/AA automated; not full certification",
+  "boundary": "Local uncommitted working tree; synthetic/mocked/loopback only",
+  "pytest": {
+    "passed": 640,
+    "warnings": 30305
+  },
+  "python": "3.14.7",
+  "host_os": "Linux",
+  "android_device_validation": "not_performed",
+  "independent_exploit_verification": false,
+  "source_sha256": {
+    "mobileag/dashboard/routes.py": "7ec56c0f86b85061b866d8e4fa51cda690d11df8d089ed8247d16872e1ee7177",
+    "mobileag/web/static/dashboard-tools.js": "9349ab0407e91cb80ef84dce15a015677a4c94bb3724216ce86aa3b228771f95",
+    "mobileag/web/static/dashboard-tools.css": "01b43bf74bda701966a4b914a4cc0206cd2171945727f349c1927e5ea0decca5"
+  },
+  "installed_wheel": {
+    "version": "0.1.0",
+    "scripts": 22,
+    "stylesheets": 6,
+    "auth_denied_without_token": true
+  },
+  "product_regression": {
+    "passed": true,
+    "page_errors": [],
+    "a11y": {
+      "surface": [],
+      "findings": [],
+      "scans": [],
+      "agents": [],
+      "settings": [],
+      "dast": [],
+      "taint": [],
+      "api": [],
+      "automation": [],
+      "assessment": []
+    },
+    "mobile_a11y": {
+      "surface": [],
+      "findings": [],
+      "scans": [],
+      "agents": [],
+      "settings": [],
+      "dast": [],
+      "taint": [],
+      "api": [],
+      "automation": [],
+      "assessment": []
+    },
+    "browser": "155.0.8059.12"
+  }
+}

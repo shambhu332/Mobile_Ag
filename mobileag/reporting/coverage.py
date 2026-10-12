@@ -43,8 +43,16 @@ def guided_coverage(document: dict) -> dict:
         if selected and status not in {'completed', 'completed_with_observations'}:
             gaps.append(f'{name}: execution {status}')
         rows[name] = row
+    selected_count = sum(row['selected'] for row in rows.values())
+    if not selected_count:
+        # An all-not-selected/empty legacy record is not evidence of a
+        # static-only assessment. Keep its state distinct from a bounded SAST
+        # run so the UI/report cannot imply that any analysis took place.
+        gaps.append('assessment: no stages selected or recorded')
+    coverage_state = ('unknown' if not selected_count else
+                      'partial' if gaps else 'bounded_static_only')
     return {'schema_version': 1, 'artifact_sha256': document.get('artifact_sha256'),
             'package_name': document.get('package_name'), 'stages': rows,
-            'assessment_coverage': 'partial' if gaps else 'bounded_static_only',
+            'assessment_coverage': coverage_state,
             'gaps': gaps, 'exhaustive': False, 'security_verdict': 'not_established',
             'independently_verified_exploits': 0}

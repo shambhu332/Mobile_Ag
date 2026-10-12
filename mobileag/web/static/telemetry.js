@@ -82,7 +82,7 @@
       if (data.finding && currentScan) {
         currentScan.findings = currentScan.findings || [];
         if (!currentScan.findings.some(f => f.id === data.finding.id || f.title === data.finding.title)) {
-          currentScan.findings.unshift(data.finding);
+          currentScan.findings.unshift(liveObservation(data.finding));
         }
         const totalCount = currentScan.findings.length;
         const kpiTotal = document.getElementById('kpi-total');
@@ -92,16 +92,7 @@
 
         // Match the KPI labels and server report semantics: only explicit
         // analyst-confirmed status contributes to confirmed severity totals.
-        const confirmedFindings = currentScan.findings.filter(f =>
-          String(f.status || '').toUpperCase() === 'CONFIRMED');
-        const critHigh = confirmedFindings.filter(f =>
-          ['CRITICAL', 'HIGH'].includes(String(f.severity || '').toUpperCase())).length;
-        const medLow = confirmedFindings.filter(f =>
-          ['MEDIUM', 'LOW'].includes(String(f.severity || '').toUpperCase())).length;
-        const critHighEl = document.getElementById('kpi-critical-high');
-        if (critHighEl) critHighEl.textContent = critHigh;
-        const medLowEl = document.getElementById('kpi-med-low');
-        if (medLowEl) medLowEl.textContent = medLow;
+        refreshAttestationKpis(currentScan);
 
         if (activeView === 'findings') applyFindingsFilter();
         showToast(`Discovered: ${escapeHtml(String(data.finding.title ?? ""))}`, 'info');

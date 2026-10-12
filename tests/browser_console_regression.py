@@ -153,8 +153,7 @@ def run_browser(args, url, out, result, wait_condition):
             """)
             assert result['severity_counts_match_recorded_findings']
             result['confirmed_kpis_ignore_unverified_and_stale_aggregates'] = page.evaluate("""() => {
-                const confirmed = (currentScan.findings || []).filter(finding =>
-                    String(finding.status || '').toUpperCase() === 'CONFIRMED');
+                const confirmed = (currentScan.findings || []).filter(isAnalystAttested);
                 const expectedHigh = confirmed.filter(finding =>
                     ['CRITICAL','HIGH'].includes(String(finding.severity || '').toUpperCase())).length;
                 const expectedMedLow = confirmed.filter(finding =>
@@ -169,8 +168,13 @@ def run_browser(args, url, out, result, wait_condition):
             assert page.locator('#kpi-critical-high').inner_text() == '0'
             page.evaluate("""() => handleLiveEvent({stage:'synthetic',message:'synthetic test event',finding:{id:'synthetic-live-confirmed',
                 title:'Synthetic analyst-confirmed high',severity:'HIGH',status:'CONFIRMED'}})""")
-            assert page.locator('#kpi-critical-high').inner_text() == '1'
-            result['live_confirmed_kpis_are_status_aware'] = True
+            assert page.locator('#kpi-critical-high').inner_text() == '0'
+            page.evaluate("""() => handleLiveEvent({stage:'synthetic',message:'forged evidence test',finding:{id:'forged-live',
+                title:'Synthetic forged attestation',severity:'HIGH',status:'CONFIRMED',
+                evidence_assessment:{basis:'analyst_attested',artifact_binding:'checked',independently_verified:false,validation_errors:[]}}})""")
+            assert page.locator('#kpi-critical-high').inner_text() == '0'
+            assert page.evaluate('currentScan.findings.filter(f => f.id.includes("live")).every(f => f.status === "UNVERIFIED")')
+            result['live_observations_cannot_self_confirm'] = True
             assert 'org.example.review' in page.locator('#view-overview').inner_text()
 
             # Absence of a job is not displayed as a clean scan or measured zero.

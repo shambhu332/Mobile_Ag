@@ -77,9 +77,9 @@
         if (indicator) { indicator.textContent = 'ADB inventory unknown — retry'; indicator.className = 'text-xs text-amber-400'; }
         const select = document.getElementById('header-device-select');
         if (select) select.replaceChildren(new Option('Device inventory unavailable', ''));
-        document.getElementById('header-root-badge').textContent = 'Not checked';
-        document.getElementById('nav-dast-device-badge').textContent = 'Unknown';
-        document.getElementById('dast-fleet-count').textContent = 'Unknown';
+        const rootBadge=document.getElementById('header-root-badge');if(rootBadge)rootBadge.textContent='Not checked';
+        const navBadge=document.getElementById('nav-dast-device-badge');if(navBadge)navBadge.textContent='Unknown';
+        const fleetCount=document.getElementById('dast-fleet-count');if(fleetCount)fleetCount.textContent='Unknown';
         const fleet = document.getElementById('dast-device-fleet-list');
         if (fleet) fleet.textContent = 'Inventory unavailable. Reconnect the session or Refresh; no device is selected.';
         updateDastControls();
@@ -583,7 +583,7 @@
         }
       } else if (data.type === 'dast_finding') {
         if (!dastFindings.some(existing => existing.title === data.finding.title)) {
-          dastFindings.unshift(data.finding);
+          dastFindings.unshift(liveObservation(data.finding));
         }
         renderDastFindings();
         showToast(`🚨 Dynamic Finding: ${escapeHtml(String(data.finding.title ?? ""))}`, 'error');
@@ -795,7 +795,7 @@
       if (label) label.textContent = selected ? dastActiveDevice : 'None Selected';
       const badge = document.getElementById('frida-status-badge');
       if (badge) { badge.textContent = 'Frida process not checked'; badge.className = 'text-xs text-slate-400'; }
-      document.getElementById('header-root-badge').textContent = selected ? 'Root not checked' : 'No Device';
+      const rootBadge=document.getElementById('header-root-badge');if(rootBadge)rootBadge.textContent=selected?'Root not checked':'No Device';
     }
 
     async function checkFridaServerStatus() {
@@ -875,4 +875,4 @@
     // =========================================================================
 
     window.addEventListener('DOMContentLoaded', updateDastControls);
-    window.addEventListener('workspace-session-invalidated', () => { dastDevices=[]; dastActiveDevice=null; updateDastControls(); document.getElementById('dast-adb-indicator').textContent='ADB not checked — reconnect'; document.getElementById('header-device-select').replaceChildren(new Option('Reconnect session', '')); document.getElementById('dast-device-fleet-list').textContent='Session disconnected; reconnect and refresh inventory.'; document.getElementById('dast-fleet-count').textContent='Not checked'; document.getElementById('nav-dast-device-badge').textContent='Unknown'; });
+    window.addEventListener('workspace-session-invalidated', () => { dastDevices=[];dastActiveDevice=null;updateDastControls();const indicator=document.getElementById('dast-adb-indicator');if(indicator)indicator.textContent='ADB not checked — reconnect';const select=document.getElementById('header-device-select');if(select)select.replaceChildren(new Option('Reconnect session',''));const fleet=document.getElementById('dast-device-fleet-list');if(fleet)fleet.textContent='Session disconnected; reconnect and refresh inventory.';const count=document.getElementById('dast-fleet-count');if(count)count.textContent='Not checked';const badge=document.getElementById('nav-dast-device-badge');if(badge)badge.textContent='Unknown';});

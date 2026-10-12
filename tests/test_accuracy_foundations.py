@@ -84,6 +84,23 @@ def test_completed_guided_execution_does_not_infer_login_or_api_authorization():
     assert report['independently_verified_exploits'] == 0
 
 
+def test_guided_coverage_does_not_call_empty_assessment_static_only():
+    result = guided_coverage({'stages': {name: {'status': 'not_selected'}
+        for name in ('sast', 'api', 'dast', 'llm')}})
+    assert result['assessment_coverage'] == 'unknown'
+    assert 'assessment: no stages selected or recorded' in result['gaps']
+    assert result['security_verdict'] == 'not_established'
+
+
+def test_bounded_static_only_requires_completed_static_analysis():
+    result = guided_coverage({'stages': {
+        'sast': {'status': 'completed', 'assessment_coverage': 'recorded_no_static_gaps'},
+        'api': {'status': 'not_selected'}, 'dast': {'status': 'not_selected'},
+        'llm': {'status': 'not_selected'}}})
+    assert result['assessment_coverage'] == 'bounded_static_only'
+    assert result['gaps'] == []
+
+
 def test_confirmation_gate_checks_schema_and_build_without_mutating_triage():
     from mobileag.reporting.evidence_contract import prepare_finding
     from mobileag.reporting.validation import bind_confirmation

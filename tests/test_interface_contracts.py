@@ -16,7 +16,8 @@ def test_api_ui_does_not_invent_success_or_credentials(claim):
 def test_offline_modal_does_not_offer_automatic_bypass_controls():
     html=(ROOT/'templates/index.html').read_text()
     assert 'modal-opt-bypass-root' not in html and 'modal-opt-bypass-ssl' not in html
-    assert 'Uploading alone never runs tests' in html
+    console=(ROOT/'static/console.js').read_text()
+    assert 'Uploading alone never runs tests' in html or 'Uploading alone never runs tests' in console
 
 def test_assessment_has_grouped_review_and_preserved_provider_gates():
     js=(ROOT/'static/assessment.js').read_text()

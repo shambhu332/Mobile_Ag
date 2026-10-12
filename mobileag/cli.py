@@ -264,5 +264,9 @@ def taint(src: str, output: str):
     console.print(f" - Report Saved:  [link={report_file.resolve()}]{report_file.resolve()}[/link]\n")
 
 
+from mobileag.dashboard.commands import dashboard
+main.add_command(dashboard)
+
+
 if __name__ == "__main__":
     main()

@@ -1,0 +1,74 @@
+{
+  "status": "passed",
+  "scope": "synthetic loopback only",
+  "self_login": "real token form",
+  "curl": "8.22.0",
+  "navigation": {
+    "connected": true,
+    "visited": [
+      {
+        "view": "overview",
+        "visible": true
+      },
+      {
+        "view": "assessment",
+        "visible": true
+      },
+      {
+        "view": "surface",
+        "visible": true
+      },
+      {
+        "view": "findings",
+        "visible": true
+      },
+      {
+        "view": "scans",
+        "visible": true
+      },
+      {
+        "view": "settings",
+        "visible": true
+      },
+      {
+        "view": "dast",
+        "visible": true
+      },
+      {
+        "view": "taint",
+        "visible": true
+      },
+      {
+        "view": "api",
+        "visible": true
+      },
+      {
+        "view": "automation",
+        "visible": true
+      },
+      {
+        "view": "agents",
+        "visible": true
+      }
+    ],
+    "blocked_requests": [],
+    "page_errors": [],
+    "writes_authorized": false,
+    "device_actions_authorized": false,
+    "session_persisted": false,
+    "telemetry": "disabled_in_read_only_navigation"
+  },
+  "jobs_started": 0,
+  "validation_boundary": "local uncommitted working tree; synthetic/mocked/loopback only",
+  "pytest": {
+    "passed": 622,
+    "warnings": 29554
+  },
+  "python": "3.14.7",
+  "playwright": "1.63.0",
+  "wheel": {
+    "version": "0.1.0",
+    "installed_smoke": "passed",
+    "packaged_dashboard_cli": "passed"
+  }
+}

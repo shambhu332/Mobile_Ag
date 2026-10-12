@@ -155,11 +155,13 @@
     results.replaceChildren();status.textContent=current.id+' · '+current.status+' · '+(current.reason||'');
     make('h3','Stage results (actual execution, not promised coverage)',results);
     for(const [name,stage] of Object.entries(current.stages))make('p',name.toUpperCase()+': '+stage.status+(stage.executed!==undefined?' · '+stage.executed+' cases observed':'')+(stage.screens!==undefined?' · '+stage.screens+' live screens mapped':''),results);
+    window.MobileAgEvidence?.coverage(results,current);
     const review=current.stages.llm?.review,attempts=review?.attempts||current.stages.llm?.attempts||[];
     if(review)make('p','AI advice from '+review.provider+' / '+review.model+(review.fallback_used?' — secondary used after primary HTTP 429':' — primary used; secondary not contacted'),results);
     if(attempts.length)make('p','Provider attempts: '+attempts.map(attempt=>attempt.provider+': '+attempt.outcome+(attempt.http_status?' (HTTP '+attempt.http_status+')':'')).join(' → '),results);
     if(current.stages.llm?.reason)make('p','AI stage: '+current.stages.llm.reason,results);
     const actions=make('div','',results);actions.className='workflow-actions';
+    window.MobileAgAuthorizationEvidence?.add(actions,current,async()=>{current=await(await fetch('/api/assessments/'+current.id)).json();render();});
     if(current.scan_id)button('Review SAST findings',actions,async()=>{await loadSpecificScan(current.scan_id);switchView('findings');});
     if(current.automation_run_id)button('Review/approve exact navigation actions',actions,async()=>{window.dispatchEvent(new CustomEvent('automation-open-run',{detail:{id:current.automation_run_id}}));});
     button('Stop future stages',actions,async()=>{await fetch('/api/assessments/'+current.id+'/cancel',{method:'POST'});status.textContent='Stop requested. Issued actions cannot be undone.';}).disabled=current.status!=='running';

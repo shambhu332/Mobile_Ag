@@ -13,6 +13,8 @@ python -m mobileag.cli web --host 127.0.0.1 --port 8080
 
 Open the printed URL and enter the session token printed in the terminal using the labelled connection form. API routes require bearer authentication; WebSockets authenticate with an initial JSON token message. Do not put tokens in URLs or durable evidence.
 
+For read-only dashboard automation, `python -m mobileag.cli dashboard api --transport curl` and `python -m mobileag.cli dashboard navigate` use `MOBILEAG_API_TOKEN` or a private prompt. Navigation connects through the real token form and visits exact sections; external requests, redirects, writes and real telemetry connections are blocked. No browser profile or credentials are saved. This is dashboard navigation, not target login or execution approval. See `docs/dashboard-self-navigation-2026-10-11/README.md`.
+
 ## Scanning
 
 Upload an APK/IPA through the dashboard. Uploads have opaque names, ZIP validation and size limits. Drag-and-drop uploads the artifact; a separate explicit start action begins static analysis. It never selects a device or enables bypass hooks. Missing files are errors, never demo scans.
@@ -73,3 +75,7 @@ Ctrl/Command K or Find a section opens navigation-only search; `/` does not inte
 Start Assessment automatically checks the harmless host sandbox/tool configuration, host-only ADB inventory, saved scope and public provider catalog after authentication and before Start. It does not select/connect/boot devices, execute device shell, install dependencies, contact models or approve scope. Guided submission blocks unavailable static-worker prerequisites and non-online/unapproved DAST serials; production worker authorization/isolation remain independent.
 
 Explicit device selection may automatically observe the process name via ordinary-shell `ps -A` ONLY with the saved exact `frida_status` action. This device-wide read-only observation is separate from `frida` attachment approval. Default badges are not checked; unknown inventory invalidates selection. Preset Preview generates text without instrumentation. Optional terminal-stage JSON download is opt-in for a newly explicitly started assessment, once only, not history replay. See `docs/auto-ready-2026-10-07/README.md`; tests remain synthetic, not live device/Frida or provider-health proof.
+
+## Dashboard tools UI
+
+The global Dashboard tools button exposes page-only session controls, navigation-only tour, and explicit bounded HTTP/curl self-reads. The workbench derives its destination from the listening socket, not client Host or a free-form URL. Never enter real mobile credentials in this panel. Findings/assessment views show evidence and coverage gaps; paired-account imports are synthetic operator evidence, not replay or independent proof. See `docs/dashboard-ui-2026-10-11/README.md` and the opt-in `tests/browser_dashboard_tools_ui.py`.

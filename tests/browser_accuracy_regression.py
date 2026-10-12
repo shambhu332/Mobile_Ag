@@ -31,6 +31,35 @@ def main():
             assert 'Not assessed' in page.locator('#taint-findings-container').inner_text()
         page.evaluate('renderTaintFindings([])')
         assert page.locator('#taint-stat-sev').inner_text() == 'NOT ASSESSED'
+
+        # Exercise actual triage handlers with a synthetic acknowledgement.
+        # No backend/network requests; rejected or malformed receipts cannot
+        # change local status, revision, or the attested KPI.
+        page.set_content('<div id="kpi-critical-high">0</div><div id="kpi-med-low">0</div>')
+        for module in ('workspace.js', 'findings.js'):
+            page.add_script_tag(content=(root / 'mobileag/web/static' / module).read_text())
+        page.evaluate('''() => {
+            currentScan = {scan_id:'synthetic',revision:0,findings:[{id:'test',status:'UNVERIFIED',severity:'HIGH'}]};
+            window.MobileAgUI = {askNotes:async()=>({notes:'Synthetic controls'})};
+            showToast = inspectFinding = applyFindingsFilter = () => {};
+            window.fetch = async()=>{throw new Error('Synthetic rejected request')};
+        }''')
+        page.evaluate("submitTriage('test','CONFIRMED')")
+        assert page.evaluate('currentScan.revision') == 0
+        assert page.evaluate('currentScan.findings[0].status') == 'UNVERIFIED'
+        page.evaluate("window.fetch = async()=>({json:async()=>({status:'saved',revision:1})})")
+        page.evaluate("submitTriage('test','CONFIRMED')")
+        assert page.evaluate('currentScan.revision') == 0
+        page.evaluate('''window.fetch = async()=>({json:async()=>({status:'saved',revision:1,
+            finding:{id:'test',severity:'HIGH',status:'CONFIRMED',evidence_assessment:{basis:'analyst_attested',
+                artifact_binding:'checked',independently_verified:false,validation_errors:[]}}})})''')
+        page.evaluate("submitTriage('test','CONFIRMED')")
+        assert page.evaluate('currentScan.revision') == 1
+        assert page.locator('#kpi-critical-high').inner_text() == '1'
+        page.evaluate('''window.fetch = async()=>({json:async()=>({status:'saved',revision:2,
+            finding:{id:'test',severity:'HIGH',status:'UNVERIFIED',evidence_assessment:{basis:'not_proven'}}})})''')
+        page.evaluate("submitTriage('test','UNVERIFIED')")
+        assert page.locator('#kpi-critical-high').inner_text() == '0'
         assert not errors, errors
         browser.close()
     print(json.dumps({'status': 'passed', 'scope': 'synthetic isolated renderer; no live testing', 'browser_errors': errors}))

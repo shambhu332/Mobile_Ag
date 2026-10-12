@@ -379,6 +379,7 @@ def main():
                     wait_condition(page,'document.querySelector("#assessment-provider").options.length === 11')
                     assert page.locator('#assessment-provider option:disabled').count()==0
                     configure_provider('assessment-provider','mistral')
+                    wait_condition(page,'document.querySelector("#assessment-provider-info").innerText.includes("MISTRAL_API_KEY")')
                     assert 'MISTRAL_API_KEY' in page.locator('#assessment-provider-info').inner_text()
                     assert 'MOBILEAG_LLM_MISTRAL_MODEL' in page.locator('#assessment-provider-info').inner_text()
                     assert page.locator('#assessment-start').is_disabled()

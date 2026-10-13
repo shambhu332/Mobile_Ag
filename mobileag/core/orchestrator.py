@@ -48,6 +48,7 @@ from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
 from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
+from mobileag.analysis.fileprovider_auditor import FileProviderAuditor
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ class Orchestrator:
         self._il2cpp_auditor = Il2CppAuditor()
         self._privacy_manifest_auditor = PrivacyManifestAuditor()
         self._rasp_auditor = RaspResilienceAuditor()
+        self._fileprovider_auditor = FileProviderAuditor()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -322,6 +324,7 @@ class Orchestrator:
             "hermes": asyncio.to_thread(self._hermes_analyzer.audit_package_bundles, state["resource_path"]),
             "il2cpp": asyncio.to_thread(self._il2cpp_auditor.audit_package, state["resource_path"]),
             "flutter": asyncio.to_thread(self._flutter_engine.analyze_package_directory, state["resource_path"]),
+            "fileprovider": asyncio.to_thread(self._fileprovider_auditor.audit_resource_directory, state["resource_path"]),
         }
 
         results = await asyncio.gather(
@@ -403,6 +406,9 @@ class Orchestrator:
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):
                         state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+            elif name == "fileprovider":
+                for fp_res in (result or []):
+                    all_findings.extend(fp_res.findings)
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":

@@ -6,11 +6,13 @@ plus lexical Java/Kotlin fallback and limited same-file method summaries. Full
 inter-procedural Android call/control-flow analysis is not implemented. Candidate flows are checked
 until reaching critical sinks:
 1. WebView navigation and JavaScript evaluation -> CWE-829 / CWE-79 review candidates
-2. Databases (rawQuery / execSQL) -> CWE-89 (SQL Injection)
-3. Intent Launchers (startActivity / startService) -> CWE-927 (Intent Redirection)
-4. File Operations (new File / openFileOutput) -> CWE-22 (Path Traversal)
-5. Command Execution (Runtime.exec / ProcessBuilder) -> CWE-78 (Command Injection)
-6. Dynamic Class Loading (DexClassLoader / Class.forName) -> CWE-470
+2. WebView HTML loading -> CWE-79 review candidates
+3. Databases (rawQuery / execSQL) -> CWE-89 (SQL Injection)
+4. Intent Launchers (startActivity / startService) -> CWE-927 (Intent Redirection)
+5. File Operations (new File / openFileOutput) -> CWE-22 (Path Traversal)
+6. Command Execution (Runtime.exec / ProcessBuilder) -> CWE-78 (Command Injection)
+7. Dynamic Class Loading (DexClassLoader / Class.forName) -> CWE-470
+8. Java object deserialization from untrusted byte flows -> CWE-502 review candidates
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -29,6 +32,8 @@ from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
+MAX_PARAMETER_SINK_SUMMARIES = 5000
+MAX_PARAMETER_SUMMARY_ROUNDS = 32
 
 # Source regex patterns (extracts variable receiving untrusted data)
 _SOURCE_PATTERNS = [
@@ -66,6 +71,10 @@ _SOURCE_PATTERNS = [
         ),
     ),
     (
+        "CONTENT_RESOLVER_READ",
+        re.compile(r"""\b(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*(?:openInputStream|openAssetFileDescriptor|openFileDescriptor|openTypedAssetFileDescriptor)\s*\(\s*(?P<uri>[A-Za-z_$][\w$]*)\b"""),
+    ),
+    (
         "INTENT_SOURCE",
         re.compile(
             r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_().]+\.)?getIntent\s*\("""
@@ -90,6 +99,15 @@ _SINK_SPECS = [
         "pattern": re.compile(r"""\b([a-zA-Z0-9_]+)\.(?:loadUrl|postUrl)\s*\("""),
         "masvs": "MASVS-CODE-2",
         "remediation": "Treat externally supplied URLs as untrusted. Parse and validate the scheme and complete host against an exact allowlist before loading; verify the effective guard and impact before classifying this candidate as a vulnerability.",
+    },
+    {
+        "type": "WEBVIEW_HTML_LOAD",
+        "cwe": "CWE-79",
+        "severity": Severity.INFO,
+        "title": "Potential Untrusted Input Flow to WebView HTML Loading",
+        "pattern": re.compile(r"""\b([a-zA-Z0-9_]+)\.loadDataWithBaseURL\s*\("""),
+        "masvs": "MASVS-CODE-2",
+        "remediation": "Treat both HTML data and base URL as untrusted. Avoid loading attacker-controlled markup; use a safe origin and context-appropriate encoding, and validate bridge exposure, JavaScript settings, guards and impact before classifying this candidate.",
     },
     {
         "type": "WEBVIEW_JAVASCRIPT",
@@ -144,6 +162,15 @@ _SINK_SPECS = [
         "pattern": re.compile(r"""\b(?:new\s+DexClassLoader|new\s+PathClassLoader|DexClassLoader|PathClassLoader)\s*\("""),
         "masvs": "MASVS-CODE-4",
         "remediation": "Do not instantiate dynamic class loaders using paths or URLs supplied from untrusted external sources.",
+    },
+    {
+        "type": "UNTRUSTED_DESERIALIZATION",
+        "cwe": "CWE-502",
+        "severity": Severity.INFO,
+        "title": "Potential Untrusted Input Flow to Object Deserialization",
+        "pattern": re.compile(r"""\b([a-zA-Z0-9_]+)\.readObject\s*\("""),
+        "masvs": "MASVS-CODE-4",
+        "remediation": "Avoid Java native object deserialization for untrusted data. Prefer a constrained data format and explicit type/schema validation; verify the byte stream's origin, object filters, and actual reachability before assessing impact.",
     },
     {
         "type": "UNSAFE_REFLECTION",
@@ -284,6 +311,74 @@ def _type_scopes(code: str) -> list[tuple[str, int, int]]:
 def _enclosing_type(offset: int, spans: list[tuple[str, int, int]]) -> str | None:
     containing = [item for item in spans if item[1] <= offset < item[2]]
     return min(containing, key=lambda item: item[2] - item[1])[0] if containing else None
+
+
+def _lexical_method_identity(method_name: str, body: str, offset: int,
+                             type_spans: list[tuple[str, int, int]]) -> str | None:
+    """Build a conservative lexical owner/signature label, not a symbol ID."""
+    owner_spans = sorted((item for item in type_spans if item[1] <= offset < item[2]),
+                         key=lambda item: item[2] - item[1], reverse=True)
+    if not owner_spans:
+        return None
+    owner = ".".join(item[0] for item in owner_spans)
+    match = re.search(rf"\b{re.escape(method_name)}\s*\(", body)
+    if not match:
+        return None
+    opening = body.find("(", match.start())
+    depth = angle = bracket = 0
+    closing = None
+    for index in range(opening, len(body)):
+        char = body[index]
+        if char == "(": depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+        elif char == "<": angle += 1
+        elif char == ">": angle = max(0, angle - 1)
+        elif char == "[": bracket += 1
+        elif char == "]": bracket = max(0, bracket - 1)
+    if closing is None:
+        return None
+    raw = body[opening + 1:closing]
+    params = []
+    start = paren = angle = bracket = brace = 0
+    for index, char in enumerate(raw):
+        if char == "(": paren += 1
+        elif char == ")": paren = max(0, paren - 1)
+        elif char == "<": angle += 1
+        elif char == ">": angle = max(0, angle - 1)
+        elif char == "[": bracket += 1
+        elif char == "]": bracket = max(0, bracket - 1)
+        elif char == "{": brace += 1
+        elif char == "}": brace = max(0, brace - 1)
+        elif char == "," and paren == angle == bracket == brace == 0:
+            params.append(raw[start:index].strip())
+            start = index + 1
+    if raw[start:].strip():
+        params.append(raw[start:].strip())
+    normalized_types = []
+    for parameter in params:
+        parameter = re.sub(r"@(?:[\w$.]+)(?:\s*\([^)]*\))?\s*", "", parameter).strip()
+        parameter = re.sub(r"\b(?:final|vararg|crossinline|noinline)\b\s*", "", parameter)
+        if ":" in parameter and not re.search(r"\b[A-Za-z_$][\w$<>?.\[\]]*\s+[A-Za-z_$][\w$]*\s*$", parameter):
+            # Kotlin named parameter: name: Type [= default].
+            type_part = parameter.split(":", 1)[1].split("=", 1)[0].strip()
+        else:
+            java_parameter = re.fullmatch(r"(.+?)\s+([A-Za-z_$][\w$]*)(\s*\[\])?", parameter)
+            if not java_parameter:
+                return None
+            type_part = java_parameter.group(1).strip()
+            if java_parameter.group(3):
+                type_part += "[]"
+            if type_part.endswith("..."):
+                type_part = type_part[:-3] + "[]"
+        if not type_part or any(char in type_part for char in "{};="):
+            return None
+        normalized_types.append(" ".join(type_part.split()))
+    identity = f"{owner}#{method_name}({','.join(normalized_types)})"
+    return identity if len(identity) <= 256 else None
 
 
 def _enclosing_type_members(code: str, offset: int, type_spans: list[tuple[str, int, int]],
@@ -435,9 +530,22 @@ class TaintEngine:
     def __init__(self) -> None:
         self._java_ast = JavaAstTaintAnalyzer()
         self.ast_coverage = {"available": self._java_ast.available, "files_parsed": 0,
-                             "parse_fallbacks": 0, "static_status": "not_analyzed"}
+                             "parse_fallbacks": 0, "syntax_error_fallbacks": 0,
+                             "syntax_error_nodes_observed": 0,
+                             "syntax_error_node_count_incomplete_files": 0,
+                             "parser_exception_fallbacks": 0,
+                             "parser_unavailable_fallbacks": 0,
+                             "static_status": "not_analyzed"}
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
                          "proof_status": "not_proven", "exhaustive": False}
+        self._parameter_summary_coverage = {
+            "source_files_analyzed": 0, "direct_summaries": 0,
+            "transitive_summaries": 0, "files_with_transitive_summaries": 0,
+            "round_limit_files": 0, "candidate_limit_files": 0,
+            "max_rounds_per_file": MAX_PARAMETER_SUMMARY_ROUNDS,
+            "max_summaries_per_file": MAX_PARAMETER_SINK_SUMMARIES,
+            "proof_status": "not_proven",
+        }
 
     @staticmethod
     def _tainted_return_summaries(
@@ -783,32 +891,104 @@ class TaintEngine:
         for parameter in signature.group(1).split(","):
             java = re.search(r"\bIntent\s+([A-Za-z_$][\w$]*)\b", parameter)
             kotlin = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?Intent\b", parameter)
-            match = java or kotlin
+            match = kotlin or java
             if match:
                 result.append(match.group(1))
         return result
 
     @staticmethod
+    def _javascript_interface_parameters(code: str, scope_offset: int, method_name: str,
+                                         method_body: str) -> list[str]:
+        """Model parameters of lexically annotated JavaScript bridge methods.
+
+        Annotation presence is only a review lead: this does not prove a live
+        WebView exposure, origin, API level, or JavaScript reachability.
+        """
+        header = method_body.split("{", 1)[0]
+        signature = re.search(rf"\b{re.escape(method_name)}\s*\(([^)]*)\)", header)
+        if not signature:
+            return []
+        # method_spans starts at the declaration, not its annotations. Only
+        # inspect contiguous annotation/blank lines to avoid carrying an
+        # annotation from an unrelated earlier method.
+        declaration_offset = code.find(method_name, scope_offset, min(len(code), scope_offset + 1024))
+        declaration_prefix = code[scope_offset:declaration_offset] if declaration_offset >= 0 else ""
+        prefix = (code[:scope_offset] + declaration_prefix).splitlines()[-8:]
+        annotation_lines = []
+        for line in reversed(prefix):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("@"):
+                annotation_lines.append(stripped)
+                continue
+            break
+        has_annotation = bool(re.search(r"@(?:android\.webkit\.)?JavascriptInterface\b", declaration_prefix))
+        if not has_annotation:
+            has_annotation = any(re.search(r"@(?:android\.webkit\.)?JavascriptInterface\b", line)
+                                 for line in annotation_lines)
+        if not has_annotation:
+            return []
+        result = []
+        for parameter in signature.group(1).split(","):
+            java = re.search(r"(?:^|\s)([A-Za-z_$][\w$]*)\s*$", parameter.strip())
+            kotlin = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*[^,]+$", parameter.strip())
+            # In Kotlin's `name: Type` form, the Java fallback would otherwise
+            # incorrectly capture the final type token as the parameter name.
+            match = kotlin or java
+            if match:
+                result.append(match.group(1))
+        return result
+
     def _tainted_parameter_sink_summaries(
-        code: str,
-    ) -> dict[str, list[tuple[int, int, dict[str, Any], str, str | None]]]:
+        self, code: str,
+    ) -> dict[str, list[tuple[int, int, dict[str, Any], str, str | None, int, str]]]:
         """Summarize same-file methods that pass a parameter to a modeled sink.
 
-        The summary is lexical and name-based. It intentionally emits only an
-        unverified lead; overload resolution and path/guard analysis are absent.
+        The summary is lexical and same-file only. It composes simple direct
+        identifier forwarding with bounded owner/arity checks, but emits only
+        unverified leads; overload dispatch and path/guard analysis are absent.
         """
-        summaries: dict[str, list[tuple[int, int, dict[str, Any], str, str | None]]] = {}
+        summaries: dict[str, list[tuple[int, int, dict[str, Any], str, str | None, int, str]]] = {}
         scopes = list(method_spans(code))
         type_scopes = _type_scopes(code)
-        method_name_counts: dict[str, int] = {}
-        for method_name, _, _ in scopes:
-            method_name_counts[method_name] = method_name_counts.get(method_name, 0) + 1
-        for name, _offset, body in scopes:
-            # Summaries are keyed by name rather than class/signature. Do not
-            # merge sink behavior across overloads or same-named methods in
-            # unrelated classes; unresolved calls remain unmodeled.
-            if method_name_counts[name] != 1:
+        declaration_counts = Counter()
+        definitions = []
+        candidate_limit_reached = False
+        for method_name, offset, body in scopes:
+            header = body.split("{", 1)[0]
+            signature = re.search(rf"\b{re.escape(method_name)}\s*\(([^)]*)\)", header)
+            if not signature:
                 continue
+            raw = signature.group(1)
+            depth = 0
+            arity = 0 if not raw.strip() else 1
+            for char in raw:
+                if char in "<([": depth += 1
+                elif char in ">)]": depth = max(0, depth - 1)
+                elif char == "," and depth == 0: arity += 1
+            declaration_counts[(method_name, _enclosing_type(offset, type_scopes), arity)] += 1
+            parameters, start, depth = [], 0, 0
+            for index, char in enumerate(raw):
+                if char in "<([": depth += 1
+                elif char in ">)]": depth = max(0, depth - 1)
+                elif char == "," and depth == 0:
+                    parameters.append(raw[start:index].strip()); start = index + 1
+            tail = raw[start:].strip()
+            if tail: parameters.append(tail)
+            names = []
+            for parameter in parameters:
+                kotlin = re.match(r"(?:vararg\s+)?([A-Za-z_$][\w$]*)\s*:", parameter)
+                java = re.search(r"([A-Za-z_$][\w$]*)\s*(?:\[\])?\s*$", parameter)
+                name_match = kotlin or java
+                names.append(name_match.group(1) if name_match else "")
+            calls = tuple(call_sites(body, r"\b[A-Za-z_$][\w$]*"))
+            definitions.append((method_name, _enclosing_type(offset, type_scopes), body, names, calls))
+        for name, _offset, body in scopes:
+            # Keep the owner and arity so callers can distinguish same-named
+            # helpers in different classes. Ambiguous same-owner/same-arity
+            # overloads are filtered below because argument types are not
+            # resolved by this bounded summary.
             header = body.split("{", 1)[0]
             signature = re.search(rf"\b{re.escape(name)}\s*\(([^)]*)\)", header)
             if not signature:
@@ -828,7 +1008,11 @@ class TaintEngine:
                 java = re.search(r"([A-Za-z_$][\w$]*)\s*(?:\[\])?\s*$", param)
                 match = kotlin or java
                 param_names.append(match.group(1) if match else "")
+            direct_candidate_count = sum(len(items) for items in summaries.values())
+            candidate_limit_reached = candidate_limit_reached or direct_candidate_count >= MAX_PARAMETER_SINK_SUMMARIES
             for sink in _SINK_SPECS:
+                if candidate_limit_reached:
+                    break
                 operation = sink["pattern"].pattern.removesuffix(r"\s*\(")
                 declaration = re.search(rf"\b{re.escape(name)}\s*\(", body)
                 for call in call_sites(body, operation):
@@ -841,7 +1025,81 @@ class TaintEngine:
                                 param_index, len(params), sink,
                                 call.code_args[0] if call.code_args else "",
                                 _enclosing_type(_offset, type_scopes),
+                                code.count("\n", 0, _offset + call.offset) + 1,
+                                name,
                             ))
+                            direct_candidate_count += 1
+                            if direct_candidate_count >= MAX_PARAMETER_SINK_SUMMARIES:
+                                candidate_limit_reached = True
+                                break
+                    if candidate_limit_reached:
+                        break
+        summaries = {name: [entry for entry in entries
+                            if declaration_counts[(name, entry[4], entry[1])] == 1]
+                     for name, entries in summaries.items()}
+
+        # Propagate a summary through bounded same-owner helper calls. Only
+        # simple direct parameter forwarding and unqualified/this calls are
+        # modeled; receiver dispatch, conversions and control flow stay unknown.
+        direct_count = sum(len(entries) for entries in summaries.values())
+        summary_count = direct_count
+        candidate_limit_reached = candidate_limit_reached or direct_count >= MAX_PARAMETER_SINK_SUMMARIES
+        max_rounds = 0 if candidate_limit_reached else min(len(definitions), MAX_PARAMETER_SUMMARY_ROUNDS)
+        round_limit_reached = False
+        for round_index in range(max_rounds):
+            changed = False
+            for caller_name, caller_owner, body, caller_params, calls in definitions:
+                caller_count = len(caller_params)
+                if declaration_counts[(caller_name, caller_owner, caller_count)] != 1:
+                    continue
+                declaration = re.search(rf"\b{re.escape(caller_name)}\s*\(", body)
+                for call in calls:
+                    callee_name = call.operation
+                    if callee_name == caller_name or not summaries.get(callee_name):
+                        continue
+                    if declaration and call.offset == declaration.start():
+                        continue
+                    prefix = body[:call.offset]
+                    receiver = re.search(r"(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*$", prefix)
+                    if receiver and receiver.group("receiver") not in {"this", "super"}:
+                        continue
+                    for entry in list(summaries[callee_name]):
+                        param_index, callee_arity, sink, sink_arg, callee_owner, sink_line, terminal = entry
+                        if (caller_owner != callee_owner or len(call.code_args) != callee_arity
+                                or param_index >= len(call.code_args)):
+                            continue
+                        forwarded = call.code_args[param_index].strip()
+                        for caller_index, caller_param in enumerate(caller_params):
+                            if not caller_param or forwarded != caller_param:
+                                continue
+                            candidate = (caller_index, caller_count, sink, sink_arg,
+                                         caller_owner, sink_line, terminal)
+                            bucket = summaries.setdefault(caller_name, [])
+                            if candidate not in bucket:
+                                if summary_count >= MAX_PARAMETER_SINK_SUMMARIES:
+                                    candidate_limit_reached = True
+                                    break
+                                bucket.append(candidate)
+                                summary_count += 1
+                                changed = True
+                        if candidate_limit_reached:
+                            break
+                    if candidate_limit_reached:
+                        break
+                if candidate_limit_reached:
+                    break
+            if not changed:
+                break
+            if round_index == max_rounds - 1:
+                round_limit_reached = True
+        total_count = sum(len(entries) for entries in summaries.values())
+        metrics = self._parameter_summary_coverage
+        metrics["source_files_analyzed"] += 1
+        metrics["direct_summaries"] += direct_count
+        metrics["transitive_summaries"] += max(0, total_count - direct_count)
+        metrics["files_with_transitive_summaries"] += int(total_count > direct_count)
+        metrics["round_limit_files"] += int(round_limit_reached)
+        metrics["candidate_limit_files"] += int(candidate_limit_reached)
         return summaries
 
     def analyze_source_content(self, content: str, file_path: str = "") -> list[Finding]:
@@ -854,7 +1112,8 @@ class TaintEngine:
         type_scopes = _type_scopes(code)
         if not scopes:
             scopes = [("unscoped", 0, code)]
-        for _name, scope_offset, body in scopes:
+        for method_name, scope_offset, body in scopes:
+            method_identity = _lexical_method_identity(method_name, body, scope_offset, type_scopes)
             local_code = _mask_nested_method_scopes(body, scope_offset, scopes)
             # Method-local type evidence prevents arbitrary model objects that
             # happen to expose a similarly named method from becoming Android
@@ -890,6 +1149,13 @@ class TaintEngine:
                 r"\b(?:val|var)\s+([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?ClipboardManager\b", local_code))
             clipboard_names.update(re.findall(
                 r"\b([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?ClipboardManager\b", local_code))
+            content_resolver_names = set(re.findall(
+                r"\b(?:android\.content\.)?ContentResolver\s+([A-Za-z_$][\w$]*)\b", local_code))
+            content_resolver_names.update(re.findall(
+                r"\b(?:val|var)\s+([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?ContentResolver\b",
+                local_code))
+            content_resolver_names.update(re.findall(
+                r"\b([A-Za-z_$][\w$]*)\s*:\s*(?:android\.content\.)?ContentResolver\b", local_code))
             # Track URI provenance with the same lexical shadowing model as
             # taint bindings. A flat set either survived safe reassignment or
             # lost an outer binding when a nested local shadowed its name.
@@ -928,15 +1194,23 @@ class TaintEngine:
                         return trace
                 return None
 
-            declaration_match = re.search(rf"\b{re.escape(_name)}\s*\(", body)
+            declaration_match = re.search(rf"\b{re.escape(method_name)}\s*\(", body)
             declaration_name_offset = (scope_offset + declaration_match.start()) if declaration_match else None
-            for parameter in self._external_intent_parameters(_name, body):
+            for parameter in self._external_intent_parameters(method_name, body):
                 callback_line_offset = declaration_name_offset if declaration_name_offset is not None else scope_offset
                 line_idx = code.count("\n", 0, callback_line_offset) + 1
                 binding_scopes[parameter] = [(method_depth, TaintTrace(
                     parameter, "ANDROID_CALLBACK_INTENT_PARAMETER", line_idx,
                     body.split("{", 1)[0].strip(), {parameter},
                     [f"L{line_idx}: {parameter} is a callback-shaped Intent parameter"],
+                ))]
+            for parameter in self._javascript_interface_parameters(code, scope_offset, method_name, body):
+                bridge_line_offset = declaration_name_offset if declaration_name_offset is not None else scope_offset
+                line_idx = code.count("\n", 0, bridge_line_offset) + 1
+                binding_scopes[parameter] = [(method_depth, TaintTrace(
+                    parameter, "JAVASCRIPT_INTERFACE_PARAMETER", line_idx,
+                    body.split("{", 1)[0].strip(), {parameter},
+                    [f"L{line_idx}: {parameter} is a parameter of a lexically annotated JavascriptInterface method"],
                 ))]
             for offset, statement in self._statements(local_code):
                 statement_depth = depth_at[min(offset, len(local_code))]
@@ -1020,6 +1294,11 @@ class TaintEngine:
                     if source and source[0] == "URI_COMPONENT":
                         if source[1].group("receiver") not in uri_names:
                             source = None
+                    if source and source[0] == "CONTENT_RESOLVER_READ":
+                        stream_call = source[1]
+                        if (stream_call.group("receiver") not in content_resolver_names
+                                or stream_call.group("uri") not in uri_names):
+                            source = None
                     # `getString()` is ubiquitous (JSON, resources, SDK models,
                     # SharedPreferences). Treating every call as a taint source
                     # caused unrelated values to appear attacker-controlled.
@@ -1047,10 +1326,12 @@ class TaintEngine:
                     operation = sink["pattern"].pattern.removesuffix(r"\s*\(")
                     for call in call_sites(clean, operation):
                         compatible_types = (
-                            {"WebView"} if sink["type"] in {"WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT"}
+                            {"WebView"} if sink["type"] in {"WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT", "WEBVIEW_HTML_LOAD"}
                             else {"SQLiteDatabase", "SupportSQLiteDatabase"}
                             if sink["type"] == "SQLI" else set()
                         )
+                        if sink["type"] == "UNTRUSTED_DESERIALIZATION":
+                            compatible_types = {"ObjectInputStream"}
                         if sink["type"] == "INTENT_REDIRECTION":
                             invoked_method = call.operation.rsplit(".", 1)[-1]
                             compatible_types = ({"Activity", "ActivityCompat"}
@@ -1061,7 +1342,10 @@ class TaintEngine:
                             invoked_method = call.operation.rsplit(".", 1)[-1]
                             compatible_types = {"ClassLoader"} if invoked_method == "loadClass" else {"Class"}
                         sink_receiver = re.search(r"([A-Za-z_$][\w$]*)\s*\.\s*$", clean[:call.offset])
-                        sink_operation = (f"{sink_receiver.group(1)}.{call.operation}"
+                        if sink["type"] == "UNTRUSTED_DESERIALIZATION" and sink_receiver is None:
+                            sink_receiver = re.fullmatch(r"([A-Za-z_$][\w$]*)\.readObject", call.operation)
+                        sink_operation = (call.operation if sink["type"] == "UNTRUSTED_DESERIALIZATION"
+                                          else f"{sink_receiver.group(1)}.{call.operation}"
                                           if sink_receiver else call.operation)
                         if (compatible_types and _known_unrelated_sink_receiver(
                                 code, body, sink_operation, compatible_types)):
@@ -1069,7 +1353,10 @@ class TaintEngine:
                         # SQL bound selectionArgs are not query syntax. Likewise
                         # launch request codes and WebView header maps are not the
                         # launched Intent/loaded URL value.
-                        relevant = call.code_args[:1] if sink["type"] in {"SQLI", "INTENT_REDIRECTION", "WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT", "UNSAFE_REFLECTION"} else call.code_args
+                        relevant = (call.code_args[:2] if sink["type"] == "WEBVIEW_HTML_LOAD" else
+                                    call.code_args[:1] if sink["type"] in {"SQLI", "INTENT_REDIRECTION", "WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT", "UNSAFE_REFLECTION"} else call.code_args)
+                        if sink["type"] == "UNTRUSTED_DESERIALIZATION" and sink_receiver:
+                            relevant = [*relevant, sink_receiver.group(1)]
                         if (file_path.lower().endswith(".java") and sink["type"] == "SQLI"
                                 and call.args and numeric_sql_concatenation(call.args[0], content)):
                             continue
@@ -1207,8 +1494,14 @@ class TaintEngine:
                                       "source_kind": trace.source_type if trace else "inline_input_source",
                                       "source_sink_trace": {
                                           "source": {"kind": trace.source_type if trace else "inline_input_source",
-                                                     "line": trace.source_line if trace else line_idx},
-                                          "sink": {"operation": sink["type"], "line": line_idx},
+                                                     "line": trace.source_line if trace else line_idx,
+                                                     "method": method_name,
+                                                     "method_identity": method_identity,
+                                                     "method_identity_kind": "bounded_lexical_owner_signature" if method_identity else "not_available"},
+                                          "sink": {"operation": sink["type"], "line": line_idx,
+                                                   "method": method_name,
+                                                   "method_identity": method_identity,
+                                                   "method_identity_kind": "bounded_lexical_owner_signature" if method_identity else "not_available"},
                                           "propagation_steps": trace.propagation_steps if trace else [],
                                           "guards": "not_resolved", "runtime_verified": False,
                                       },
@@ -1235,9 +1528,9 @@ class TaintEngine:
                         )
                         receiver_name = call_receiver.group("receiver") if call_receiver else None
                         caller_type = _enclosing_type(scope_offset, type_scopes)
-                        for param_index, param_count, sink, _sink_arg, summary_owner in summaries:
-                            if summary_owner and receiver_name:
-                                if receiver_name in {"this", "super"}:
+                        for param_index, param_count, sink, _sink_arg, summary_owner, helper_sink_line, sink_method in summaries:
+                            if summary_owner:
+                                if receiver_name is None or receiver_name in {"this", "super"}:
                                     if caller_type != summary_owner:
                                         continue
                                 elif receiver_name != summary_owner:
@@ -1246,7 +1539,7 @@ class TaintEngine:
                                         type_members = _enclosing_type_members(
                                             code, scope_offset, type_scopes, scopes)
                                         declared_type = _declared_receiver_type(type_members, receiver_name)
-                                    if declared_type and declared_type != summary_owner:
+                                    if declared_type != summary_owner:
                                         continue
                             if len(call.code_args) != param_count or param_index >= len(call.code_args):
                                 continue
@@ -1262,7 +1555,7 @@ class TaintEngine:
                                 title=helper_title,
                                 description=(f"Potential same-file helper flow from {trace.source_var} "
                                              f"({trace.source_type}), line {trace.source_line}, through "
-                                             f"{helper}() to {sink['type']}. Method resolution, guards, "
+                                             f"{helper}() to {sink['type']} in {sink_method}(). Method resolution, guards, "
                                              "path conditions and external reachability are not analyzed; no exploit is established."
                                              + (" The preference value's writer/integrity is not established, so attacker control is unproven." if stored_preference else "")),
                                 severity=Severity.INFO if stored_preference else sink["severity"], confidence=0.5, cwe_id=sink["cwe"],
@@ -1274,8 +1567,10 @@ class TaintEngine:
                                 metadata={"proof_state": "not_proven", "analysis_kind": "bounded_lexical_flow",
                                           "source_kind": trace.source_type,
                                           "source_sink_trace": {
-                                              "source": {"kind": trace.source_type, "line": trace.source_line},
-                                              "sink": {"operation": sink["type"], "line": None},
+                                              "source": {"kind": trace.source_type, "line": trace.source_line,
+                                                         "method": method_name},
+                                              "sink": {"operation": sink["type"], "line": helper_sink_line,
+                                                       "method": sink_method},
                                               "helper_call": {"name": helper, "line": line_idx},
                                               "propagation_steps": trace.propagation_steps,
                                               "guards": "not_resolved", "runtime_verified": False,
@@ -1289,16 +1584,43 @@ class TaintEngine:
             ast_findings = self._java_ast.analyze(content, file_path)
             if ast_findings is None:
                 self.ast_coverage["parse_fallbacks"] += 1
+                reason = self._java_ast.last_failure_reason
+                if reason == "syntax_error":
+                    self.ast_coverage["syntax_error_fallbacks"] += 1
+                    observed_errors = self._java_ast.last_parse_error_node_count
+                    if type(observed_errors) is int:
+                        self.ast_coverage["syntax_error_nodes_observed"] += observed_errors
+                    if self._java_ast.last_parse_error_count_status != "measured":
+                        self.ast_coverage["syntax_error_node_count_incomplete_files"] += 1
+                elif reason == "parser_exception":
+                    self.ast_coverage["parser_exception_fallbacks"] += 1
+                elif reason == "parser_unavailable":
+                    self.ast_coverage["parser_unavailable_fallbacks"] += 1
                 self.ast_coverage["static_status"] = "fallback_lexical"
             else:
                 self.ast_coverage["files_parsed"] += 1
                 self.ast_coverage["static_status"] = "analyzed_heuristically"
-                known = {(f.cwe_id, f.file_path, f.line_number, f.title) for f in findings}
+                known = {(f.cwe_id, f.file_path, f.line_number, f.title): f for f in findings}
                 for ast_finding in ast_findings:
                     key = (ast_finding.cwe_id, ast_finding.file_path, ast_finding.line_number, ast_finding.title)
                     if key not in known:
                         findings.append(ast_finding)
-                        known.add(key)
+                        known[key] = ast_finding
+                    else:
+                        # A lexical candidate may duplicate the AST candidate
+                        # by rule/path/line/title. Keep one finding, but do not
+                        # discard the AST's more precise source/sink attribution.
+                        existing = known[key]
+                        if existing is not None:
+                            ast_metadata = ast_finding.metadata if isinstance(ast_finding.metadata, dict) else {}
+                            existing_metadata = existing.metadata if isinstance(existing.metadata, dict) else {}
+                            ast_trace = ast_metadata.get("source_sink_trace")
+                            lexical_trace = existing_metadata.get("source_sink_trace")
+                            if isinstance(ast_trace, dict) and isinstance(lexical_trace, dict):
+                                existing_metadata["lexical_source_sink_trace"] = lexical_trace
+                                existing_metadata["source_sink_trace"] = ast_trace
+                                existing_metadata["analysis_kind"] = "bounded_lexical_and_java_ast_duplicate"
+                                existing.metadata = existing_metadata
         return findings
 
     @staticmethod
@@ -1346,7 +1668,16 @@ class TaintEngine:
         all_findings: list[Finding] = []
         root_path = Path(decompiled_dir)
         self.ast_coverage.update(files_parsed=0, parse_fallbacks=0,
+                                 syntax_error_fallbacks=0, parser_exception_fallbacks=0,
+                                 syntax_error_nodes_observed=0,
+                                 syntax_error_node_count_incomplete_files=0,
+                                 parser_unavailable_fallbacks=0,
                                  static_status="not_analyzed")
+        self._parameter_summary_coverage.update(
+            source_files_analyzed=0, direct_summaries=0, transitive_summaries=0,
+            files_with_transitive_summaries=0, round_limit_files=0,
+            candidate_limit_files=0,
+        )
 
         inventory = SourceInventory()
         analysis_failures: list[str] = []
@@ -1357,20 +1688,59 @@ class TaintEngine:
                 all_findings.extend(self.analyze_source_content(content, file_path=rel_path))
                 if len(all_findings) >= 1000:
                     all_findings = all_findings[:1000]
-                    inventory.coverage['limits_reached'] = True
+                    inventory.record_limit('taint_candidate_count')
                     break
             except Exception as e:
                 rel_path = str(file_path.relative_to(root_path)) if file_path.is_relative_to(root_path) else file_path.name
                 analysis_failures.append(rel_path)
                 logger.warning("Failed to analyze taint in %s (%s)", rel_path, type(e).__name__)
         self.coverage = dict(inventory.coverage)
+        summary_limits = self._parameter_summary_coverage
+        if summary_limits["candidate_limit_files"] or summary_limits["round_limit_files"]:
+            self.coverage["static_status"] = "partial"
+            self.coverage["limits_reached"] = True
+            reasons = self.coverage.setdefault("limit_reasons", {})
+            if summary_limits["candidate_limit_files"]:
+                reasons["taint_parameter_summary_count"] = summary_limits["candidate_limit_files"]
+            if summary_limits["round_limit_files"]:
+                reasons["taint_parameter_summary_rounds"] = summary_limits["round_limit_files"]
         if analysis_failures:
             self.coverage["static_status"] = "partial"
             self.coverage["analysis_failures"] = len(analysis_failures)
             self.coverage["failed_source_files"] = analysis_failures[:100]
         self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
                              candidate_count=len(all_findings), java_ast=dict(self.ast_coverage),
-                             limits={**inventory.coverage['limits'], 'findings':1000})
+                             same_file_parameter_summary=dict(self._parameter_summary_coverage),
+                             limits={**inventory.coverage['limits'], 'findings':1000,
+                                     'parameter_summaries': MAX_PARAMETER_SINK_SUMMARIES,
+                                     'parameter_summary_rounds': MAX_PARAMETER_SUMMARY_ROUNDS})
+        serialization_candidates = sum(
+            1 for finding in all_findings
+            if finding.cwe_id == "CWE-502"
+            and finding.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+                == "UNTRUSTED_DESERIALIZATION")
+        self.coverage["serialization"] = {
+            "static_status": self.coverage.get("static_status", "incomplete"),
+            "runtime_status": "not_tested", "proof_status": "not_proven",
+            "candidate_count": serialization_candidates, "exhaustive": False,
+            "limitations": [
+                "only the bounded modeled Java ObjectInputStream flow is counted",
+                "URI provider control, grants, guards, object filters, and runtime reachability are not validated",
+            ],
+        }
+        webview_candidates = sum(
+            1 for finding in all_findings
+            if finding.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+                in {"WEBVIEW_NAVIGATION", "WEBVIEW_JAVASCRIPT", "WEBVIEW_HTML_LOAD"})
+        self.coverage["webview"] = {
+            "static_status": self.coverage.get("static_status", "incomplete"),
+            "runtime_status": "not_tested", "proof_status": "not_proven",
+            "candidate_count": webview_candidates, "exhaustive": False,
+            "limitations": [
+                "only bounded flows to modeled Java WebView sinks are counted",
+                "effective origin, JavaScript bridge exposure, guards, control flow, and runtime reachability are not validated",
+            ],
+        }
         return all_findings
 
     async def analyze_directory_async(self, decompiled_dir: str | Path) -> list[Finding]:

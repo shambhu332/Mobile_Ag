@@ -242,7 +242,7 @@ class SmaliCallGraphEngine:
         for sf, data in inventory.read(source_root, {".smali"}, names=names):
             self._parse_smali_file(sf, data.decode("utf-8", errors="ignore"))
             if len(self.methods) >= 100000:
-                inventory.coverage['limits_reached'] = True
+                inventory.record_limit('smali_method_count')
                 break
 
         for method in self.methods.values():

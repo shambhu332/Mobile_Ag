@@ -22,6 +22,10 @@ def test_bounded_sources_skip_symlinks_and_large_files(tmp_path):
     rows = list(reader.read(tmp_path, {'.java'}))
     assert [(p.name, data) for p, data in rows] == [('Small.java', b'ok')]
     assert reader.coverage['source_files_skipped'] == 2
+    assert reader.coverage['source_file_skip_reasons'] == {
+        'symlink_entry': 1, 'file_size_limit': 1,
+    }
+    assert sum(reader.coverage['source_file_skip_reasons'].values()) == reader.coverage['source_files_skipped']
     assert reader.coverage['static_status'] == 'partial'
 
 
@@ -31,9 +35,11 @@ def test_entry_and_total_byte_budgets(tmp_path):
     reader = SourceInventory(max_entries=2)
     assert len(list(reader.read(tmp_path, {'.java'}))) == 2
     assert reader.coverage['limits_reached']
+    assert reader.coverage['limit_reasons'] == {'entry_budget': 1}
     reader = SourceInventory(max_total_bytes=6)
     assert len(list(reader.read(tmp_path, {'.java'}))) == 1
     assert reader.coverage['static_status'] == 'partial'
+    assert reader.coverage['limit_reasons'] == {'total_byte_budget': 1}
 
 
 @pytest.mark.asyncio

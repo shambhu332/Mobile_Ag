@@ -111,7 +111,7 @@ class AuthSessionAuditor:
                 for issue_id, (pattern, cwe, _, description) in self.static_patterns.items():
                     if pattern.search(line):
                         if len(findings) >= 500:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('auth_candidate_count')
                             continue
                         findings.append(Finding(
                             title=f"Authentication/session review: {issue_id}",

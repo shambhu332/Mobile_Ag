@@ -38,7 +38,7 @@ class APIMapper:
                 # Extract Retrofit annotations
                 for method, path in self.retrofit_pattern.findall(content):
                     if len(endpoints) >= 5000:
-                        inventory.coverage['limits_reached'] = True
+                        inventory.record_limit('endpoint_count')
                         break
                     endpoints.append({
                         "method": method,
@@ -58,7 +58,7 @@ class APIMapper:
                             "file_path": rel_path
                             })
                         else:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('api_candidate_count')
 
                 # Extract hardcoded URLs
                 for url in self.url_pattern.findall(content):
@@ -77,7 +77,7 @@ class APIMapper:
                             "file_path": rel_path
                             })
                         else:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('url_count')
                     elif (urlsplit(url).scheme.lower() == "http"
                           and hostname not in {"localhost", "127.0.0.1", "::1"}):
                         if len(raw_findings) < 500:
@@ -88,7 +88,7 @@ class APIMapper:
                             "file_path": rel_path
                             })
                         else:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('http_url_candidate_count')
 
             except (OSError, UnicodeError) as e:
                 logger.debug(f"Could not read file {file_path}: {e}")

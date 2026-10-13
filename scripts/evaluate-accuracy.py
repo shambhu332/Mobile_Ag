@@ -26,6 +26,10 @@ def main():
         engine._java_ast.available = False
     report = evaluate_instances(corpus, engine.analyze_source_content)
     report['backend'] = 'java_ast_plus_lexical' if engine._java_ast.available else 'lexical_fallback'
+    report['parser_coverage'] = {
+        **engine.ast_coverage,
+        'coverage_scope': 'Java parser attempts in the source fixture corpus; no DEX/decompiler accounting',
+    }
     report['python_version'] = sys.version.split()[0]
     report['corpus_file_sha256'] = hashlib.sha256(args.corpus.read_bytes()).hexdigest()
     root = Path(__file__).resolve().parents[1]

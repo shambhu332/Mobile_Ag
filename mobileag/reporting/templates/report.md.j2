@@ -56,6 +56,23 @@ The security analysis identified **{{ stats.total }}** review items (not validat
 #### Description
 {{ finding.description }}
 
+{% set trace = finding.metadata.get('source_sink_trace') if finding.metadata else none %}
+{% if trace %}
+#### Static source-to-sink trace (review candidate)
+{% if trace.source %}- **Source:** `{{ trace.source.kind|default('not recorded') }}`{% if trace.source.line %}, line {{ trace.source.line }}{% endif %}{% else %}- **Source:** not recorded{% endif %}
+{% if trace.sink %}- **Sink:** `{{ trace.sink.operation|default('not recorded') }}`{% if trace.sink.line %}, line {{ trace.sink.line }}{% endif %}{% else %}- **Sink:** not recorded{% endif %}
+- **Guards:** {{ trace.guards|default('not resolved') }}
+- **Runtime verified:** {{ trace.runtime_verified|default(false) }}
+{% if finding.metadata.control_flow %}- **Control-flow model:** {{ finding.metadata.control_flow }}{% endif %}
+This is analyzer trace metadata, not proof of external reachability, attacker control, effective guard behavior, or exploitability.
+{% endif %}
+{% if finding.evidence_assessment.basis == 'analyst_attested' and finding.validation_evidence.record %}
+#### Structured analyst evidence (not independently verified)
+```json
+{{ finding.validation_evidence.record|report_json }}
+```
+{% endif %}
+
 #### Code Evidence
 ```java
 {{ finding.code_snippet }}

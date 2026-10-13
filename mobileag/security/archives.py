@@ -8,7 +8,7 @@ MAX_EXPANDED = 512 * 1024 * 1024
 MAX_MEMBERS = 20000
 
 
-def validate_archive(path: str | Path) -> str:
+def _validated_members(path: str | Path):
     path = Path(path)
     if not path.is_file() or path.stat().st_size > MAX_UPLOAD:
         raise ValueError("Missing archive or upload size limit exceeded")
@@ -29,13 +29,33 @@ def validate_archive(path: str | Path) -> str:
                 total += member.file_size
                 if total > MAX_EXPANDED or member.file_size > MAX_UPLOAD:
                     raise ValueError("Archive expansion limit exceeded")
-            if 'AndroidManifest.xml' in names:
-                return 'android'
-            if any(n.startswith('Payload/') and n.endswith('.app/Info.plist') for n in names):
-                return 'ios'
-            raise ValueError("Archive is not an APK or IPA")
+            return names
     except zipfile.BadZipFile as exc:
         raise ValueError("Invalid ZIP application archive") from exc
+
+
+def validate_archive(path: str | Path) -> str:
+    """Validate a bounded APK/IPA archive and return its package kind."""
+    names = _validated_members(path)
+    if 'AndroidManifest.xml' in names:
+        return 'android'
+    if any(n.startswith('Payload/') and n.endswith('.app/Info.plist') for n in names):
+        return 'ios'
+    raise ValueError("Archive is not an APK or IPA")
+
+
+def validate_android_bundle_archive(path: str | Path) -> str:
+    """Validate the structural signature of an Android App Bundle ZIP.
+
+    This does not decode protobuf manifests or authorize treating a bundle as
+    an APK; callers should use the separate bounded inventory-only workflow.
+    """
+    names = _validated_members(path)
+    has_base_manifest = 'base/manifest/AndroidManifest.xml' in names
+    has_bundle_config = 'BundleConfig.pb' in names
+    if not (has_base_manifest and has_bundle_config):
+        raise ValueError("Archive is not a structurally recognized Android App Bundle")
+    return 'android_app_bundle'
 
 
 def extract_archive(path: str | Path, destination: str | Path) -> None:

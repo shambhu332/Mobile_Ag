@@ -62,7 +62,69 @@ python -m mobileag.cli scan --apk owned.apk --offline --format json
 python -m mobileag.cli ios --ipa owned.ipa --format markdown
 ```
 
-`--offline` prevents LLM/OSV requests. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Source/snippet cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. The dashboard has a separately consented aggregate-metadata-only review stage described below. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
+The Android scan command is suitable for a local CI job with exit status `0`
+when the scan completes without pipeline errors and nonzero when the scan is
+incomplete or fails. Findings do not themselves change the exit status. JSON
+reports carry `report_schema_version: 1`; the envelope is described by
+[`docs/schemas/mobileag-report-v1.schema.json`](docs/schemas/mobileag-report-v1.schema.json).
+Run timestamps and scan IDs are intentionally per-run values, so report files
+are schema-stable, not byte-for-byte reproducible across scans.
+To verify wheel packaging reproducibility under the installed build toolchain,
+run `python scripts/check-reproducible-wheel.py`; it performs two isolated
+offline builds with a fixed archive timestamp and compares wheel SHA-256 hashes.
+This check does not establish hosted-runner or dependency-supply-chain
+reproducibility.
+
+`--offline` prevents LLM/OSV requests. OSV dependency lookups are disabled unless that invocation explicitly includes `--lookup-advisories`; this sends parsed Maven or npm coordinates and exact versions from supported local metadata (including Gradle/Maven metadata and npm `package-lock.json` v1/v2/v3 and Yarn v1 `yarn.lock`) to OSV. This only covers lockfiles present in the analyzed tree; APKs often omit build-time lockfiles, so absence does not mean no dependencies. Unsupported or dynamic lock entries remain unresolved and make inventory coverage partial. The two options cannot be combined. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Source/snippet cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. The dashboard has a separately consented aggregate-metadata-only review stage described below. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
+
+Offline dependency inventory recognizes literal Maven/Gradle declarations, direct dependencies in DTD-free `pom.xml` files (including bounded whole-value property references declared in that same root POM), `gradle.lockfile`, embedded `pom.properties`, npm `package-lock.json` v1/v2/v3, and Yarn v1 `yarn.lock`. Gradle version-catalog aliases count as dependencies only when a bounded supported dependency declaration references the exact alias; unused catalog entries are not treated as resolved packages. It does not resolve dynamic versions, plugins, providers, dependency graphs, Yarn Berry, or workspace aliases; unresolved declarations and parse failures are counted as partial coverage. Inventory alone is not a vulnerability result. PendingIntent mutability review also resolves only unique bounded Java `final int` or Kotlin `const val Int` flag aliases; helper calls, reassigned variables, ambiguous aliases, and unsupported expressions remain manual-review leads.
+
+Import an external SARIF 2.1.0 file into a separate, untrusted candidate
+projection (offline; output must be a new file):
+
+```bash
+python -m mobileag.cli import-sarif --input external.sarif --output imported-candidates.json
+```
+
+The importer validates the vendored OASIS SARIF 2.1.0 schema offline before
+projecting a bounded subset. It enforces size/run/result limits, records the
+source SHA-256 and producer provenance, deduplicates rule/location instances,
+rejects unsafe file URIs, and discards producer evidence/status. Schema
+conformance does not make external claims trustworthy: imported results remain
+`UNVERIFIED`; this is not a MobileAg scan report and does not add findings to
+scan history. See [`docs/schemas/README.md`](docs/schemas/README.md) for schema
+provenance and digest.
+
+For a MobSF Android static JSON report, MobileAg can project a bounded subset
+offline:
+
+```bash
+python -m mobileag.cli import-mobsf-json --input mobsf-report.json --output imported-mobsf-candidates.json
+```
+
+Only `code_analysis.findings` and `manifest_analysis.manifest_findings` are
+projected, as `UNVERIFIED` candidates. The CLI applies a 5 MiB input limit,
+caps finding counts, redacts output, drops unsafe source locations and never
+updates scan history or binds the producer's package assertion to a MobileAg
+artifact. MobSF JSON has no importer-enforced producer-version compatibility
+matrix here: unsupported shapes are rejected, and a synthetic fixture is not
+evidence of compatibility with every MobSF release. The output projection
+schema is [`docs/schemas/mobsf-import-v1.schema.json`](docs/schemas/mobsf-import-v1.schema.json).
+The recognized field names follow MobSF's current [Android static-analysis
+report template](https://github.com/MobSF/Mobile-Security-Framework-MobSF/blob/master/mobsf/templates/static_analysis/android_source_analysis.html),
+not a guaranteed stable interchange contract.
+
+For an Android App Bundle, run the separate bounded input-only inventory:
+
+```bash
+python -m mobileag.cli inventory-aab --input owned.aab --output aab-inventory.json
+```
+
+This records bundle module, DEX-header class-count, and native-library member
+inventory with artifact SHA-256. It does not decode protobuf manifests, create
+device splits/APKs, decompile or analyze code, or establish delivery/runtime
+coverage. See the versioned
+[`AAB inventory schema`](docs/schemas/android-app-bundle-inventory-v1.schema.json).
 
 Java Tree-sitter AST support is installed by the default package dependencies
 and used by taint review when parsing succeeds. Per-scan coverage records the
@@ -128,6 +190,8 @@ Use **Configuration → LLM provider configuration** to choose the primary provi
 **Start Assessment → Optional AI review** shows the selected pair and requires explicit primary metadata-egress consent and separate secondary consent. Secondary runs once only after primary HTTP 429; static analysis stays offline. See [configuration UI validation](docs/llm-configuration-2026-10-07/README.md) and [fallback boundaries](docs/provider-fallback-2026-10-06/README.md).
 
 Automated findings are **UNVERIFIED review candidates**, not proven vulnerabilities. Taint detection is a straight-line heuristic, not a complete inter-procedural engine. Symbol presence, exported components, URL paths, shell-readable data and LLM votes do not prove exploitation. Confirmation requires analyst evidence. Dashboard triage is scan-scoped, revision-checked and saved transactionally in local SQLite; legacy original report files are preserved. The legacy unscoped feedback endpoint rejects requests rather than guessing the target scan.
+
+Completed scans support a manual, record-only test plan through authenticated `GET`/`PUT /api/scans/{scan_id}/test-plan`. Plans bind to the scan's package and artifact SHA-256 and use optimistic revisions. They hold role/flow descriptions, test-account aliases (never credentials), coverage states and analyst notes. They do not approve or run device/API actions; notes remain unverified analyst input. A retest plan snapshots its same-package baseline scan ID, artifact SHA-256, and version; `GET /api/scans/{scan_id}/planned-comparison` rechecks that frozen package/hash/version binding before comparing. `GET /api/scans/{current_scan_id}/comparison/{baseline_scan_id}` remains available for explicit read-only exact-location comparisons. A separate `relocation_leads` list can suggest a unique possible file move only when rule/CWE, qualified method identity, and sink operation agree; the exact-location rows remain `not_proof_of_fix`/new, and the lead is never a match or fix verdict. Neither route infers that a missing candidate is fixed. Run the isolated Chromium workflow check with `python tests/browser_test_plan_comparison.py` (or pass its `--chromium` option); it uses only synthetic loopback scan records and runs in the Project validation CI browser job.
 
 The current behavior supersedes the historical capability descriptions above and older architecture/session notes. See [fix status and validation](docs/audit-2026-10-05/FIX_STATUS.md) and the [original review](docs/audit-2026-10-05/REVIEW.md). The subsequent product review and its fixes are tracked in [current product-fix status](docs/product-security-review-2026-10-05/FIX_STATUS.md).
 

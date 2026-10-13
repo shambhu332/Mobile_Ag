@@ -22,6 +22,30 @@ from mobileag.security.archives import validate_archive
 
 web = importlib.import_module('mobileag.web.app')
 
+
+class _MockStreamResponse:
+    def __init__(self, body, status_code=200):
+        self.body = body
+        self.status_code = status_code
+
+    async def aiter_bytes(self):
+        for start in range(0, len(self.body), 65536):
+            yield self.body[start:start + 65536]
+
+
+class _MockStreamContext:
+    def __init__(self, response):
+        self.response = response
+
+    async def __aenter__(self): return self.response
+    async def __aexit__(self, *args): return False
+
+
+class _MockClientContext:
+    def __init__(self, client): self.client = client
+    async def __aenter__(self): return self.client
+    async def __aexit__(self, *args): return False
+
 def apk_bytes():
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,'w') as z:
@@ -81,7 +105,136 @@ async def test_offline_osv_skipped(tmp_path):
     (tmp_path/'build.gradle').write_text('implementation "test:test:1"')
     with patch('httpx.AsyncClient') as client:
         assert await scanner.scan(str(tmp_path)) == []
+        assert scanner.coverage['dependency_count'] == 1
+        assert scanner.coverage['static_status'] == 'analyzed_heuristically'
+        assert scanner.coverage['lookup_status'] == 'skipped_offline'
+        assert scanner.coverage['advisory_freshness'] == 'not_checked'
         client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_offline_osv_cannot_be_overridden_by_lookup_consent(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+    router = LLMRouter(Settings(_env_file=None, offline=True))
+    scanner = DependencyScanner(router)
+    (tmp_path/'build.gradle').write_text('implementation "test:test:1"')
+    with patch('httpx.AsyncClient') as client:
+        assert await scanner.scan(str(tmp_path), allow_advisory_lookup=True) == []
+        client.assert_not_called()
+    assert scanner.coverage['dependency_count'] == 1
+    assert scanner.coverage['lookup_status'] == 'skipped_offline'
+    assert scanner.coverage['lookup_authorized'] is True
+    assert 'blocked by offline mode' in scanner.coverage['limitations'][-1]
+
+
+@pytest.mark.asyncio
+async def test_osv_response_with_oversized_body_is_rejected(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    client = MagicMock()
+    client.stream = MagicMock(return_value=_MockStreamContext(
+        _MockStreamResponse(b'x' * (1024 * 1024 + 1))))
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1"')
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(client)):
+        assert await scanner.scan(str(tmp_path), allow_advisory_lookup=True) == []
+    assert scanner.coverage['lookup_status'] == 'failed'
+    assert scanner.coverage['oversized_responses'] == 1
+    assert scanner.coverage['advisory_freshness'] == 'not_retrieved'
+
+
+@pytest.mark.asyncio
+async def test_osv_vulnerability_count_is_capped_and_reported_partial(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    client = MagicMock()
+    payload = {'vulns': [{'id': f'SYNTHETIC-{i}', 'summary': 'Synthetic'} for i in range(105)]}
+    client.stream = MagicMock(return_value=_MockStreamContext(
+        _MockStreamResponse(json.dumps(payload).encode())))
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1"')
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(client)):
+        findings = await scanner.scan(str(tmp_path), allow_advisory_lookup=True)
+    assert len(findings) == 100
+    assert scanner.coverage['lookup_status'] == 'partial'
+    assert scanner.coverage['vulnerability_results_omitted'] == 5
+    assert scanner.coverage['advisory_response_limits']['vulnerabilities_per_package'] == 100
+
+
+@pytest.mark.asyncio
+async def test_osv_findings_are_capped_per_scan_and_reported_partial(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    client = MagicMock()
+    payload = {'vulns': [{'id': f'SYNTHETIC-{i}', 'summary': 'Synthetic'} for i in range(100)]}
+    stream_context = _MockStreamContext(_MockStreamResponse(json.dumps(payload).encode()))
+    client.stream = MagicMock(return_value=stream_context)
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('dependencies {\n' + ''.join(
+        f'implementation "test:library-{i}:1"\n' for i in range(6)) + '}\n')
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(client)):
+        findings = await scanner.scan(str(tmp_path), allow_advisory_lookup=True)
+    assert len(findings) == 500
+    assert scanner.coverage['findings_omitted'] == 100
+    assert scanner.coverage['lookup_status'] == 'partial'
+
+
+@pytest.mark.asyncio
+async def test_opt_in_npm_lock_lookup_uses_npm_ecosystem(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    (tmp_path/'package-lock.json').write_text(json.dumps({
+        'lockfileVersion': 3,
+        'packages': {'': {}, 'node_modules/react-native': {'version': '0.76.0'}},
+    }))
+    client = MagicMock()
+    payload = {'vulns': [{'id': 'SYNTHETIC-NPM-1', 'summary': 'Synthetic advisory'}]}
+    client.stream = MagicMock(return_value=_MockStreamContext(
+        _MockStreamResponse(json.dumps(payload).encode())))
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(client)):
+        findings = await scanner.scan(str(tmp_path), allow_advisory_lookup=True)
+    assert len(findings) == 1
+    request = client.stream.call_args.kwargs['json']
+    assert request['package'] == {'name': 'react-native', 'ecosystem': 'npm'}
+    assert findings[0].metadata['package_ecosystem'] == 'npm'
+    assert findings[0].status == FindingStatus.UNVERIFIED
+
+
+@pytest.mark.asyncio
+async def test_opt_in_osv_lookup_records_provenance_freshness_and_unverified_state(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    client = MagicMock()
+    payload = {'vulns': [{'id': 'SYNTHETIC-OSV-1', 'aliases': ['CVE-2099-0001'],
+                          'summary': 'Synthetic advisory', 'published': '2099-01-01T00:00:00Z',
+                          'modified': '2099-01-02T00:00:00Z'}]}
+    client.stream = MagicMock(return_value=_MockStreamContext(
+        _MockStreamResponse(json.dumps(payload).encode())))
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1.2.3"')
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(client)):
+        findings = await scanner.scan(str(tmp_path), allow_advisory_lookup=True)
+    assert client.stream.call_count == 1
+    assert scanner.coverage['lookup_status'] == 'completed'
+    assert scanner.coverage['successful'] == 1 and scanner.coverage['failed'] == 0
+    assert scanner.coverage['advisory_freshness'].startswith('retrieved_at:')
+    assert findings[0].status == FindingStatus.UNVERIFIED
+    assert findings[0].metadata['advisory_source'] == 'OSV API'
+    assert findings[0].metadata['advisory_modified'] == '2099-01-02T00:00:00Z'
+
+
+@pytest.mark.asyncio
+async def test_online_configuration_does_not_authorize_osv_lookup_by_itself(tmp_path):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1.2.3"')
+    with patch('httpx.AsyncClient') as client:
+        assert await scanner.scan(str(tmp_path)) == []
+    client.assert_not_called()
+    assert scanner.coverage['dependency_count'] == 1
+    assert scanner.coverage['lookup_status'] == 'skipped_no_consent'
+    assert scanner.coverage['advisory_freshness'] == 'not_checked'
 
 def test_missing_scan_never_demo(client):
     r=client.post('/api/scans/run',json={'apk_path':str(web.UPLOAD_DIR/'absent.apk')})

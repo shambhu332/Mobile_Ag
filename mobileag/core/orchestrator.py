@@ -24,6 +24,7 @@ from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.call_graph import SmaliCallGraphEngine
 from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer
+from mobileag.analysis.deep_link_correlation import correlate_manifest_deep_link_flows
 from mobileag.analysis.auth_session_auditor import AuthSessionAuditor
 from mobileag.analysis.firebase_auditor import FirebaseAuditor
 from mobileag.analysis.code_reviewer import CodeReviewer
@@ -99,6 +100,7 @@ class Orchestrator:
         output_dir: Optional[str] = None,
         scan_id: Optional[str] = None,
         progress_callback: Optional[Any] = None,
+        allow_advisory_lookup: bool = False,
     ) -> ScanState:
         """Run a full security scan on an APK.
 
@@ -117,6 +119,7 @@ class Orchestrator:
         output_path.mkdir(parents=True, exist_ok=True)
 
         state = create_initial_state(sid, apk_path, str(output_path))
+        state["allow_advisory_lookup"] = bool(allow_advisory_lookup)
         logger.info("Starting scan %s on %s", sid, apk_path)
 
         async def _notify(stage: str, msg: str, pct: int, finding: Optional[dict[str, Any]] = None) -> None:
@@ -204,17 +207,38 @@ class Orchestrator:
                 "smali_files": file_counts["smali"],
                 "ingestion_inventory": {"source": dict(inventory.coverage), "smali": dict(smali_inventory.coverage)},
                 "resources": bool(state["resource_path"]),
-                "dependency_lookup": "skipped_offline" if self._settings.offline else "enabled",
+                "dependency_lookup": ("authorized" if state.get("allow_advisory_lookup") else
+                                       "skipped_offline" if self._settings.offline else "skipped_no_consent"),
                 "historical_learning": "not_configured",
                 "android_surface": AndroidSurfaceAnalyzer().scan(None,{} )["coverage"],
             })
             state["package_name"] = extraction.get("package_name", "")
             state["artifact_provenance"] = extraction.get("artifact_provenance", {})
+            archive_inventory = state["artifact_provenance"].get("archive_inventory", {})
+            state["coverage"].setdefault("ingestion_inventory", {})["apk_archive"] = dict(archive_inventory)
+            decompiler_diagnostics = state["artifact_provenance"].get("decompiler_diagnostics", {})
+            if isinstance(decompiler_diagnostics, dict):
+                state["coverage"]["decompiler_diagnostics"] = {
+                    "static_status": ("partial" if decompiler_diagnostics.get("review_state") == "partial"
+                                      else "completed" if decompiler_diagnostics.get("review_state") == "completed"
+                                      else "incomplete"),
+                    "runtime_status": "not_tested",
+                    "proof_status": "not_proven",
+                    "marker_line_counts": decompiler_diagnostics.get("marker_line_counts"),
+                    "unsupported_construct_count": None,
+                    "omitted_file_count": None,
+                    "limits_reached": decompiler_diagnostics.get("status") == "bounded_diagnostics_incomplete",
+                    "exhaustive": False,
+                    "limitations": decompiler_diagnostics.get("limitations", []),
+                }
 
             # Parse manifest
             manifest_path = extraction.get("manifest_path", "")
             if manifest_path:
                 state["manifest_data"] = self._manifest_parser.parse(manifest_path)
+                state["coverage"]["split_manifest"] = dict(
+                    state["manifest_data"].get("split_metadata", {})
+                )
                 state["artifact_provenance"].setdefault("app", {}).update({
                     key: state["manifest_data"].get(key)
                     for key in ("version_name", "version_code", "min_sdk", "target_sdk")
@@ -270,7 +294,8 @@ class Orchestrator:
             ),
             "api_mapping": self._api_mapper.map_apis(state["decompiled_path"]),
             "native": self._native_analyzer.analyze(state["resource_path"]),
-            "dependencies": self._dependency_scanner.scan(state["resource_path"]),
+            "dependencies": self._dependency_scanner.scan(
+                state["resource_path"], allow_advisory_lookup=state.get("allow_advisory_lookup", False)),
             "taint": self._taint_engine.analyze_directory_async(state["decompiled_path"]) if self._settings.enable_deep_taint else asyncio.sleep(0, result=[]),
             "nsc": self._nsc_auditor.audit_directory_async(state["resource_path"]),
             "binary_protection": self._bin_protection.audit_directory_async(state["resource_path"]),
@@ -291,12 +316,29 @@ class Orchestrator:
                 engines[name]="incomplete"
                 if name in {"auth_session", "firebase"}:
                     state["coverage"][name].update(static_status="incomplete", runtime_status="not_tested", proof_status="not_proven")
+                if name == "manifest":
+                    state["coverage"][name] = {
+                        "static_status": "incomplete", "runtime_status": "not_tested",
+                        "proof_status": "not_proven", "exhaustive": False,
+                        "limitations": ["manifest auditor failed; component review is incomplete"],
+                    }
                 if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["analysis engine failed; findings and coverage are incomplete"],
                     }
+                    if name == "taint":
+                        state["coverage"][name]["serialization"] = {
+                            "static_status": "incomplete", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "candidate_count": None,
+                            "exhaustive": False,
+                        }
+                        state["coverage"][name]["webview"] = {
+                            "static_status": "incomplete", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "candidate_count": None,
+                            "exhaustive": False,
+                        }
                 if name=="android_surface":
                     for category in state["coverage"].get("android_surface",{}).get("categories",{}).values():
                         category["static_status"]="incomplete"
@@ -305,12 +347,7 @@ class Orchestrator:
             engines[name]="skipped_disabled" if name=="taint" and not self._settings.enable_deep_taint else "completed_heuristically"
             if name == "dependencies" and self._settings.offline:
                 engines[name] = "skipped_offline"
-                state["coverage"]["dependencies"] = {
-                    "static_status": "skipped_offline", "runtime_status": "not_tested",
-                    "proof_status": "not_proven", "exhaustive": False,
-                    "limitations": ["OSV lookup disabled; no vulnerability database queried",
-                                    "APK-only library identity/version and exploit reachability are not established"],
-                }
+                state["coverage"]["dependencies"] = dict(self._dependency_scanner.coverage)
             if name in {"auth_session", "firebase"}:
                 all_findings.extend(result["findings"])
                 state["coverage"][name] = result["coverage"]
@@ -331,7 +368,46 @@ class Orchestrator:
                 engines[name] = self._api_mapper.coverage.get("static_status", "incomplete")
             elif isinstance(result, list):
                 all_findings.extend(result)
-                if name == "secrets":
+                if name == "manifest":
+                    manifest = state.get("manifest_data", {})
+                    manifest_ready = isinstance(manifest, dict) and isinstance(manifest.get("components"), list)
+                    provider_inventory = dict(manifest.get("provider_path_inventory", {})) if isinstance(manifest, dict) else {}
+                    if provider_inventory:
+                        provider_inventory["candidate_count"] = sum(
+                            1 for finding in result
+                            if getattr(finding, "metadata", {}).get("analysis_kind") == "provider_path_configuration")
+                    else:
+                        provider_inventory = {
+                            "static_status": "incomplete", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "exhaustive": False,
+                            "limitations": ["provider path resource inventory unavailable"],
+                        }
+                    state["coverage"]["manifest"] = {
+                        "static_status": "completed" if manifest_ready else "incomplete",
+                        "runtime_status": "not_tested",
+                        "proof_status": "not_proven",
+                        "exhaustive": False,
+                        "component_count": len(manifest.get("components", [])) if manifest_ready else 0,
+                        "exported_component_count": sum(1 for component in manifest.get("components", [])
+                                                         if component.get("exported") is True) if manifest_ready else 0,
+                        "candidate_count": sum(1 for finding in result
+                                               if getattr(finding, "detection_method", "") == "ManifestAuditor"),
+                        "backup_rule_references": dict(manifest.get("application", {}).get(
+                            "backup_rule_references", {})) if isinstance(manifest.get("application"), dict) else {},
+                        "backup_rules_inventory": dict(manifest.get("application", {}).get(
+                            "backup_rules_inventory", {})) if isinstance(manifest.get("application"), dict) else {},
+                        "provider_path_inventory": provider_inventory,
+                        "limitations": [
+                            "bounded parsed-manifest audit only; merged installed manifest and runtime caller authorization are not verified",
+                            "exported declarations and candidate findings do not establish attacker reachability or impact",
+                        ],
+                    }
+                    backup_inventory = state["coverage"]["manifest"].get("backup_rules_inventory")
+                    if isinstance(backup_inventory, dict):
+                        backup_inventory["candidate_count"] = sum(
+                            1 for finding in result
+                            if getattr(finding, "metadata", {}).get("check_id") == "manifest_allow_backup")
+                elif name == "secrets":
                     state["coverage"][name] = dict(self._secret_scanner.coverage)
                     engines[name] = self._secret_scanner.coverage.get("static_status", "incomplete")
                 elif name == "code_review":
@@ -343,6 +419,16 @@ class Orchestrator:
                             "static_status": "skipped_disabled", "runtime_status": "not_tested",
                             "proof_status": "not_proven", "exhaustive": False,
                             "limitations": ["deep taint scan is disabled by configuration"],
+                        }
+                        state["coverage"][name]["serialization"] = {
+                            "static_status": "skipped_disabled", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "candidate_count": None,
+                            "exhaustive": False,
+                        }
+                        state["coverage"][name]["webview"] = {
+                            "static_status": "skipped_disabled", "runtime_status": "not_tested",
+                            "proof_status": "not_proven", "candidate_count": None,
+                            "exhaustive": False,
                         }
                     else:
                         analyzer = {
@@ -371,6 +457,23 @@ class Orchestrator:
             }
             state["errors"].append("Smali call graph review incomplete")
             logger.warning("[Stage 2] Smali Call Graph audit warning: %s", e)
+
+        try:
+            route_correlation = correlate_manifest_deep_link_flows(
+                all_findings, state.get("manifest_data", {}))
+        except Exception as e:
+            route_correlation = {
+                "status": "incomplete", "uri_flow_candidates": None,
+                "correlated_flows": None, "unmatchable_flows": None,
+                "proof_status": "not_proven", "runtime_status": "not_tested",
+                "limitations": ["bounded manifest-route correlation failed"],
+            }
+            logger.warning("[Stage 2] Deep-link route correlation incomplete: %s", e)
+        state["coverage"]["deep_link_flow_correlation"] = route_correlation
+        deep_link_coverage = (state.get("coverage", {}).get("android_surface", {})
+                              .get("categories", {}).get("deep_links"))
+        if isinstance(deep_link_coverage, dict):
+            deep_link_coverage["uri_flow_manifest_route_correlation"] = route_correlation
 
         for finding in all_findings:
             finding.status = FindingStatus.UNVERIFIED
@@ -463,6 +566,12 @@ class Orchestrator:
                 output_path=sarif_path,
                 target_name=state.get("package_name", "mobile_target"),
                 scan_id=state.get("scan_id", "scan-001"),
+                artifact={
+                    "artifact_sha256": state.get("artifact_provenance", {}).get("sha256"),
+                    "package_name": state.get("package_name"),
+                    "app_version": state.get("manifest_data", {}).get("version_name") or state.get("version"),
+                },
+                coverage=state.get("coverage", {}),
             )
             state["sarif_path"] = str(sarif_path)
             logger.info("Saved SARIF report: %s", sarif_path)

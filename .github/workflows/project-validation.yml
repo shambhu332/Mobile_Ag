@@ -11,14 +11,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.14'
-      - run: python -m pip install -c requirements/validated-python314.txt ".[test,java-ast]"
+          python-version: '3.14.7'
+      - run: python -m pip install -c requirements/validated-python314.txt ".[test]"
       - run: python -m pytest -q
       - name: Location-aware accuracy regressions (synthetic candidates only)
         run: |
           python scripts/evaluate-accuracy.py --corpus tests/fixtures/accuracy_instances.json
           python scripts/evaluate-accuracy.py --corpus tests/fixtures/accuracy_instances.json --lexical-only
       - run: python -m build --wheel
+      - name: Reproducible isolated wheel comparison
+        run: python scripts/check-reproducible-wheel.py
       - run: python scripts/verify-dashboard-assets.py
       - name: Smoke installed wheel outside source checkout
         run: |
@@ -36,4 +38,5 @@ jobs:
           python tests/browser_dashboard_navigation.py --chromium "$CHROMIUM"
           python tests/browser_dashboard_tools_ui.py --chromium "$CHROMIUM" --axe assets/node_modules/axe-core/axe.min.js --output "$RUNNER_TEMP/dashboard-tools-ui"
           python tests/browser_product_regression.py --server-python "$(command -v python)" --chromium "$CHROMIUM" --axe assets/node_modules/axe-core/axe.min.js --output "$RUNNER_TEMP/browser-results"
+          python tests/browser_test_plan_comparison.py --chromium "$CHROMIUM"
           python tests/browser_console_regression.py --server-python "$(command -v python)" --chromium "$CHROMIUM" --axe assets/node_modules/axe-core/axe.min.js --output "$RUNNER_TEMP/console-results"

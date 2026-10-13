@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools==84.0.0", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -32,6 +32,7 @@ dependencies = [
     "click",
     "jinja2",
     "pydantic",
+    "jsonschema>=4,<5",
     "rich",
     "python-dotenv",
     "aiohttp",

@@ -104,7 +104,7 @@ class SecretScanner:
                                     "stem": file_path.stem
                                 })
                                 if len(raw_secret_matches) >= 1000:
-                                    inventory.coverage['limits_reached'] = True
+                                    inventory.record_limit('secret_candidate_count')
                                     break
                             if len(raw_secret_matches) >= 1000:
                                 break
@@ -124,7 +124,7 @@ class SecretScanner:
                             entropy_matches.append({"file_path": rel_path, "line_num": line_num,
                                                     "stem": file_path.stem})
                         if len(entropy_matches) >= 1000:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('entropy_candidate_count')
                             break
 
                     # Check crypto patterns
@@ -139,7 +139,7 @@ class SecretScanner:
                                     "stem": file_path.stem
                                 })
                                 if len(crypto_matches) >= 1000:
-                                    inventory.coverage['limits_reached'] = True
+                                    inventory.record_limit('crypto_candidate_count')
                                     break
             except (OSError, UnicodeError) as e:
                 logger.debug(f"Could not read file {file_path}: {e}")

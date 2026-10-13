@@ -12,6 +12,8 @@ from mobileag.core.state import ScanState
 from mobileag.reporting.finding import Severity, FindingStatus
 from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
+from mobileag.reporting.capability_inventory import capability_inventory
+from mobileag.security.privacy import redact
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,7 @@ class ReportEngine:
                 loader=FileSystemLoader(str(_TEMPLATES_DIR)),
                 autoescape=False,
             )
+            self._env.filters['report_json'] = self._report_json
         else:
             logger.warning("Report templates directory not found: %s", _TEMPLATES_DIR)
 
@@ -141,7 +144,8 @@ class ReportEngine:
         if state.get("errors"):
             coverage_gaps.append("scan.errors_present")
         
-        return {
+        report_data = {
+            "report_schema_version": 1,
             "scan_id": state["scan_id"],
             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "app_info": {
@@ -160,6 +164,7 @@ class ReportEngine:
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
             "review_surface_ledger": review_surface_ledger(state.get("coverage", {})),
+            "capability_inventory": capability_inventory(state.get("coverage", {}), state.get("framework_info", {})),
             "coverage_summary": {
                 "static_status_count": static_status_count,
                 "non_exhaustive_analysis_count": len(set(non_exhaustive_paths)),
@@ -175,6 +180,12 @@ class ReportEngine:
             "confirmation_policy": "Structured analyst attestation is not independent automated exploit proof.",
             "candidate_count_semantics": "Confirmed severity counts include only analyst-attested findings; candidate_severity counts are provisional labels for unverified review items. Confirmation is not independently verified by the tool.",
         }
+        return redact(report_data)
+
+    @staticmethod
+    def _report_json(value: object) -> str:
+        """Safe, bounded-to-schema JSON presentation for report code blocks."""
+        return json.dumps(redact(value), indent=2, ensure_ascii=True).replace('`', r'\u0060')
 
     def _generate_markdown(self, data: dict) -> str:
         """Generate markdown report using Jinja2."""
@@ -236,10 +247,33 @@ class ReportEngine:
         if ledger:
             rows.append('\n### Review-surface ledger\n')
             rows.append('This crosswalk records mapped analyzer execution only; every surface remains unproven unless separately validated.\n')
-            rows.append('| Surface | Static analysis | Runtime | Evidence | Mapped coverage paths | Coverage gap |\n|---|---|---|---|---|---|')
+            rows.append('| Surface | Static analysis | Runtime | Evidence | Mapped coverage paths | Recorded counts | Coverage gap |\n|---|---|---|---|---|---|---|')
             for name, item in ledger.get('surfaces', {}).items():
                 paths = ', '.join(f"`{path}`" for path in item.get('mapped_coverage_paths', [])) or 'none'
-                rows.append(f"| {name} | {item.get('analysis_state', 'not_tested')} | {item.get('runtime_state', 'not_tested')} | {item.get('evidence_state', 'not_proven')} | {paths} | {item.get('gap') or 'no additional mapping gap recorded'} |")
+                counts = ', '.join(f"{path}: {values}" for path, values in item.get('recorded_counts', {}).items()) or 'none'
+                rows.append(f"| {name} | {item.get('analysis_state', 'not_tested')} | {item.get('runtime_state', 'not_tested')} | {item.get('evidence_state', 'not_tested')} | {paths} | {counts} | {item.get('gap') or 'no additional mapping gap recorded'} |")
+        inventory = data.get('capability_inventory', {})
+        if inventory:
+            rows.append('\n### Framework and format support inventory\n')
+            rows.append(f"Framework hint: `{inventory.get('detected_framework_hint', 'not_recorded')}` (signature detection only; does not establish code coverage).\n")
+            rows.append('| Area | Implemented support | This scan | Evidence path | Input skips / limits | Limitations |\n|---|---|---|---|---|---|')
+            for name, item in inventory.get('formats', {}).items():
+                input_details = []
+                if item.get('source_files_skipped') is not None:
+                    input_details.append(f"skipped files={item['source_files_skipped']}")
+                for label, key in [('skip reasons', 'source_file_skip_reasons'), ('limit reasons', 'limit_reasons')]:
+                    reasons = item.get(key, {})
+                    if isinstance(reasons, dict) and reasons:
+                        input_details.append(label + ': ' + ', '.join(f"{reason}={count}" for reason, count in sorted(reasons.items())))
+                summaries = item.get('same_file_parameter_summary', {})
+                if isinstance(summaries, dict) and summaries:
+                    input_details.append(
+                        f"helper summaries: direct={summaries.get('direct_summaries', 0)}, "
+                        f"transitive={summaries.get('transitive_summaries', 0)}, "
+                        f"round-limited files={summaries.get('round_limit_files', 0)}, "
+                        f"candidate-limited files={summaries.get('candidate_limit_files', 0)}")
+                rows.append(f"| {name} | {item.get('support_level')} | {item.get('execution_state')} ({item.get('static_status')}) | {item.get('coverage_path') or 'none'} | {'; '.join(input_details) or 'not reported'} | {'; '.join(item.get('limitations', []))} |")
+            rows.append('This is an implementation inventory, not a benchmark, completeness claim, or security verdict.\n')
         summary = data.get('coverage_summary', {})
         rows.append(f"- Assessment coverage: {data.get('assessment_coverage', 'not_recorded')}; static statuses recorded: {summary.get('static_status_count', 0)}; non-exhaustive analyses: {summary.get('non_exhaustive_analysis_count', 0)}; limits reached: {summary.get('limits_reached_count', 0)}")
         gaps = data.get('coverage_gaps', [])

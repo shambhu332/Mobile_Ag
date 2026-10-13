@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from mobileag.reporting.finding import Finding, Severity
+from mobileag.reporting.coverage import review_surface_ledger
 from mobileag import __version__
 from mobileag.security.privacy import redact
 
@@ -40,7 +41,9 @@ class SARIFExporter:
         cls,
         findings: Sequence[Finding | dict[str, Any]],
         target_name: str = "mobile_target",
-        scan_id: str = "scan-001"
+        scan_id: str = "scan-001",
+        artifact: dict[str, Any] | None = None,
+        coverage: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Convert findings into a compliant SARIF v2.1.0 JSON report dictionary."""
         rules_map: dict[str, dict[str, Any]] = {}
@@ -49,7 +52,7 @@ class SARIFExporter:
         for f in findings:
             data = f.model_dump(mode='json') if isinstance(f, Finding) else f
             from mobileag.reporting.evidence_contract import prepare_finding
-            data = prepare_finding(data)
+            data = prepare_finding(data, artifact)
             status = data.get('status', 'UNVERIFIED')
             if status in {'FALSE_POSITIVE', 'DUPLICATE'}:
                 continue
@@ -133,6 +136,10 @@ class SARIFExporter:
                     "proof_basis": proof_basis,
                     "evidence_assessment": data["evidence_assessment"],
                     "investigation_plan": data["investigation_plan"],
+                    **({"source_sink_trace": data.get("metadata", {}).get("source_sink_trace")}
+                       if isinstance(data.get("metadata"), dict) and data["metadata"].get("source_sink_trace") else {}),
+                    **({"validation_evidence": data.get("validation_evidence")}
+                       if proof_basis == "analyst_attested" else {}),
                 },
             }
             results.append(result_item)
@@ -154,6 +161,11 @@ class SARIFExporter:
                     "properties": {
                         "scanId": scan_id,
                         "target": target_name,
+                        **({"artifact": {key: artifact[key] for key in
+                            ("artifact_sha256", "package_name", "app_version") if artifact.get(key)} }
+                           if artifact else {}),
+                        **({"review_surface_ledger": review_surface_ledger(coverage)}
+                           if coverage is not None else {}),
                     },
                 }
             ],
@@ -166,10 +178,12 @@ class SARIFExporter:
         findings: Sequence[Finding | dict[str, Any]],
         output_path: str | Path,
         target_name: str = "mobile_target",
-        scan_id: str = "scan-001"
+        scan_id: str = "scan-001",
+        artifact: dict[str, Any] | None = None,
+        coverage: dict[str, Any] | None = None,
     ) -> Path:
         """Generate and save SARIF JSON report to disk."""
-        sarif_data = cls.generate_sarif(findings, target_name, scan_id)
+        sarif_data = cls.generate_sarif(findings, target_name, scan_id, artifact, coverage)
         out_p = Path(output_path)
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(sarif_data, indent=2), encoding="utf-8")

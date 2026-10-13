@@ -60,7 +60,7 @@
       });
 
       const targetView = document.getElementById(`view-${viewId}`);
-      if (targetView) targetView.classList.remove('hidden');
+      if (targetView) { targetView.classList.remove('hidden'); targetView.scrollTop = 0; }
 
       const activeNav = document.getElementById(`nav-${viewId}`);
       if (activeNav) {

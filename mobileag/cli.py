@@ -25,9 +25,13 @@ def main():
 @click.option("--output", default="./output", help="Output directory for reports", type=click.Path())
 @click.option("--format", "report_format", default="markdown", type=click.Choice(["markdown", "json", "sarif"], case_sensitive=False), help="Report output format")
 @click.option("--offline", is_flag=True, help="Enforce deterministic offline analysis (no cloud LLM API calls)")
-def scan(app_path: str, output: str, report_format: str, offline: bool):
+@click.option("--lookup-advisories", is_flag=True,
+              help="Explicitly authorize this scan to query OSV with parsed Maven/npm dependency coordinates")
+def scan(app_path: str, output: str, report_format: str, offline: bool, lookup_advisories: bool):
     """Run a full security analysis on an Android APK or iOS IPA package."""
     is_ios = app_path.lower().endswith(".ipa")
+    if offline and lookup_advisories:
+        raise click.ClickException("--offline prohibits all network access; omit --lookup-advisories")
     platform_name = "iOS IPA" if is_ios else "Android APK"
 
     console.print(Panel.fit(
@@ -81,12 +85,15 @@ def scan(app_path: str, output: str, report_format: str, offline: bool):
         console.print("[bold yellow]Offline Mode Active:[/] Running deterministic Smali bytecode call graph, AST heuristics, and rule engine (no cloud LLM required).")
     else:
         console.print(f"[bold green]LLM Hybrid Mode Active:[/] Configured providers: {', '.join(settings.enabled_providers)}")
+    if lookup_advisories:
+        console.print("[bold yellow]External advisory lookup authorized:[/] parsed Maven/npm coordinates and versions may be sent to OSV.")
 
     orchestrator = Orchestrator(settings)
 
     try:
         # Run the async scan
-        state = asyncio.run(orchestrator.scan(app_path, output_dir=output))
+        state = asyncio.run(orchestrator.scan(app_path, output_dir=output,
+                                              allow_advisory_lookup=lookup_advisories))
 
         if state.get("errors"):
             console.print("[bold yellow]Scan completed with warnings:[/]")
@@ -262,6 +269,80 @@ def taint(src: str, output: str):
     console.print(f"\n[bold green]Taint Analysis Complete![/]")
     console.print(f" - Sinks Tainted: [bold red]{len(findings)}[/]")
     console.print(f" - Report Saved:  [link={report_file.resolve()}]{report_file.resolve()}[/link]\n")
+
+
+@main.command("import-sarif")
+@click.option("--input", "input_path", required=True, type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.option("--output", "output_path", required=True, type=click.Path(dir_okay=False),
+              help="New JSON path for untrusted imported candidates; existing files are never overwritten.")
+def import_sarif_command(input_path: str, output_path: str):
+    """Validate SARIF 2.1.0 offline and project bounded unverified candidates."""
+    import json
+    from mobileag.reporting.sarif_importer import MAX_BYTES, SarifImportError, import_sarif
+
+    try:
+        with Path(input_path).open("rb") as stream:
+            raw = stream.read(MAX_BYTES + 1)
+        result = import_sarif(raw)
+        # Exclusive create preserves existing evidence and rejects symlink targets.
+        with Path(output_path).open("x", encoding="utf-8") as stream:
+            json.dump(result, stream, indent=2, ensure_ascii=True)
+            stream.write("\n")
+    except (OSError, SarifImportError) as exc:
+        raise click.ClickException(str(exc)) from None
+    console.print(f"Imported {result['imported_candidates']} unverified candidate(s); "
+                  f"skipped {result['duplicates_skipped']} duplicate(s) and "
+                  f"{result['invalid_or_nonfinding_results_skipped']} invalid/non-finding result(s).")
+    console.print(f"Candidate projection saved to: {output_path}")
+
+
+@main.command("import-mobsf-json")
+@click.option("--input", "input_path", required=True,
+              type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.option("--output", "output_path", required=True, type=click.Path(dir_okay=False),
+              help="New JSON path for untrusted imported candidates; existing files are never overwritten.")
+def import_mobsf_json_command(input_path: str, output_path: str):
+    """Project a bounded MobSF Android static-report subset offline as unverified candidates."""
+    import json
+    from mobileag.reporting.mobsf_importer import MAX_BYTES, MobSFImportError, import_mobsf_json
+
+    try:
+        with Path(input_path).open("rb") as stream:
+            raw = stream.read(MAX_BYTES + 1)
+        result = import_mobsf_json(raw)
+        with Path(output_path).open("x", encoding="utf-8") as stream:
+            json.dump(result, stream, indent=2, ensure_ascii=True)
+            stream.write("\n")
+    except (OSError, MobSFImportError) as exc:
+        raise click.ClickException(str(exc)) from None
+    console.print(f"Imported {result['imported_candidates']} unverified candidate(s); "
+                  f"skipped {result['duplicates_skipped']} duplicate(s) and "
+                  f"{result['invalid_or_nonfinding_results_skipped']} invalid/non-finding result(s).")
+    console.print(f"Candidate projection saved to: {output_path}")
+
+
+@main.command("inventory-aab")
+@click.option("--input", "input_path", required=True,
+              type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.option("--output", "output_path", required=True, type=click.Path(dir_okay=False),
+              help="New JSON path for bounded inventory; existing files are never overwritten.")
+def inventory_aab_command(input_path: str, output_path: str):
+    """Inventory AAB modules and DEX/native inputs without analyzing or extracting them."""
+    import json
+    from mobileag.ingestion.aab_inventory import inventory_android_app_bundle
+
+    try:
+        result = inventory_android_app_bundle(input_path)
+        with Path(output_path).open("x", encoding="utf-8") as stream:
+            json.dump(result, stream, indent=2, ensure_ascii=True)
+            stream.write("\n")
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from None
+    console.print(f"Inventoried {result['module_count']} module(s), "
+                  f"{result['dex_member_count']} DEX input(s), and "
+                  f"{result['native_library_member_count']} native library input(s).")
+    console.print("Inventory only: no manifest protobuf decoding, APK generation, or security analysis was performed.")
+    console.print(f"Inventory saved to: {output_path}")
 
 
 from mobileag.dashboard.commands import dashboard

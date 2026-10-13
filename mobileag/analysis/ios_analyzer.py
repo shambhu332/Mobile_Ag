@@ -474,11 +474,24 @@ class IOSSecurityAnalyzer:
             all_findings.extend(plist_findings)
 
         macho_headers = MachOSecurityHeaders()
+        swift_metadata = {}
         if extracted.get("binary_path"):
             macho_headers, bin_findings = self.audit_macho_binary(extracted["binary_path"])
             all_findings.extend(bin_findings)
             sym_findings = self.audit_binary_symbols_and_apis(extracted["binary_path"])
             all_findings.extend(sym_findings)
+            try:
+                from mobileag.analysis.macho_parser import MachoBinaryParser
+                m_parser = MachoBinaryParser()
+                m_res = m_parser.parse_binary(extracted["binary_path"])
+                if m_res.is_macho:
+                    swift_metadata = {
+                        "swift_sections": m_res.swift_sections_detected,
+                        "crypto_frameworks": m_res.crypto_frameworks,
+                        "api_endpoints": m_res.api_endpoints,
+                    }
+            except Exception as e:
+                logger.debug("MachoBinaryParser optional pass skipped: %s", e)
 
         return {
             "app_name": extracted["app_name"],
@@ -495,5 +508,6 @@ class IOSSecurityAnalyzer:
                 "pie_enabled": macho_headers.pie_enabled,
                 "has_stack_canary": macho_headers.has_stack_canary,
                 "has_arc": macho_headers.has_arc,
-            }
+            },
+            "swift_metadata": swift_metadata,
         }

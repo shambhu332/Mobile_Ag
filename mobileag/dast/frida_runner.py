@@ -339,3 +339,24 @@ console.log("[MobileAg-Frida] Unified Dynamic Instrumentation Suite Active.");
                 "error": str(e),
             }
 
+    def generate_stealth_unpinning_script(self, target_package: str, bypass_flutter: bool = True, bypass_boringssl: bool = True) -> str:
+        """Generate comprehensive stealth unpinning script spanning Java, BoringSSL, and Flutter."""
+        from mobileag.dast.unpinning_engine import UnpinningEngine, UnpinningConfig
+        engine = UnpinningEngine()
+        config = UnpinningConfig(
+            target_package=target_package,
+            bypass_java=True,
+            bypass_boringssl=bypass_boringssl,
+            bypass_flutter=bypass_flutter,
+        )
+        return engine.generate_script(config)
+
+    def generate_stealth_daemon_launcher(self, serial: str, server_binary_path: str = "/data/local/tmp/frida-server") -> str:
+        """Generate stealth daemon deployment command line using FridaStealthHarness."""
+        from mobileag.dast.frida_stealth import FridaStealthHarness
+        harness = FridaStealthHarness()
+        stealth_name = harness.generate_random_process_name()
+        port = harness.get_ephemeral_port()
+        return f"su -c 'cp {server_binary_path} /data/local/tmp/{stealth_name} && chmod 755 /data/local/tmp/{stealth_name} && /data/local/tmp/{stealth_name} -l 127.0.0.1:{port} -D &'"
+
+

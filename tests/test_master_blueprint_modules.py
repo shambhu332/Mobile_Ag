@@ -91,3 +91,43 @@ def test_bola_fuzzer_candidate_extraction_and_discrepancy():
         response_body='{"error": "Forbidden"}',
     )
     assert res_safe.is_vulnerable is False
+
+
+def test_poc_synthesizer_task_hijacking_and_provider_sqli():
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+    from mobileag.reporting.finding import Finding, Severity
+
+    synth = ExploitPocSynthesizer()
+
+    # 1. Task Hijacking
+    f_task = Finding(
+        id="TASK_AFFINITY_HIJACK",
+        title="Task Affinity Hijacking Risk: com.example.app.LoginActivity",
+        description="Task affinity mismatch",
+        severity=Severity.HIGH,
+        cwe_id="CWE-1021",
+        affected_component="com.example.app.LoginActivity",
+        metadata={"task_affinity": "com.example.target.affinity"}
+    )
+    poc_task = synth.synthesize(f_task, "com.example.target")
+    assert poc_task is not None
+    assert "StrandHoggActivity" in poc_task.kotlin_exploit_code
+    assert "com.example.target.affinity" in poc_task.kotlin_exploit_code
+    assert "adb shell am start" in poc_task.adb_command
+
+    # 2. ContentProvider SQL Injection
+    f_sqli = Finding(
+        id="CONTENT_PROVIDER_SQLI",
+        title="ContentProvider SQL Injection Vulnerability",
+        description="Unsanitized query projection",
+        severity=Severity.HIGH,
+        cwe_id="CWE-89",
+        affected_component="com.example.target.DataProvider",
+        metadata={"authority": "com.example.target.provider"}
+    )
+    poc_sqli = synth.synthesize(f_sqli, "com.example.target")
+    assert poc_sqli is not None
+    assert "ProviderSqliExploit" in poc_sqli.kotlin_exploit_code
+    assert "content://com.example.target.provider/query" in poc_sqli.kotlin_exploit_code
+    assert "adb shell content query" in poc_sqli.adb_command
+

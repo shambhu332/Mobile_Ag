@@ -201,6 +201,27 @@ class ReactNativeScanner:
                 continue
             self.coverage = dict(inventory.coverage)
             findings = self.scan_bundle_text(data.decode("utf-8", errors="ignore"), str(path))
+            if len(data) >= 8:
+                import struct
+                try:
+                    magic = struct.unpack("<Q", data[:8])[0]
+                    if magic == 0x1F480120:
+                        from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
+                        h_res = HermesBytecodeAnalyzer().analyze_bundle(path)
+                        for sec in h_res.secrets:
+                            findings.append({
+                                "issue_id": f"RN-HERMES-SECRET-{sec.get('name', 'KEY').replace(' ', '-').upper()}",
+                                "cwe": "CWE-798",
+                                "severity": "Critical",
+                                "title": f"Hardcoded Secret in React Native Hermes Bytecode",
+                                "description": f"Found embedded {sec.get('name', 'secret')} in Hermes bytecode.",
+                                "file_path": str(path),
+                                "offset": 0,
+                                "code_snippet": "[REDACTED Hermes bytecode credential]",
+                                "remediation": "Move secrets to secure server-side infrastructure.",
+                            })
+                except Exception:
+                    pass
             if len(findings) >= 1000:
                 self.coverage['limits_reached'] = True
                 self.coverage['static_status'] = 'partial'

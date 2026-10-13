@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from mobileag.analysis.android_surface import method_spans
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.dast.adb_manager import ADBManager
 from mobileag.dast.deeplink_fuzzer import DeepLinkFuzzer
@@ -25,6 +26,248 @@ from mobileag.web.app import app
 @pytest.fixture
 def client():
     return TestClient(app, headers={"Authorization": "Bearer " + app.state.auth_token})
+
+
+@pytest.mark.parametrize("ast_enabled", [False, True])
+def test_untrusted_intent_bytes_flow_to_java_object_deserialization(ast_enabled):
+    source = '''import android.content.Intent;
+import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
+class Decoder {
+  Object decode(Intent intent) throws Exception {
+    byte[] payload = intent.getByteArrayExtra("blob");
+    ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(payload));
+    return input.readObject();
+  }
+}'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Decoder.java")
+    candidates = [finding for finding in findings
+                  if finding.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+                  == "UNTRUSTED_DESERIALIZATION"]
+    assert candidates
+    candidate = candidates[0]
+    assert candidate.cwe_id == "CWE-502"
+    assert candidate.severity.value == "INFO"
+    assert candidate.status.value == "UNVERIFIED"
+    assert candidate.metadata["proof_state"] == "not_proven"
+
+
+def test_local_byte_stream_to_object_deserialization_is_not_external_input_flow():
+    source = '''import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
+class Decoder {
+  Object decode() throws Exception {
+    byte[] payload = new byte[] {1, 2, 3};
+    ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(payload));
+    return input.readObject();
+  }
+}'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Decoder.java")
+    assert not any(finding.cwe_id == "CWE-502" for finding in findings)
+
+
+@pytest.mark.parametrize("ast_enabled", [False, True])
+@pytest.mark.parametrize("read_code", [
+    'InputStream stream = resolver.openInputStream(uri);',
+    'android.content.res.AssetFileDescriptor afd = resolver.openAssetFileDescriptor(uri, "r");\n'
+    '    InputStream stream = afd.createInputStream();',
+    'android.os.ParcelFileDescriptor fd = resolver.openFileDescriptor(uri, "r");\n'
+    '    InputStream stream = new java.io.FileInputStream(fd.getFileDescriptor());',
+    'android.content.res.AssetFileDescriptor afd = resolver.openTypedAssetFileDescriptor(uri, "*/*", null);\n'
+    '    InputStream stream = afd.createInputStream();',
+])
+def test_intent_uri_content_resolver_reads_flow_to_deserialization(ast_enabled, read_code):
+    source = f'''import android.content.ContentResolver;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+class Decoder {{
+  Object decode(Intent intent, ContentResolver resolver) throws Exception {{
+    Uri uri = intent.getData();
+    {read_code}
+    ObjectInputStream input = new ObjectInputStream(stream);
+    return input.readObject();
+  }}
+}}'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Decoder.java")
+    candidates = [finding for finding in findings
+                  if finding.metadata.get("source_sink_trace", {}).get("source", {}).get("kind")
+                  == "CONTENT_RESOLVER_READ"]
+    assert len(candidates) == 1
+    assert candidates[0].cwe_id == "CWE-502"
+    assert candidates[0].metadata["proof_state"] == "not_proven"
+    assert candidates[0].metadata["source_sink_trace"]["guards"] == "not_resolved"
+
+
+def test_static_uri_content_resolver_stream_is_not_treated_as_untrusted_input():
+    source = '''import android.content.ContentResolver;
+import android.net.Uri;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+class Decoder {
+  Object decode(ContentResolver resolver) throws Exception {
+    Uri uri = Uri.parse("content://trusted.example/static");
+    InputStream stream = resolver.openInputStream(uri);
+    ObjectInputStream input = new ObjectInputStream(stream);
+    return input.readObject();
+  }
+}'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Decoder.java")
+    assert not any(finding.cwe_id == "CWE-502" for finding in findings)
+
+
+def test_taint_directory_exports_surface_specific_deserialization_coverage(tmp_path):
+    (tmp_path / "Unsafe.java").write_text('''import android.content.ContentResolver;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+class Unsafe {
+ Object decode(Intent intent, ContentResolver resolver) throws Exception {
+   Uri uri = intent.getData();
+   InputStream stream = resolver.openInputStream(uri);
+   ObjectInputStream input = new ObjectInputStream(stream);
+   return input.readObject();
+ }
+}''')
+    (tmp_path / "Safe.java").write_text('''import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
+class Safe {
+ Object decode() throws Exception {
+   ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(new byte[] {1}));
+   return input.readObject();
+ }
+}''')
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_directory(str(tmp_path))
+    serialization = engine.coverage["serialization"]
+    assert serialization["static_status"] == engine.coverage["static_status"]
+    assert serialization["candidate_count"] == 1
+    assert serialization["proof_status"] == "not_proven"
+    assert sum(finding.cwe_id == "CWE-502" for finding in findings) == 1
+
+
+@pytest.mark.parametrize("ast_enabled", [False, True])
+def test_intent_html_flow_to_webview_load_data_with_base_url(ast_enabled):
+    source = '''import android.content.Intent;
+import android.webkit.WebView;
+class HtmlScreen {
+  void show(Intent intent, WebView webView) {
+    String html = intent.getStringExtra("html");
+    webView.loadDataWithBaseURL("https://app.example", html, "text/html", "UTF-8", null);
+  }
+}'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "HtmlScreen.java")
+    candidate = next(f for f in findings if f.metadata.get("source_sink_trace", {})
+                     .get("sink", {}).get("operation") == "WEBVIEW_HTML_LOAD")
+    assert candidate.cwe_id == "CWE-79"
+    assert candidate.severity.value == "INFO"
+    assert candidate.metadata["proof_state"] == "not_proven"
+
+
+def test_html_webview_history_url_only_is_not_treated_as_untrusted_markup():
+    source = '''import android.content.Intent;
+import android.webkit.WebView;
+class HtmlScreen {
+  void show(Intent intent, WebView webView) {
+    String url = intent.getStringExtra("history");
+    webView.loadDataWithBaseURL("https://app.example", "<p>fixed</p>", "text/html", "UTF-8", url);
+  }
+}'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "HtmlScreen.java")
+    assert not any(f.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+                   == "WEBVIEW_HTML_LOAD" for f in findings)
+
+
+@pytest.mark.parametrize("annotation", ["  @android.webkit.JavascriptInterface\n", "  @android.webkit.JavascriptInterface ", ""])
+@pytest.mark.parametrize("ast_enabled", [False, True])
+def test_javascript_interface_parameter_is_only_modeled_when_annotated(annotation, ast_enabled):
+    annotated = bool(annotation.strip())
+    source = f'''import android.webkit.WebView;
+class BridgeScreen {{
+  WebView webView;
+{annotation}  public void render(String html) {{
+    webView.loadDataWithBaseURL("https://app.example", html, "text/html", "UTF-8", null);
+  }}
+}}'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "BridgeScreen.java")
+    candidates = [f for f in findings if f.metadata.get("source_sink_trace", {})
+                  .get("sink", {}).get("operation") == "WEBVIEW_HTML_LOAD"]
+    assert bool(candidates) is annotated
+    if annotated:
+        trace = candidates[0].metadata["source_sink_trace"]
+        assert trace["source"]["kind"] == "JAVASCRIPT_INTERFACE_PARAMETER"
+        assert candidates[0].metadata["proof_state"] == "not_proven"
+        assert candidates[0].metadata["source_reachability"] == "not_established"
+
+
+def test_kotlin_javascript_interface_parameter_name_is_extracted_correctly():
+    source = '''class Bridge {
+  @android.webkit.JavascriptInterface
+  fun render(html: String) { println(html) }
+}'''
+    spans = list(method_spans(source))
+    assert len(spans) == 1
+    name, offset, body = spans[0]
+    assert TaintEngine._javascript_interface_parameters(source, offset, name, body) == ["html"]
+
+
+def test_kotlin_javascript_interface_parameter_flows_to_webview_html_sink():
+    source = '''import android.webkit.WebView
+class Bridge(private val webView: WebView) {
+  @android.webkit.JavascriptInterface
+  fun render(html: String) {
+    webView.loadDataWithBaseURL("https://app.example", html, "text/html", "UTF-8", null)
+  }
+}'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    candidates = [finding for finding in engine.analyze_source_content(source, "Bridge.kt")
+                  if finding.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+                  == "WEBVIEW_HTML_LOAD"]
+    assert len(candidates) == 1
+    trace = candidates[0].metadata["source_sink_trace"]
+    assert trace["source"]["kind"] == "JAVASCRIPT_INTERFACE_PARAMETER"
+    assert trace["sink"]["operation"] == "WEBVIEW_HTML_LOAD"
+    assert candidates[0].metadata["proof_state"] == "not_proven"
+
+
+def test_taint_directory_reports_webview_flow_count_by_surface(tmp_path):
+    (tmp_path / "HtmlScreen.java").write_text('''import android.content.Intent;
+import android.webkit.WebView;
+class HtmlScreen {
+  void show(Intent intent, WebView webView) {
+    String html = intent.getStringExtra("html");
+    webView.loadDataWithBaseURL("https://app.example", html, "text/html", "UTF-8", null);
+  }
+}''')
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_directory(str(tmp_path))
+    assert engine.coverage["webview"]["candidate_count"] == 1
+    assert engine.coverage["webview"]["proof_status"] == "not_proven"
+    assert any(f.metadata.get("source_sink_trace", {}).get("sink", {}).get("operation")
+               == "WEBVIEW_HTML_LOAD" for f in findings)
 
 
 # =============================================================================
@@ -629,6 +872,128 @@ def test_taint_flows_from_callback_through_same_file_sink_helper():
     assert summary.status.value == "UNVERIFIED" and summary.cvss_score == 0
 
 
+def test_taint_helper_summary_disambiguates_same_named_methods_by_owner():
+    source = '''class Handler {
+      WebView view;
+      void onNewIntent(Intent incoming) {
+        String url = incoming.getStringExtra("url");
+        launch(url);
+      }
+      void launch(String value) { view.loadUrl(value); }
+    }
+    class Unrelated {
+      void launch(String value) { System.out.println(value); }
+    }'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Handler.java")
+    summaries = [item for item in findings if "parameter summary" in item.detection_method]
+    assert len(summaries) == 1
+    assert summaries[0].metadata["source_sink_trace"]["sink"]["method"] == "launch"
+    assert summaries[0].metadata["proof_state"] == "not_proven"
+
+
+def test_taint_helper_summary_fails_closed_on_same_owner_same_arity_overloads():
+    source = '''class Handler {
+      WebView view;
+      void onNewIntent(Intent incoming) {
+        String url = incoming.getStringExtra("url");
+        launch(url);
+      }
+      void launch(String value) { System.out.println(value); }
+      void launch(Integer value) { view.loadUrl(String.valueOf(value)); }
+    }'''
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Handler.java")
+    assert not any("parameter summary" in item.detection_method for item in findings)
+
+
+@pytest.mark.parametrize("ast_enabled", [False, True])
+def test_taint_helper_summary_follows_bounded_same_file_parameter_chain(ast_enabled):
+    source = '''class Handler {
+      WebView view;
+      void onNewIntent(Intent incoming) {
+        String url = incoming.getStringExtra("url");
+        prepare(url);
+      }
+      void prepare(String value) { launch(value); }
+      void launch(String target) { view.loadUrl(target); }
+    }'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Handler.java")
+    summary = next(item for item in findings if "parameter summary" in item.detection_method)
+    trace = summary.metadata["source_sink_trace"]
+    assert trace["helper_call"]["name"] == "prepare"
+    assert trace["sink"]["method"] == "launch"
+    assert trace["sink"]["operation"] == "WEBVIEW_NAVIGATION"
+    assert summary.metadata["proof_state"] == "not_proven"
+
+
+@pytest.mark.parametrize("ast_enabled", [False, True])
+def test_taint_helper_chain_requires_direct_parameter_forwarding(ast_enabled):
+    source = '''class Handler {
+      WebView view;
+      void onNewIntent(Intent incoming) {
+        String url = incoming.getStringExtra("url");
+        prepare(url);
+      }
+      void prepare(String value) { launch(value + "safe"); }
+      void launch(String target) { view.loadUrl(target); }
+    }'''
+    engine = TaintEngine()
+    if not ast_enabled:
+        engine._java_ast.available = False
+    findings = engine.analyze_source_content(source, "Handler.java")
+    assert not any("parameter summary" in item.detection_method for item in findings)
+
+
+def test_taint_coverage_counts_transitive_same_file_summaries(tmp_path):
+    (tmp_path / "Handler.java").write_text('''class Handler {
+      WebView view;
+      void onNewIntent(Intent incoming) {
+        String url = incoming.getStringExtra("url");
+        prepare(url);
+      }
+      void prepare(String value) { launch(value); }
+      void launch(String target) { view.loadUrl(target); }
+    }''')
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    findings = engine.analyze_directory(str(tmp_path))
+    summary = engine.coverage["same_file_parameter_summary"]
+    assert summary["source_files_analyzed"] == 1
+    assert summary["direct_summaries"] >= 1
+    assert summary["transitive_summaries"] >= 1
+    assert summary["files_with_transitive_summaries"] == 1
+    assert summary["proof_status"] == "not_proven"
+    assert any("same-file parameter summary" in item.detection_method for item in findings)
+    from mobileag.reporting.capability_inventory import capability_inventory
+    reported = capability_inventory({"taint": engine.coverage})["formats"]["java_kotlin"]
+    assert reported["same_file_parameter_summary"]["transitive_summaries"] >= 1
+
+
+def test_taint_parameter_summary_budget_is_reported_as_partial(tmp_path, monkeypatch):
+    import mobileag.analysis.taint_engine as taint_module
+    monkeypatch.setattr(taint_module, "MAX_PARAMETER_SINK_SUMMARIES", 1)
+    (tmp_path / "Handler.java").write_text('''class Handler {
+      void launch(Intent value) {
+        startActivity(value);
+        startActivity(value);
+      }
+    }''')
+    engine = TaintEngine()
+    engine._java_ast.available = False
+    engine.analyze_directory(str(tmp_path))
+    summary = engine.coverage["same_file_parameter_summary"]
+    assert summary["candidate_limit_files"] == 1
+    assert engine.coverage["static_status"] == "partial"
+    assert engine.coverage["limits_reached"] is True
+    assert engine.coverage["limit_reasons"]["taint_parameter_summary_count"] == 1
+
+
 def test_java_ast_taint_catches_multiline_source_without_regex_fabrication():
     source = '''class Handler { void open(Intent intent, WebView web) {
         String target = intent
@@ -647,6 +1012,38 @@ def test_java_ast_taint_catches_multiline_source_without_regex_fabrication():
     assert ast_finding.status.value == "UNVERIFIED" and ast_finding.cvss_score == 0
     assert any(item.cwe_id == "CWE-829" for item in findings)
     assert engine.ast_coverage["files_parsed"] == 1
+
+
+def test_java_ast_parser_failures_are_counted_separately_from_unavailable_parser():
+    engine = TaintEngine()
+    if not engine._java_ast.available:
+        pytest.skip("Tree-sitter Java is required for syntax-error accounting")
+    malformed = "class Broken { void f( {"
+    assert engine._java_ast.analyze(malformed, "Broken.java") is None
+    assert engine._java_ast.last_failure_reason == "syntax_error"
+    engine.analyze_source_content(malformed, "Broken.java")
+    assert engine.ast_coverage["parse_fallbacks"] == 1
+    assert engine.ast_coverage["syntax_error_fallbacks"] == 1
+    assert engine.ast_coverage["syntax_error_nodes_observed"] > 0
+    assert engine.ast_coverage["syntax_error_node_count_incomplete_files"] == 0
+
+    unavailable = TaintEngine()
+    unavailable._java_ast.available = False
+    unavailable.analyze_source_content("class Plain { void f() {} }", "Plain.java")
+    assert unavailable.ast_coverage["parser_unavailable_fallbacks"] == 1
+    assert unavailable.ast_coverage["syntax_error_fallbacks"] == 0
+
+
+def test_java_ast_parse_error_node_count_fails_closed_at_visit_budget(monkeypatch):
+    import mobileag.analysis.java_ast_taint as module
+    analyzer = module.JavaAstTaintAnalyzer()
+    if not analyzer.available:
+        pytest.skip("Tree-sitter Java is required for syntax-error accounting")
+    monkeypatch.setattr(module, "MAX_PARSE_ERROR_NODE_VISITS", 1)
+    assert analyzer.analyze("class Broken { void f( {", "Broken.java") is None
+    assert analyzer.last_failure_reason == "syntax_error"
+    assert analyzer.last_parse_error_node_count is not None
+    assert analyzer.last_parse_error_count_status == "incomplete_visit_limit"
 
 
 def test_java_ast_ignores_source_tokens_inside_string_literals():

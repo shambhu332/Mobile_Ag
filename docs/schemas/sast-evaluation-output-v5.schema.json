@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobileag.example/schemas/sast-evaluation-output-v5.schema.json",
+  "title": "MobileAg SAST instance evaluation output v5",
+  "type": "object",
+  "required": ["schema_version", "matching", "corpus_sha256", "case_count", "tp", "fp", "fn", "duplicate_reports", "failed_cases", "precision", "recall", "by_cwe", "cases", "input_coverage", "limitations"],
+  "properties": {
+    "schema_version": {"const": 5},
+    "matching": {"type": "string"},
+    "corpus_sha256": {"$ref": "#/$defs/hash"},
+    "case_count": {"type": "integer", "minimum": 1},
+    "tp": {"$ref": "#/$defs/count"},
+    "fp": {"$ref": "#/$defs/count"},
+    "fn": {"$ref": "#/$defs/count"},
+    "duplicate_reports": {"$ref": "#/$defs/count"},
+    "failed_cases": {"$ref": "#/$defs/count"},
+    "precision": {"$ref": "#/$defs/rate"},
+    "recall": {"$ref": "#/$defs/rate"},
+    "by_cwe": {"type": "object", "additionalProperties": {"$ref": "#/$defs/scores"}},
+    "cases": {"type": "array", "items": {"$ref": "#/$defs/case"}},
+    "input_coverage": {
+      "type": "object",
+      "required": ["corpus_cases_submitted", "analyzer_invocations", "cases_completed", "cases_failed", "cases_skipped", "unsupported_constructs", "unsupported_construct_labels", "apk_extracted_source_files"],
+      "properties": {
+        "corpus_cases_submitted": {"$ref": "#/$defs/count"},
+        "analyzer_invocations": {"$ref": "#/$defs/count"},
+        "cases_completed": {"$ref": "#/$defs/count"},
+        "cases_failed": {"$ref": "#/$defs/count"},
+        "cases_skipped": {"$ref": "#/$defs/count"},
+        "unsupported_constructs": {"$ref": "#/$defs/notMeasured"},
+        "unsupported_construct_labels": {
+          "type": "object",
+          "required": ["status", "cases_with_labels", "cases_submitted", "label_occurrences", "by_construct", "scope"],
+          "properties": {
+            "status": {"enum": ["not_measured", "partial_corpus_labels", "all_cases_labeled"]},
+            "cases_with_labels": {"$ref": "#/$defs/count"},
+            "cases_submitted": {"$ref": "#/$defs/count"},
+            "label_occurrences": {"$ref": "#/$defs/count"},
+            "by_construct": {"type": "object", "additionalProperties": {"type": "object", "required": ["case_occurrences"], "properties": {"case_occurrences": {"$ref": "#/$defs/count"}}}},
+            "scope": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "apk_extracted_source_files": {"$ref": "#/$defs/notMeasured"}
+      },
+      "additionalProperties": true
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "notMeasured": {"type": "object", "required": ["status", "count"], "properties": {"status": {"type": "string"}, "count": {"type": ["integer", "null"], "minimum": 0}}, "additionalProperties": true},
+    "scores": {"type": "object", "required": ["tp", "fp", "fn", "precision", "recall"], "properties": {"tp": {"$ref": "#/$defs/count"}, "fp": {"$ref": "#/$defs/count"}, "fn": {"$ref": "#/$defs/count"}, "precision": {"$ref": "#/$defs/rate"}, "recall": {"$ref": "#/$defs/rate"}}, "additionalProperties": true},
+    "location": {"type": "object", "required": ["cwe", "source_file", "source_line", "source_method", "source_method_identity", "sink_file", "sink_line", "sink_method", "sink_method_identity", "source_qualified_method_identity", "sink_qualified_method_identity"], "properties": {"cwe": {"type": "string", "pattern": "^CWE-[0-9]+$"}, "source_file": {"type": ["string", "null"]}, "source_line": {"type": ["integer", "null"], "minimum": 1}, "source_method": {"type": ["string", "null"]}, "source_method_identity": {"type": ["string", "null"]}, "sink_file": {"type": ["string", "null"]}, "sink_line": {"type": ["integer", "null"], "minimum": 1}, "sink_method": {"type": ["string", "null"]}, "sink_method_identity": {"type": ["string", "null"]}, "source_qualified_method_identity": {"type": ["string", "null"]}, "sink_qualified_method_identity": {"type": ["string", "null"]}}, "additionalProperties": true},
+    "case": {"type": "object", "required": ["id", "language", "tp", "fp", "fn", "duplicate_reports", "failed_cases", "unsupported_constructs", "execution_status", "error_type", "expected", "observed"], "properties": {"id": {"type": "string", "minLength": 1}, "language": {"enum": ["java", "kotlin"]}, "tp": {"$ref": "#/$defs/count"}, "fp": {"$ref": "#/$defs/count"}, "fn": {"$ref": "#/$defs/count"}, "duplicate_reports": {"$ref": "#/$defs/count"}, "failed_cases": {"$ref": "#/$defs/count"}, "unsupported_constructs": {"type": ["array", "null"], "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "line": {"type": "integer", "minimum": 1}}, "additionalProperties": false}}, "execution_status": {"enum": ["completed", "error"]}, "error_type": {"type": ["string", "null"]}, "expected": {"type": "array", "items": {"$ref": "#/$defs/location"}}, "observed": {"type": "array", "items": {"$ref": "#/$defs/location"}}, "source_file": {"type": "string"}}, "additionalProperties": true}
+  },
+  "additionalProperties": true
+}

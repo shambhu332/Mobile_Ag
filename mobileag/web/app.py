@@ -22,6 +22,7 @@ from mobileag.security.archives import validate_archive, MAX_UPLOAD
 from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
 from mobileag.reporting.validation import ConfirmationEvidence, EvidenceError
+from mobileag.assessments.test_plan import TestPlanInput as TestPlanRequest
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Literal
@@ -429,6 +430,56 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     return redact(prepare_scan(scan))
 
 
+@app.get("/api/scans/{scan_id}/comparison/{baseline_scan_id}")
+async def compare_scan_to_baseline(scan_id: str, baseline_scan_id: str) -> dict[str, Any]:
+    """Read-only comparison; never marks findings fixed or changes scan history."""
+    validate_scan_id(scan_id)
+    validate_scan_id(baseline_scan_id)
+    current, baseline = await asyncio.gather(get_scan_details(scan_id),
+                                             get_scan_details(baseline_scan_id))
+    from mobileag.reporting.scan_comparison import compare_scans
+    try:
+        return compare_scans(baseline, current)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.get("/api/scans/{scan_id}/planned-comparison")
+async def compare_scan_to_planned_baseline(scan_id: str) -> dict[str, Any]:
+    """Compare only against the artifact-bound baseline saved in this scan's test plan."""
+    validate_scan_id(scan_id)
+    current = await get_scan_details(scan_id)
+    plan = await asyncio.to_thread(repository().get_test_plan, scan_id)
+    if plan is None:
+        raise HTTPException(404, 'No test plan is recorded for this scan')
+    binding = plan.get('retest_baseline_binding')
+    if not isinstance(binding, dict) or not isinstance(binding.get('scan_id'), str):
+        raise HTTPException(409, 'No artifact-bound retest baseline is recorded in the test plan')
+    baseline = await get_scan_details(binding['scan_id'])
+    provenance = baseline.get('artifact_provenance')
+    provenance = provenance if isinstance(provenance, dict) else {}
+    current_hash = baseline.get('artifact_sha256') or provenance.get('sha256')
+    app_info = baseline.get('app_info') if isinstance(baseline.get('app_info'), dict) else {}
+    current_version = baseline.get('version') or app_info.get('version_name')
+    if (baseline.get('package_name') != binding.get('package_name')
+            or not isinstance(current_hash, str)
+            or current_hash.lower() != binding.get('artifact_sha256')
+            or current_version != binding.get('app_version')):
+        raise HTTPException(409, 'Recorded retest baseline no longer matches its saved artifact binding')
+    from mobileag.reporting.scan_comparison import compare_scans
+    try:
+        result = compare_scans(baseline, current)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    result['plan_binding'] = {
+        'plan_revision': plan.get('plan_revision'),
+        'baseline_scan_id': binding['scan_id'],
+        'baseline_artifact_sha256': binding['artifact_sha256'],
+        'status': 'artifact_binding_matches',
+    }
+    return result
+
+
 
 @app.get("/api/scans/{scan_id}/graph")
 async def get_scan_graph(scan_id: str) -> dict[str, Any]:
@@ -459,7 +510,14 @@ async def get_scan_sarif(scan_id: str) -> dict[str, Any]:
     scan = await get_scan_details(scan_id)
     findings = scan.get("findings", [])
     target_name = scan.get("package_name") or scan.get("app_name", "target_app")
-    return SARIFExporter.generate_sarif(findings, target_name=target_name, scan_id=scan_id)
+    provenance = scan.get("artifact_provenance", {})
+    artifact = {
+        "artifact_sha256": provenance.get("sha256") or scan.get("artifact_sha256"),
+        "package_name": scan.get("package_name"),
+        "app_version": scan.get("version") or scan.get("app_info", {}).get("version_name"),
+    }
+    return SARIFExporter.generate_sarif(findings, target_name=target_name, scan_id=scan_id,
+                                        artifact=artifact, coverage=scan.get("coverage", {}))
 
 
 @app.get("/api/scans/{scan_id}/apis")
@@ -475,6 +533,135 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
         "vulnerable_count": 0,
         "candidate_count": len([e for e in apis if e.get("status") == "VULNERABLE"]),
         "assessment": "Discovered routes are unverified; no server authorization proof",
+    }
+
+
+@app.get("/api/scans/{scan_id}/resilience")
+async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
+    """Return MASVS-RESILIENCE scoring from RaspResilienceAuditor."""
+    scan = await get_scan_details(scan_id)
+    out_dir = OUTPUT_DIR / scan_id
+    smali_dir = out_dir / "apktool_out" / "smali"
+    if not smali_dir.exists():
+        smali_dir = out_dir / "apktool" / "smali"
+    if not smali_dir.exists():
+        candidates = list(out_dir.glob("**/smali"))
+        smali_dir = candidates[0] if candidates else smali_dir
+
+    from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
+    auditor = RaspResilienceAuditor()
+    res = auditor.audit_package(smali_dir)
+
+    return {
+        "scan_id": scan_id,
+        "overall_score": res.overall_score,
+        "grade": res.grade,
+        "vectors": {
+            k: {
+                "name": v.vector_name,
+                "category": v.masvs_category,
+                "score": v.score,
+                "passed": v.passed,
+                "indicators": v.detected_indicators,
+            }
+            for k, v in res.vectors.items()
+        },
+    }
+
+
+@app.get("/api/scans/{scan_id}/cyclonedx")
+async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
+    """Export CycloneDX v1.5 SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return gen.generate_cyclonedx_json()
+
+
+@app.get("/api/scans/{scan_id}/openapi")
+async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
+    """Export discovered mobile APIs in OpenAPI 3.0 format."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    cataloger = MobileApiCataloger(title=f"{app_name} APIs", version="1.0.0")
+
+    apis = scan.get("api_endpoints", [])
+    for ep in apis:
+        url = ep.get("url") or f"https://api.example.com{ep.get('path', '/')}"
+        method = ep.get("method", "GET")
+        cataloger.ingest_request(CapturedRequest(method=method, url=url))
+
+    return cataloger.export_openapi_json()
+
+
+@app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")
+async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
+    """Generate Kotlin exploit PoC and ADB command for a finding."""
+    scan = await get_scan_details(scan_id)
+    findings = scan.get("findings", [])
+    finding_dict = next((f for f in findings if f.get("id") == finding_id), None)
+    if not finding_dict:
+        raise HTTPException(404, f"Finding {finding_id} not found in scan {scan_id}")
+
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+
+    try:
+        sev = Severity(finding_dict.get("severity", "MEDIUM"))
+    except Exception:
+        sev = Severity.MEDIUM
+    try:
+        st = FindingStatus(finding_dict.get("status", "UNVERIFIED"))
+    except Exception:
+        st = FindingStatus.UNVERIFIED
+
+    f_obj = Finding(
+        id=finding_dict.get("id", finding_id),
+        title=finding_dict.get("title", ""),
+        description=finding_dict.get("description", ""),
+        severity=sev,
+        status=st,
+        cwe_id=finding_dict.get("cwe_id"),
+        file_path=finding_dict.get("file_path", ""),
+        metadata=finding_dict.get("metadata", {}),
+    )
+
+    pkg = scan.get("package_name") or "com.target.mobile.app"
+    synthesizer = ExploitPocSynthesizer()
+    poc = synthesizer.synthesize(f_obj, target_package=pkg)
+
+    if not poc:
+        return {
+            "finding_id": finding_id,
+            "available": False,
+            "message": "Automated standalone exploit generator not applicable for this finding category.",
+        }
+
+    return {
+        "finding_id": finding_id,
+        "available": True,
+        "vulnerability_type": poc.vulnerability_type,
+        "adb_command": poc.adb_command,
+        "kotlin_exploit_code": poc.kotlin_exploit_code,
+        "explanation": poc.explanation,
     }
 
 
@@ -526,6 +713,34 @@ async def submit_scan_feedback(scan_id: str, finding_id: str, feedback: Feedback
 async def scan_decisions(scan_id: str):
     await get_scan_details(scan_id)
     return {'scan_id': scan_id, 'decisions': await asyncio.to_thread(repository().history, scan_id)}
+
+
+@app.get('/api/scans/{scan_id}/test-plan')
+async def get_scan_test_plan(scan_id: str):
+    validate_scan_id(scan_id)
+    await get_scan_details(scan_id)  # Import legacy scan snapshots consistently.
+    plan = await asyncio.to_thread(repository().get_test_plan, scan_id)
+    if plan is None:
+        raise HTTPException(404, 'No test plan is recorded for this scan')
+    return redact(plan)
+
+
+@app.put('/api/scans/{scan_id}/test-plan')
+async def save_scan_test_plan(scan_id: str, request: TestPlanRequest):
+    validate_scan_id(scan_id)
+    if request.retest_of_scan_id:
+        validate_scan_id(request.retest_of_scan_id)
+    scan = await get_scan_details(scan_id)
+    from mobileag.assessments.test_plan import build_plan
+    try:
+        document = build_plan(scan, request, revision=0)
+        saved = await asyncio.to_thread(repository().save_test_plan, scan_id, document,
+                                        request.expected_revision)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    return redact(saved)
 
 
 class CopilotRequest(BaseModel):
@@ -610,7 +825,7 @@ async def retention_preview(scan_id: str):
     scan = await get_scan_details(scan_id)
     return {'scan_id':scan_id,'revision':scan.get('revision',0),
             'confirmation':scan_id, 'artifact_sha256':scan.get('artifact_sha256'),
-            'deletes':['scan output','scan metadata','analyst decisions'],
+            'deletes':['scan output','scan metadata','analyst decisions','manual test-plan records'],
             'preserves':['uploaded original archive; may be shared by other scans'],
             'allowed':scan.get('status') not in {'running','queued','cancelling'}}
 

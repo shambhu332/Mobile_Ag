@@ -27,6 +27,8 @@ from typing import Any, Optional, Sequence
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.security.privacy import redact
 from mobileag.reporting.evidence_contract import prepare_finding
+from mobileag.reporting.coverage import review_surface_ledger
+from mobileag.reporting.capability_inventory import capability_inventory
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,19 @@ class ProfessionalReportExporter:
             else:
                 normalised.append({"title": str(f)})
 
-        normalised = [prepare_finding(f) for f in normalised]
+        provenance = scan_metadata.get("artifact_provenance", {})
+        app_info = scan_metadata.get("app_info", {})
+        report_metadata = dict(scan_metadata)
+        report_metadata["_review_surface_ledger"] = review_surface_ledger(scan_metadata.get("coverage", {}))
+        report_metadata["_capability_inventory"] = capability_inventory(
+            scan_metadata.get("coverage", {}), scan_metadata.get("framework_info", {}))
+        artifact = {
+            "artifact_sha256": provenance.get("sha256") or scan_metadata.get("artifact_sha256"),
+            "package_name": scan_metadata.get("package_name") or app_info.get("package_name"),
+            "app_version": scan_metadata.get("app_version") or scan_metadata.get("version") or app_info.get("version_name"),
+        }
+        artifact_binding = artifact if all(artifact.values()) else None
+        normalised = [prepare_finding(f, artifact_binding) for f in normalised]
 
         # Filter out false positives / duplicates
         active = [
@@ -104,7 +118,7 @@ class ProfessionalReportExporter:
             self._attack_surface_section(attack_surface),
             self._compliance_mapping(active),
             self._recommendations(active),
-            self._appendices(scan_metadata),
+            self._appendices(report_metadata),
         ]
 
         report = redact("\n\n---\n\n".join(sections))
@@ -254,6 +268,23 @@ class ProfessionalReportExporter:
 
             if desc:
                 lines.extend(["**Description:**\n", desc, ""])
+            metadata = f.get("metadata") if isinstance(f.get("metadata"), dict) else {}
+            trace = metadata.get("source_sink_trace") if isinstance(metadata, dict) else None
+            if isinstance(trace, dict):
+                source = trace.get("source") if isinstance(trace.get("source"), dict) else {}
+                sink = trace.get("sink") if isinstance(trace.get("sink"), dict) else {}
+                lines.extend([
+                    "**Static source-to-sink trace (review candidate; not proof of reachability or exploitability):**",
+                    f"- Source: `{source.get('kind', 'not recorded')}`" + (f" line {source['line']}" if source.get("line") else ""),
+                    f"- Sink: `{sink.get('operation', 'not recorded')}`" + (f" line {sink['line']}" if sink.get("line") else ""),
+                    f"- Guards: {trace.get('guards', 'not resolved')}",
+                    f"- Runtime verified: {trace.get('runtime_verified', False)}",
+                    "",
+                ])
+            evidence = f.get("validation_evidence") if isinstance(f.get("validation_evidence"), dict) else {}
+            if f.get("evidence_assessment", {}).get("basis") == "analyst_attested" and isinstance(evidence.get("record"), dict):
+                lines.extend(["**Structured analyst evidence (not independently verified):**", "```json",
+                              json.dumps(redact(evidence["record"]), indent=2, ensure_ascii=True).replace("`", r"\u0060"), "```", ""])
             if file_path:
                 lines.append(f"**Affected File:** `{file_path}`\n")
             if snippet:
@@ -391,6 +422,38 @@ class ProfessionalReportExporter:
                 lines.append(f"- **{k}:** {v}")
         else:
             lines.append("- No additional metadata recorded.")
+
+        ledger = meta.get("_review_surface_ledger", {}) if isinstance(meta, dict) else {}
+        if isinstance(ledger, dict) and isinstance(ledger.get("surfaces"), dict):
+            lines.extend(["", "### D. Review-Surface Ledger", "",
+                          "Mapped analyzer execution only; evidence remains unproven unless separately validated.",
+                          "", "| Surface | Static | Runtime | Evidence | Mapped paths | Gap |",
+                          "|---|---|---|---|---|---|"])
+            for name, item in ledger["surfaces"].items():
+                if isinstance(item, dict):
+                    paths = ", ".join(item.get("mapped_coverage_paths", [])) or "none"
+                    lines.append(f"| {name} | {item.get('analysis_state')} | {item.get('runtime_state')} | {item.get('evidence_state')} | {paths} | {item.get('gap') or 'not recorded'} |")
+        inventory = meta.get("_capability_inventory", {}) if isinstance(meta, dict) else {}
+        if isinstance(inventory, dict) and isinstance(inventory.get("formats"), dict):
+            lines.extend(["", "### E. Framework and Format Support Inventory", "",
+                          f"Framework hint: `{inventory.get('detected_framework_hint', 'not_recorded')}`; signature only.",
+                          "", "| Area | Support | This scan | Evidence path | Input skips / limits |", "|---|---|---|---|---|"])
+            for name, item in inventory["formats"].items():
+                if isinstance(item, dict):
+                    details = []
+                    if item.get("source_files_skipped") is not None:
+                        details.append(f"skipped files={item['source_files_skipped']}")
+                    for key in ("source_file_skip_reasons", "limit_reasons"):
+                        reasons = item.get(key, {})
+                        if isinstance(reasons, dict) and reasons:
+                            details.append(", ".join(f"{reason}={count}" for reason, count in sorted(reasons.items())))
+                    summaries = item.get("same_file_parameter_summary", {})
+                    if isinstance(summaries, dict) and summaries:
+                        details.append(f"helper summaries direct={summaries.get('direct_summaries', 0)}, "
+                                       f"transitive={summaries.get('transitive_summaries', 0)}, "
+                                       f"round-limited files={summaries.get('round_limit_files', 0)}, "
+                                       f"candidate-limited files={summaries.get('candidate_limit_files', 0)}")
+                    lines.append(f"| {name} | {item.get('support_level')} | {item.get('execution_state')} | {item.get('coverage_path') or 'none'} | {'; '.join(details) or 'not reported'} |")
 
         lines.extend([
             "",

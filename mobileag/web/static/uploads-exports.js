@@ -203,6 +203,41 @@
       }
     }
 
+    async function exportReportCycloneDX() {
+      toggleExportMenu();
+      if (!currentScan) return;
+      try {
+        const scanId = currentScan.scan_id;
+        if (!scanId) throw new Error('Select a real scan first');
+        const res = await fetch(`/api/scans/${scanId}/cyclonedx`);
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, `mobileag_sbom_${scanId}_cyclonedx.json`);
+        showToast('CycloneDX v1.5 SBOM exported successfully', 'success');
+      } catch (err) {
+        showToast('Error exporting CycloneDX SBOM', 'error');
+      }
+    }
+
+    async function exportReportOpenAPI() {
+      toggleExportMenu();
+      if (!currentScan) return;
+      try {
+        const scanId = currentScan.scan_id;
+        if (!scanId) throw new Error('Select a real scan first');
+        const res = await fetch(`/api/scans/${scanId}/openapi`);
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, `mobileag_apis_${scanId}_openapi.json`);
+        showToast('OpenAPI 3.0 specification exported successfully', 'success');
+      } catch (err) {
+        showToast('Error exporting OpenAPI specification', 'error');
+      }
+    }
+
+    document.getElementById('btn-export-cyclonedx')?.addEventListener('click', exportReportCycloneDX);
+    document.getElementById('btn-export-openapi')?.addEventListener('click', exportReportOpenAPI);
+
     function downloadBlob(blob, filename) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

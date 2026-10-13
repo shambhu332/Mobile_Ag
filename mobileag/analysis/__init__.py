@@ -8,6 +8,17 @@ _MODULES = {
     'NetworkSecurityConfigAuditor':'network_security_config_auditor',
     'ReactNativeScanner':'react_native_scanner', 'SecretScanner':'secret_scanner',
     'TaintEngine':'taint_engine',
+    'SymbolResolver':'symbol_resolver',
+    'PendingIntentAuditor':'pending_intent_auditor',
+    'IntentRedirectionAuditor':'intent_redirection_auditor',
+    'FlutterEngineAnalyzer':'flutter_engine',
+    'RaspResilienceAuditor':'rasp_resilience_auditor',
+    'MobileSbomGenerator':'sbom_generator',
+    'NativeJniAnalyzer':'native_jni_bridge',
+    'HermesBytecodeAnalyzer':'hermes_analyzer',
+    'Il2CppAuditor':'il2cpp_auditor',
+    'MachoBinaryParser':'macho_parser',
+    'PrivacyManifestAuditor':'privacy_manifest_auditor',
 }
 __all__ = list(_MODULES)
 

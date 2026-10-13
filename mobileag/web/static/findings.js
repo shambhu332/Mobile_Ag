@@ -271,6 +271,9 @@
           <button id="subtab-btn-fix" data-onclick="static90" class="poc-subtab-btn px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1">
             <i data-lucide="wrench" class="w-3 h-3 text-sky-400"></i> Remediation
           </button>
+          <button id="subtab-btn-exploit" ${bindAction('click', () => switchFindingSubTab('exploit'))} class="poc-subtab-btn px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1">
+            <i data-lucide="shield-alert" class="w-3 h-3 text-rose-400"></i> Exploit PoC (Kotlin)
+          </button>
         </div>
 
         <!-- Pane 1: Step-by-Step PoC (Markdown) -->
@@ -383,6 +386,21 @@
           </div>
         </div>
 
+        <!-- Pane 7: Standalone Exploit PoC (Kotlin) -->
+        <div id="poc-pane-exploit" class="poc-tab-pane hidden space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono uppercase text-slate-400 font-semibold flex items-center gap-1">
+              <i data-lucide="shield-alert" class="w-3 h-3 text-rose-400"></i> Synthesized Exploit Script
+            </span>
+            <button id="btn-copy-exploit-code" class="text-[10px] font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy Exploit Code
+            </button>
+          </div>
+          <div id="poc-exploit-box" class="bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-rose-300 overflow-x-auto whitespace-pre-wrap">
+            <code>// Loading synthesized exploit...</code>
+          </div>
+        </div>
+
         <!-- Triage & Co-Pilot Action Bar -->
         <div class="pt-4 border-t border-borderSubtle flex items-center justify-between gap-2">
           <button ${bindAction('click', () => askCopilotAboutFinding(f.id))} class="px-2.5 py-1.5 rounded bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs font-mono flex items-center gap-1.5 transition">
@@ -398,6 +416,24 @@
           </div>
         </div>
       `;
+
+      if (currentScan?.scan_id) {
+        fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(f.id)}/poc`)
+          .then(r => r.json())
+          .then(data => {
+            const box = document.getElementById('poc-exploit-box');
+            const copyBtn = document.getElementById('btn-copy-exploit-code');
+            if (box) {
+              if (data.available && data.kotlin_exploit_code) {
+                box.innerHTML = `<code>${escapeHtml(data.kotlin_exploit_code)}</code>`;
+                if (copyBtn) copyBtn.addEventListener('click', () => copySnippet(data.kotlin_exploit_code));
+              } else {
+                box.innerHTML = `<span class="text-slate-500">// ${escapeHtml(data.message || 'No standalone Kotlin exploit template available for this category.')}</span>`;
+              }
+            }
+          })
+          .catch(() => {});
+      }
 
       window.MobileAgEvidence?.finding(detailContainer, f);
       switchFindingSubTab(currentFindingSubTab || 'poc');

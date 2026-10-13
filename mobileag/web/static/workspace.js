@@ -60,7 +60,7 @@
       });
 
       const targetView = document.getElementById(`view-${viewId}`);
-      if (targetView) targetView.classList.remove('hidden');
+      if (targetView) { targetView.classList.remove('hidden'); targetView.scrollTop = 0; }
 
       const activeNav = document.getElementById(`nav-${viewId}`);
       if (activeNav) {
@@ -146,6 +146,23 @@
       const masvsKpi=document.getElementById('kpi-masvs');if(masvsKpi)masvsKpi.textContent='Not assessed';
       const consensusKpi=document.getElementById('kpi-consensus');if(consensusKpi)consensusKpi.textContent='Not measured';
       document.getElementById('nav-findings-count').textContent = (scan.findings || []).length;
+
+      // Populate Resilience Score KPI
+      if (scan.scan_id) {
+        fetch(`/api/scans/${scan.scan_id}/resilience`)
+          .then(r => r.json())
+          .then(data => {
+            const scoreEl = document.getElementById('kpi-resilience-score');
+            const gradeEl = document.getElementById('kpi-resilience-grade');
+            if (scoreEl && data.overall_score !== undefined) {
+              scoreEl.textContent = `${data.overall_score}%`;
+            }
+            if (gradeEl && data.grade) {
+              gradeEl.textContent = `Grade ${data.grade}`;
+            }
+          })
+          .catch(() => {});
+      }
 
       // Render Modules
       renderVisNetwork(scan.attack_surface_graph || { nodes: [], edges: [] });

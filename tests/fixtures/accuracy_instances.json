@@ -11,7 +11,10 @@
       "expected": [
         {
           "cwe": "CWE-829",
-          "sink_line": 4
+          "source_line": 3,
+          "source_method": "open",
+          "sink_line": 4,
+          "sink_method": "open"
         }
       ]
     },
@@ -40,7 +43,10 @@
       "expected": [
         {
           "cwe": "CWE-829",
-          "sink_line": 4
+          "source_line": 3,
+          "source_method": "open",
+          "sink_line": 4,
+          "sink_method": "open"
         }
       ]
     },
@@ -59,6 +65,53 @@
       "language": "kotlin",
       "source": "class Route {\n fun open(input: FakeIntent, view: WebView) {\n  val address = input.dataString\n  view.loadUrl(address)\n  view.loadUrl(\"https://fixed.example/\")\n }\n}",
       "expected": []
+    },
+    {
+      "id": "java_explicit_import_qualified_candidate",
+      "family": "webview_external_url",
+      "variant": "candidate",
+      "language": "java",
+      "file_path": "src/com/example/Route.java",
+      "source": "package com.example;\nimport android.content.Intent;\nimport android.webkit.WebView;\nclass Route {\n void onNewIntent(Intent input, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(address);\n }\n}",
+      "expected": [
+        {
+          "cwe": "CWE-829",
+          "source_line": 6,
+          "source_method": "onNewIntent",
+          "source_qualified_method_identity": "com.example.Route#onNewIntent(android.content.Intent,android.webkit.WebView)",
+          "sink_line": 7,
+          "sink_method": "onNewIntent",
+          "sink_qualified_method_identity": "com.example.Route#onNewIntent(android.content.Intent,android.webkit.WebView)"
+        }
+      ]
+    },
+    {
+      "id": "java_explicit_import_qualified_patched",
+      "family": "webview_external_url",
+      "variant": "patched",
+      "language": "java",
+      "file_path": "src/com/example/Route.java",
+      "source": "package com.example;\nimport android.content.Intent;\nimport android.webkit.WebView;\nclass Route {\n void onNewIntent(Intent input, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(\"https://fixed.example/\");\n }\n}",
+      "expected": []
+    },
+    {
+      "id": "java_same_source_type_wildcard_qualified_candidate",
+      "family": "webview_external_url",
+      "variant": "candidate",
+      "language": "java",
+      "file_path": "src/com/example/Routes.java",
+      "source": "package com.example;\nimport android.content.Intent;\nimport android.webkit.WebView;\nimport vendor.one.*;\nclass LocalPayload {}\nclass Routes {\n void onNewIntent(Intent input, LocalPayload payload, WebView view) {\n  String address = input.getStringExtra(\"url\");\n  view.loadUrl(address);\n }\n}",
+      "expected": [
+        {
+          "cwe": "CWE-829",
+          "source_line": 8,
+          "source_method": "onNewIntent",
+          "source_qualified_method_identity": "com.example.Routes#onNewIntent(android.content.Intent,com.example.LocalPayload,android.webkit.WebView)",
+          "sink_line": 9,
+          "sink_method": "onNewIntent",
+          "sink_qualified_method_identity": "com.example.Routes#onNewIntent(android.content.Intent,com.example.LocalPayload,android.webkit.WebView)"
+        }
+      ]
     }
   ]
 }

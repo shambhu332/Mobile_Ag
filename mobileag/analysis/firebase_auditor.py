@@ -87,14 +87,14 @@ class FirebaseAuditor:
                                     config[field].append(parsed[key])
                         config['source_files'].append(str(path))
                     except (ValueError, TypeError, AttributeError, KeyError, plistlib.InvalidFileException):
-                        inventory.coverage['source_files_skipped'] += 1
+                        inventory.record_skip('configuration_parse_error')
                 for field, pattern in [('database_urls', _FIREBASE_DB_URL_RE),
                                        ('storage_buckets', _FIREBASE_STORAGE_BUCKET_RE),
                                        ('api_keys', _FIREBASE_API_KEY_RE),
                                        ('fcm_server_keys', _FCM_SERVER_KEY_RE)]:
                     for match in pattern.finditer(content):
                         if len(config[field]) >= 500:
-                            inventory.coverage['limits_reached'] = True
+                            inventory.record_limit('firebase_value_count')
                             break
                         if match[0] not in config[field]:
                             config[field].append(match[0])

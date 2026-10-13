@@ -62,6 +62,7 @@ class FrameworkDetector:
         }
 
         detected_framework = "Native"
+        detected_frameworks = []
         version_hint = "unknown"
         detected_evidence = []
         notes = []
@@ -84,17 +85,24 @@ class FrameworkDetector:
                 prefix = pattern.rstrip("/") + "/"
                 if any(fnmatch.fnmatchcase(rel, pattern) or rel == pattern or rel.startswith(prefix)
                        for rel in relative_paths):
-                    if framework not in detected_framework:
-                        detected_framework = framework
+                    if framework not in detected_frameworks:
+                        detected_frameworks.append(framework)
                     detected_evidence.append(pattern)
 
-        if detected_framework != "Native":
+        # Preserve the historical singular field for callers (last matching
+        # signature family wins), but do not lose evidence when a package
+        # contains signatures for more than one framework. Ordering is
+        # deterministic and is not a confidence ranking or proof that
+        # framework code ran.
+        if detected_frameworks:
+            detected_framework = detected_frameworks[-1]
             notes.append(f"Detected {detected_framework} artifacts.")
         else:
             notes.append("No common cross-platform framework signatures found. Assuming Native.")
 
         return {
             "framework": detected_framework,
+            "detected_frameworks": detected_frameworks,
             "version_hint": version_hint,
             "detection_evidence": detected_evidence,
             "analysis_notes": notes,

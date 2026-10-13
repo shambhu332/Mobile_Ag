@@ -6,6 +6,7 @@ legacy dashboard files are imported on first access. This is not a tenant servic
 from __future__ import annotations
 import json
 import os
+import re
 import sqlite3
 import tempfile
 from contextlib import contextmanager
@@ -52,6 +53,9 @@ class ScanRepository:
                 CREATE TABLE IF NOT EXISTS policies (id INTEGER PRIMARY KEY, document TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, at TEXT NOT NULL, sha256 TEXT);
                 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, document TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS test_plans (
+                    scan_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL
+                );
             ''')
             db.execute('BEGIN IMMEDIATE')
             if 'evidence' not in {row['name'] for row in db.execute('PRAGMA table_info(decisions)')}:
@@ -131,9 +135,72 @@ class ScanRepository:
             for row in rows:row['evidence']=json.loads(row['evidence']) if row['evidence'] else None
             return rows
 
+    def get_test_plan(self, sid):
+        with self.connection() as db:
+            row = db.execute('SELECT document FROM test_plans WHERE scan_id=?', (sid,)).fetchone()
+        return json.loads(row['document']) if row else None
+
+    def save_test_plan(self, sid, document, expected_revision):
+        """Optimistically persist a bounded plan tied to the exact scan artifact."""
+        raw = json.dumps(redact(document), allow_nan=False, separators=(',', ':'))
+        if len(raw.encode('utf-8')) > 128 * 1024:
+            raise ValueError('Test-plan size limit exceeded')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            scan_row = db.execute('SELECT status,document FROM scans WHERE id=?', (sid,)).fetchone()
+            if not scan_row:
+                raise KeyError('Scan not found')
+            scan = json.loads(scan_row['document'])
+            if scan_row['status'] not in {'completed', 'complete', 'success'}:
+                raise ValueError('A test plan can only bind to a completed scan')
+            current_provenance = scan.get('artifact_provenance')
+            current_provenance = current_provenance if isinstance(current_provenance, dict) else {}
+            artifact_hash = scan.get('artifact_sha256') or current_provenance.get('sha256')
+            binding = document.get('scope', {})
+            if (document.get('scan_id') != sid or binding.get('package_name') != scan.get('package_name')
+                    or binding.get('artifact_sha256') != artifact_hash):
+                raise ValueError('Test-plan scope does not match this scan artifact')
+            retest_id = document.get('retest_of_scan_id')
+            baseline_binding = None
+            if retest_id:
+                prior_row = db.execute('SELECT status,document FROM scans WHERE id=?', (retest_id,)).fetchone()
+                if not prior_row:
+                    raise ValueError('Retest baseline must be an existing scan')
+                prior = json.loads(prior_row['document'])
+                if prior_row['status'] not in {'completed', 'complete', 'success'} or prior.get('package_name') != scan.get('package_name'):
+                    raise ValueError('Retest baseline must be a completed scan for the same package')
+                prior_provenance = prior.get('artifact_provenance')
+                prior_provenance = prior_provenance if isinstance(prior_provenance, dict) else {}
+                prior_hash = prior.get('artifact_sha256') or prior_provenance.get('sha256')
+                if not isinstance(prior_hash, str) or not re.fullmatch(r'[A-Fa-f0-9]{64}', prior_hash):
+                    raise ValueError('Retest baseline must have a valid artifact SHA-256')
+                prior_info = prior.get('app_info') if isinstance(prior.get('app_info'), dict) else {}
+                baseline_binding = {
+                    'scan_id': retest_id,
+                    'package_name': prior.get('package_name'),
+                    'artifact_sha256': prior_hash.lower(),
+                    'app_version': prior.get('version') or prior_info.get('version_name'),
+                }
+            old = db.execute('SELECT revision FROM test_plans WHERE scan_id=?', (sid,)).fetchone()
+            if old:
+                if expected_revision is None or expected_revision != old['revision']:
+                    raise ValueError('Test plan changed; reload before saving')
+                revision = old['revision'] + 1
+            else:
+                if expected_revision is not None:
+                    raise ValueError('Test plan does not exist; reload before saving')
+                revision = 0
+            document = dict(document, plan_revision=revision, retest_baseline_binding=baseline_binding)
+            raw = json.dumps(redact(document), allow_nan=False, separators=(',', ':'))
+            if len(raw.encode('utf-8')) > 128 * 1024:
+                raise ValueError('Test-plan size limit exceeded')
+            db.execute('INSERT OR REPLACE INTO test_plans VALUES(?,?,?)', (sid, revision, raw))
+        return document
+
     def remove(self, sid):
         with self.connection() as db:
             db.execute('DELETE FROM scans WHERE id=?', (sid,))
+            db.execute('DELETE FROM test_plans WHERE scan_id=?', (sid,))
             # Keep the minimal decision history; it contains redacted notes, not raw originals.
 
     def get_settings(self):
@@ -166,5 +233,6 @@ class ScanRepository:
                 raise ValueError('Scan changed; preview again')
             db.execute('DELETE FROM scans WHERE id=?',(sid,))
             db.execute('DELETE FROM decisions WHERE scan_id=?',(sid,))
+            db.execute('DELETE FROM test_plans WHERE scan_id=?',(sid,))
             db.execute('INSERT OR REPLACE INTO tombstones VALUES(?,?,?)',
                        (sid,datetime.now(timezone.utc).isoformat(),sha256))

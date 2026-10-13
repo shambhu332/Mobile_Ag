@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobileag.example/schemas/mobsf-import-v1.schema.json",
+  "title": "MobileAg bounded MobSF import projection v1",
+  "type": "object",
+  "required": ["schema_version", "source_format", "source_sha256", "source_trust", "producer_version", "reported_package_name", "producer_entries_seen", "imported_candidates", "duplicates_skipped", "invalid_or_nonfinding_results_skipped", "source_locations_omitted", "source_location_inventory_status", "findings", "limitations"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source_format": {"const": "MobSF Android static JSON (bounded subset)"},
+    "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "source_trust": {"const": "untrusted_external_results"},
+    "producer_version": {"type": "string", "maxLength": 128},
+    "reported_package_name": {"type": ["string", "null"], "maxLength": 256},
+    "producer_entries_seen": {"type": "integer", "minimum": 0},
+    "imported_candidates": {"type": "integer", "minimum": 0, "maximum": 5000},
+    "duplicates_skipped": {"type": "integer", "minimum": 0},
+    "invalid_or_nonfinding_results_skipped": {"type": "integer", "minimum": 0},
+    "source_locations_omitted": {"type": "integer", "minimum": 0},
+    "source_location_inventory_status": {"enum": ["within_limits", "truncated"]},
+    "findings": {
+      "type": "array", "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "required": ["title", "description", "severity", "cwe_id", "file_path", "line_number", "detection_method", "status", "metadata"],
+        "properties": {
+          "title": {"type": "string", "maxLength": 512},
+          "description": {"type": "string", "maxLength": 16384},
+          "severity": {"enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]},
+          "cwe_id": {"type": "string", "pattern": "^CWE-(?:[0-9]+|Unknown)$"},
+          "file_path": {"type": "string", "maxLength": 2048},
+          "line_number": {"type": ["integer", "null"], "minimum": 1},
+          "detection_method": {"const": "MobSFImport"},
+          "status": {"const": "UNVERIFIED"},
+          "metadata": {
+            "type": "object", "required": ["proof_state", "import"],
+            "properties": {
+              "proof_state": {"const": "not_proven"},
+              "import": {
+                "type": "object", "required": ["format", "rule_id", "category", "producer_version", "source_sha256", "source_trust", "producer_evidence_ignored"],
+                "properties": {
+                  "format": {"const": "MobSF Android static JSON subset"},
+                  "rule_id": {"type": "string", "maxLength": 256},
+                  "category": {"enum": ["code_analysis", "manifest_analysis"]},
+                  "producer_version": {"type": "string", "maxLength": 128},
+                  "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                  "source_trust": {"const": "untrusted_external_result"},
+                  "producer_evidence_ignored": {"const": true}
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 2048}}
+  },
+  "additionalProperties": true
+}

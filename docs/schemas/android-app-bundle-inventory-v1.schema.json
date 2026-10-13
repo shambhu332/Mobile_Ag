@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobileag.invalid/schemas/android-app-bundle-inventory-v1.schema.json",
+  "title": "MobileAg Android App Bundle input inventory v1",
+  "description": "Bounded archive/module/DEX/native input inventory only; not analysis, split delivery validation, or a security verdict.",
+  "type": "object",
+  "required": ["inventory_schema_version", "format", "artifact_sha256", "size_bytes", "zip_member_count", "expanded_bytes", "module_count", "module_manifest_count", "dex_member_count", "native_library_member_count", "modules", "inventory_status", "analysis_state", "bundle_manifest_protobuf_decoded", "split_delivery_set_status", "runtime_status", "proof_status", "security_verdict", "limitations"],
+  "properties": {
+    "inventory_schema_version": {"const": 1},
+    "format": {"const": "android_app_bundle"},
+    "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "size_bytes": {"type": "integer", "minimum": 0},
+    "zip_member_count": {"type": "integer", "minimum": 1},
+    "expanded_bytes": {"type": "integer", "minimum": 0},
+    "module_count": {"type": "integer", "minimum": 1},
+    "module_manifest_count": {"type": "integer", "minimum": 1},
+    "dex_member_count": {"type": "integer", "minimum": 0},
+    "native_library_member_count": {"type": "integer", "minimum": 0},
+    "modules": {"type": "array", "items": {"$ref": "#/$defs/module"}},
+    "inventory_status": {"enum": ["complete_within_limits", "partial"]},
+    "analysis_state": {"const": "input_inventory_only_not_analyzed"},
+    "bundle_manifest_protobuf_decoded": {"const": false},
+    "split_delivery_set_status": {"const": "not_measured"},
+    "runtime_status": {"const": "not_tested"},
+    "proof_status": {"const": "not_proven"},
+    "security_verdict": {"const": "not_established"},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "required": ["name", "manifest_present", "dex_member_count", "declared_dex_class_count", "dex_class_count_status", "native_library_member_count", "invalid_dex_member_count", "module_inventory_status"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.-]+$"},
+        "manifest_present": {"type": "boolean"},
+        "dex_member_count": {"type": "integer", "minimum": 0},
+        "declared_dex_class_count": {"type": "integer", "minimum": 0},
+        "dex_class_count_status": {"enum": ["measured_dex_headers", "not_applicable_no_dex_member", "incomplete_or_unsupported_dex", "incomplete_or_unsupported_member_name"]},
+        "native_library_member_count": {"type": "integer", "minimum": 0},
+        "invalid_dex_member_count": {"type": "integer", "minimum": 0},
+        "module_inventory_status": {"enum": ["complete_within_inventory_limits", "incomplete_module_manifest_missing", "incomplete_invalid_module_path"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

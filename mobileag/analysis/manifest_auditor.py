@@ -37,7 +37,8 @@ class ManifestAuditor:
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
                 remediation="Set android:allowBackup='false' in AndroidManifest.xml unless specifically required.",
-                file_path="AndroidManifest.xml"
+                file_path="AndroidManifest.xml",
+                metadata={"check_id": "manifest_allow_backup", "proof_state": "not_proven"}
             ))
 
         # Check debuggable
@@ -87,6 +88,35 @@ class ManifestAuditor:
             permission = comp.get("permission")
             name = comp.get("name", "UnknownComponent")
             comp_type = comp.get("type", "component").capitalize()
+            access_policy = comp.get("declared_access_permissions")
+            if not isinstance(access_policy, dict):
+                access_policy = ({"read": permission or None, "write": permission or None}
+                                 if comp.get("type") == "provider"
+                                 else {"interaction": permission or None})
+            unguarded_provider_access = ([direction for direction in ("read", "write")
+                                          if not access_policy.get(direction)]
+                                         if comp.get("type") == "provider" else [])
+            missing_permission = (bool(unguarded_provider_access) if comp.get("type") == "provider"
+                                  else not permission)
+            permission_resolution = comp.get("permission_resolution", {})
+            unresolved_permission_access = [
+                direction for direction, resolution in permission_resolution.items()
+                if isinstance(resolution, dict)
+                and resolution.get("status") == "unresolved_resource_reference"
+            ] if isinstance(permission_resolution, dict) else []
+            unresolved_path_permissions = []
+            if comp.get("type") == "provider":
+                for index, path_permission in enumerate(comp.get("path_permissions", [])[:128]):
+                    if not isinstance(path_permission, dict):
+                        continue
+                    path_resolution = path_permission.get("permission_resolution", {})
+                    if not isinstance(path_resolution, dict):
+                        continue
+                    for direction, resolution in path_resolution.items():
+                        if (isinstance(resolution, dict)
+                                and resolution.get("status") == "unresolved_resource_reference"):
+                            unresolved_path_permissions.append(f"path_permission[{index}].{direction}")
+            unresolved_permission_access.extend(unresolved_path_permissions)
 
             # Android 12+ rejects target-31+ APK components with intent filters
             # that omit android:exported. This is a build/installability lead,
@@ -109,15 +139,16 @@ class ManifestAuditor:
                               "target_sdk": target_sdk},
                 ))
 
-            if exported and not permission:
+            if exported and missing_permission:
                 # Exposure is an attack-surface observation, not proof of a
                 # missing authorization check. Launcher/public components may
                 # intentionally accept callers and require no permission.
                 findings.append(Finding(
                     title=f"Review Exported {comp_type}: {name}",
-                    description=f"{comp_type} '{name}' accepts external callers without a manifest permission. "
+                    description=(f"{comp_type} '{name}' has no declared permission for "
+                                 f"{', '.join(unguarded_provider_access) if unguarded_provider_access else 'component interaction'}. "
                                 "This may be intentional (for example a launcher activity). Trace caller-controlled "
-                                "inputs to sensitive operations and verify runtime authorization before claiming a vulnerability.",
+                                "inputs to sensitive operations and verify the merged manifest and runtime authorization before claiming a vulnerability."),
                     severity=Severity.INFO,
                     cwe_id="CWE-Unknown",
                     affected_component=name,
@@ -125,7 +156,28 @@ class ManifestAuditor:
                     status=FindingStatus.UNVERIFIED,
                     remediation="Keep intentionally public entrypoints usable. For private operations, disable export "
                                 "or enforce caller authorization before processing inputs; do not disable launcher access blindly.",
-                    file_path="AndroidManifest.xml"
+                    file_path="AndroidManifest.xml",
+                    metadata={"declared_access_permissions": access_policy,
+                              "unguarded_provider_access": unguarded_provider_access,
+                              "proof_state": "not_proven"},
+                ))
+
+            if exported and unresolved_permission_access:
+                findings.append(Finding(
+                    title=f"Review Unresolved Exported Component Permission: {name}",
+                    description=(f"Permission configuration for exported {comp_type.lower()} '{name}' contains a resource reference that this bounded manifest pass did not resolve for: "
+                                 f"{', '.join(sorted(unresolved_permission_access))}. Do not treat the reference as a verified authorization boundary or as proof that access is unrestricted; inspect the resource table and merged release manifest."),
+                    severity=Severity.INFO, cwe_id="CWE-284", cvss_score=0.0,
+                    affected_component=name, detection_method="ManifestAuditor",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Resolve permission resource references against the built artifact and verify the effective caller authorization before drawing a security conclusion.",
+                    file_path="AndroidManifest.xml",
+                    metadata={"analysis_kind": "unresolved_component_permission",
+                              "permission_resolution": permission_resolution,
+                              "unresolved_path_permissions": unresolved_path_permissions,
+                              "path_permissions_truncated": bool(comp.get("path_permissions_truncated")),
+                              "unresolved_access_directions": sorted(unresolved_permission_access),
+                              "proof_status": "not_proven"},
                 ))
 
             task_affinity = comp.get("taskAffinity")
@@ -147,7 +199,7 @@ class ManifestAuditor:
 
             # FileProvider misconfiguration check
             if "FileProvider" in name or (comp.get("meta_data") and "android.support.FILE_PROVIDER_PATHS" in comp.get("meta_data", {})):
-                if exported and not permission:
+                if exported and missing_permission:
                     cwe = "CWE-22"
                     findings.append(Finding(
                         title=f"Exported FileProvider with Arbitrary File Access Risk: {name}",
@@ -163,24 +215,122 @@ class ManifestAuditor:
                         file_path="AndroidManifest.xml"
                     ))
 
+        # Broad configured roots are a review lead only. A provider must still
+        # issue a URI grant, and its implementation/runtime behavior determines
+        # the actual caller-visible data boundary.
+        path_inventory = manifest_data.get("provider_path_inventory", {})
+        for provider in path_inventory.get("providers", []):
+            if provider.get("status") != "parsed":
+                continue
+            provider_name = provider.get("provider", "unknown")
+            provider_component = next((component for component in components
+                                       if component.get("name") == provider_name
+                                       and component.get("type") == "provider"), {})
+            for entry in provider.get("entries", []):
+                configured_path = str(entry.get("path", "")).strip()
+                if entry.get("type") != "root-path" and configured_path not in ("", ".", "/"):
+                    continue
+                findings.append(Finding(
+                    title=f"Review Broad FileProvider Path Configuration: {provider_name}",
+                    description=(f"FileProvider XML maps a broad '{entry.get('type', 'unknown')}' root with path "
+                                 f"'{configured_path}'. This is a configuration review lead only: a third party "
+                                 f"still needs an issued URI grant (manifest grantUriPermissions="
+                                 f"{provider_component.get('grant_uri_permissions', 'not_recorded')}), and provider code, "
+                                 "URI construction, effective installed configuration, and the files actually exposed "
+                                 "are not established."),
+                    severity=Severity.INFO, cwe_id="CWE-Unknown", cvss_score=0.0,
+                    affected_component=str(provider_name),
+                    detection_method="ManifestAuditor", status=FindingStatus.UNVERIFIED,
+                    remediation=("Restrict FileProvider roots to the smallest required subdirectory, issue temporary "
+                                 "URI grants only for intended files, and validate provider path and caller behavior."),
+                    file_path=str(provider.get("resource", "AndroidManifest.xml")),
+                    metadata={"analysis_kind": "provider_path_configuration", "proof_state": "not_proven",
+                              "provider_path_type": entry.get("type"), "external_uri_grant_verified": False,
+                              "provider_exported": provider_component.get("exported"),
+                              "grant_uri_permissions": provider_component.get("grant_uri_permissions"),
+                              "declared_grant_path_count": len(provider_component.get("grant_uri_permissions_paths", [])),
+                              "declared_path_permission_count": len(provider_component.get("path_permissions", []))},
+                ))
+
         # A weak custom permission is relevant here only when an exported
         # component actually uses it. An unused declaration alone protects
         # nothing and is not a security finding.
         declared_perms = manifest_data.get("declared_permissions", [])
-        used_exported_permissions = {
-            comp.get("permission") for comp in components
-            if comp.get("exported") is True and comp.get("permission")
-        }
+        used_exported_permissions: dict[str, list[dict[str, str]]] = {}
+        for comp in components:
+            if comp.get("exported") is not True:
+                continue
+            access = comp.get("declared_access_permissions")
+            if not isinstance(access, dict):
+                access = ({"read": comp.get("permission"), "write": comp.get("permission")}
+                          if comp.get("type") == "provider" else
+                          {"interaction": comp.get("permission")})
+            resolution = comp.get("permission_resolution", {})
+            if not isinstance(resolution, dict):
+                resolution = {}
+            directions = ("read", "write") if comp.get("type") == "provider" else ("interaction",)
+            for direction in directions:
+                direction_resolution = resolution.get(direction, {})
+                if ("permission_resolution" in comp and
+                        (not isinstance(direction_resolution, dict)
+                        or direction_resolution.get("status") not in {
+                            "literal_name", "resolved_simple_string_resource"})):
+                    continue
+                perm_name = access.get(direction)
+                if isinstance(perm_name, str) and perm_name:
+                    used_exported_permissions.setdefault(perm_name, []).append({
+                        "component": str(comp.get("name", "UnknownComponent"))[:256],
+                        "access": direction,
+                    })
+            if comp.get("type") == "provider":
+                for index, path_permission in enumerate(comp.get("path_permissions", [])[:128]):
+                    if not isinstance(path_permission, dict):
+                        continue
+                    path_access = path_permission.get("declared_access_permissions", {})
+                    path_resolution = path_permission.get("permission_resolution", {})
+                    if not isinstance(path_access, dict) or not isinstance(path_resolution, dict):
+                        continue
+                    path_label = next((f"{key}={str(path_permission[key])[:128]}"
+                                       for key in ("path", "pathPrefix", "pathPattern")
+                                       if path_permission.get(key)), f"path_permission[{index}]")
+                    for direction in ("read", "write"):
+                        resolution_row = path_resolution.get(direction, {})
+                        if (not isinstance(resolution_row, dict)
+                                or resolution_row.get("status") not in {
+                                    "literal_name", "resolved_simple_string_resource"}):
+                            continue
+                        perm_name = path_access.get(direction)
+                        if isinstance(perm_name, str) and perm_name:
+                            used_exported_permissions.setdefault(perm_name, []).append({
+                                "component": f"{str(comp.get('name', 'UnknownComponent'))[:180]} ({path_label})",
+                                "access": direction,
+                            })
         for dperm in declared_perms:
+            if not isinstance(dperm, dict):
+                continue
+            name_resolution = dperm.get("name_resolution", {})
+            if (isinstance(name_resolution, dict) and name_resolution
+                    and name_resolution.get("status") not in {
+                        "literal_name", "resolved_simple_string_resource"}):
+                continue
             p_name = dperm.get("name", "")
-            prot = (dperm.get("protectionLevel") or "").lower()
-            if p_name in used_exported_permissions and prot in ("normal", "", "none"):
+            if not isinstance(p_name, str) or not p_name:
+                continue
+            raw_protection = dperm.get("protectionLevel") or "normal"
+            if not isinstance(raw_protection, str):
+                continue
+            prot = raw_protection.lower()
+            base_protection = prot.split("|", 1)[0].strip() or "normal"
+            use_sites = used_exported_permissions.get(p_name, [])
+            if use_sites and base_protection in {"normal", "dangerous", "none"}:
                 cwe = "CWE-276"
+                use_summary = ", ".join(sorted({f"{site['component']} ({site['access']})"
+                                                 for site in use_sites}))[:1000]
                 findings.append(Finding(
-                    title=f"Exported Component Uses Normal-Protection Custom Permission: {p_name}",
+                    title=f"Review Broad Custom Permission on Exported Component: {p_name}",
                     description=(
-                        f"An exported component uses custom permission '{p_name}' with protectionLevel='{prot or 'normal'}'. "
-                        "Normal-level permissions are generally grantable to ordinary installed apps; verify the effective merged manifest, component sensitivity, and runtime authorization before assessing impact."
+                        f"Exported component access uses custom permission '{p_name}' with protectionLevel='{prot}'. "
+                        f"Recorded use sites: {use_summary}. A normal permission is generally available to ordinary installed apps; dangerous permissions are user-mediated. Verify the merged manifest, component sensitivity, and runtime authorization before assessing impact."
                     ),
                     severity=Severity.INFO,
                     cwe_id=cwe,
@@ -190,11 +340,25 @@ class ManifestAuditor:
                     detection_method="ManifestAuditor",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Elevate custom permissions guarding sensitive components to android:protectionLevel='signature'.",
-                    file_path="AndroidManifest.xml"
+                    file_path="AndroidManifest.xml",
+                    metadata={"analysis_kind": "custom_permission_protection",
+                              "protection_level": prot, "base_protection_level": base_protection,
+                              "exported_use_sites": use_sites, "proof_status": "not_proven"},
                 ))
 
         # Check dangerous system permissions requested
         requested_perms = manifest_data.get("permissions", [])
+        request_details: dict[str, list[dict[str, Any]]] = {}
+        for request in manifest_data.get("permission_requests", []):
+            if not isinstance(request, dict) or not isinstance(request.get("name"), str):
+                continue
+            request_details.setdefault(request["name"], []).append({
+                "request_element": request.get("request_element"),
+                "max_sdk_version": request.get("max_sdk_version"),
+                "uses_permission_flags": request.get("uses_permission_flags"),
+                "name_resolution_status": request.get("name_resolution", {}).get("status")
+                if isinstance(request.get("name_resolution"), dict) else "not_recorded",
+            })
         if "android.permission.SYSTEM_ALERT_WINDOW" in requested_perms:
             cwe = "CWE-1021"
             findings.append(Finding(
@@ -208,7 +372,9 @@ class ManifestAuditor:
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
                 remediation="Only request SYSTEM_ALERT_WINDOW if background floating UI is indispensable. Enforce FLAG_SECURE on sensitive activities.",
-                file_path="AndroidManifest.xml"
+                file_path="AndroidManifest.xml",
+                metadata={"permission_request_declarations": request_details.get(
+                    "android.permission.SYSTEM_ALERT_WINDOW", []), "proof_status": "not_proven"},
             ))
 
         if "android.permission.REQUEST_INSTALL_PACKAGES" in requested_perms:
@@ -224,7 +390,9 @@ class ManifestAuditor:
                 detection_method="ManifestAuditor",
                 status=FindingStatus.UNVERIFIED,
                 remediation="Remove REQUEST_INSTALL_PACKAGES and direct users to official app stores instead of in-app self-updating APKs.",
-                file_path="AndroidManifest.xml"
+                file_path="AndroidManifest.xml",
+                metadata={"permission_request_declarations": request_details.get(
+                    "android.permission.REQUEST_INSTALL_PACKAGES", []), "proof_status": "not_proven"},
             ))
 
         logger.info(f"Manifest audit completed: {len(findings)} findings.")

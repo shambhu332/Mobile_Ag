@@ -1,4 +1,6 @@
 import tempfile
+import shutil
+import subprocess
 from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -53,6 +55,9 @@ async def test_manifest_auditor(mock_router):
         # Manifest attributes/components are static review leads, not impact proof.
         assert f.severity == Severity.INFO
         assert f.cvss_score == 0.0
+    backup = next(f for f in findings if f.title == "Application Data Backup Allowed")
+    assert backup.metadata["check_id"] == "manifest_allow_backup"
+    assert backup.metadata["proof_state"] == "not_proven"
 
 
 @pytest.mark.asyncio
@@ -211,6 +216,258 @@ async def test_dependency_scanner(mock_router):
         assert isinstance(findings, list)
 
 
+def test_dependency_inventory_understands_literal_kotlin_and_groovy_notation(tmp_path, mock_router):
+    (tmp_path / "build.gradle").write_text(
+        'dependencies { implementation("org.example:core:1.2.3") }\n'
+        'implementation("org.example:dynamic:$version")\n'
+        "implementation group: 'org.example', name: 'legacy', version: '2.0.0'\n")
+    scanner = DependencyScanner(mock_router)
+    results = scanner._sync_find_dependencies(tmp_path)
+    assert {(g, a, v) for g, a, v, _path in results} == {
+        ('org.example', 'core', '1.2.3'), ('org.example', 'legacy', '2.0.0')}
+    assert scanner.coverage['unresolved_dependency_declarations'] == 1
+    assert scanner.coverage['static_status'] == 'partial'
+
+
+def test_dependency_inventory_ignores_gradle_line_and_block_comments(tmp_path, mock_router):
+    (tmp_path / "build.gradle").write_text('''// implementation "attacker:commented:9.9.9"
+/*
+api("also:commented:8.8.8")
+*/
+def url = "https://example.invalid/not-a-comment"
+dependencies {
+  implementation "org.example:real-library:1.2.3"
+}
+''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("org.example", "real-library", "1.2.3"),
+    }
+    assert scanner.coverage["unresolved_dependency_declarations"] == 0
+
+
+def test_dependency_inventory_reads_gradle_lockfiles_and_literal_version_catalogs(tmp_path, mock_router):
+    (tmp_path / "gradle.lockfile").write_text(
+        "org.example:locked-lib:3.2.1=runtimeClasspath\n"
+        "empty=\n"
+    )
+    (tmp_path / "libs.versions.toml").write_text(
+        '[versions]\n'
+        'catalog-api = "2.4.0"\n'
+        '[libraries]\n'
+        'catalog-api = { module = "org.example:catalog-api", version.ref = "catalog-api" }\n'
+        'strict-lib = { group = "org.example", name = "strict-lib", version = { strictly = "1.7.5" } }\n'
+        'dynamic-lib = { module = "org.example:dynamic-lib", version = "+" }\n'
+    )
+    (tmp_path / "build.gradle.kts").write_text('''dependencies {
+    implementation(libs.catalog.api)
+    api(libs.strict.lib)
+    implementation(platform(libs.dynamic.lib))
+}
+''', encoding="utf-8")
+    pom = tmp_path / "META-INF" / "maven" / "org.example" / "pom.properties"
+    pom.parent.mkdir(parents=True)
+    pom.write_text("groupId=org.example\nartifactId=embedded\nversion=5.0.0\n")
+
+    scanner = DependencyScanner(mock_router)
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("org.example", "locked-lib", "3.2.1"),
+        ("org.example", "catalog-api", "2.4.0"),
+        ("org.example", "strict-lib", "1.7.5"),
+        ("org.example", "embedded", "5.0.0"),
+    }
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["dependency_metadata_parse_failures"] == 0
+    assert scanner.coverage["dependencies_by_source"] == {
+        "gradle_build": 0, "pom_properties": 1,
+        "gradle_lockfile": 1, "version_catalog": 2,
+        "npm_package_lock": 0, "yarn_lock_v1": 0, "pom_xml": 0,
+    }
+
+
+def test_unused_version_catalog_alias_is_not_reported_as_resolved_dependency(tmp_path, mock_router):
+    (tmp_path / "libs.versions.toml").write_text('''[libraries]
+unused-lib = { module = "org.example:unused-lib", version = "1.2.3" }
+''', encoding="utf-8")
+    (tmp_path / "build.gradle.kts").write_text('''// implementation(libs.unused.lib)
+val note = "implementation(libs.unused.lib)"
+''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    assert scanner._sync_find_dependencies(tmp_path) == []
+    assert scanner.coverage["dependencies_by_source"]["version_catalog"] == 0
+    assert scanner.coverage["unresolved_dependency_declarations"] == 0
+    assert scanner.coverage["static_status"] == "analyzed_heuristically"
+
+
+def test_bounded_maven_pom_xml_inventory_uses_literal_direct_dependencies_only(tmp_path, mock_router):
+    (tmp_path / "pom.xml").write_text('''<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <dependencies>
+    <dependency><groupId>org.example</groupId><artifactId>api</artifactId><version>1.2.3</version></dependency>
+    <dependency><groupId>org.example</groupId><artifactId>dynamic</artifactId><version>${revision}</version></dependency>
+  </dependencies>
+  <dependencyManagement><dependencies>
+    <dependency><groupId>org.example</groupId><artifactId>managed-only</artifactId><version>3.0.0</version></dependency>
+  </dependencies></dependencyManagement>
+  <profiles><profile><dependencies>
+    <dependency><groupId>org.example</groupId><artifactId>conditional</artifactId><version>4.0.0</version></dependency>
+  </dependencies></profile></profiles>
+</project>''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("org.example", "api", "1.2.3"),
+    }
+    assert scanner.coverage["dependencies_by_source"]["pom_xml"] == 1
+    assert scanner.coverage["unresolved_dependency_declarations"] == 3
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_bounded_maven_pom_resolves_root_local_literal_properties_only(tmp_path, mock_router):
+    (tmp_path / "pom.xml").write_text('''<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <properties><release.version>2.4.1</release.version><cycle.a>${cycle.b}</cycle.a>
+    <cycle.b>${cycle.a}</cycle.b></properties>
+  <dependencies>
+    <dependency><groupId>org.example</groupId><artifactId>resolved</artifactId><version>${release.version}</version></dependency>
+    <dependency><groupId>org.example</groupId><artifactId>cycle</artifactId><version>${cycle.a}</version></dependency>
+    <dependency><groupId>org.example</groupId><artifactId>parent</artifactId><version>${project.version}</version></dependency>
+  </dependencies>
+</project>''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("org.example", "resolved", "2.4.1"),
+    }
+    assert scanner.coverage["unresolved_dependency_declarations"] == 2
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_maven_pom_rejects_doctype_and_external_entities(tmp_path, mock_router):
+    (tmp_path / "pom.xml").write_text('''<!DOCTYPE project [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+<project><dependencies><dependency><groupId>org.example</groupId>
+<artifactId>api</artifactId><version>&x;</version></dependency></dependencies></project>''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    assert scanner._sync_find_dependencies(tmp_path) == []
+    assert scanner.coverage["dependency_metadata_parse_failures"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_ambiguous_catalog_accessors_are_withheld_and_counted_partial(tmp_path, mock_router):
+    (tmp_path / "libs.versions.toml").write_text('''[libraries]
+foo-bar = { module = "org.example:first", version = "1.2.3" }
+"foo.bar" = { module = "org.example:second", version = "2.3.4" }
+''', encoding="utf-8")
+    (tmp_path / "build.gradle").write_text('implementation(libs.foo.bar)\n', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    assert scanner._sync_find_dependencies(tmp_path) == []
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_invalid_gradle_version_catalog_is_explicitly_partial(tmp_path, mock_router):
+    (tmp_path / "libs.versions.toml").write_text('[libraries\nmalformed')
+    scanner = DependencyScanner(mock_router)
+
+    assert scanner._sync_find_dependencies(tmp_path) == []
+    assert scanner.coverage["dependency_metadata_parse_failures"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_npm_package_lock_v3_inventory_is_bounded_and_partial_on_dynamic_entries(tmp_path, mock_router):
+    import json
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "name": "synthetic-rn", "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "synthetic-rn", "version": "1.0.0"},
+            "node_modules/react-native": {"version": "0.76.0"},
+            "node_modules/@scope/synthetic": {"version": "2.1.0-beta.1"},
+            "node_modules/workspace-lib": {"version": "file:../workspace", "link": True},
+        },
+    }), encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("npm", "react-native", "0.76.0"),
+        ("npm", "@scope/synthetic", "2.1.0-beta.1"),
+    }
+    assert scanner.coverage["dependencies_by_source"]["npm_package_lock"] == 2
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_npm_package_lock_v1_uses_bounded_iterative_nested_dependency_walk(tmp_path, mock_router):
+    import json
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "lockfileVersion": 1,
+        "dependencies": {
+            "react-native": {"version": "0.64.0", "dependencies": {
+                "@scope/native-addon": {"version": "1.2.3"},
+                "git-dep": {"version": "git+https://example.invalid/repo", "dependencies": {}},
+            }},
+        },
+    }), encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("npm", "react-native", "0.64.0"),
+        ("npm", "@scope/native-addon", "1.2.3"),
+    }
+    assert scanner.coverage["dependencies_by_source"]["npm_package_lock"] == 2
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_malformed_npm_lockfile_version_is_partial_not_a_scanner_crash(tmp_path, mock_router):
+    import json
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "lockfileVersion": {"unexpected": "object"}, "packages": {},
+    }), encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    assert scanner._sync_find_dependencies(tmp_path) == []
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
+def test_yarn_v1_lockfile_inventories_scoped_selectors_and_marks_dynamic_entries_partial(tmp_path, mock_router):
+    (tmp_path / "yarn.lock").write_text('''# yarn lockfile v1
+"react-native@^0.76.0":
+  version "0.76.0"
+  resolved "https://registry.npmjs.org/react-native/-/react-native-0.76.0.tgz"
+"@scope/native-addon@^2.0.0", "@scope/native-addon@~2.0.0":
+  version "2.1.0"
+legacy-git@^1.0.0:
+  version "git+https://example.invalid/repo"
+''', encoding="utf-8")
+    scanner = DependencyScanner(mock_router)
+
+    dependencies = scanner._sync_find_dependencies(tmp_path)
+
+    assert {(group, artifact, version) for group, artifact, version, _ in dependencies} == {
+        ("npm", "react-native", "0.76.0"),
+        ("npm", "@scope/native-addon", "2.1.0"),
+    }
+    assert scanner.coverage["dependencies_by_source"]["yarn_lock_v1"] == 2
+    assert scanner.coverage["unresolved_dependency_declarations"] == 1
+    assert scanner.coverage["static_status"] == "partial"
+
+
 @pytest.mark.asyncio
 async def test_manifest_auditor_fileprovider_and_permissions(mock_router):
     auditor = ManifestAuditor(mock_router)
@@ -297,6 +554,53 @@ async def test_native_analyzer_direct_bytes(mock_router):
         assert "CWE-120" in cwes  # strcpy
         assert "CWE-78" in cwes   # system
         assert "CWE-489" in cwes  # ptrace
+        assert analyzer.coverage["native_inventory"]["elf_parse_failures"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("gcc") is None, reason="gcc required for synthetic ELF fixture")
+async def test_native_analyzer_distinguishes_elf_import_from_execution(mock_router):
+    """A compiler-built ELF import is inventory evidence, never call proof."""
+    analyzer = NativeAnalyzer(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        source = root / "fixture.c"
+        library = root / "libfixture.so"
+        source.write_text(
+            "#include <string.h>\n"
+            "void fixture_copy(char *dst, const char *src) { strcpy(dst, src); }\n"
+        )
+        subprocess.run(
+            [shutil.which("gcc"), "-shared", "-fPIC", "-fno-builtin",
+             "-Wl,-soname,libfixture.so", "-Wl,--build-id=sha1",
+             "-o", str(library), str(source)],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+
+        findings = await analyzer.analyze(str(root))
+
+    strcpy_findings = [finding for finding in findings if "strcpy" in finding.title]
+    assert len(strcpy_findings) == 1
+    finding = strcpy_findings[0]
+    assert finding.metadata["analysis_kind"] == "elf_dynamic_symbol_import"
+    assert finding.metadata["elf_machine"]
+    assert finding.metadata["elf_soname"] == "libfixture.so"
+    assert len(finding.metadata["elf_build_id"]) == 40
+    assert "libc.so.6" in finding.metadata["needed_libraries"]
+    assert finding.metadata["function_call_observed"] is False
+    assert finding.metadata["proof_state"] == "not_proven"
+    assert finding.status == FindingStatus.UNVERIFIED
+    assert finding.severity == Severity.INFO
+    assert "does not establish a call site" in finding.description
+    assert analyzer.coverage["native_inventory"]["elf_files_parsed"] == 1
+    assert analyzer.coverage["native_inventory"]["elf_dynamic_functions_seen"] > 0
+    record = analyzer.coverage["native_inventory"]["libraries"][0]
+    assert record["sha256"] and record["soname"] == "libfixture.so"
+    assert record["build_id"] == finding.metadata["elf_build_id"]
+    assert record["relative_path"] == "libfixture.so"
+    assert "strcpy" in record["undefined_function_import_names"]
+    assert len(record["undefined_function_import_names"]) <= 64
+    assert record["undefined_function_import_names_truncated"] is False
 
 
 @pytest.mark.asyncio

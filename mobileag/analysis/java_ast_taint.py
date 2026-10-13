@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.analysis.source_syntax import numeric_sql_concatenation
 
+MAX_PARSE_ERROR_NODE_VISITS = 100_000
+MAX_TYPE_IDENTITY_NODE_VISITS = 100_000
+
 
 @dataclass(frozen=True)
 class Trace:
@@ -22,6 +25,9 @@ class Trace:
 
 class JavaAstTaintAnalyzer:
     def __init__(self):
+        self.last_failure_reason: str | None = None
+        self.last_parse_error_node_count: int | None = None
+        self.last_parse_error_count_status = "not_measured"
         try:
             from tree_sitter import Language, Parser
             import tree_sitter_java
@@ -33,13 +39,41 @@ class JavaAstTaintAnalyzer:
 
     def analyze(self, content: str, file_path: str = "") -> list[Finding] | None:
         """Return AST candidates; None means unavailable or parse errors (fallback)."""
+        self.last_parse_error_node_count = None
+        self.last_parse_error_count_status = "not_measured"
         if not self.available:
+            self.last_failure_reason = "parser_unavailable"
             return None
         raw = content.encode("utf-8", errors="replace")
-        tree = self._parser.parse(raw)
-        if tree.root_node.has_error:
+        try:
+            tree = self._parser.parse(raw)
+        except Exception:
+            self.last_failure_reason = "parser_exception"
             return None
+        if tree.root_node.has_error:
+            self.last_failure_reason = "syntax_error"
+            pending = [tree.root_node]
+            visited = 0
+            error_nodes = 0
+            truncated = False
+            while pending and visited < MAX_PARSE_ERROR_NODE_VISITS:
+                node = pending.pop()
+                visited += 1
+                if node.is_error or node.is_missing:
+                    error_nodes += 1
+                children = node.children
+                available = MAX_PARSE_ERROR_NODE_VISITS - visited - len(pending)
+                if len(children) > available:
+                    pending.extend(children[:max(0, available)])
+                    truncated = True
+                    break
+                pending.extend(children)
+            self.last_parse_error_node_count = error_nodes
+            self.last_parse_error_count_status = "measured" if not truncated and not pending else "incomplete_visit_limit"
+            return None
+        self.last_failure_reason = None
         findings: list[Finding] = []
+        qualified_identities: dict[str, str] = {}
         class_bases: dict[str, set[str]] = {}
         for match in re.finditer(
             r"\bclass\s+([A-Za-z_$][\w$]*)\s*(?:<[^>{}]*>)?([^{}]*)\{",
@@ -140,6 +174,71 @@ class JavaAstTaintAnalyzer:
         def text(node) -> str:
             return raw[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
+        package_name = ""
+        imports: dict[str, set[str]] = {}
+        wildcard_import = False
+        for declaration in tree.root_node.named_children:
+            if declaration.type == "package_declaration" and declaration.named_children:
+                package_name = text(declaration.named_children[0]).strip()
+            elif declaration.type == "import_declaration":
+                value = text(declaration).strip().removeprefix("import").removesuffix(";").strip()
+                if value.startswith("static "):
+                    continue
+                if value.endswith(".*"):
+                    wildcard_import = True
+                elif "." in value:
+                    imports.setdefault(value.rsplit(".", 1)[-1], set()).add(value)
+
+        declared_type_names: dict[str, set[str]] = {}
+        declared_type_counts: dict[str, int] = {}
+        top_level_nodes = tree.root_node.named_children
+        if len(top_level_nodes) > MAX_TYPE_IDENTITY_NODE_VISITS:
+            # Do not make a partial type index look definitive.
+            top_level_nodes = []
+        for current in top_level_nodes:
+            if current.type in {"class_declaration", "interface_declaration", "enum_declaration",
+                                "record_declaration", "annotation_type_declaration"}:
+                declared_name = current.child_by_field_name("name")
+                if declared_name is not None:
+                    simple_name = text(declared_name)
+                    declared_type_counts[simple_name] = declared_type_counts.get(simple_name, 0) + 1
+                    declared_type_names.setdefault(simple_name, set()).add(
+                        f"{package_name}.{simple_name}" if package_name else simple_name)
+        if len(top_level_nodes) == 0 and len(tree.root_node.named_children) > MAX_TYPE_IDENTITY_NODE_VISITS:
+            declared_type_names = {}
+            declared_type_counts = {}
+
+        primitives = {"boolean", "byte", "short", "int", "long", "char", "float", "double"}
+        java_lang = {"String", "Object", "Boolean", "Byte", "Short", "Integer", "Long", "Character",
+                     "Float", "Double", "Number", "Class", "Throwable", "Exception", "RuntimeException",
+                     "Void", "Enum", "Iterable", "Comparable", "StringBuilder", "Math", "System"}
+
+        def qualify_type(type_name: str) -> str | None:
+            """Qualify only unambiguous non-generic type names, not semantic symbols."""
+            value = re.sub(r"\s+", "", type_name)
+            match = re.fullmatch(r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\[\])*", value)
+            if not match:
+                return None
+            base = match.group(1)
+            suffix = value[len(base):]
+            if base in primitives or "." in base:
+                return base + suffix
+            imported_types = imports.get(base, set())
+            if len(imported_types) == 1:
+                return next(iter(imported_types)) + suffix
+            if len(imported_types) > 1:
+                return None
+            local_types = declared_type_names.get(base, set())
+            if len(local_types) == 1 and declared_type_counts.get(base) == 1:
+                return next(iter(local_types)) + suffix
+            if local_types:
+                return None
+            if base in java_lang:
+                return "java.lang." + base + suffix
+            if wildcard_import:
+                return None
+            return f"{package_name}.{base}{suffix}" if package_name else base + suffix
+
         def method_name(node) -> str:
             name = node.child_by_field_name("name")
             return text(name) if name else ""
@@ -232,7 +331,8 @@ class JavaAstTaintAnalyzer:
             # variable safe after the branch.
             return after if before is None else before if after is None else before
 
-        def emit(node, trace: Trace, sink_name: str):
+        def emit(node, trace: Trace, sink_name: str, current_method: str,
+                 current_method_identity: str | None):
             cwe, severity, title, masvs = sink_methods[sink_name]
             stored_preference = trace.kind == "SHARED_PREFS_SOURCE"
             if stored_preference:
@@ -256,8 +356,16 @@ class JavaAstTaintAnalyzer:
                 metadata={"proof_state": "not_proven", "analysis_kind": "java_ast_local_flow",
                           "source_kind": trace.kind,
                           "source_sink_trace": {
-                              "source": {"kind": trace.kind, "line": trace.line},
-                              "sink": {"operation": sink_name, "line": line},
+                              "source": {"kind": trace.kind, "line": trace.line, "method": current_method,
+                                         "method_identity": current_method_identity,
+                                         "source_qualified_method_identity": qualified_identities.get(current_method_identity),
+                                         "source_qualified_identity_kind": "package_import_and_same_source_type_lexical_canonicalization_only" if current_method_identity in qualified_identities else "not_available",
+                                         "method_identity_kind": "tree_sitter_lexical_owner_signature" if current_method_identity else "not_available"},
+                              "sink": {"operation": sink_name, "line": line, "method": current_method,
+                                       "method_identity": current_method_identity,
+                                       "source_qualified_method_identity": qualified_identities.get(current_method_identity),
+                                       "source_qualified_identity_kind": "package_import_and_same_source_type_lexical_canonicalization_only" if current_method_identity in qualified_identities else "not_available",
+                                       "method_identity_kind": "tree_sitter_lexical_owner_signature" if current_method_identity else "not_available"},
                               "guards": "not_resolved", "runtime_verified": False,
                           },
                           "source_control_status": "app_persisted_value_origin_not_established" if stored_preference else "modeled_source_not_reachability_proof",
@@ -347,11 +455,43 @@ class JavaAstTaintAnalyzer:
         def walk(node, env: dict[str, Trace | None], current_method: str = "",
                  uri_names: set[str] | None = None, intent_names: set[str] | None = None,
                  clipboard_names: set[str] | None = None,
-                 receiver_types: dict[str, str] | None = None):
+                 receiver_types: dict[str, str] | None = None,
+                 current_method_identity: str | None = None,
+                 current_owner: str = ""):
+            if node.type in {"class_declaration", "interface_declaration", "enum_declaration",
+                             "record_declaration", "annotation_type_declaration"}:
+                owner_node = node.child_by_field_name("name")
+                if owner_node:
+                    owner_name = text(owner_node)
+                    current_owner = f"{current_owner}.{owner_name}" if current_owner else owner_name
             # Seed only known framework callback-shaped Intent parameters. The
             # callback override and manifest exposure are not validated here.
             if node.type == "method_declaration":
                 current_method = method_name(node)
+                parameters = node.child_by_field_name("parameters")
+                parameter_types = []
+                if parameters is not None:
+                    for parameter in parameters.named_children:
+                        type_node = parameter.child_by_field_name("type")
+                        if type_node is None:
+                            # Unknown parameter syntax: withhold the identity rather
+                            # than collapsing an overload to an imprecise signature.
+                            parameter_types = []
+                            break
+                        parameter_types.append(" ".join(text(type_node).split()))
+                candidate_identity = (
+                    f"{current_owner or '<file>'}#{current_method}({','.join(parameter_types)})"
+                    if parameters is not None and (not parameters.named_children or parameter_types)
+                    else None
+                )
+                current_method_identity = candidate_identity if candidate_identity and len(candidate_identity) <= 256 else None
+                if current_method_identity:
+                    canonical_parameters = [qualify_type(item) for item in parameter_types]
+                    if all(item is not None for item in canonical_parameters):
+                        owner = f"{package_name}.{current_owner}" if package_name and current_owner else current_owner
+                        canonical = f"{owner or '<file>'}#{current_method}({','.join(canonical_parameters)})"
+                        if len(canonical) <= 256:
+                            qualified_identities[current_method_identity] = canonical
                 env = dict(env)
                 uri_names = method_uri_names(node)
                 intent_names = method_intent_names(node)
@@ -373,7 +513,8 @@ class JavaAstTaintAnalyzer:
                 before = dict(env)
                 branch = dict(env)
                 for child in node.named_children:
-                    walk(child, branch, current_method, uri_names, intent_names, clipboard_names, receiver_types)
+                    walk(child, branch, current_method, uri_names, intent_names, clipboard_names,
+                         receiver_types, current_method_identity, current_owner)
                 local_names = directly_declared(node)
                 for name, previous in before.items():
                     if name not in local_names and name in branch:
@@ -388,7 +529,8 @@ class JavaAstTaintAnalyzer:
                     if name_node:
                         env[text(name_node)] = trace_for(value, env, uri_names, intent_names, clipboard_names)
                     if value:
-                        walk(value, env, current_method, uri_names, intent_names, clipboard_names, receiver_types)
+                        walk(value, env, current_method, uri_names, intent_names, clipboard_names,
+                             receiver_types, current_method_identity, current_owner)
                 return
             if node.type == "assignment_expression":
                 left = node.child_by_field_name("left")
@@ -396,7 +538,8 @@ class JavaAstTaintAnalyzer:
                 if left and left.type == "identifier":
                     env[text(left)] = trace_for(right, env, uri_names, intent_names, clipboard_names)
                 if right:
-                    walk(right, env, current_method, uri_names, intent_names, clipboard_names, receiver_types)
+                    walk(right, env, current_method, uri_names, intent_names, clipboard_names,
+                         receiver_types, current_method_identity, current_owner)
                 return
             if node.type == "method_invocation":
                 name = method_name(node)
@@ -426,12 +569,14 @@ class JavaAstTaintAnalyzer:
                         return
                     trace = next((candidate for arg in relevant if (candidate := trace_for(arg, env, uri_names, intent_names, clipboard_names))), None)
                     if trace:
-                        emit(node, trace, name)
+                        emit(node, trace, name, current_method, current_method_identity)
                 for child in node.named_children:
-                    walk(child, env, current_method, uri_names, intent_names, clipboard_names, receiver_types)
+                    walk(child, env, current_method, uri_names, intent_names, clipboard_names,
+                         receiver_types, current_method_identity, current_owner)
                 return
             for child in node.named_children:
-                walk(child, env, current_method, uri_names, intent_names, clipboard_names, receiver_types)
+                walk(child, env, current_method, uri_names, intent_names, clipboard_names,
+                     receiver_types, current_method_identity, current_owner)
 
         walk(tree.root_node, {})
         return findings

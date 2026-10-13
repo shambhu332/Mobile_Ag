@@ -2,6 +2,135 @@
 from __future__ import annotations
 
 
+# A deliberately conservative crosswalk from existing analyzer coverage to
+# review surfaces. A mapped analyzer only means its bounded checks ran; it does
+# not mean the surface was exhaustively tested or secure.
+_SURFACE_ANALYZERS = {
+    'manifest_component_inventory': ('manifest',),
+    'ipc_intent_calls': ('android_surface.categories.intent',),
+    'serialization': ('android_surface.categories.serialization', 'taint.serialization'),
+    'files_uri_grants': ('manifest.provider_path_inventory',),
+    'provider_path_configuration': ('manifest.provider_path_inventory',),
+    'storage_backup_logging': ('manifest.backup_rules_inventory', 'android_surface.categories.logging',
+                               'android_surface.categories.storage'),
+    'webview_deep_links': ('android_surface.categories.webview', 'android_surface.categories.deep_links',
+                           'taint.webview'),
+    'network_api_authentication': ('auth_session', 'api_mapping'),
+    'cryptography_native': ('nsc', 'native'),
+}
+
+_SURFACE_GAPS = {
+    'manifest_component_inventory': 'parsed manifest only; merged installed manifest and effective caller authorization are not validated',
+    'ipc_intent_calls': 'bounded lexical call inventory; caller-controlled dataflow and runtime authorization are not established',
+    'serialization': 'only bounded ObjectInputStream flows from modeled sources are traced; other serializers, filters, guards, URI grants and runtime reachability remain unresolved',
+    'files_uri_grants': 'configured roots/grant declarations only; URI-grant issuance and caller access are not tested',
+    'provider_path_configuration': 'resource configuration only; provider implementation and sensitive files exposed are unknown',
+    'storage_backup_logging': 'backup rules, lexical log sites and sensitive-identifier preference-write leads are inventoried only; data sensitivity, encryption, effective backup behavior and accessibility are not validated',
+    'webview_deep_links': 'bounded lexical/manifest and modeled taint-sink review; effective origin, caller reachability, bridge behavior and runtime flow remain unproven',
+    'network_api_authentication': 'endpoint/session inventory does not establish authentication or server authorization behavior',
+    'cryptography_native': 'configuration/byte-string indicators do not establish cryptographic use or native call reachability',
+}
+
+
+def _coverage_at_path(coverage: dict, path: str) -> dict | None:
+    value = coverage
+    for part in path.split('.'):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value if isinstance(value, dict) else None
+
+
+def review_surface_ledger(coverage: dict | None) -> dict:
+    """Expose a stable review-surface crosswalk without upgrading evidence.
+
+    `analysis_state` records only analyzer execution metadata. `evidence_state`
+    stays `not_proven`: this ledger does not establish reachability, a finding,
+    runtime behavior, or absence of vulnerabilities.
+    """
+    coverage = coverage if isinstance(coverage, dict) else {}
+    rows = {}
+    for surface, paths in _SURFACE_ANALYZERS.items():
+        records = [(path, _coverage_at_path(coverage, path)) for path in paths]
+        records = [(path, record) for path, record in records if record is not None]
+        statuses = [record.get('static_status') for _, record in records]
+        if not records or all(status in (None, 'not_started', 'not_tested', 'not_selected') for status in statuses):
+            analysis_state = 'not_tested'
+        elif all(status in ('completed', 'analyzed', 'analyzed_heuristically', 'completed_heuristically') for status in statuses):
+            analysis_state = 'analyzed'
+        elif all(status == 'not_applicable' for status in statuses):
+            analysis_state = 'not_applicable'
+        else:
+            analysis_state = 'incomplete'
+        runtime_statuses = [record.get('runtime_status') for _, record in records]
+        if runtime_statuses and all(status in ('completed', 'observed') for status in runtime_statuses):
+            runtime_state = 'observed'
+        elif any(status is not None and status not in ('not_tested', 'not_started', 'not_selected')
+                 for status in runtime_statuses):
+            runtime_state = 'incomplete'
+        else:
+            runtime_state = 'not_tested'
+        candidate_paths = [path for path, record in records
+                           if type(record.get('candidate_count')) is int and record['candidate_count'] > 0]
+        evidence_state = ('not_applicable' if analysis_state == 'not_applicable' else
+                          'candidate' if candidate_paths else 'not_tested')
+        gap_reasons = []
+        if not records:
+            gap_reasons.append('no analyzer mapped to this surface')
+        else:
+            for path, record in records:
+                status = record.get('static_status')
+                if status not in ('completed', 'analyzed', 'analyzed_heuristically',
+                                  'completed_heuristically', 'not_applicable'):
+                    gap_reasons.append(f"{path}: static status {status if isinstance(status, str) else 'not_recorded'}")
+                skipped = record.get('source_files_skipped')
+                if type(skipped) is int and skipped > 0:
+                    gap_reasons.append(f'{path}: {skipped} source file(s) skipped')
+                reasons = record.get('limit_reasons')
+                if isinstance(reasons, dict):
+                    for reason, count in sorted(reasons.items()):
+                        if isinstance(reason, str) and type(count) is int and count > 0:
+                            gap_reasons.append(f'{path}: limit {reason} reached ({count})')
+            if runtime_state == 'not_tested':
+                gap_reasons.append('runtime behavior not tested')
+            elif runtime_state == 'incomplete':
+                gap_reasons.append('runtime evidence is incomplete')
+        surface_gap = _SURFACE_GAPS.get(surface)
+        if surface_gap:
+            gap_reasons.append(surface_gap)
+        rows[surface] = {
+            'analysis_state': analysis_state,
+            'runtime_state': runtime_state,
+            'evidence_state': evidence_state,
+            'proof_status': 'not_proven',
+            'independently_verified': False,
+            'candidate_evidence_paths': candidate_paths,
+            'mapped_coverage_paths': [path for path, _ in records],
+            'static_statuses': statuses,
+            'recorded_counts': {
+                path: {key: record[key] for key in ('component_count', 'exported_component_count', 'candidate_count',
+                                                    'provider_count', 'unresolved_count')
+                       if type(record.get(key)) is int}
+                for path, record in records
+                if any(type(record.get(key)) is int for key in ('component_count', 'exported_component_count',
+                                                                 'candidate_count', 'provider_count', 'unresolved_count'))
+            },
+            'gap': 'no analyzer mapped to this surface' if not records else surface_gap,
+            'gap_reasons': gap_reasons,
+        }
+    return {
+        'schema_version': 1,
+        'surfaces': rows,
+        'exhaustive': False,
+            'security_verdict': 'not_established',
+        'limitations': [
+            'Analyzer execution is not proof of runtime reachability or exploitability.',
+            'No surface state establishes absence of vulnerabilities.',
+            'Effective runtime manifest authorization, URI-grant issuance/access validation, full serialization dataflow, and comprehensive storage/backup/logging coverage remain unproven.',
+        ],
+    }
+
+
 def guided_coverage(document: dict) -> dict:
     """Summarize persisted observations only; never infer login or exploit proof.
 

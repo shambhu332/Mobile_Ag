@@ -77,6 +77,83 @@ def test_comments_literals_and_safe_ssl_callback_not_flagged():
     assert len(mask_non_code(source))==len(source) and mask_non_code(source).count('\n')==source.count('\n')
 
 
+def test_sensitive_preference_write_is_only_an_info_review_lead():
+    source='''class Fixture {
+      void save(String accessToken) { prefs.edit().putString("k", accessToken).apply(); }
+      void unrelated(String label) { builder.putString("k", label); }
+      // prefs.edit().putString("k", password).apply();
+      String example = "prefs.edit().putString(token, value)";
+    }'''
+    findings,sites=AndroidSurfaceAnalyzer().analyze_source(source,'Fixture.java')
+    storage=[finding for finding in findings if finding.metadata['category']=='storage']
+    assert len(storage)==1
+    assert storage[0].metadata['check_id']=='sensitive_identifier_in_preference_write_review'
+    assert storage[0].cwe_id=='CWE-922'
+    assert storage[0].severity==Severity.INFO and storage[0].status==FindingStatus.UNVERIFIED
+    assert storage[0].metadata['proof_state']=='not_proven'
+    assert len(sites['storage'])==1 and sites['storage'][0]['line']==2
+
+
+def test_world_accessible_storage_modes_are_reviewed_only_in_mode_argument():
+    source='''class Fixture {
+      void write() {
+        openFileOutput("fixture", MODE_WORLD_READABLE);
+        getSharedPreferences("fixture", MODE_PRIVATE | MODE_WORLD_WRITEABLE);
+        openFileOutput(MODE_WORLD_READABLE, MODE_PRIVATE);
+        // openFileOutput("fixture", MODE_WORLD_READABLE);
+        String note = "getSharedPreferences(x, MODE_WORLD_WRITEABLE)";
+      }
+    }'''
+    findings,sites=AndroidSurfaceAnalyzer().analyze_source(source,'Fixture.java')
+    modes=[finding for finding in findings if finding.metadata['check_id']=='world_accessible_app_file_mode_review']
+    assert len(modes)==2
+    assert all(finding.cwe_id=='CWE-732' and finding.severity==Severity.INFO
+               and finding.status==FindingStatus.UNVERIFIED
+               and finding.metadata['proof_state']=='not_proven' for finding in modes)
+    assert [item['line'] for item in sites['storage'] if item['operation'] in {'openFileOutput','getSharedPreferences'}]==[3,4]
+
+
+def test_javascript_enabled_webview_candidate_requires_same_method_content_or_bridge():
+    analyzer=AndroidSurfaceAnalyzer()
+    source='''class Fixture {
+      void exposed(WebView web) {
+        web.getSettings().setJavaScriptEnabled(true);
+        web.addJavascriptInterface(new Bridge(), "bridge");
+      }
+      void javascriptOnly(WebView web) { web.getSettings().setJavaScriptEnabled(true); }
+      void safe(WebView web) { web.getSettings().setJavaScriptEnabled(false); web.loadUrl("https://fixture.invalid"); }
+    }'''
+    findings,_=analyzer.analyze_source(source,'Fixture.java')
+    candidates=[finding for finding in findings if finding.metadata['check_id']=='javascript_enabled_with_content_or_bridge_review']
+    assert len(candidates)==1
+    assert candidates[0].severity==Severity.INFO and candidates[0].status==FindingStatus.UNVERIFIED
+    assert candidates[0].metadata['proof_state']=='not_proven'
+
+
+def test_webview_bridge_registration_joins_only_simple_same_file_constructor_type():
+    source='''class Bridge {
+      @android.webkit.JavascriptInterface public void open(String value) {}
+      @JavascriptInterface public void status() {}
+    }
+    class Host {
+      void bind(WebView web, Object supplied) {
+        web.addJavascriptInterface(new Bridge(), "native");
+        web.addJavascriptInterface(supplied, "dynamic");
+        web.addJavascriptInterface(new other.Bridge(), "qualified");
+      }
+    }'''
+    _,sites=AndroidSurfaceAnalyzer().analyze_source(source,'Fixture.java')
+    registrations=[item for item in sites['webview'] if item['operation']=='addJavascriptInterface registration']
+    assert len(registrations)==3
+    direct=next(item for item in registrations if item['registered_object_type']=='Bridge')
+    assert direct['annotated_methods']==['open','status']
+    assert direct['association_status']=='same_file_constructor_type_has_annotated_methods'
+    dynamic=next(item for item in registrations if item['registered_object_type'] is None)
+    assert dynamic['association_status']=='dynamic_or_unresolved_object_expression'
+    assert dynamic['annotated_methods']==[]
+    assert all(item['evidence'].endswith('invocation unresolved') for item in registrations)
+
+
 def test_source_skips_and_no_source_not_clean(tmp_path,monkeypatch):
     analyzer=AndroidSurfaceAnalyzer()
     assert analyzer.scan('',{})['coverage']['categories']['webview']['static_status']=='not_analyzed'
@@ -100,15 +177,78 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
     monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',lambda _:[])
     (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
-    state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path))
+    state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
     result=await worker._run_analysis(state)
     assert result['coverage']['engines']['taint']=='skipped_disabled'
     assert result['coverage']['android_surface']['categories']['webview']['candidate_count']==1
+    assert result['coverage']['manifest']['static_status']=='completed'
+    assert result['coverage']['manifest']['exhaustive'] is False
+    assert result['coverage']['manifest']['runtime_status']=='not_tested'
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
     monkeypatch.setattr(worker._android_surface,'analyze',AsyncMock(side_effect=RuntimeError('synthetic failure')))
     result=await worker._run_analysis(create_initial_state('synthetic2','unused',str(tmp_path)))
     assert result['coverage']['engines']['android_surface']=='incomplete'
     assert result['errors']
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_persists_bounded_deep_link_flow_correlation(tmp_path, monkeypatch):
+    from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
+
+    worker = Orchestrator(Settings(_env_file=None, offline=True, enable_deep_taint=True))
+    for target, method in [
+        (worker._manifest_auditor, 'audit'), (worker._secret_scanner, 'scan'),
+        (worker._code_reviewer, 'review'), (worker._native_analyzer, 'analyze'),
+        (worker._dependency_scanner, 'scan'), (worker._nsc_auditor, 'audit_directory_async'),
+        (worker._bin_protection, 'audit_directory_async'), (worker._rn_scanner, 'scan_directory_async'),
+    ]:
+        monkeypatch.setattr(target, method, AsyncMock(return_value=[]))
+    empty_agent = {"findings": [], "coverage": {"static_status": "not_analyzed",
+                                                  "runtime_status": "not_tested",
+                                                  "proof_status": "not_proven"}}
+    monkeypatch.setattr(worker._auth_session_auditor, 'analyze', AsyncMock(return_value=empty_agent))
+    monkeypatch.setattr(worker._firebase_auditor, 'analyze', AsyncMock(return_value=empty_agent))
+    monkeypatch.setattr(worker._api_mapper, 'map_apis', AsyncMock(return_value=([], [])))
+    monkeypatch.setattr(worker._call_graph_engine, 'audit_smali_directory', lambda _: [])
+
+    source = '''package com.example;
+import android.content.Intent;
+import android.net.Uri;
+import android.webkit.WebView;
+class Route { void onCreate(Intent intent, WebView web) {
+  Uri uri = intent.getData();
+  String target = uri.getQueryParameter("next");
+  web.loadUrl(target);
+} }'''
+    candidate = next(item for item in JavaAstTaintAnalyzer().analyze(source, 'com/example/Route.java')
+                     if item.metadata.get('source_kind') == 'URI_QUERY_PARAM')
+    monkeypatch.setattr(worker._taint_engine, 'analyze_directory_async',
+                        AsyncMock(return_value=[candidate]))
+    decoded = tmp_path / 'AndroidManifest.xml'
+    decoded.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example">
+      <application><activity android:name=".Route" android:exported="true">
+        <intent-filter><action android:name="android.intent.action.VIEW"/>
+          <category android:name="android.intent.category.DEFAULT"/>
+          <category android:name="android.intent.category.BROWSABLE"/>
+          <data android:scheme="fixture" android:host="route.invalid" android:path="/open"/>
+        </intent-filter>
+      </activity></application></manifest>''')
+    parsed = ManifestParser().parse(str(decoded))
+    state = create_initial_state('synthetic', 'unused', str(tmp_path))
+    state.update(decompiled_path=str(tmp_path), resource_path=str(tmp_path), smali_path=str(tmp_path),
+                 manifest_data=parsed, package_name='com.example')
+
+    result = await worker._run_analysis(state)
+
+    summary = result['coverage']['deep_link_flow_correlation']
+    assert summary['status'] == 'bounded_same_class_join_completed'
+    assert summary['correlated_flows'] == 1
+    assert summary['proof_status'] == 'not_proven'
+    assert result['coverage']['android_surface']['categories']['deep_links'][
+        'uri_flow_manifest_route_correlation'] == summary
+    correlated = next(item for item in result['raw_findings']
+                      if item.get('metadata', {}).get('source_kind') == 'URI_QUERY_PARAM')
+    assert correlated['metadata']['manifest_route_correlation']['runtime_verified'] is False
 
 
 def test_reports_include_category_coverage():
@@ -203,3 +343,162 @@ def test_webview_debugging_and_safe_browsing_checks_have_positive_and_negative_c
     }'''
     findings, _ = analyzer.analyze_source(negative, 'Negative.java')
     assert findings == []
+
+
+def test_pending_intent_checks_flags_argument_and_accepts_literal_mutability_constants():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''class PendingIntents {
+      void build() {
+        PendingIntent.getActivity(context, 0, intent, flags);
+        PendingIntent.getActivity(context, PendingIntent.FLAG_IMMUTABLE, createIntent(PendingIntent.FLAG_MUTABLE), flags);
+        PendingIntent.getBroadcast(context, 1, intent, PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent.getService(context, 2, intent, PendingIntent.FLAG_MUTABLE);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(source, 'PendingIntents.java')
+    matches = [finding for finding in findings if finding.metadata.get('check_id') == 'pending_intent_mutability_review']
+    assert len(matches) == 2
+    mutable = [finding for finding in findings if finding.metadata.get('check_id') == 'pending_intent_mutable_flags_review']
+    assert len(mutable) == 1
+    assert mutable[0].metadata['category'] == 'intent'
+    assert mutable[0].status == FindingStatus.UNVERIFIED and mutable[0].severity == Severity.INFO
+    assert mutable[0].metadata['proof_state'] == 'not_proven'
+    assert 'FLAG_IMMUTABLE unless fill-in behavior is required' in mutable[0].remediation
+    assert matches[0].status == FindingStatus.UNVERIFIED
+    assert matches[0].severity == Severity.INFO
+    assert matches[0].metadata['proof_state'] == 'not_proven'
+    assert 'effective flags expression' in matches[0].remediation
+
+
+def test_pending_intent_resolves_only_unique_bounded_final_flag_aliases():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''class AliasedFlags {
+      private static final int IMMUTABLE_FLAGS = PendingIntent.FLAG_IMMUTABLE;
+      private static final int MUTABLE_FLAGS = PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
+      private static final int UNKNOWN_FLAGS = helper();
+      void build() {
+        PendingIntent.getActivity(context, 0, immutable, IMMUTABLE_FLAGS);
+        PendingIntent.getBroadcast(context, 1, mutable, MUTABLE_FLAGS);
+        PendingIntent.getService(context, 2, unknown, UNKNOWN_FLAGS);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(source, 'AliasedFlags.java')
+    by_check = {}
+    for finding in findings:
+        by_check.setdefault(finding.metadata.get('check_id'), []).append(finding)
+
+    assert len(by_check['pending_intent_mutability_review']) == 1
+    assert len(by_check['pending_intent_mutable_flags_review']) == 1
+    assert all(f.status == FindingStatus.UNVERIFIED and f.severity == Severity.INFO for f in findings)
+
+
+def test_pending_intent_resolves_kotlin_const_val_flag_alias():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''object PendingFlags {
+      const val IMMUTABLE_FLAGS: Int = PendingIntent.FLAG_IMMUTABLE
+      fun create() {
+        PendingIntent.getActivity(context, 0, intent, IMMUTABLE_FLAGS)
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(source, 'PendingFlags.kt')
+    assert not [f for f in findings if f.metadata.get('check_id') == 'pending_intent_mutability_review']
+    assert not [f for f in findings if f.metadata.get('check_id') == 'pending_intent_mutable_flags_review']
+
+
+def test_pending_intent_duplicate_flag_alias_remains_unresolved():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''class First { static final int FLAGS = PendingIntent.FLAG_IMMUTABLE; }
+    class Second { static final int FLAGS = PendingIntent.FLAG_MUTABLE; }
+    class Use { void create() { PendingIntent.getActivity(context, 0, intent, FLAGS); } }'''
+    findings, _ = analyzer.analyze_source(source, 'AmbiguousFlags.java')
+    matches = [f for f in findings if f.metadata.get('check_id') == 'pending_intent_mutability_review']
+    assert len(matches) == 1
+    assert matches[0].status == FindingStatus.UNVERIFIED
+
+
+def test_possible_untrusted_deserialization_needs_same_method_entry_lead_and_stays_unproven():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''class ImportReceiver {
+      void onReceive(Context context, Intent intent) {
+        Object payload = intent.getSerializableExtra("payload");
+        ObjectInputStream stream = new ObjectInputStream(input);
+        Object value = stream.readObject();
+      }
+      void localOnly() {
+        ObjectInputStream stream = new ObjectInputStream(input);
+        Object value = stream.readObject();
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(source, 'ImportReceiver.java')
+    matches = [finding for finding in findings if finding.metadata.get('check_id') == 'untrusted_deserialization_source_sink_review']
+    assert len(matches) == 1
+    assert matches[0].status == FindingStatus.UNVERIFIED and matches[0].severity == Severity.INFO
+    assert matches[0].metadata['proof_state'] == 'not_proven'
+    assert 'dataflow not proven' in matches[0].description
+
+
+def test_webview_external_input_bridge_same_method_is_only_a_review_candidate():
+    analyzer = AndroidSurfaceAnalyzer()
+    source = '''class Router {
+      void route(Intent intent, WebView webView) {
+        String url = intent.getData().toString();
+        webView.addJavascriptInterface(new Bridge(), "bridge");
+        webView.loadUrl(url);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(source, 'Router.java')
+    matches = [finding for finding in findings if finding.metadata.get('check_id') == 'external_input_webview_bridge_review']
+    assert len(matches) == 1
+    assert matches[0].status == FindingStatus.UNVERIFIED and matches[0].severity == Severity.INFO
+    assert matches[0].metadata['proof_state'] == 'not_proven'
+    assert 'dataflow not proven' in matches[0].description
+
+
+@pytest.mark.parametrize('annotation', ['@JavascriptInterface public void bridge(String value) { }',
+                                         '@JavascriptInterface\n public void bridge(String value) { }'])
+def test_webview_coverage_inventories_javascript_interface_methods_only(annotation):
+    analyzer = AndroidSurfaceAnalyzer()
+    source = f'class Bridge {{ {annotation} public void local(String value) {{ }} }}'
+    _, sites = analyzer.analyze_source(source, 'Bridge.java')
+    bridges = [site for site in sites['webview'] if site['operation'] == 'JavascriptInterface method']
+    assert len(bridges) == 1
+    assert bridges[0]['method_name'] == 'bridge'
+    assert bridges[0]['evidence'].startswith('annotation_inventory_only')
+
+
+def test_sensitive_looking_log_identifier_is_review_candidate_not_secret_flow_proof():
+    analyzer = AndroidSurfaceAnalyzer()
+    positive = '''class Auth {
+      void debug(String accessToken) {
+        android.util.Log.d("auth", accessToken);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(positive, 'Auth.java')
+    matches = [finding for finding in findings if finding.metadata.get('check_id') == 'sensitive_identifier_in_log_review']
+    assert len(matches) == 1
+    assert matches[0].status == FindingStatus.UNVERIFIED and matches[0].severity == Severity.INFO
+    assert matches[0].metadata['proof_state'] == 'not_proven'
+    negative = '''class Auth {
+      void debug(String message) {
+        // Log.d("auth", accessToken);
+        String sample = "Log.d(auth, password)";
+        android.util.Log.d("auth", message);
+      }
+    }'''
+    findings, _ = analyzer.analyze_source(negative, 'AuthSafe.java')
+    assert not [finding for finding in findings if finding.metadata.get('check_id') == 'sensitive_identifier_in_log_review']
+
+
+def test_timber_sensitive_argument_is_inventory_lead_and_literal_is_not():
+    analyzer=AndroidSurfaceAnalyzer()
+    source='''class Auth {
+      void debug(String accessToken, String message) {
+        Timber.tag("auth").d("token=%s", accessToken);
+        Timber.d("message=%s", message);
+      }
+    }'''
+    findings,_=analyzer.analyze_source(source,'Auth.java')
+    matches=[finding for finding in findings if finding.metadata.get('check_id')=='sensitive_identifier_in_log_review']
+    assert len(matches)==1
+    assert matches[0].severity==Severity.INFO and matches[0].status==FindingStatus.UNVERIFIED
+    assert matches[0].metadata['proof_state']=='not_proven'

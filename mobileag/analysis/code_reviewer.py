@@ -327,7 +327,7 @@ class CodeReviewer:
                 # 1. Standard rules
                 for line_num, line in enumerate(lines, 1):
                     if len(findings) >= 1000:
-                        inventory.coverage['limits_reached'] = True
+                        inventory.record_limit('code_review_candidate_count')
                         break
                     for name, pattern, cwe, sev, rem in self.basic_rules:
                         if pattern.search(line):
@@ -347,7 +347,7 @@ class CodeReviewer:
                                 "remediation": rem
                             })
                             if len(findings) >= 1000:
-                                inventory.coverage['limits_reached'] = True
+                                inventory.record_limit('code_review_candidate_count')
                                 break
 
                 # 2. Lexical method-scope review, not an AST/control-flow proof
@@ -356,7 +356,7 @@ class CodeReviewer:
                               self._audit_biometric_auth, self._audit_keystore_specs):
                     findings.extend(audit(content, rel_path, stem)[:max(0, 1000-len(findings))])
                     if len(findings) >= 1000:
-                        inventory.coverage['limits_reached'] = True
+                        inventory.record_limit('code_review_candidate_count')
                         break
 
             except Exception as e:

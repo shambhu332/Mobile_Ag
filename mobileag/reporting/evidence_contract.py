@@ -41,8 +41,10 @@ def prepare_finding(value: dict, artifact: dict | None = None) -> dict:
         for field in ('artifact_sha256', 'package_name', 'app_version'):
             if not artifact.get(field) or record.get(field) != artifact[field]:
                 errors.append(f'artifact_binding_mismatch:{field}')
+    elif value.get('status', 'UNVERIFIED') == 'CONFIRMED':
+        errors.append('artifact_binding_not_checked')
     requested = value.get('status', 'UNVERIFIED')
-    attested = requested == 'CONFIRMED' and schema_valid and not errors
+    attested = requested == 'CONFIRMED' and schema_valid and artifact is not None and not errors
     if requested == 'CONFIRMED' and not attested:
         result['reported_status'] = requested
         result['status'] = 'UNVERIFIED'

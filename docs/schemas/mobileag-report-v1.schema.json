@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobileag.invalid/schemas/report-v1.schema.json",
+  "title": "MobileAg JSON scan report v1",
+  "description": "Versioned report envelope. Findings are review candidates or analyst attestations as separately labeled; this schema is not a security verdict.",
+  "type": "object",
+  "required": ["report_schema_version", "scan_id", "app_info", "stats", "findings", "coverage", "review_surface_ledger", "capability_inventory", "assessment_coverage", "coverage_gaps", "exhaustive_analysis"],
+  "properties": {
+    "report_schema_version": {"const": 1},
+    "scan_id": {"type": "string"},
+    "date": {"type": "string"},
+    "app_info": {"type": "object"},
+    "artifact_provenance": {"type": "object"},
+    "stats": {"type": "object", "required": ["total", "confirmed", "unverified_candidates"]},
+    "findings": {"type": "array", "items": {"type": "object", "required": ["title", "severity", "status", "evidence_assessment", "investigation_plan"]}},
+    "coverage": {"type": "object"},
+    "review_surface_ledger": {"type": "object", "required": ["schema_version", "surfaces", "exhaustive", "security_verdict"]},
+    "capability_inventory": {"type": "object", "required": ["schema_version", "formats", "exhaustive", "security_verdict"]},
+    "assessment_coverage": {"enum": ["unknown", "partial", "recorded_no_static_gaps"]},
+    "coverage_gaps": {"type": "array", "items": {"type": "string"}},
+    "exhaustive_analysis": {"const": false}
+  },
+  "additionalProperties": true
+}

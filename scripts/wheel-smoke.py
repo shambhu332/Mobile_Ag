@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from importlib import resources
 
 async def check(target):
     import mobileag
@@ -15,6 +16,7 @@ async def check(target):
     from mobileag.automation.models import CreateRun
     from mobileag.assessments.models import Assessment
     from mobileag.llm.broker import LLMBroker
+    from mobileag.reporting.sarif_importer import import_sarif
     from mobileag.web.app import app
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1') as client:
         response = await client.get('/')
@@ -35,7 +37,13 @@ async def check(target):
         assert (await client.get('/api/automation/runs')).status_code == 401
         assert (await client.get('/api/assessments')).status_code == 401
         assert (await client.get('/api/automation/capabilities',headers={'Authorization':'Bearer synthetic-wheel-smoke-only'})).json()['platforms']==['android']
-    print(json.dumps({'installed_wheel_import':True,'version':mobileag.__version__,'shipped_script_count':len(scripts),'shipped_stylesheet_count':len(styles),'unauthenticated_api_denied':True}))
+    schema = resources.files('mobileag').joinpath('data', 'sarif-schema-2.1.0.json')
+    assert schema.is_file(), 'Full SARIF schema missing from installed wheel'
+    imported = import_sarif({'version':'2.1.0','runs':[{'tool':{'driver':{'name':'wheel-smoke'}},
+        'results':[{'ruleId':'R1','message':{'text':'synthetic candidate'}}]}]})
+    assert imported['imported_candidates'] == 1
+    assert imported['findings'][0]['status'] == 'UNVERIFIED'
+    print(json.dumps({'installed_wheel_import':True,'version':mobileag.__version__,'shipped_script_count':len(scripts),'shipped_stylesheet_count':len(styles),'unauthenticated_api_denied':True,'full_sarif_schema_shipped_and_offline_imported':True}))
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser();p.add_argument('--target',required=True);args=p.parse_args()

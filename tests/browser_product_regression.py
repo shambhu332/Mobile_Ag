@@ -300,6 +300,49 @@ def main():
                     page.unroute(scan_url)
                     page.locator('#scans-table-body').get_by_role('button',name='Retry',exact=True).click()
                     wait_condition(page,'document.querySelector("#scans-table-body").textContent.includes("scan_synthetic")')
+                    # Manual plan editor is scan/artifact-bound, explicit and record-only.
+                    page.locator('#nav-scans').click()
+                    wait_condition(page,'document.querySelector("#test-plan-scope").textContent.includes("scan_synthetic")')
+                    page.locator('#manual-test-plan summary').click()
+                    assert 'SHA-256' in page.locator('#test-plan-scope').inner_text()
+                    assert page.locator('#test-plan-form input[type=password]').count()==0
+                    page.locator('[data-plan-add=flows]').click()
+                    flow_cards=page.locator('#test-plan-form .plan-collection').nth(1).locator('.plan-entry')
+                    flow_cards.nth(1).locator('[data-plan-field=id]').fill('flow2')
+                    flow_cards.nth(1).locator('[data-plan-field=name]').fill('Second synthetic flow')
+                    page.locator('[data-plan-add=test_account_aliases]').click()
+                    alias_card=page.locator('#test-plan-form .plan-collection').nth(2).locator('.plan-entry').first
+                    alias_card.locator('[data-plan-field=alias]').fill('synthetic-user')
+                    alias_card.locator('[data-plan-field=role_id]').fill('tester')
+                    page.locator('[data-plan-add=evidence]').click()
+                    evidence_card=page.locator('#test-plan-form .plan-collection').nth(4).locator('.plan-entry').first
+                    evidence_card.locator('[data-plan-field=id]').fill('note1')
+                    evidence_card.locator('[data-plan-field=summary]').fill('Synthetic manual note only')
+                    with page.expect_response(lambda response: response.url.endswith('/api/scans/scan_synthetic/test-plan') and response.request.method=='PUT') as saved_plan:
+                        page.get_by_role('button',name='Save manual plan',exact=True).click()
+                    assert saved_plan.value.status==200
+                    assert 'Saved local manual plan revision 0' in page.locator('#test-plan-status').inner_text()
+                    saved_plan_doc=page.evaluate("async()=>await (await fetch('/api/scans/scan_synthetic/test-plan')).json()")
+                    assert len(saved_plan_doc['flows'])==2 and saved_plan_doc['flows'][1]['id']=='flow2'
+                    assert saved_plan_doc['test_account_aliases'][0]['alias']=='synthetic-user'
+                    assert saved_plan_doc['evidence'][0]['outcome']=='not_tested'
+                    assert saved_plan_doc['evidence_interpretation']=='manual_notes_unverified_not_execution_or_independent_proof'
+                    # A scan switch must not silently overwrite a dirty manual draft.
+                    flow_cards.nth(1).locator('[data-plan-field=name]').fill('Unsaved draft')
+                    wait_condition(page,'document.querySelector("#manual-test-plan").dataset.dirty === "true"')
+                    page.evaluate('()=>window.dispatchEvent(new Event("workspace-session-connected"))')
+                    assert flow_cards.nth(1).locator('[data-plan-field=name]').input_value()=='Unsaved draft'
+                    assert not page.get_by_role('button',name='Save manual plan',exact=True).is_disabled()
+                    page.evaluate('()=>{window.planTestCurrent=currentScan;currentScan={...currentScan,scan_id:"scan_other"};window.dispatchEvent(new Event("workspace-scan-changed"));}')
+                    assert flow_cards.nth(1).locator('[data-plan-field=name]').input_value()=='Unsaved draft'
+                    assert page.get_by_role('button',name='Save manual plan',exact=True).is_disabled()
+                    page.evaluate('()=>{currentScan=window.planTestCurrent;delete window.planTestCurrent;window.dispatchEvent(new Event("workspace-scan-changed"));}')
+                    page.get_by_role('button',name='Reload saved plan / discard draft').click()
+                    wait_condition(page,'document.querySelector("#test-plan-status").textContent.startsWith("Loaded saved plan")')
+                    assert flow_cards.nth(1).locator('[data-plan-field=name]').input_value()=='Second synthetic flow'
+                    assert 'does not authorize or run device/API actions' in page.locator('#manual-test-plan').inner_text()
+                    result['manual_test_plan_ui']={'scan_binding_visible':True,'multi_entry_forms_and_save':True,
+                        'dirty_draft_preserved_until_explicit_reload':True,'credentials_not_present_in_form':True,'unverified_interpretation':True}
                     page.locator('#nav-api').click()
                     wait_condition(page,'document.querySelector("#api-detail-status-badge").textContent === "NOT ASSESSED"')
                     page.locator('#api-subtab-btn-response').click()

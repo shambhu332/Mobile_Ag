@@ -83,8 +83,11 @@ class SmartUICrawler:
     def _classify_semantic_role(self, r_id: str, cls: str, text: str, desc: str, is_pwd_attr: bool) -> str:
         combined = f"{r_id} {text} {desc}".lower()
 
-        # Permission allow buttons
-        if any(w in combined for w in ("while using the app", "only this time", "allow", "grant", "permission_allow")):
+        # Permission allow & biometric prompt bypass buttons
+        if any(w in combined for w in (
+            "while using the app", "only this time", "allow", "grant", "permission_allow",
+            "use password", "cancel biometric", "accept", "continue", "i agree"
+        )):
             return "permission_allow"
 
         # Passwords

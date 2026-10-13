@@ -15,6 +15,10 @@ _MODULES = {
     'RaspResilienceAuditor':'rasp_resilience_auditor',
     'MobileSbomGenerator':'sbom_generator',
     'NativeJniAnalyzer':'native_jni_bridge',
+    'HermesBytecodeAnalyzer':'hermes_analyzer',
+    'Il2CppAuditor':'il2cpp_auditor',
+    'MachoBinaryParser':'macho_parser',
+    'PrivacyManifestAuditor':'privacy_manifest_auditor',
 }
 __all__ = list(_MODULES)
 

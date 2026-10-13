@@ -40,6 +40,14 @@ from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
 from mobileag.reporting.finding import Finding, FindingStatus
 from mobileag.reporting.sarif_exporter import SARIFExporter
+from mobileag.analysis.pending_intent_auditor import PendingIntentAuditor
+from mobileag.analysis.intent_redirection_auditor import IntentRedirectionAuditor
+from mobileag.analysis.flutter_engine import FlutterEngineAnalyzer
+from mobileag.analysis.native_jni_bridge import NativeJniAnalyzer
+from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
+from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
+from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
+from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +90,14 @@ class Orchestrator:
         self._nsc_auditor = NetworkSecurityConfigAuditor()
         self._bin_protection = BinaryProtectionAuditor()
         self._rn_scanner = ReactNativeScanner(self._settings.entropy_threshold)
+        self._pending_intent_auditor = PendingIntentAuditor()
+        self._intent_redirection_auditor = IntentRedirectionAuditor()
+        self._flutter_engine = FlutterEngineAnalyzer()
+        self._native_jni_analyzer = NativeJniAnalyzer()
+        self._hermes_analyzer = HermesBytecodeAnalyzer()
+        self._il2cpp_auditor = Il2CppAuditor()
+        self._privacy_manifest_auditor = PrivacyManifestAuditor()
+        self._rasp_auditor = RaspResilienceAuditor()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -300,6 +316,12 @@ class Orchestrator:
             "nsc": self._nsc_auditor.audit_directory_async(state["resource_path"]),
             "binary_protection": self._bin_protection.audit_directory_async(state["resource_path"]),
             "react_native": self._rn_scanner.scan_directory_async(state["resource_path"]),
+            "pending_intent": asyncio.to_thread(self._pending_intent_auditor.audit_directory, state["decompiled_path"]),
+            "intent_redirection": asyncio.to_thread(self._intent_redirection_auditor.audit_directory, state["decompiled_path"]),
+            "native_jni": asyncio.to_thread(self._native_jni_analyzer.audit_package_libraries, state["resource_path"]),
+            "hermes": asyncio.to_thread(self._hermes_analyzer.audit_package_bundles, state["resource_path"]),
+            "il2cpp": asyncio.to_thread(self._il2cpp_auditor.audit_package, state["resource_path"]),
+            "flutter": asyncio.to_thread(self._flutter_engine.analyze_package_directory, state["resource_path"]),
         }
 
         results = await asyncio.gather(
@@ -365,7 +387,22 @@ class Orchestrator:
                 ]
                 all_findings.extend(findings)
                 state["coverage"][name] = dict(self._api_mapper.coverage)
-                engines[name] = self._api_mapper.coverage.get("static_status", "incomplete")
+            elif name == "native_jni":
+                for lib_res in result:
+                    all_findings.extend(lib_res.findings)
+            elif name == "flutter":
+                if getattr(result, "is_flutter_app", False):
+                    for ep in getattr(result, "api_endpoints", []):
+                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+            elif name == "hermes":
+                for h_res in (result or []):
+                    if getattr(h_res, "is_hermes", False):
+                        for ep in getattr(h_res, "api_endpoints", []):
+                            state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+            elif name == "il2cpp":
+                if getattr(result, "is_il2cpp", False):
+                    for ep in getattr(result, "api_endpoints", []):
+                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":
@@ -438,9 +475,16 @@ class Orchestrator:
                         }[name]
                         state["coverage"][name] = dict(getattr(analyzer, "coverage", {}))
 
-            logger.info("[Stage 2] %s: %d findings",
-                        name,
-                        len(result["findings"]) if name in {"android_surface", "auth_session", "firebase"} else len(result) if not isinstance(result, tuple) else len(result[1]))
+            f_count = 0
+            if name in {"android_surface", "auth_session", "firebase"} and isinstance(result, dict):
+                f_count = len(result.get("findings", []))
+            elif isinstance(result, tuple):
+                f_count = len(result[1]) if len(result) > 1 and hasattr(result[1], "__len__") else 0
+            elif isinstance(result, list):
+                f_count = len(result)
+            elif hasattr(result, "findings"):
+                f_count = len(getattr(result, "findings", []))
+            logger.info("[Stage 2] %s: %d findings", name, f_count)
 
         # Deterministic Smali Call Graph reachability audit
         try:
@@ -577,3 +621,23 @@ class Orchestrator:
             logger.info("Saved SARIF report: %s", sarif_path)
         except Exception as exc:
             logger.warning("Failed exporting SARIF: %s", exc)
+
+        # Save CycloneDX v1.5 SBOM
+        try:
+            from mobileag.analysis.sbom_generator import MobileSbomGenerator
+            sbom_gen = MobileSbomGenerator(
+                app_name=state.get("package_name") or "mobile_target",
+                app_version=state.get("manifest_data", {}).get("version_name") or "1.0.0",
+            )
+            for dep in state.get("dependencies", []):
+                sbom_gen.add_component(
+                    name=dep.get("name", "dependency"),
+                    version=dep.get("version", "unknown"),
+                    purl=dep.get("purl", f"pkg:generic/{dep.get('name', 'dependency')}"),
+                )
+            sbom_path = output / f"sbom_{state['scan_id']}_cyclonedx.json"
+            sbom_gen.save_cyclonedx(sbom_path)
+            state["sbom_path"] = str(sbom_path)
+            logger.info("Saved CycloneDX SBOM: %s", sbom_path)
+        except Exception as exc:
+            logger.warning("Failed exporting CycloneDX SBOM: %s", exc)

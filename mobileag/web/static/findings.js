@@ -426,7 +426,7 @@
             if (box) {
               if (data.available && data.kotlin_exploit_code) {
                 box.innerHTML = `<code>${escapeHtml(data.kotlin_exploit_code)}</code>`;
-                if (copyBtn) copyBtn.onclick = () => copySnippet(data.kotlin_exploit_code);
+                if (copyBtn) copyBtn.addEventListener('click', () => copySnippet(data.kotlin_exploit_code));
               } else {
                 box.innerHTML = `<span class="text-slate-500">// ${escapeHtml(data.message || 'No standalone Kotlin exploit template available for this category.')}</span>`;
               }

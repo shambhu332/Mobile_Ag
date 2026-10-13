@@ -34,7 +34,7 @@ class ExploitPocSynthesizer:
             return self._synthesize_deep_link_poc(finding, target_package)
         elif "PENDING_INTENT" in fid or cwe == "CWE-927":
             return self._synthesize_pending_intent_poc(finding, target_package)
-        elif "FILE_PROVIDER" in fid or cwe == "CWE-22":
+        elif "FILEPROVIDER" in fid or "FILE_PROVIDER" in fid or cwe == "CWE-22":
             return self._synthesize_file_provider_poc(finding, target_package)
 
         return None

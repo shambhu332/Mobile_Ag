@@ -7,7 +7,7 @@ import pytest
 
 from mobileag.analysis.evaluation import evaluate_instances, assert_disjoint, validate_corpus
 from mobileag.analysis.taint_engine import TaintEngine
-from mobileag.reporting.coverage import guided_coverage
+from mobileag.reporting.coverage import guided_coverage, review_surface_ledger
 from mobileag.reporting.report_engine import ReportEngine
 
 FIXTURE = Path(__file__).parent / 'fixtures/accuracy_instances.json'
@@ -71,6 +71,38 @@ def test_report_unknown_static_states_fail_closed(status):
 def test_report_errors_cannot_produce_gap_free_assessment():
     report = ReportEngine()._prepare_data({'scan_id': 'fixture', 'coverage': {'test': {'static_status': 'completed'}}, 'errors': ['engine failed']})
     assert report['assessment_coverage'] == 'partial'
+
+
+def test_review_surface_ledger_maps_only_recorded_analyzers_and_fails_closed():
+    ledger = review_surface_ledger({
+        'android_surface': {'categories': {
+            'intent': {'static_status': 'completed', 'runtime_status': 'not_tested'},
+            'webview': {'static_status': 'incomplete', 'runtime_status': 'not_tested'},
+            'deep_links': {'static_status': 'completed', 'runtime_status': 'not_tested'},
+        }},
+        'auth_session': {'static_status': 'completed', 'runtime_status': 'not_tested'},
+        'api_mapping': {'static_status': 'failed', 'runtime_status': 'not_tested'},
+        'nsc': {'static_status': 'completed', 'runtime_status': 'not_tested'},
+        'native': {'static_status': 'not_started', 'runtime_status': 'not_tested'},
+    })
+    surfaces = ledger['surfaces']
+    assert surfaces['ipc_intent_calls']['analysis_state'] == 'analyzed'
+    assert surfaces['webview_deep_links']['analysis_state'] == 'incomplete'
+    assert surfaces['network_api_authentication']['analysis_state'] == 'incomplete'
+    assert surfaces['serialization']['analysis_state'] == 'not_tested'
+    assert surfaces['files_uri_grants']['gap'] == 'no analyzer mapped to this surface'
+    assert all(row['evidence_state'] == 'not_proven' for row in surfaces.values())
+    assert ledger['exhaustive'] is False
+    assert ledger['security_verdict'] == 'not_established'
+
+
+def test_review_surface_ledger_is_in_json_and_markdown_reports():
+    report = ReportEngine()._prepare_data({'scan_id': 'fixture', 'coverage': {}})
+    assert report['review_surface_ledger']['surfaces']['serialization']['analysis_state'] == 'not_tested'
+    markdown = ReportEngine()._generate_markdown(report)
+    assert 'Review-surface ledger' in markdown
+    assert 'storage_backup_logging' in markdown
+    assert 'no analyzer mapped to this surface' in markdown
 
 
 def test_completed_guided_execution_does_not_infer_login_or_api_authorization():

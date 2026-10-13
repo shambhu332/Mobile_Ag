@@ -6,6 +6,8 @@
 
 [Quick start](#quick-start) · [Contribute](CONTRIBUTING.md) · [Starter tasks](docs/CONTRIBUTOR_ROADMAP.md) · [Report a bug](https://github.com/shambhu332/Mobile_Ag/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/shambhu332/Mobile_Ag/issues/new?template=feature_request.yml)
 
+See the [market-informed product implementation roadmap](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md) for prioritized MobileAg improvements, acceptance criteria, and explicit non-goals. It is a plan, not a claim that proposed work is already implemented.
+
 Review static candidates, inspect evidence, configure optional AI review, and run explicitly scoped device diagnostics from an authenticated local dashboard.
 
 - Android APK decompilation through JADX/APKTool; iOS IPA static inspection.

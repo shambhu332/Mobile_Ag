@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 from mobileag.core.state import ScanState
 from mobileag.reporting.finding import Severity, FindingStatus
 from mobileag.reporting.evidence_contract import prepare_finding
+from mobileag.reporting.coverage import review_surface_ledger
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,7 @@ class ReportEngine:
             "api_endpoints": state.get("api_endpoints", []),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
+            "review_surface_ledger": review_surface_ledger(state.get("coverage", {})),
             "coverage_summary": {
                 "static_status_count": static_status_count,
                 "non_exhaustive_analysis_count": len(set(non_exhaustive_paths)),
@@ -230,6 +232,14 @@ class ReportEngine:
     @staticmethod
     def _coverage_markdown(data):
         rows=['\n## Coverage and proof boundaries\n', 'Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven by the tool.']
+        ledger = data.get('review_surface_ledger', {})
+        if ledger:
+            rows.append('\n### Review-surface ledger\n')
+            rows.append('This crosswalk records mapped analyzer execution only; every surface remains unproven unless separately validated.\n')
+            rows.append('| Surface | Static analysis | Runtime | Evidence | Mapped coverage paths | Coverage gap |\n|---|---|---|---|---|---|')
+            for name, item in ledger.get('surfaces', {}).items():
+                paths = ', '.join(f"`{path}`" for path in item.get('mapped_coverage_paths', [])) or 'none'
+                rows.append(f"| {name} | {item.get('analysis_state', 'not_tested')} | {item.get('runtime_state', 'not_tested')} | {item.get('evidence_state', 'not_proven')} | {paths} | {item.get('gap') or 'no additional mapping gap recorded'} |")
         summary = data.get('coverage_summary', {})
         rows.append(f"- Assessment coverage: {data.get('assessment_coverage', 'not_recorded')}; static statuses recorded: {summary.get('static_status_count', 0)}; non-exhaustive analyses: {summary.get('non_exhaustive_analysis_count', 0)}; limits reached: {summary.get('limits_reached_count', 0)}")
         gaps = data.get('coverage_gaps', [])

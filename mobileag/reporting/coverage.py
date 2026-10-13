@@ -2,6 +2,79 @@
 from __future__ import annotations
 
 
+# A deliberately conservative crosswalk from existing analyzer coverage to
+# review surfaces. A mapped analyzer only means its bounded checks ran; it does
+# not mean the surface was exhaustively tested or secure.
+_SURFACE_ANALYZERS = {
+    'ipc_intent_calls': ('android_surface.categories.intent',),
+    'serialization': (),
+    'files_uri_grants': (),
+    'storage_backup_logging': (),
+    'webview_deep_links': ('android_surface.categories.webview', 'android_surface.categories.deep_links'),
+    'network_api_authentication': ('auth_session', 'api_mapping'),
+    'cryptography_native': ('nsc', 'native'),
+}
+
+
+def _coverage_at_path(coverage: dict, path: str) -> dict | None:
+    value = coverage
+    for part in path.split('.'):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value if isinstance(value, dict) else None
+
+
+def review_surface_ledger(coverage: dict | None) -> dict:
+    """Expose a stable review-surface crosswalk without upgrading evidence.
+
+    `analysis_state` records only analyzer execution metadata. `evidence_state`
+    stays `not_proven`: this ledger does not establish reachability, a finding,
+    runtime behavior, or absence of vulnerabilities.
+    """
+    coverage = coverage if isinstance(coverage, dict) else {}
+    rows = {}
+    for surface, paths in _SURFACE_ANALYZERS.items():
+        records = [(path, _coverage_at_path(coverage, path)) for path in paths]
+        records = [(path, record) for path, record in records if record is not None]
+        statuses = [record.get('static_status') for _, record in records]
+        if not records or all(status in (None, 'not_started', 'not_tested', 'not_selected') for status in statuses):
+            analysis_state = 'not_tested'
+        elif all(status in ('completed', 'analyzed') for status in statuses):
+            analysis_state = 'analyzed'
+        elif all(status == 'not_applicable' for status in statuses):
+            analysis_state = 'not_applicable'
+        else:
+            analysis_state = 'incomplete'
+        runtime_statuses = [record.get('runtime_status') for _, record in records]
+        if runtime_statuses and all(status in ('completed', 'observed') for status in runtime_statuses):
+            runtime_state = 'observed'
+        elif any(status is not None and status not in ('not_tested', 'not_started', 'not_selected')
+                 for status in runtime_statuses):
+            runtime_state = 'incomplete'
+        else:
+            runtime_state = 'not_tested'
+        rows[surface] = {
+            'analysis_state': analysis_state,
+            'runtime_state': runtime_state,
+            'evidence_state': 'not_proven',
+            'mapped_coverage_paths': [path for path, _ in records],
+            'static_statuses': statuses,
+            'gap': 'no analyzer mapped to this surface' if not records else None,
+        }
+    return {
+        'schema_version': 1,
+        'surfaces': rows,
+        'exhaustive': False,
+        'security_verdict': 'not_established',
+        'limitations': [
+            'Analyzer execution is not proof of runtime reachability or exploitability.',
+            'No surface state establishes absence of vulnerabilities.',
+            'Manifest authorization, serialization, file/URI grants, and storage/backup/logging have no dedicated mapped analyzer yet.',
+        ],
+    }
+
+
 def guided_coverage(document: dict) -> dict:
     """Summarize persisted observations only; never infer login or exploit proof.
 

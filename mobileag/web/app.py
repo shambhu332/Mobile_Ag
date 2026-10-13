@@ -1667,6 +1667,44 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["stats"] = {level:sum(f.get("severity", "").lower() == level for f in scan["findings"])
                          for level in ("critical","high","medium","low","info")}
         scan["stats"]["total"] = len(scan["findings"])
+
+        # Dynamically build interactive Vis.js Attack Surface Graph
+        nodes = [{"id": "app", "label": scan["package_name"] or apk_name, "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"}]
+        edges = []
+        seen_nodes = {"app"}
+        for c in (scan["components"] or [])[:15]:
+            c_name = c.get("name", "Component")
+            c_id = f"comp_{c_name}"
+            if c_id not in seen_nodes:
+                seen_nodes.add(c_id)
+                nodes.append({
+                    "id": c_id, "label": c_name.split(".")[-1], "group": "component",
+                    "shape": "dot", "size": 18, "color": "#10b981" if not c.get("exported") else "#f59e0b"
+                })
+                edges.append({"from": "app", "to": c_id, "label": "component"})
+        for ep in (scan["api_endpoints"] or [])[:15]:
+            ep_url = ep.get("url") if isinstance(ep, dict) else getattr(ep, "url", str(ep))
+            ep_id = f"api_{ep_url}"
+            if ep_id not in seen_nodes:
+                seen_nodes.add(ep_id)
+                nodes.append({
+                    "id": ep_id, "label": ep_url[:30], "group": "api",
+                    "shape": "dot", "size": 16, "color": "#06b6d4"
+                })
+                edges.append({"from": "app", "to": ep_id, "label": "calls"})
+        for f in (scan["findings"] or [])[:20]:
+            f_id = f.get("id", str(id(f)))
+            if f_id not in seen_nodes:
+                seen_nodes.add(f_id)
+                sev = f.get("severity", "MEDIUM").upper()
+                f_color = "#ef4444" if sev in {"CRITICAL", "HIGH"} else "#f59e0b" if sev == "MEDIUM" else "#3b82f6"
+                nodes.append({
+                    "id": f_id, "label": (f.get("title") or "Finding")[:25], "group": "vulnerability",
+                    "shape": "diamond", "size": 20, "color": f_color
+                })
+                edges.append({"from": "app", "to": f_id, "label": "has_vuln"})
+        scan["attack_surface_graph"] = {"nodes": nodes, "edges": edges}
+
         from mobileag.reporting.report_engine import ReportEngine
         state.update(scan_id=scan_id, output_dir=str(Path(req.output_dir) / scan_id),
                      filtered_findings=scan["findings"], package_name=scan["package_name"])

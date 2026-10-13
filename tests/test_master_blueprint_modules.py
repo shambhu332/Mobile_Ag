@@ -40,6 +40,7 @@ def test_crypto_harvester_script_and_event_parsing():
     script = harvester.generate_hook_script()
     assert "javax.crypto.Cipher" in script
     assert "SecretKeySpec" in script
+    assert "net.sqlcipher.database.SQLiteDatabase" in script
 
     event = harvester.parse_event({
         "type": "crypto_event",
@@ -52,6 +53,17 @@ def test_crypto_harvester_script_and_event_parsing():
     assert event.operation == "ENCRYPT"
     assert event.algorithm == "AES/CBC/PKCS5Padding"
     assert event.key_hex == "00112233445566778899aabbccddeeff"
+
+    sqlcipher_event = harvester.parse_event({
+        "type": "crypto_event",
+        "operation": "SQLCIPHER_KEY",
+        "algorithm": "SQLCipher-256",
+        "key": "SecretDbPassword123",
+    })
+    assert sqlcipher_event is not None
+    assert sqlcipher_event.operation == "SQLCIPHER_KEY"
+    assert sqlcipher_event.key_hex == "SecretDbPassword123"
+
 
 
 def test_provider_fuzzer_traversal_and_sqli_payloads():
@@ -130,4 +142,70 @@ def test_poc_synthesizer_task_hijacking_and_provider_sqli():
     assert "ProviderSqliExploit" in poc_sqli.kotlin_exploit_code
     assert "content://com.example.target.provider/query" in poc_sqli.kotlin_exploit_code
     assert "adb shell content query" in poc_sqli.adb_command
+
+
+def test_traffic_auditor_catalog_and_shadow_api():
+    from mobileag.dast.traffic_auditor import TrafficAuditor, HTTPTransaction
+
+    auditor = TrafficAuditor()
+    txs = [
+        HTTPTransaction(
+            url="https://api.example.com/v1/users/me?include_orders=true",
+            method="GET",
+            request_headers={"Authorization": "Bearer sample_token"},
+            response_status=200,
+        ),
+        HTTPTransaction(
+            url="https://api.example.com/v1/hidden/debug",
+            method="POST",
+            request_headers={},
+            response_status=200,
+        ),
+    ]
+
+    cataloger = auditor.catalog_traffic(txs, title="Sample App APIs")
+    openapi = cataloger.export_openapi_json()
+    assert openapi["openapi"] == "3.0.0"
+    assert "/v1/users/me" in openapi["paths"]
+    assert "/v1/hidden/debug" in openapi["paths"]
+
+    # Detect shadow API not declared in static attack surface
+    declared = ["https://api.example.com/v1/users/me"]
+    shadow_findings = auditor.find_shadow_apis(txs, declared)
+    assert len(shadow_findings) == 1
+    assert "/v1/hidden/debug" in shadow_findings[0].affected_component
+
+
+def test_dependency_scanner_sbom_generation():
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    scanner = DependencyScanner()
+    scanner._last_dependencies = [
+        ("com.squareup.okhttp3", "okhttp", "4.9.3", "build.gradle"),
+        ("com.google.code.gson", "gson", "2.8.9", "build.gradle"),
+    ]
+
+    generator = scanner.generate_sbom("BankingApp", "2.1.0")
+    cyclone = generator.generate_cyclonedx_json()
+    assert cyclone["bomFormat"] == "CycloneDX"
+    assert len(cyclone["components"]) == 2
+    purls = [c["purl"] for c in cyclone["components"]]
+    assert "pkg:maven/com.squareup.okhttp3/okhttp@4.9.3" in purls
+    assert "pkg:maven/com.google.code.gson/gson@2.8.9" in purls
+
+
+def test_call_graph_and_taint_pending_intent():
+    from mobileag.analysis.call_graph import SMALI_SINKS, SMALI_SOURCES
+    from mobileag.analysis.taint_engine import _SINK_SPECS, _SOURCE_PATTERNS
+
+    assert "Landroid/app/PendingIntent;->send" in SMALI_SINKS
+    assert "Landroid/content/Intent;->getScheme" in SMALI_SOURCES
+    assert "Landroid/net/Uri;->getScheme" in SMALI_SOURCES
+
+    sink_types = [s["type"] for s in _SINK_SPECS]
+    assert "PENDING_INTENT_FORWARDING" in sink_types
+
+    source_names = [s[0] for s in _SOURCE_PATTERNS]
+    assert "JS_INTERFACE_BRIDGE" in source_names
+
 

@@ -241,3 +241,9 @@ class BinaryProtectionAuditor:
             ))
 
         return findings
+
+    def get_rasp_auditor(self) -> Any:
+        """Instantiate an OWASP MASVS-RESILIENCE scoring engine."""
+        from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
+        return RaspResilienceAuditor()
+

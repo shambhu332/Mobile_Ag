@@ -361,14 +361,14 @@ Timeline & Execution Status [100% COMPLETE]
 │   └── [x] CycloneDX SBOM & Privacy Manifest Auditors (`sbom_generator.py`, `privacy_manifest_auditor.py`)
 └── Phase 5: Dashboard & Production Release [COMPLETED]
     ├── [x] WebSocket Telemetry & Graph Visualization (`app.py`, `workspace.js`, Vis.js attack surface)
-    └── [x] SARIF 2.1.0 & Professional Reporting Gates (`sarif_exporter.py`, 869/869 tests passing)
+    └── [x] SARIF 2.1.0 & Professional Reporting Gates (`sarif_exporter.py`, 872/872 tests passing)
 ```
 
 ---
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & Integration Tests**: 869 unit and regression tests passing with 100% pass rate across `tests/`.
+1. **Unit & Integration Tests**: 872 unit and regression tests passing with 100% pass rate across `tests/`.
 2. **Synthetic Regression Corpora**: Validated against benchmark synthetic APK artifacts with zero false-positive leakage.
 3. **Fail-Closed Evidence Standard**: Verified fail-closed bindings across all analyzers; provisional candidates clearly delineated from confirmed attestations.
 

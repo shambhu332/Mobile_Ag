@@ -67,3 +67,9 @@ class APISecurityTester:
         self._reject_live(allow_network)
         self._telemetry("authentication", "not_tested")
         return []
+
+    def get_bola_fuzzer(self) -> Any:
+        """Return an automated BolaFuzzer for dual-session BOLA/IDOR auditing."""
+        from mobileag.dast.bola_fuzzer import BolaFuzzer
+        return BolaFuzzer()
+

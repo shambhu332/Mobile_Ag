@@ -99,6 +99,34 @@ Java.perform(function() {
             return res;
         };
     } catch (e) {}
+
+    // Hook net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase to harvest database password
+    try {
+        var SqlCipherDB = Java.use('net.sqlcipher.database.SQLiteDatabase');
+        var openMethods = SqlCipherDB.openOrCreateDatabase.overloads;
+        openMethods.forEach(function(overload) {
+            overload.implementation = function() {
+                var args = [].slice.call(arguments);
+                var pass = null;
+                for (var i = 0; i < args.length; i++) {
+                    if (typeof args[i] === 'string' && args[i].length > 0 && i > 0) {
+                        pass = args[i];
+                        break;
+                    } else if (Array.isArray(args[i])) {
+                        pass = bytesToHex(args[i]);
+                        break;
+                    }
+                }
+                send({
+                    type: 'crypto_event',
+                    operation: 'SQLCIPHER_KEY',
+                    algorithm: 'SQLCipher-256',
+                    key: pass ? String(pass) : 'UNKNOWN'
+                });
+                return overload.apply(this, arguments);
+            };
+        });
+    } catch (e) {}
 });
 """
 

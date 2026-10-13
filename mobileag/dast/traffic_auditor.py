@@ -307,3 +307,47 @@ class TrafficAuditor:
                 ))
 
         return findings
+
+    def catalog_traffic(self, transactions: list[HTTPTransaction], title: str = "Mobile App Backend APIs") -> Any:
+        """Catalog transactions into a MobileApiCataloger and produce OpenAPI models."""
+        from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+        cataloger = MobileApiCataloger(title=title)
+        for tx in transactions:
+            parsed = urlparse(tx.url)
+            query_params = {k: v[0] for k, v in parse_qs(parsed.query).items() if v}
+            cataloger.ingest_request(
+                CapturedRequest(
+                    method=tx.method,
+                    url=tx.url,
+                    headers=dict(tx.request_headers),
+                    query_params=query_params,
+                    body=tx.request_body,
+                    response_status=tx.response_status,
+                    response_body=tx.response_body,
+                )
+            )
+        return cataloger
+
+    def find_shadow_apis(self, transactions: list[HTTPTransaction], declared_endpoints: list[str]) -> list[Finding]:
+        """Flag intercepted endpoints not present in static code declarations."""
+        findings: list[Finding] = []
+        declared_set = {urlparse(e).path for e in declared_endpoints if e}
+        seen = set()
+        for tx in transactions:
+            p = urlparse(tx.url).path
+            if p and p not in declared_set and p not in seen:
+                seen.add(p)
+                findings.append(
+                    Finding(
+                        title=f"Potential Shadow API Endpoint: {tx.method} {p}",
+                        description=f"Intercepted backend call to {p} which was not declared in the application's static attack surface.",
+                        severity=Severity.INFO,
+                        status=FindingStatus.UNVERIFIED,
+                        cwe_id="CWE-1059",
+                        affected_component=p,
+                        file_path=tx.url,
+                        metadata={"endpoint": p, "method": tx.method},
+                    )
+                )
+        return findings
+

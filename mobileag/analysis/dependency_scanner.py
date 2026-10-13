@@ -174,8 +174,8 @@ def _pom_direct_dependencies(content: str, file_path: str) -> tuple[list[tuple[s
 class DependencyScanner:
     """Agent for scanning dependencies for known CVEs via OSV."""
 
-    def __init__(self, router: LLMRouter):
-        """Initialize the dependency scanner with an LLM router."""
+    def __init__(self, router: Optional[LLMRouter] = None):
+        """Initialize the dependency scanner with an optional LLM router."""
         self.router = router
         self.dep_pattern = re.compile(r"(?:implementation|api|compile)\s+['\"]([^:]+):([^:]+):([^'\"]+)['\"]")
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
@@ -572,6 +572,7 @@ class DependencyScanner:
         findings: list[Finding] = []
         base_path = Path(decompiled_path)
         dependencies = await asyncio.to_thread(self._sync_find_dependencies, base_path)
+        self._last_dependencies = dependencies
         offline = bool(getattr(self.router, "_settings", None) and self.router._settings.offline is True)
         self.coverage.update(advisory_source="OSV API", advisory_freshness="not_checked",
                              lookup_status=("skipped_offline" if offline else
@@ -631,3 +632,14 @@ class DependencyScanner:
 
         logger.info(f"Dependency scan completed: {len(findings)} findings.")
         return findings
+
+    def generate_sbom(self, app_name: str = "MobileApp", app_version: str = "1.0.0") -> Any:
+        """Construct a standardized MobileSbomGenerator instance populated from inventoried dependencies."""
+        from mobileag.analysis.sbom_generator import MobileSbomGenerator
+        generator = MobileSbomGenerator(app_name=app_name, app_version=app_version)
+        for grp, art, ver, _ in getattr(self, "_last_dependencies", []):
+            purl = f"pkg:maven/{grp}/{art}@{ver}" if grp else f"pkg:npm/{art}@{ver}"
+            name = f"{grp}:{art}" if grp else art
+            generator.add_component(name=name, version=ver, purl=purl, component_type="library")
+        return generator
+

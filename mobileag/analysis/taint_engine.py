@@ -40,7 +40,7 @@ _SOURCE_PATTERNS = [
     (
         "INTENT_EXTRA",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_$().]+(?:\?\s*)?\s*\.\s*)?(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra)\s*\("""
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_$().]+(?:\?\s*)?\s*\.\s*)?(?:getStringExtra|getIntExtra|getLongExtra|getFloatExtra|getDoubleExtra|getBooleanExtra|getByteArrayExtra|getStringArrayExtra|getStringArrayListExtra|getIntegerArrayListExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|getSerializableExtra|getBundleExtra|getExtras|getCharSequenceExtra|getCharSequenceArrayExtra|getCharSequenceArrayListExtra|getScheme)\s*\("""
         ),
     ),
     (
@@ -66,7 +66,7 @@ _SOURCE_PATTERNS = [
     (
         "URI_COMPONENT",
         re.compile(
-            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment)\s*\(""",
+            r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?P<receiver>[A-Za-z_$][\w$]*)\s*(?:\?\s*)?\.\s*(?:getPath|getLastPathSegment|getHost|getAuthority|getFragment|getScheme)\s*\(""",
             re.IGNORECASE,
         ),
     ),
@@ -85,6 +85,13 @@ _SOURCE_PATTERNS = [
         re.compile(
             r"""(?:(?:final\s+)?(?:val\s+|var\s+|[a-zA-Z0-9_<>[\]]+\s+))?([a-zA-Z0-9_]+)\s*=\s*(?:\([a-zA-Z0-9_<>[\]\s]+\)\s*)?(?:[a-zA-Z0-9_.$]+\.)?(?:getPrimaryClip|[a-zA-Z0-9_.$]*clip[a-zA-Z0-9_.$]*\.getText)\s*\(""",
             re.IGNORECASE,
+        ),
+    ),
+    (
+        "JS_INTERFACE_BRIDGE",
+        re.compile(
+            r"""@JavascriptInterface\s+(?:public\s+)?(?:fun\s+|void\s+|[a-zA-Z0-9_<>[\]]+\s+)[a-zA-Z0-9_]+\s*\([^)]*?(?:String|[a-zA-Z0-9_<>[\]]+)\s+([a-zA-Z0-9_]+)""",
+            re.MULTILINE,
         ),
     ),
 ]
@@ -135,6 +142,15 @@ _SINK_SPECS = [
         "pattern": re.compile(r"""\b(?:startActivity|startActivityForResult|startService|startForegroundService|sendBroadcast|sendOrderedBroadcast)\s*\("""),
         "masvs": "MASVS-PLATFORM-1",
         "remediation": "Do not redirect arbitrary Intent objects from incoming extras. Validate component targets or check calling package identity.",
+    },
+    {
+        "type": "PENDING_INTENT_FORWARDING",
+        "cwe": "CWE-927",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Taint Flow to PendingIntent Execution",
+        "pattern": re.compile(r"""\b(?:[a-zA-Z0-9_]*[pP]endingIntent|[a-zA-Z0-9_]+)\.send\s*\("""),
+        "masvs": "MASVS-PLATFORM-1",
+        "remediation": "Validate PendingIntent authenticity and targets before forwarding or invoking send().",
     },
     {
         "type": "PATH_TRAVERSAL",
@@ -1680,6 +1696,12 @@ class TaintEngine:
         )
 
         inventory = SourceInventory()
+        from mobileag.analysis.symbol_resolver import SymbolResolver
+        self.symbol_resolver = SymbolResolver()
+        try:
+            self.symbol_resolver.index_directory(root_path)
+        except Exception as e:
+            logger.debug("Symbol indexing pass skipped: %s", e)
         analysis_failures: list[str] = []
         for file_path, data in inventory.read(root_path, {".java", ".kt"}):
             try:
@@ -1711,6 +1733,8 @@ class TaintEngine:
         self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
                              candidate_count=len(all_findings), java_ast=dict(self.ast_coverage),
                              same_file_parameter_summary=dict(self._parameter_summary_coverage),
+                             symbol_resolver={"indexed_classes": len(self.symbol_resolver.classes) if hasattr(self, "symbol_resolver") else 0,
+                                              "static_status": "completed" if hasattr(self, "symbol_resolver") and self.symbol_resolver.classes else "not_analyzed"},
                              limits={**inventory.coverage['limits'], 'findings':1000,
                                      'parameter_summaries': MAX_PARAMETER_SINK_SUMMARIES,
                                      'parameter_summary_rounds': MAX_PARAMETER_SUMMARY_ROUNDS})

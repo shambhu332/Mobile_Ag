@@ -102,6 +102,8 @@ SMALI_SOURCES = {
     "Landroid/telephony/TelephonyManager;->getDeviceId": "DEVICE_IMEI",
     "Landroid/telephony/TelephonyManager;->getImei": "DEVICE_IMEI",
     "Landroid/location/LocationManager;->getLastKnownLocation": "GEOLOCATION",
+    "Landroid/content/Intent;->getScheme": "INTENT_SCHEME",
+    "Landroid/net/Uri;->getScheme": "URI_SCHEME",
 }
 
 # Smali Sink signatures and corresponding CWE classifications
@@ -189,6 +191,12 @@ SMALI_SINKS = {
         "severity": Severity.HIGH,
         "title": "Untrusted IPC Dataflow to ContentResolver Update",
         "desc": "Untrusted external parameter flows into ContentResolver.update(), risking database record tampering."
+    },
+    "Landroid/app/PendingIntent;->send": {
+        "cwe": "CWE-927",
+        "severity": Severity.HIGH,
+        "title": "Untrusted PendingIntent Forwarding / Execution",
+        "desc": "Untrusted input reaches PendingIntent.send(), enabling unauthorized invocation of caller-granted privileges."
     },
 }
 

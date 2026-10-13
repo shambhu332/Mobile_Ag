@@ -1,0 +1,373 @@
+# MobileAg Master Technical Architecture & Implementation Blueprint
+
+## Purpose and Scope
+This document provides an exhaustive, step-by-step technical implementation roadmap for expanding the **MobileAg** mobile security testing and assessment platform. It bridges the capabilities of commercial market leaders (**NowSecure**, **Oversecured**, **Appknox**, **Data Theorem**, **Guardsquare**, **Ostorlab**, and **Approov**) into MobileAg’s local-first, evidence-bound architecture.
+
+Every section details:
+- **Architectural Design & Purpose**
+- **Exact File Locations & Target Modules**
+- **Technical Algorithms & Data Flow**
+- **Integration Points with MobileAg Core**
+
+---
+
+```
+MobileAg Master Blueprint Architecture
+├── 1. Advanced Static Analysis & Taint Tracking
+│   ├── Inter-Procedural & Cross-File Call Graph Engine
+│   ├── Component Lifecycle-Aware Flow Tracing
+│   └── Android IPC Vulnerability Auditing (PendingIntent, FileProvider, Task Hijacking)
+├── 2. Multi-Framework & Non-Dalvik Binary Analysis
+│   ├── Flutter Dart Snapshot Symbol & String Extractor
+│   ├── React Native Hermes (.hbc) Bytecode Decompiler
+│   ├── Unity IL2CPP Reconstructor (Metadata + libil2cpp.so)
+│   └── iOS Mach-O & Swift Metadata Analyzer
+├── 3. Advanced Dynamic Instrumentation & Frida Harness
+│   ├── Universal Stealth & Port-Randomized Frida Daemon
+│   ├── Multi-Layer TLS/SSL Unpinning (Java, Native BoringSSL, Flutter)
+│   ├── In-Memory Crypto & Key Lifecycle Harvester
+│   └── Runtime Memory Forensics & Cleartext Cache Auditor
+├── 4. Automated IPC Fuzzing & Exploit PoC Synthesis
+│   ├── Dynamic Deep Link & Custom Scheme Mutation Fuzzer
+│   ├── ContentProvider Traversal & Injection Fuzzer
+│   └── Compilable Exploit PoC Generator (Oversecured/OVAA Parity)
+├── 5. Mobile Backend API & Token Security Engine
+│   ├── Automated API Cataloger & OpenAPI 3.0 / HAR Exporter
+│   ├── Automated BOLA / IDOR Dual-Session Replay Fuzzer
+│   └── Mobile Token & Session Lifecycle Auditor
+├── 6. Binary Hardening & RASP Resilience Scoring
+│   ├── 6-Vector MASVS-RESILIENCE Scoring Engine
+│   ├── Obfuscation Ratio & Control Flow Flattening Calculator
+│   └── Anti-Tampering, Anti-Debugging & Root Evasion Evaluator
+├── 7. Autonomous Dynamic UI Exploration (Smart Crawler)
+│   ├── Semantic UI Form Filling (Credentials, Search, Forms)
+│   ├── OS Permission & Biometric Prompt Bypass
+│   └── UI State Hashing & Loop Prevention
+├── 8. Mobile SBOM, Supply Chain & Privacy Manifests
+│   ├── Standardized CycloneDX v1.5 & SPDX 2.3 Generators
+│   ├── Real-Time OSV Advisory Enrichment (Offline / Authorized Online)
+│   └── Apple Privacy Manifest (PrivacyInfo.xcprivacy) & Google Play Data Safety Auditor
+└── 9. Dashboard, Telemetry & Reporting Engine
+    ├── WebSocket/SSE Real-Time Telemetry Stream
+    ├── Interactive Attack Surface Graph Visualization (Vis.js / Neo4j)
+    └── Enterprise Exporting (SARIF 2.1.0, Executive PDF, Professional Markdown)
+```
+
+---
+
+## 1. Advanced Static Analysis: Inter-Procedural Taint & IPC Engine
+
+### 1.1 Inter-Procedural Cross-File Call Graph & Taint Engine
+* **Objective**: Overcome the single-file analysis barrier. Trace untrusted sources through arbitrary class wrappers, utility delegates, and helper chains to dangerous execution sinks.
+* **Target Files**:
+  - `mobileag/analysis/symbol_resolver.py` (New)
+  - `mobileag/analysis/call_graph.py` (Enhancement)
+  - `mobileag/analysis/java_ast_taint.py` (Enhancement)
+  - `mobileag/analysis/taint_engine.py` (Enhancement)
+* **Technical Implementation**:
+  1. **Global Symbol Registry**: During initial decompilation, parse all class declarations and record their Fully Qualified Class Name (FQCN), superclasses, implemented interfaces, method signatures, and field declarations into an in-memory SQLite/KV store.
+  2. **Inter-Procedural Call Linking**: When method `ClassA.entry()` calls `helper.process(input)`, resolve `helper`’s declared type via the Symbol Registry. Propagate the taint status of parameter `input` to the formal parameter of `ClassB.process()`.
+  3. **Android Lifecycle Roots**: Treat standard lifecycle callbacks (`onCreate`, `onStart`, `onResume`, `onReceive`, `onHandleIntent`, `handleMessage`) as automatic synthetic entry points in the control flow graph.
+  4. **Source-to-Sink Mapping**: Maintain strict evidence bounds:
+     - *Sources*: `Intent.getData()`, `getExtras()`, `getScheme()`, `WebView` bridge parameters (`@JavascriptInterface`), external files.
+     - *Sinks*: `startActivity()`, `Runtime.getRuntime().exec()`, `SQLiteDatabase.rawQuery()`, `WebView.loadUrl()`, `PendingIntent.send()`.
+
+### 1.2 Android IPC Vulnerabilities: PendingIntent, FileProvider & Intent Redirection
+* **Objective**: Detect advanced Android-specific IPC misconfigurations that commercial scanners frequently test.
+* **Target Files**:
+  - `mobileag/analysis/intent_redirection_auditor.py` (New)
+  - `mobileag/analysis/pending_intent_auditor.py` (New)
+  - `mobileag/analysis/fileprovider_auditor.py` (New)
+* **Technical Implementation**:
+  1. **Intent Redirection**: Detect when an exported component receives an Intent, extracts an embedded `Parcelable` Intent (`intent.getParcelableExtra(...)`), and passes it directly to `startActivity()` or `sendBroadcast()` without validating the target component or package name.
+  2. **PendingIntent Mutability**: Verify that all `PendingIntent.getActivity/getBroadcast/getService` invocations specify `FLAG_IMMUTABLE` (Android 12+ mandate) or properly protect mutable intents (`FLAG_MUTABLE`) against unauthorized fill-in attacks.
+  3. **FileProvider Path Traversal**: Parse `res/xml/` FileProvider path definitions. Flag dangerous configurations exposing the filesystem root (`<root-path path="." />`) or shared external storage (`<external-path path="." />`) combined with `android:grantUriPermissions="true"`.
+  4. **Task Hijacking & StrandHogg**: Audit `AndroidManifest.xml` for missing or misconfigured `launchMode="singleTask"` alongside unassigned `taskAffinity`, which exposes activities to overlay and task-reparenting attacks.
+
+---
+
+## 2. Multi-Framework & Non-Dalvik Binary Analysis
+
+Traditional Dalvik-only decompilers fail when analyzing modern cross-platform applications. This phase implements dedicated extraction for Flutter, React Native, Unity, and iOS.
+
+### 2.1 Flutter Dart Snapshot Extractor
+* **Objective**: Recover routes, API endpoints, encryption keys, and business logic from stripped Flutter binaries.
+* **Target Files**:
+  - `mobileag/analysis/flutter_engine.py` (New)
+* **Technical Implementation**:
+  1. Check for `lib/arm64-v8a/libapp.so` and `libflutter.so`.
+  2. Extract the Dart Snapshot Snapshot Hash from `libflutter.so`.
+  3. Parse the Dart AOT Snapshot data section to recover:
+     - Embedded string pools (recovering API URLs, authorization headers, hardcoded credentials).
+     - Named route registries (identifying hidden or administrative application screens).
+     - Bundled asset paths from `assets/flutter_assets/`.
+
+### 2.2 React Native Hermes (`.hbc`) Bytecode Decompiler
+* **Objective**: Decompile and audit optimized Hermes bytecode bundles.
+* **Target Files**:
+  - `mobileag/analysis/hermes_analyzer.py` (New)
+  - `mobileag/analysis/react_native_scanner.py` (Enhancement)
+* **Technical Implementation**:
+  1. Inspect `assets/index.android.bundle` for the Hermes magic number `0x1F480120`.
+  2. Read the Hermes bytecode version and invoke bounded disassembly (`hermes-dec` or `hbctool`) to extract:
+     - Decompiled JavaScript control flow.
+     - Hardcoded API tokens, OAuth client secrets, and environment configurations.
+  3. Execute MobileAg’s AST and secret auditors on the recovered JavaScript files.
+
+### 2.3 Unity IL2CPP Metadata & Binary Reconstructor
+* **Objective**: Reconstruct class definitions, method names, and strings from Unity games and fintech apps.
+* **Target Files**:
+  - `mobileag/analysis/il2cpp_auditor.py` (New)
+* **Technical Implementation**:
+  1. Locate `lib/arm64-v8a/libil2cpp.so` and `assets/bin/Data/Managed/Metadata/global-metadata.dat`.
+  2. Parse the IL2CPP metadata header to resolve string literal tables, method definitions, and type definitions.
+  3. Export a reconstructed C# symbol table header (`dump.cs`) to expose backend endpoints and native encryption algorithms.
+
+### 2.4 iOS Mach-O & Swift Metadata Analyzer
+* **Objective**: Provide native iOS IPA binary analysis on parity with Android capabilities.
+* **Target Files**:
+  - `mobileag/analysis/ios_analyzer.py` (Enhancement)
+  - `mobileag/analysis/macho_parser.py` (New)
+* **Technical Implementation**:
+  1. Parse Mach-O load commands, `__TEXT` segments, and `__cstring` tables.
+  2. Extract Swift 5 runtime metadata (`__swift5_types`, `__swift5_proto`, `__swift5_fieldmd`) to reconstruct Swift class and struct definitions.
+  3. Audit `Info.plist` for misconfigured App Transport Security (ATS) exceptions (`NSAllowsArbitraryLoads = true`) and dangerous custom URL schemes.
+
+---
+
+## 3. Dynamic Instrumentation & Runtime Frida Harness
+
+### 3.1 Universal Stealth Instrumentation Daemon
+* **Objective**: Run dynamic Frida tests reliably without triggering commercial anti-Frida or anti-debugging defenses.
+* **Target Files**:
+  - `mobileag/dast/frida_stealth.py` (New)
+  - `mobileag/dast/frida_runner.py` (Enhancement)
+  - `mobileag/dast/adb_manager.py` (Enhancement)
+* **Technical Implementation**:
+  1. **Binary Renaming & Socket Randomization**:
+     - Automatically push a randomized-name binary (e.g., `mag_daemon_8492`) via ADB.
+     - Bind to an ephemeral Unix domain socket or non-standard port instead of default TCP `27042`.
+  2. **Thread & Memory Camouflage**:
+     - Inject an early initialization hook that patches `pthread_create` to rename `gum-js-loop` threads.
+     - Intercept `/proc/self/maps` and `/proc/self/status` reads to mask Frida-related memory mappings (`frida-agent.so`).
+
+### 3.2 Universal Multi-Engine TLS/SSL Unpinning
+* **Objective**: Enable full proxy interception across Java, native C++, and Flutter network stacks.
+* **Target Files**:
+  - `mobileag/dast/unpinning_engine.py` (New)
+  - `mobileag/generators/templates/frida/unpinning.js` (Enhancement)
+* **Technical Implementation**:
+  1. **Java Layer**:
+     - Hook `javax.net.ssl.TrustManagerFactory.getTrustManagers()`.
+     - Hook `okhttp3.CertificatePinner.check()`.
+     - Bypass `NetworkSecurityConfigProvider`.
+  2. **Native C/C++ Layer**:
+     - Hook OpenSSL/BoringSSL verification callbacks (`SSL_CTX_set_custom_verify`, `SSL_set_verify`).
+  3. **Flutter Engine**:
+     - Scan memory for `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so` and patch the return value to bypass pinning.
+
+### 3.3 In-Memory Cryptography & Key Harvester
+* **Objective**: Extract live encryption keys, initialization vectors, and plaintext payloads at runtime.
+* **Target Files**:
+  - `mobileag/dast/crypto_harvester.py` (New)
+* **Technical Implementation**:
+  1. Hook `javax.crypto.Cipher.init(int opmode, Key key, AlgorithmParameterSpec params)`:
+     - Log algorithm name, mode (flagging `ECB`), and key size.
+     - Capture raw key bytes from `SecretKeySpec.getEncoded()`.
+  2. Hook `javax.crypto.Cipher.doFinal(byte[] input)` to capture unencrypted plaintext data before it is encrypted or after it is decrypted.
+  3. Hook `net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase` to harvest local database encryption passwords.
+
+---
+
+## 4. Automated IPC Fuzzing & Exploit PoC Synthesis
+
+### 4.1 Deep Link & Custom Scheme Mutation Fuzzer
+* **Objective**: Verify if exported deep link handlers are vulnerable to open redirection, parameter tampering, or unauthorized state changes.
+* **Target Files**:
+  - `mobileag/dast/deeplink_intent_fuzzer.py` (New)
+* **Technical Implementation**:
+  1. Extract all declared URI schemes (`scheme://host/path?param=`) from the manifest and bytecode.
+  2. Mutate parameters using defined payload suites:
+     - External URL redirection payloads (`https://attacker.com`, `javascript:alert(1)`).
+     - Path traversal strings (`../../sensitive_file`).
+     - SQL injection probes (`' OR '1'='1`).
+  3. Execute fuzzing runs via ADB:
+     ```bash
+     adb shell am start -W -a android.intent.action.VIEW -d "<payload>"
+     ```
+  4. Correlate with `logcat` dumps, WebView navigation events, and process crash logs to verify vulnerability execution.
+
+### 4.2 ContentProvider Fuzzer & Traversal Tester
+* **Objective**: Test exported ContentProviders for directory traversal and SQL injection vulnerabilities.
+* **Target Files**:
+  - `mobileag/dast/provider_fuzzer.py` (New)
+  - `mobileag/dast/provider_auditor.py` (Enhancement)
+* **Technical Implementation**:
+  1. Identify all ContentProviders with `android:exported="true"`.
+  2. Probe each provider with `adb shell content query` and `adb shell content read`:
+     - Path Traversal: `content://<authority>/../../../../data/data/<package>/databases/app.db`
+     - Projection/Selection SQLi: `content://<authority>/users --projection "* FROM users WHERE 1=1 --"`
+  3. Verify whether file descriptors or database rows are leaked without required permissions.
+
+### 4.3 Automated Exploit PoC Generator (Oversecured / OVAA Parity)
+* **Objective**: Generate standalone, compilable exploit code proving the real-world impact of discovered vulnerabilities.
+* **Target Files**:
+  - `mobileag/generators/poc_apk_synthesizer.py` (New)
+  - `mobileag/generators/templates/poc/` (Templates)
+* **Technical Implementation**:
+  1. For every confirmed high-severity IPC flaw, synthesize a complete Android exploit module:
+     - Standalone Kotlin/Java activity source code.
+     - `AndroidManifest.xml` targeting the vulnerable component.
+     - Exact `Intent` construction with extras, flags, and URI parameters.
+  2. Output both a standalone `.kt` script and a ready-to-run ADB exploit command line.
+
+---
+
+## 5. Mobile Backend API & Token Security Engine
+
+### 5.1 Dynamic API Cataloger & OpenAPI 3.0 Exporter
+* **Objective**: Map the entire attack surface of backend APIs utilized by the mobile application.
+* **Target Files**:
+  - `mobileag/dast/api_cataloger.py` (New)
+  - `mobileag/dast/traffic_auditor.py` (Enhancement)
+* **Technical Implementation**:
+  1. Capture all HTTP/HTTPS transactions routed through `mobileag/dast/mitm_proxy.py`.
+  2. Deduplicate requests by method, host, path template, and query parameter signatures.
+  3. Infer request/response JSON schemas and auto-generate an **OpenAPI 3.0 specification (`openapi.json`)**.
+  4. Flag "Shadow APIs" (undocumented endpoints seen in traffic that are not declared in mobile code).
+
+### 5.2 Automated BOLA / IDOR Dual-Session Replay Fuzzer
+* **Objective**: Automatically detect Broken Object Level Authorization across mobile APIs.
+* **Target Files**:
+  - `mobileag/dast/bola_fuzzer.py` (New)
+  - `mobileag/dast/api_security_tester.py` (Enhancement)
+* **Technical Implementation**:
+  1. Accept two authorized test session tokens from the Test Plan (`Session_A` and `Session_B`).
+  2. Identify API endpoints containing resource identifiers (e.g., `/api/v2/orders/94821` or `?account_id=104`).
+  3. Replay requests for User A's resources using User B's authentication tokens.
+  4. If the server returns HTTP 200 with User A's private data, generate a verified BOLA/IDOR finding with full HTTP request/response evidence.
+
+---
+
+## 6. Binary Hardening & RASP Resilience Scoring
+
+### 6.1 6-Vector MASVS-RESILIENCE Scoring Engine
+* **Objective**: Benchmark binary resilience against reverse engineering and tampering (Guardsquare/Promon parity).
+* **Target Files**:
+  - `mobileag/analysis/rasp_resilience_auditor.py` (New)
+  - `mobileag/analysis/binary_protection_auditor.py` (Enhancement)
+* **Technical Implementation**:
+  Compute an aggregate **Resilience Score (0–100%)** based on six automated checks:
+
+| Vector | Technical Metric | Evaluation Standard |
+| :--- | :--- | :--- |
+| **Identifier Obfuscation** | Ratio of short/scrambled identifiers (`a.b.c()`) vs. human-readable names. | MASVS-RESILIENCE-1 |
+| **Control Flow Complexity** | Cyclomatic complexity and presence of switch-based state dispatchers. | MASVS-RESILIENCE-2 |
+| **String Pool Entropy** | Shannon entropy calculation across string pools to detect string encryption. | MASVS-RESILIENCE-3 |
+| **Anti-Root / Jailbreak** | Presence of heuristic checks for `su`, Magisk, Zygisk, and root packages. | MASVS-RESILIENCE-4 |
+| **Anti-Debugging** | Enforcement of `debuggable="false"` and native `ptrace(PTRACE_TRACEME)` calls. | MASVS-RESILIENCE-5 |
+| **Tamper Resistance** | Verification of APK signature check calls (`PackageManager.GET_SIGNATURES`). | MASVS-RESILIENCE-6 |
+
+---
+
+## 7. Autonomous Dynamic UI Exploration (Smart Crawler)
+
+### 7.1 Semantic UI Form Filling & Navigation
+* **Objective**: Replace dumb random monkey clicks with intelligent UI exploration that can navigate authentication forms and permission prompts.
+* **Target Files**:
+  - `mobileag/dast/smart_crawler.py` (New)
+  - `mobileag/dast/ui_crawler.py` (Enhancement)
+* **Technical Implementation**:
+  1. **UI Hierarchy Parsing**: Dump the active view hierarchy via `uiautomator dump` or Android Accessibility services.
+  2. **Semantic Element Recognition**:
+     - Inputs matching `user|email|phone` $\rightarrow$ Inject configured test username.
+     - Inputs matching `pass|pin|secret` $\rightarrow$ Inject configured test password.
+     - Buttons matching `allow|grant|accept` $\rightarrow$ Automatically tap to dismiss OS permission prompts.
+  3. **State Hashing & Loop Prevention**:
+     - Compute a state hash: `SHA256(current_activity + sorted_element_resource_ids)`.
+     - Track visited state counts to prevent the crawler from getting stuck in navigation loops.
+
+---
+
+## 8. Mobile SBOM, Supply Chain & Privacy Compliance
+
+### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
+* **Objective**: Generate enterprise-grade Software Bill of Materials for mobile applications.
+* **Target Files**:
+  - `mobileag/analysis/sbom_generator.py` (New)
+  - `mobileag/analysis/dependency_scanner.py` (Enhancement)
+* **Technical Implementation**:
+  1. Catalog all Maven/Gradle libraries, embedded JNI native libraries (`.so`), and npm dependencies.
+  2. Generate standard Package URLs (PURL): `pkg:maven/com.squareup.okhttp3/okhttp@4.9.3`.
+  3. Export valid CycloneDX v1.5 JSON/XML and SPDX 2.3 manifests.
+  4. Query the Open Source Vulnerabilities (OSV) database to attach known CVEs to inventoried components.
+
+### 8.2 Privacy Manifest & Google Play Data Safety Auditor
+* **Objective**: Verify compliance with Apple Privacy Manifests and Google Play Data Safety declarations.
+* **Target Files**:
+  - `mobileag/analysis/privacy_manifest_auditor.py` (New)
+* **Technical Implementation**:
+  1. **iOS Privacy Manifests**:
+     - Parse `PrivacyInfo.xcprivacy`.
+     - Cross-check declared API categories (`NSPrivacyAccessedAPITypeUserDefaults`, `SystemBootTime`) against actual binary calls to detect undeclared tracking APIs.
+  2. **Android Data Safety**:
+     - Correlate requested dangerous permissions (`ACCESS_FINE_LOCATION`, `READ_CONTACTS`) and third-party tracking SDKs with declared privacy disclosures.
+
+---
+
+## 9. Dashboard, Telemetry & Enterprise Reporting
+
+### 9.1 Real-Time WebSocket Telemetry Streaming
+* **Objective**: Provide live visual feedback of dynamic testing progress on the web dashboard.
+* **Target Files**:
+  - `mobileag/web/app.py` (Enhancement)
+  - `mobileag/web/static/telemetry.js` (Enhancement)
+* **Technical Implementation**:
+  1. Implement a FastAPI WebSocket route (`/ws/scans/{scan_id}/telemetry`).
+  2. Stream real-time events: tool execution status, Frida hook detections, captured HTTP requests, and crawler screenshots.
+
+### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
+* **Objective**: Visualize relationships between components, permissions, deep links, and APIs.
+* **Target Files**:
+  - `mobileag/knowledge/neo4j_graph.py` (Enhancement)
+  - `mobileag/web/static/interface.js` (Enhancement)
+* **Technical Implementation**:
+  1. Render an interactive network graph of the mobile application:
+     - Nodes: Activities, Services, ContentProviders, Receivers, API Endpoints, Local Databases.
+     - Edges: Intents, URI Grants, Network Calls, Data Flows.
+  2. Highlight vulnerable paths in red with click-to-expand evidence panels.
+
+---
+
+## Comprehensive Implementation Schedule
+
+```
+Timeline & Execution Phases
+├── Phase 1 (Weeks 1–2): Static Engine & Frameworks
+│   ├── Symbol Resolver & Inter-Procedural Call Graph
+│   ├── Flutter Dart & React Native Hermes Parsers
+│   └── Intent Redirection & PendingIntent Auditors
+├── Phase 2 (Weeks 3–4): Dynamic Engine & Frida Harness
+│   ├── Stealth Frida Daemon & Evasion Engine
+│   ├── Multi-Layer TLS/SSL Unpinning Suite
+│   └── In-Memory Crypto & Key Harvester
+├── Phase 3 (Weeks 5–6): IPC Fuzzing & API Testing
+│   ├── Deep Link & ContentProvider Fuzzers
+│   ├── Automated PoC Synthesizer
+│   └── BOLA / IDOR Fuzzer & OpenAPI Exporter
+├── Phase 4 (Weeks 7–8): RASP, SBOM & Automation
+│   ├── 6-Vector MASVS-RESILIENCE Scoring
+│   ├── Smart Dynamic Crawler
+│   └── CycloneDX SBOM & Privacy Manifest Auditors
+└── Phase 5 (Weeks 9–10): Dashboard & Production Release
+    ├── WebSocket Telemetry & Graph Visualization
+    └── SARIF 2.1.0 & Professional Reporting Gates
+```
+
+---
+
+## Verification & Quality Assurance Gates
+
+1. **Unit & Integration Tests**: Every new analyzer under `mobileag/analysis/` and `mobileag/dast/` must have accompanying test suites in `tests/`.
+2. **Synthetic Regression Corpora**: Maintain tests against benchmark applications (including OVAA) to prevent regression and ensure low false-positive rates.
+3. **Fail-Closed Evidence Standard**: Every finding must include concrete artifact hash binding, reproducible code paths, or live runtime execution traces.

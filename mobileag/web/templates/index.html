@@ -155,6 +155,12 @@
             <button data-onclick="static15" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
               <i data-lucide="shield-check" class="w-3.5 h-3.5 text-purple-400"></i> SARIF
             </button>
+            <button id="btn-export-cyclonedx" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
+              <i data-lucide="package" class="w-3.5 h-3.5 text-cyan-400"></i> CycloneDX SBOM
+            </button>
+            <button id="btn-export-openapi" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
+              <i data-lucide="globe" class="w-3.5 h-3.5 text-blue-400"></i> OpenAPI 3.0
+            </button>
           </div>
         </div>
       </div>
@@ -173,8 +179,8 @@
       <!-- =================================================================== -->
       <div id="view-surface" class="view-panel h-full flex flex-col overflow-y-auto p-5 gap-4">
 
-        <!-- KPI Cards — Reduced to 3 essential metrics -->
-        <div class="grid grid-cols-3 gap-4 shrink-0">
+        <!-- KPI Cards — 4 essential metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
           <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
             <div>
               <p class="text-[11px] font-mono text-slate-400 uppercase">Total Findings</p>
@@ -202,6 +208,19 @@
             </div>
             <div class="w-8 h-8 rounded-lg bg-orange-950/30 border border-orange-800/30 flex items-center justify-center text-orange-400">
               <i data-lucide="info" class="w-4 h-4"></i>
+            </div>
+          </div>
+
+          <div class="bg-panel border border-emerald-900/40 rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-mono text-emerald-400 uppercase">Resilience Score</p>
+              <div class="flex items-baseline gap-2 mt-0.5">
+                <h3 id="kpi-resilience-score" class="text-2xl font-bold font-mono text-emerald-400">--</h3>
+                <span id="kpi-resilience-grade" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">--</span>
+              </div>
+            </div>
+            <div class="w-8 h-8 rounded-lg bg-emerald-950/40 border border-emerald-800/40 flex items-center justify-center text-emerald-400">
+              <i data-lucide="shield-check" class="w-4 h-4"></i>
             </div>
           </div>
         </div>

@@ -536,6 +536,135 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
     }
 
 
+@app.get("/api/scans/{scan_id}/resilience")
+async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
+    """Return MASVS-RESILIENCE scoring from RaspResilienceAuditor."""
+    scan = await get_scan_details(scan_id)
+    out_dir = OUTPUT_DIR / scan_id
+    smali_dir = out_dir / "apktool_out" / "smali"
+    if not smali_dir.exists():
+        smali_dir = out_dir / "apktool" / "smali"
+    if not smali_dir.exists():
+        candidates = list(out_dir.glob("**/smali"))
+        smali_dir = candidates[0] if candidates else smali_dir
+
+    from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
+    auditor = RaspResilienceAuditor()
+    res = auditor.audit_package(smali_dir)
+
+    return {
+        "scan_id": scan_id,
+        "overall_score": res.overall_score,
+        "grade": res.grade,
+        "vectors": {
+            k: {
+                "name": v.vector_name,
+                "category": v.masvs_category,
+                "score": v.score,
+                "passed": v.passed,
+                "indicators": v.detected_indicators,
+            }
+            for k, v in res.vectors.items()
+        },
+    }
+
+
+@app.get("/api/scans/{scan_id}/cyclonedx")
+async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
+    """Export CycloneDX v1.5 SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return gen.generate_cyclonedx_json()
+
+
+@app.get("/api/scans/{scan_id}/openapi")
+async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
+    """Export discovered mobile APIs in OpenAPI 3.0 format."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    cataloger = MobileApiCataloger(title=f"{app_name} APIs", version="1.0.0")
+
+    apis = scan.get("api_endpoints", [])
+    for ep in apis:
+        url = ep.get("url") or f"https://api.example.com{ep.get('path', '/')}"
+        method = ep.get("method", "GET")
+        cataloger.ingest_request(CapturedRequest(method=method, url=url))
+
+    return cataloger.export_openapi_json()
+
+
+@app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")
+async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
+    """Generate Kotlin exploit PoC and ADB command for a finding."""
+    scan = await get_scan_details(scan_id)
+    findings = scan.get("findings", [])
+    finding_dict = next((f for f in findings if f.get("id") == finding_id), None)
+    if not finding_dict:
+        raise HTTPException(404, f"Finding {finding_id} not found in scan {scan_id}")
+
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+
+    try:
+        sev = Severity(finding_dict.get("severity", "MEDIUM"))
+    except Exception:
+        sev = Severity.MEDIUM
+    try:
+        st = FindingStatus(finding_dict.get("status", "UNVERIFIED"))
+    except Exception:
+        st = FindingStatus.UNVERIFIED
+
+    f_obj = Finding(
+        id=finding_dict.get("id", finding_id),
+        title=finding_dict.get("title", ""),
+        description=finding_dict.get("description", ""),
+        severity=sev,
+        status=st,
+        cwe_id=finding_dict.get("cwe_id"),
+        file_path=finding_dict.get("file_path", ""),
+        metadata=finding_dict.get("metadata", {}),
+    )
+
+    pkg = scan.get("package_name") or "com.target.mobile.app"
+    synthesizer = ExploitPocSynthesizer()
+    poc = synthesizer.synthesize(f_obj, target_package=pkg)
+
+    if not poc:
+        return {
+            "finding_id": finding_id,
+            "available": False,
+            "message": "Automated standalone exploit generator not applicable for this finding category.",
+        }
+
+    return {
+        "finding_id": finding_id,
+        "available": True,
+        "vulnerability_type": poc.vulnerability_type,
+        "adb_command": poc.adb_command,
+        "kotlin_exploit_code": poc.kotlin_exploit_code,
+        "explanation": poc.explanation,
+    }
+
+
 class FeedbackRequest(BaseModel):
     verdict: Literal['CONFIRMED', 'FALSE_POSITIVE', 'DUPLICATE', 'UNVERIFIED']
     notes: str = Field(default='', max_length=10000)

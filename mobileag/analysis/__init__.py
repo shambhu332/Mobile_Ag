@@ -14,6 +14,7 @@ _MODULES = {
     'FlutterEngineAnalyzer':'flutter_engine',
     'RaspResilienceAuditor':'rasp_resilience_auditor',
     'MobileSbomGenerator':'sbom_generator',
+    'NativeJniAnalyzer':'native_jni_bridge',
 }
 __all__ = list(_MODULES)
 

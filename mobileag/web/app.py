@@ -595,6 +595,58 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
     return gen.generate_cyclonedx_json()
 
 
+@app.get("/api/scans/{scan_id}/cyclonedx.xml")
+async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
+    """Export CycloneDX v1.5 XML SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return Response(content=gen.generate_cyclonedx_xml(), media_type="application/xml")
+
+
+@app.get("/api/scans/{scan_id}/spdx")
+async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
+    """Export SPDX 2.3 SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return gen.generate_spdx_json()
+
+
 @app.get("/api/scans/{scan_id}/openapi")
 async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
     """Export discovered mobile APIs in OpenAPI 3.0 format."""
@@ -610,6 +662,23 @@ async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
         cataloger.ingest_request(CapturedRequest(method=method, url=url))
 
     return cataloger.export_openapi_json()
+
+
+@app.get("/api/scans/{scan_id}/har")
+async def get_scan_har(scan_id: str) -> dict[str, Any]:
+    """Export intercepted mobile HTTP/HTTPS traffic in HAR 1.2 format."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    cataloger = MobileApiCataloger(title=f"{app_name} APIs", version="1.0.0")
+
+    apis = scan.get("api_endpoints", [])
+    for ep in apis:
+        url = ep.get("url") or f"https://api.example.com{ep.get('path', '/')}"
+        method = ep.get("method", "GET")
+        cataloger.ingest_request(CapturedRequest(method=method, url=url))
+
+    return cataloger.export_har_json()
 
 
 @app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")

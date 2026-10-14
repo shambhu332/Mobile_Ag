@@ -29,9 +29,11 @@ class MobileApiCataloger:
         self.title = title
         self.version = version
         self.endpoints: Dict[str, Dict[str, Any]] = {}
+        self.captured_requests: List[CapturedRequest] = []
 
     def ingest_request(self, req: CapturedRequest) -> None:
         """Process and index an intercepted request."""
+        self.captured_requests.append(req)
         parsed = urlparse(req.url)
         path = parsed.path or "/"
         method = req.method.lower()
@@ -95,3 +97,82 @@ class MobileApiCataloger:
         data = self.export_openapi_json()
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+
+    def export_har_json(self) -> Dict[str, Any]:
+        """Convert captured HTTP transactions into HAR 1.2 format."""
+        from datetime import datetime, timezone
+
+        entries = []
+        for req in self.captured_requests:
+            req_headers = [{"name": k, "value": str(v)} for k, v in req.headers.items()]
+            query_strings = [{"name": k, "value": str(v)} for k, v in req.query_params.items()]
+
+            post_data = None
+            if req.body is not None:
+                content_type = req.headers.get("Content-Type", req.headers.get("content-type", "application/octet-stream"))
+                post_data = {
+                    "mimeType": content_type,
+                    "text": req.body,
+                }
+
+            res_content: Dict[str, Any] = {
+                "size": len(req.response_body.encode("utf-8")) if req.response_body else 0,
+                "mimeType": "application/json",
+            }
+            if req.response_body is not None:
+                res_content["text"] = req.response_body
+
+            entry: Dict[str, Any] = {
+                "startedDateTime": datetime.now(timezone.utc).isoformat(),
+                "time": 20,
+                "request": {
+                    "method": req.method.upper(),
+                    "url": req.url,
+                    "httpVersion": "HTTP/1.1",
+                    "cookies": [],
+                    "headers": req_headers,
+                    "queryString": query_strings,
+                    "headersSize": -1,
+                    "bodySize": len(req.body.encode("utf-8")) if req.body else 0,
+                },
+                "response": {
+                    "status": req.response_status,
+                    "statusText": "OK" if req.response_status < 400 else "Error",
+                    "httpVersion": "HTTP/1.1",
+                    "cookies": [],
+                    "headers": [],
+                    "content": res_content,
+                    "redirectURL": "",
+                    "headersSize": -1,
+                    "bodySize": res_content["size"],
+                },
+                "cache": {},
+                "timings": {
+                    "send": 0,
+                    "wait": 20,
+                    "receive": 0,
+                },
+            }
+            if post_data:
+                entry["request"]["postData"] = post_data
+
+            entries.append(entry)
+
+        return {
+            "log": {
+                "version": "1.2",
+                "creator": {
+                    "name": "MobileAg Dynamic Traffic Auditor",
+                    "version": self.version,
+                },
+                "pages": [],
+                "entries": entries,
+            }
+        }
+
+    def save_har(self, output_path: str) -> None:
+        """Save captured traffic to HAR 1.2 JSON file."""
+        data = self.export_har_json()
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+

@@ -142,8 +142,76 @@ class MobileSbomGenerator:
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
+    def generate_cyclonedx_xml(self) -> str:
+        """Generate CycloneDX v1.5 XML formatted SBOM."""
+        import xml.etree.ElementTree as ET
+
+        serial_number = f"urn:uuid:{uuid.uuid4()}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        ns = "http://cyclonedx.org/schema/bom/1.5"
+        root = ET.Element("bom", {
+            "xmlns": ns,
+            "serialNumber": serial_number,
+            "version": "1",
+        })
+
+        metadata = ET.SubElement(root, "metadata")
+        ts_elem = ET.SubElement(metadata, "timestamp")
+        ts_elem.text = timestamp
+
+        tools = ET.SubElement(metadata, "tools")
+        tool = ET.SubElement(tools, "tool")
+        vendor = ET.SubElement(tool, "vendor")
+        vendor.text = "MobileAg"
+        name = ET.SubElement(tool, "name")
+        name.text = "MobileAg Security Scanner"
+        ver = ET.SubElement(tool, "version")
+        ver.text = "0.1.0"
+
+        app_comp = ET.SubElement(metadata, "component", {"type": "application"})
+        app_name_elem = ET.SubElement(app_comp, "name")
+        app_name_elem.text = self.app_name
+        app_ver_elem = ET.SubElement(app_comp, "version")
+        app_ver_elem.text = self.app_version
+
+        components = ET.SubElement(root, "components")
+        for c in self.components:
+            comp_elem = ET.SubElement(components, "component", {"type": c.component_type})
+            c_name = ET.SubElement(comp_elem, "name")
+            c_name.text = c.name
+            c_ver = ET.SubElement(comp_elem, "version")
+            c_ver.text = c.version
+            c_purl = ET.SubElement(comp_elem, "purl")
+            c_purl.text = c.purl
+            c_scope = ET.SubElement(comp_elem, "scope")
+            c_scope.text = c.scope
+
+            if c.hashes:
+                hashes_elem = ET.SubElement(comp_elem, "hashes")
+                for alg, h_val in c.hashes.items():
+                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg.upper()})
+                    h_elem.text = h_val
+
+            if c.licenses:
+                licenses_elem = ET.SubElement(comp_elem, "licenses")
+                for lic in c.licenses:
+                    license_elem = ET.SubElement(licenses_elem, "license")
+                    id_elem = ET.SubElement(license_elem, "id")
+                    id_elem.text = lic
+
+        ET.indent(root, space="  ")
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+    def save_cyclonedx_xml(self, output_path: str | Path) -> None:
+        """Write CycloneDX XML to disk."""
+        xml_data = self.generate_cyclonedx_xml()
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(xml_data)
+
     def save_spdx(self, output_path: str | Path) -> None:
         """Write SPDX JSON to disk."""
         data = self.generate_spdx_json()
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+

@@ -332,4 +332,136 @@ def test_web_export_endpoints_cyclonedx_xml_spdx_har():
     assert har_json["log"]["entries"][0]["request"]["url"] == "https://api.demo.com/v1/profile"
 
 
+def test_token_session_auditor_jwt_claims_and_entropy():
+    import base64
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+
+    # 1. JWT with 'none' algorithm and missing exp
+    hdr_none = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode().rstrip("=")
+    pay_plain = base64.urlsafe_b64encode(json.dumps({"sub": "user123", "password": "supersecretpassword"}).encode()).decode().rstrip("=")
+    jwt_insecure = f"{hdr_none}.{pay_plain}.sig"
+
+    findings = auditor.audit_token(jwt_insecure)
+    cwe_ids = [f.cwe_id for f in findings]
+    assert "CWE-347" in cwe_ids  # alg none
+    assert "CWE-613" in cwe_ids  # missing exp
+    assert "CWE-312" in cwe_ids  # password in payload
+
+    # 2. Low entropy token
+    low_ent_findings = auditor.audit_token("aaaaaaaaaaaaaaaa")
+    assert any(f.cwe_id == "CWE-330" for f in low_ent_findings)
+
+
+def test_token_session_auditor_transactions_and_logout_reuse():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    auditor = MobileTokenSessionAuditor()
+    txs = [
+        # 1. Cleartext HTTP transmission with token
+        CapturedRequest(
+            method="GET",
+            url="http://insecure.example.com/api/profile",
+            headers={"Authorization": "Bearer secret_session_token_xyz_123"},
+        ),
+        # 2. Token in query parameter
+        CapturedRequest(
+            method="GET",
+            url="https://api.example.com/data?auth_token=super_secret_query_tok_123",
+        ),
+        # 3. Logout request
+        CapturedRequest(
+            method="POST",
+            url="https://api.example.com/logout",
+            headers={"Authorization": "Bearer tok_to_revoke_123"},
+            response_status=200,
+        ),
+        # 4. Token reused after logout
+        CapturedRequest(
+            method="GET",
+            url="https://api.example.com/v1/dashboard",
+            headers={"Authorization": "Bearer tok_to_revoke_123"},
+            response_status=200,
+        ),
+    ]
+
+    findings = auditor.audit_transactions(txs)
+    cwe_ids = [f.cwe_id for f in findings]
+    assert "CWE-319" in cwe_ids  # Cleartext HTTP
+    assert "CWE-598" in cwe_ids  # Query token
+    assert "CWE-613" in cwe_ids  # Logout reuse
+
+
+def test_api_security_tester_get_token_auditor():
+    from mobileag.dast.api_security_tester import APISecurityTester
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    tester = APISecurityTester()
+    auditor = tester.get_token_auditor()
+    assert isinstance(auditor, MobileTokenSessionAuditor)
+
+
+def test_sbom_vulnerability_attachment():
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    import xml.etree.ElementTree as ET
+
+    gen = MobileSbomGenerator(app_name="VulnApp", app_version="1.0.0")
+    gen.add_component(
+        name="okhttp",
+        version="3.12.0",
+        purl="pkg:maven/com.squareup.okhttp3/okhttp@3.12.0",
+    )
+    gen.add_vulnerability(
+        vuln_id="CVE-2021-0341",
+        purl="pkg:maven/com.squareup.okhttp3/okhttp@3.12.0",
+        description="Certificate hostname verification bypass vulnerability.",
+        severity="high",
+        cwe_ids=["CWE-295"],
+    )
+
+    # Check CycloneDX JSON
+    cdx_json = gen.generate_cyclonedx_json()
+    assert "vulnerabilities" in cdx_json
+    assert cdx_json["vulnerabilities"][0]["id"] == "CVE-2021-0341"
+    assert cdx_json["vulnerabilities"][0]["ratings"][0]["severity"] == "high"
+
+    # Check CycloneDX XML
+    cdx_xml = gen.generate_cyclonedx_xml()
+    assert "<vulnerabilities>" in cdx_xml
+    assert "<id>CVE-2021-0341</id>" in cdx_xml
+    root = ET.fromstring(cdx_xml)
+    assert any(child.tag.endswith("vulnerabilities") for child in root)
+
+
+def test_web_endpoint_token_audit():
+    from fastapi.testclient import TestClient
+    from mobileag.web.app import app, ACTIVE_SCANS
+
+    scan_id = "test_scan_tokens_002"
+    ACTIVE_SCANS[scan_id] = {
+        "id": scan_id,
+        "scan_id": scan_id,
+        "status": "running",
+        "app_name": "TokenTestApp",
+        "api_endpoints": [
+            {
+                "method": "GET",
+                "url": "http://api.insecure.com/users",
+                "headers": {"Authorization": "Bearer weak_cleartext_token_abc"},
+            }
+        ],
+    }
+
+    client = TestClient(app, headers={"Authorization": "Bearer " + app.state.auth_token})
+    res = client.get(f"/api/scans/{scan_id}/tokens/audit")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["token_findings_count"] >= 1
+    assert any(f["cwe_id"] == "CWE-319" for f in data["findings"])
+
+
+
 

@@ -247,6 +247,18 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   3. Replay requests for User A's resources using User B's authentication tokens.
   4. If the server returns HTTP 200 with User A's private data, generate a verified BOLA/IDOR finding with full HTTP request/response evidence.
 
+### 5.3 Mobile Token & Session Lifecycle Auditor
+* **Objective**: Audit mobile authentication tokens, JWT lifecycle claims, cleartext transmission, and session revocation.
+* **Target Files**:
+  - `mobileag/dast/token_session_auditor.py` (New)
+  - `mobileag/dast/api_security_tester.py` (Enhancement)
+* **Technical Implementation**:
+  1. Parse JWT header and payload claims to flag insecure algorithm `none` (CWE-347) and weak symmetric keys (CWE-327).
+  2. Inspect expiration claims (`exp`, `iat`) to detect missing expiration, expired tokens in use, or excessive lifetimes (CWE-613).
+  3. Flag cleartext HTTP transmission of authorization tokens (CWE-319) and tokens passed in URL query strings (CWE-598).
+  4. Detect session token reuse after logout or de-authentication requests (CWE-613).
+  5. Calculate Shannon entropy to identify predictable, low-entropy session IDs (CWE-330).
+
 ---
 
 ## 6. Binary Hardening & RASP Resilience Scoring
@@ -354,21 +366,21 @@ Timeline & Execution Status [100% COMPLETE]
 ├── Phase 3: IPC Fuzzing & API Testing [COMPLETED]
 │   ├── [x] Deep Link & ContentProvider Fuzzers (`deeplink_intent_fuzzer.py`, `provider_fuzzer.py`)
 │   ├── [x] Automated PoC Synthesizer (`poc_apk_synthesizer.py`)
-│   └── [x] BOLA / IDOR Fuzzer & OpenAPI Exporter (`bola_fuzzer.py`, `api_cataloger.py`)
+│   └── [x] BOLA / IDOR Fuzzer, OpenAPI & Token Auditor (`bola_fuzzer.py`, `api_cataloger.py`, `token_session_auditor.py`)
 ├── Phase 4: RASP, SBOM & Automation [COMPLETED]
 │   ├── [x] 6-Vector MASVS-RESILIENCE Scoring (`rasp_resilience_auditor.py`)
 │   ├── [x] Smart Dynamic Crawler (`smart_crawler.py`)
 │   └── [x] CycloneDX SBOM & Privacy Manifest Auditors (`sbom_generator.py`, `privacy_manifest_auditor.py`)
 └── Phase 5: Dashboard & Production Release [COMPLETED]
     ├── [x] WebSocket Telemetry & Graph Visualization (`app.py`, `workspace.js`, Vis.js attack surface)
-    └── [x] SARIF 2.1.0 & Professional Reporting Gates (`sarif_exporter.py`, 875/875 tests passing)
+    └── [x] SARIF 2.1.0 & Professional Reporting Gates (`sarif_exporter.py`, 880/880 tests passing)
 ```
 
 ---
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & Integration Tests**: 875 unit and regression tests passing with 100% pass rate across `tests/`.
+1. **Unit & Integration Tests**: 880 unit and regression tests passing with 100% pass rate across `tests/`.
 2. **Synthetic Regression Corpora**: Validated against benchmark synthetic APK artifacts with zero false-positive leakage.
 3. **Fail-Closed Evidence Standard**: Verified fail-closed bindings across all analyzers; provisional candidates clearly delineated from confirmed attestations.
 

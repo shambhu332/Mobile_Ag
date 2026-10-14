@@ -73,3 +73,9 @@ class APISecurityTester:
         from mobileag.dast.bola_fuzzer import BolaFuzzer
         return BolaFuzzer()
 
+    def get_token_auditor(self) -> Any:
+        """Return a MobileTokenSessionAuditor for token lifecycle and session auditing."""
+        from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+        return MobileTokenSessionAuditor()
+
+

@@ -6,6 +6,7 @@ embedded native shared libraries, and build metadata.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ class MobileSbomGenerator:
         self.app_name = app_name
         self.app_version = app_version
         self.components: List[SbomComponent] = []
+        self.vulnerabilities: List[Dict[str, Any]] = []
 
     def add_component(
         self,
@@ -53,6 +55,24 @@ class MobileSbomGenerator:
         )
         self.components.append(comp)
 
+    def add_vulnerability(
+        self,
+        vuln_id: str,
+        purl: str,
+        description: str = "",
+        severity: str = "medium",
+        cwe_ids: Optional[List[str]] = None,
+    ) -> None:
+        """Attach an OSV/CVE security advisory to an inventoried component."""
+        self.vulnerabilities.append({
+            "id": vuln_id,
+            "purl": purl,
+            "description": description,
+            "severity": severity,
+            "cwe_ids": cwe_ids or [],
+        })
+
+
     def generate_cyclonedx_json(self) -> Dict[str, Any]:
         """Generate CycloneDX v1.5 JSON formatted SBOM."""
         serial_number = f"urn:uuid:{uuid.uuid4()}"
@@ -73,7 +93,7 @@ class MobileSbomGenerator:
                 comp_entry["licenses"] = [{"license": {"id": lic}} for lic in c.licenses]
             cyclonedx_components.append(comp_entry)
 
-        return {
+        res = {
             "bomFormat": "CycloneDX",
             "specVersion": "1.5",
             "serialNumber": serial_number,
@@ -95,6 +115,26 @@ class MobileSbomGenerator:
             },
             "components": cyclonedx_components,
         }
+
+        if self.vulnerabilities:
+            cyclonedx_vulns = []
+            for v in self.vulnerabilities:
+                v_entry: Dict[str, Any] = {
+                    "id": v["id"],
+                    "description": v["description"],
+                    "ratings": [{"severity": v["severity"].lower()}],
+                    "affects": [{"ref": v["purl"]}],
+                }
+                if v.get("cwe_ids"):
+                    v_entry["cwes"] = [
+                        int(re.sub(r"[^\d]", "", cwe))
+                        for cwe in v["cwe_ids"]
+                        if re.sub(r"[^\d]", "", cwe)
+                    ]
+                cyclonedx_vulns.append(v_entry)
+            res["vulnerabilities"] = cyclonedx_vulns
+
+        return res
 
     def generate_spdx_json(self) -> Dict[str, Any]:
         """Generate SPDX 2.3 JSON formatted SBOM."""
@@ -199,6 +239,24 @@ class MobileSbomGenerator:
                     license_elem = ET.SubElement(licenses_elem, "license")
                     id_elem = ET.SubElement(license_elem, "id")
                     id_elem.text = lic
+
+        if self.vulnerabilities:
+            vulns_elem = ET.SubElement(root, "vulnerabilities")
+            for v in self.vulnerabilities:
+                v_elem = ET.SubElement(vulns_elem, "vulnerability")
+                id_elem = ET.SubElement(v_elem, "id")
+                id_elem.text = v["id"]
+                if v.get("description"):
+                    desc_elem = ET.SubElement(v_elem, "description")
+                    desc_elem.text = v["description"]
+                ratings = ET.SubElement(v_elem, "ratings")
+                rating = ET.SubElement(ratings, "rating")
+                sev = ET.SubElement(rating, "severity")
+                sev.text = v["severity"].lower()
+                affects = ET.SubElement(v_elem, "affects")
+                target = ET.SubElement(affects, "target")
+                ref = ET.SubElement(target, "ref")
+                ref.text = v["purl"]
 
         ET.indent(root, space="  ")
         return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")

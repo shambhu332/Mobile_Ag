@@ -681,6 +681,33 @@ async def get_scan_har(scan_id: str) -> dict[str, Any]:
     return cataloger.export_har_json()
 
 
+@app.get("/api/scans/{scan_id}/tokens/audit")
+async def audit_scan_tokens(scan_id: str) -> dict[str, Any]:
+    """Audit captured authentication tokens and session lifecycle."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    auditor = MobileTokenSessionAuditor()
+    apis = scan.get("api_endpoints", [])
+    captured = [
+        CapturedRequest(
+            method=ep.get("method", "GET"),
+            url=ep.get("url") or f"https://api.example.com{ep.get('path', '/')}",
+            headers=ep.get("headers", {}),
+            query_params=ep.get("query_params", {}),
+            response_status=ep.get("status_code", 200),
+        )
+        for ep in apis
+    ]
+    findings = auditor.audit_transactions(captured)
+    return {
+        "scan_id": scan_id,
+        "token_findings_count": len(findings),
+        "findings": [f.model_dump() for f in findings],
+    }
+
+
 @app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")
 async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
     """Generate Kotlin exploit PoC and ADB command for a finding."""

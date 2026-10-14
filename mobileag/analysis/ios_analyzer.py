@@ -493,6 +493,33 @@ class IOSSecurityAnalyzer:
             except Exception as e:
                 logger.debug("MachoBinaryParser optional pass skipped: %s", e)
 
+        privacy_manifest_summary: dict[str, Any] = {}
+        try:
+            from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
+            p_auditor = PrivacyManifestAuditor()
+            p_res = p_auditor.audit_ios_privacy_manifest(temp_extract_dir)
+            if p_res.has_privacy_manifest:
+                privacy_manifest_summary = {
+                    "has_privacy_manifest": True,
+                    "tracking_enabled": p_res.tracking_enabled,
+                    "tracking_domains": p_res.tracking_domains,
+                    "declared_api_categories": p_res.declared_api_categories,
+                }
+                if p_res.tracking_enabled and not p_res.tracking_domains:
+                    all_findings.append(Finding(
+                        id="ios-privacy-001",
+                        title="CWE-359: Privacy Manifest Tracking Enabled Without Declared Tracking Domains",
+                        description="NSPrivacyTracking is enabled in PrivacyInfo.xcprivacy, but no NSPrivacyTrackingDomains are declared.",
+                        severity=Severity.MEDIUM,
+                        cwe_id="CWE-359",
+                        affected_component="PrivacyInfo.xcprivacy",
+                        detection_method="PrivacyManifestAuditor (iOS Privacy Manifest)",
+                        status=FindingStatus.UNVERIFIED,
+                        remediation="Declare all internet domains used for third-party tracking in NSPrivacyTrackingDomains.",
+                    ))
+        except Exception as e:
+            logger.debug("Privacy manifest check skipped: %s", e)
+
         return {
             "app_name": extracted["app_name"],
             "package_name": extracted["package_name"],
@@ -510,4 +537,6 @@ class IOSSecurityAnalyzer:
                 "has_arc": macho_headers.has_arc,
             },
             "swift_metadata": swift_metadata,
+            "privacy_manifest": privacy_manifest_summary,
         }
+

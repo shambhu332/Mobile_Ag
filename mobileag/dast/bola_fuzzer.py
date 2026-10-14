@@ -6,6 +6,7 @@ authorization bypasses and object leaks (OWASP API Security Top 10 API1:2023).
 from __future__ import annotations
 
 import re
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import urllib.parse
@@ -21,6 +22,8 @@ class BolaTestResult:
     evidence_reason: str
     request_headers: Dict[str, str] = field(default_factory=dict)
     response_body_preview: str = ""
+    response_sha256: str = ""
+    marker_observed: bool = False
 
 
 class BolaFuzzer:
@@ -59,15 +62,20 @@ class BolaFuzzer:
         """Evaluate whether a request made with User B's token leaked User A's private data."""
         is_vuln = False
         reason = "Access denied or safe behavior observed."
+        marker_observed = bool(user_a_marker and user_a_marker in response_body)
 
         if status_code in {200, 206}:
-            # If request returned HTTP 200 and explicitly reflects user A's private identifier or marker
-            if user_a_marker and user_a_marker in response_body:
+            # A successful response alone cannot establish that the object is
+            # private or belongs to account A. Require an independently known,
+            # synthetic account-A canary to be reflected by account B's response.
+            if marker_observed:
                 is_vuln = True
-                reason = f"Endpoint responded with HTTP 200 and leaked User A's private identifier '{user_a_marker}' to User B."
-            elif len(response_body) > 10 and "unauthorized" not in response_body.lower() and "error" not in response_body.lower():
-                is_vuln = True
-                reason = f"Endpoint returned HTTP 200 with object data for ID '{resource_id}' using non-owner credentials."
+                reason = "Endpoint returned User A's synthetic canary in User B's response; canary value omitted."
+            else:
+                reason = (
+                    "HTTP success observed, but no researcher-provided User A canary matched; "
+                    "object ownership and confidentiality are unverified."
+                )
         elif status_code in {401, 403}:
             reason = f"Proper authorization enforcement observed (HTTP {status_code})."
         elif status_code == 404:
@@ -80,5 +88,11 @@ class BolaFuzzer:
             status_code=status_code,
             is_vulnerable=is_vuln,
             evidence_reason=reason,
-            response_body_preview=response_body[:200] if response_body else "",
+            # Avoid retaining potentially real account data. Digest, status,
+            # and the explicit synthetic-canary match are sufficient for a
+            # bounded observation record; raw HTTP evidence belongs in an
+            # authorized, separately redacted capture store.
+            response_body_preview="",
+            response_sha256=hashlib.sha256(response_body.encode("utf-8", errors="replace")).hexdigest(),
+            marker_observed=marker_observed,
         )

@@ -6,8 +6,9 @@ via ADB, capturing logcat output, activity manager results, and crash tombstones
 from __future__ import annotations
 
 import subprocess
+import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 
 @dataclass
@@ -53,12 +54,37 @@ class DeepLinkIntentFuzzer:
 
         return mutations
 
-    def execute_fuzz_case(self, target_uri: str, package_name: Optional[str] = None, timeout: float = 5.0) -> FuzzResult:
-        """Execute a single fuzz case using ADB and inspect output."""
-        cmd = [self.adb_path, "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", target_uri]
+    def execute_fuzz_case(
+        self,
+        target_uri: str,
+        package_name: Optional[str] = None,
+        timeout: float = 5.0,
+        *,
+        serial: Optional[str] = None,
+        guard: Optional[Callable[[], None]] = None,
+    ) -> FuzzResult:
+        """Execute one bounded case only after caller scope checks pass.
+
+        There is deliberately no implicit ADB device selection. ``guard`` must
+        revalidate the caller's exact authorized device/package/action scope
+        immediately before execution. This helper does not itself establish
+        authorization or prove a vulnerability.
+        """
+        if not serial or not serial.strip() or guard is None:
+            return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+        if not 0 < timeout <= 15 or not target_uri or len(target_uri) > 4096:
+            return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
+        if package_name is not None and not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name):
+            return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
+
+        cmd = [self.adb_path, "-s", serial.strip(), "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", target_uri]
         if package_name:
             cmd.extend(["-p", package_name])
 
+        try:
+            guard()
+        except Exception:
+            return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             output = res.stdout + res.stderr

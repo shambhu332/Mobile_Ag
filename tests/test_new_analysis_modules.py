@@ -75,6 +75,25 @@ def test_pending_intent_auditor():
         assert len(mutable) == 1
 
 
+def test_pending_intent_parser_handles_multiline_nested_calls_and_ignores_comments(tmp_path):
+    path = tmp_path / "Sample.kt"
+    path.write_text('''
+        // PendingIntent.getActivity(ctx, 0, intent, 0) -- comment only
+        val text = "PendingIntent.getActivity(ctx, 0, i, 0)"
+        val missing = PendingIntent.getActivity(
+            ctx,
+            requestCode,
+            Intent(ctx, Target::class.java).apply { putExtra("x", nested(1, 2)) },
+            0
+        )
+        val immutable = PendingIntent.getBroadcast(ctx, 0, intent,
+            PendingIntent.FLAG_IMMUTABLE)
+    ''')
+    findings = PendingIntentAuditor().audit_file(path)
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
 def test_intent_redirection_auditor():
     with tempfile.TemporaryDirectory() as tmp_dir:
         java_code = """
@@ -209,6 +228,32 @@ def test_deeplink_fuzzer_mutations():
     assert len(mutations) > 5
     assert any("https://attacker.com" in m for m in mutations)
     assert any("javascript:" in m for m in mutations)
+
+
+def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+    from mobileag.dast.deeplink_intent_fuzzer import DeepLinkIntentFuzzer
+
+    called = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: called.append((a, kw)) or SimpleNamespace(
+        stdout="Status: ok", stderr="", returncode=0
+    ))
+    fuzzer = DeepLinkIntentFuzzer()
+    assert fuzzer.execute_fuzz_case("https://example.test/path").status == "BLOCKED_SCOPE"
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=lambda: None
+    ).status == "SUCCESS"
+    args, _ = called[0]
+    assert args[0][:3] == ["adb", "-s", "device-1"]
+
+    def deny():
+        raise PermissionError("scope revoked")
+
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=deny
+    ).status == "BLOCKED_SCOPE"
+    assert len(called) == 1
 
 
 def test_mobile_api_cataloger():

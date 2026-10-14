@@ -27,9 +27,63 @@ class PendingIntentAuditor:
 
     def __init__(self):
         self._factory_pattern = re.compile(
-            r"PendingIntent\.(getActivity|getActivities|getBroadcast|getService|getForegroundService)\s*\((.*?)\)",
-            re.DOTALL,
+            r"\bPendingIntent\s*\.\s*(getActivity|getActivities|getBroadcast|getService|getForegroundService)\s*\("
         )
+
+    @staticmethod
+    def _mask_comments_and_strings(source: str) -> str:
+        """Mask lexical trivia while retaining offsets and newlines."""
+        out = list(source)
+        i = 0
+        while i < len(source):
+            if source.startswith("//", i):
+                end = source.find("\n", i)
+                end = len(source) if end < 0 else end
+                for j in range(i, end): out[j] = " "
+                i = end
+            elif source.startswith("/*", i):
+                end = source.find("*/", i + 2)
+                end = len(source) if end < 0 else end + 2
+                for j in range(i, end):
+                    if source[j] not in "\r\n": out[j] = " "
+                i = end
+            elif source[i] in "\"'":
+                quote = source[i]
+                j = i + 1
+                while j < len(source):
+                    if source[j] == "\\": j += 2
+                    elif source[j] == quote:
+                        j += 1
+                        break
+                    else: j += 1
+                for k in range(i, min(j, len(source))):
+                    if source[k] not in "\r\n": out[k] = " "
+                i = j
+            else:
+                i += 1
+        return "".join(out)
+
+    @staticmethod
+    def _call_end(masked: str, open_paren: int) -> int | None:
+        depth = 0
+        for i in range(open_paren, len(masked)):
+            if masked[i] == "(": depth += 1
+            elif masked[i] == ")":
+                depth -= 1
+                if depth == 0: return i
+        return None
+
+    @staticmethod
+    def _arguments(masked: str, start: int, end: int) -> list[str]:
+        args, arg_start, depth = [], start + 1, 0
+        for i in range(start + 1, end):
+            if masked[i] in "([{": depth += 1
+            elif masked[i] in ")]}": depth -= 1
+            elif masked[i] == "," and depth == 0:
+                args.append(masked[arg_start:i])
+                arg_start = i + 1
+        args.append(masked[arg_start:end])
+        return args
 
     def audit_file(self, file_path: str | Path) -> List[Finding]:
         """Audit a single Java/Kotlin file for PendingIntent vulnerabilities."""
@@ -42,64 +96,48 @@ class PendingIntentAuditor:
         except OSError:
             return findings
 
-        lines = content.splitlines()
-
-        for idx, line in enumerate(lines, 1):
-            if "PendingIntent." not in line:
+        masked = self._mask_comments_and_strings(content)
+        for match in self._factory_pattern.finditer(masked):
+            method = match.group(1)
+            open_paren = match.end() - 1
+            end = self._call_end(masked, open_paren)
+            if end is None:
                 continue
+            args = self._arguments(masked, open_paren, end)
+            final_flags = args[-1] if args else ""
+            has_immutable = bool(re.search(r"\bFLAG_IMMUTABLE\b", final_flags))
+            has_mutable = bool(re.search(r"\bFLAG_MUTABLE\b", final_flags))
+            idx = content.count("\n", 0, match.start()) + 1
 
-            for method in self.FACTORY_METHODS:
-                call_needle = f"PendingIntent.{method}"
-                if call_needle in line:
-                    flags_context = line
-                    # Only look ahead if closing parenthesis is not on current line
-                    if ")" not in line:
-                        for lookahead in range(1, 4):
-                            if idx - 1 + lookahead < len(lines):
-                                flags_context += " " + lines[idx - 1 + lookahead]
-                                if ")" in lines[idx - 1 + lookahead]:
-                                    break
-
-                    # Check for flags in arguments
-                    has_immutable = "FLAG_IMMUTABLE" in flags_context
-                    has_mutable = "FLAG_MUTABLE" in flags_context
-                    has_zero_flag = re.search(r",\s*0\s*\)", flags_context) is not None
-
-                    if not has_immutable and not has_mutable:
-                        findings.append(
-                            Finding(
-                                id=f"PENDING_INTENT_MUTABLE_UNSPECIFIED_{idx}",
-                                title=f"Missing PendingIntent Immutability Flag in {method}()",
-                                description=(
-                                    f"PendingIntent creation at line {idx} omits explicit mutability flags. "
-                                    "On Android 12+ (API 31), apps targeting SDK 31+ must explicitly specify "
-                                    "either FLAG_IMMUTABLE or FLAG_MUTABLE. Omission can allow malicious apps "
-                                    "to mutate intent extras or alter component actions (CWE-927)."
-                                ),
-                                severity=Severity.MEDIUM,
-                                status=FindingStatus.UNVERIFIED,
-                                cwe_id="CWE-927",
-                                file_path=path_str,
-                                line_number=idx,
-                            )
-                        )
-                    elif has_mutable and not has_immutable:
-                        findings.append(
-                            Finding(
-                                id=f"PENDING_INTENT_EXPLICIT_MUTABLE_{idx}",
-                                title=f"Potentially Unsafe FLAG_MUTABLE in PendingIntent.{method}()",
-                                description=(
-                                    f"PendingIntent at line {idx} explicitly uses PendingIntent.FLAG_MUTABLE. "
-                                    "If this PendingIntent is passed to an untrusted application or third-party service, "
-                                    "the recipient can modify the underlying Intent parameters to hijack authorization."
-                                ),
-                                severity=Severity.LOW,
-                                status=FindingStatus.UNVERIFIED,
-                                cwe_id="CWE-927",
-                                file_path=path_str,
-                                line_number=idx,
-                            )
-                        )
+            if has_immutable and has_mutable:
+                title = f"Conflicting PendingIntent mutability flags in {method}()"
+                description = "The final flags expression includes both FLAG_IMMUTABLE and FLAG_MUTABLE; inspect the expression and platform behavior."
+                severity = Severity.INFO
+                finding_id = f"PENDING_INTENT_CONFLICTING_FLAGS_{idx}"
+            elif not has_immutable and not has_mutable:
+                title = f"Missing PendingIntent Mutability Flag in {method}()"
+                description = (
+                    f"PendingIntent creation at line {idx} has no explicit mutability flag in its final argument. "
+                    "Apps targeting Android 12+ must specify mutability. Verify compile/target SDK and platform conditions; "
+                    "this source pattern alone does not demonstrate that another app can mutate the token."
+                )
+                severity = Severity.MEDIUM
+                finding_id = f"PENDING_INTENT_MUTABLE_UNSPECIFIED_{idx}"
+            elif has_mutable and not has_immutable:
+                title = f"Review Mutable PendingIntent in {method}()"
+                description = (
+                    f"PendingIntent at line {idx} explicitly uses FLAG_MUTABLE. Confirm that mutability is required "
+                    "and that untrusted recipients cannot influence security-sensitive fill-in fields."
+                )
+                severity = Severity.LOW
+                finding_id = f"PENDING_INTENT_EXPLICIT_MUTABLE_{idx}"
+            else:
+                continue
+            findings.append(Finding(
+                id=finding_id, title=title, description=description, severity=severity,
+                status=FindingStatus.UNVERIFIED, cwe_id="CWE-927", file_path=path_str,
+                line_number=idx,
+            ))
 
         return findings
 

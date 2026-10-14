@@ -23,6 +23,14 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert any(f.metadata.get("tag") == "root-path" and f.severity == "HIGH" for f in result.findings)
     assert any(f.metadata.get("tag") == "external-path" and f.severity == "MEDIUM" for f in result.findings)
 
+    # A root-relative subdirectory is not the whole filesystem and should not
+    # inherit the broad-root finding solely because of its tag.
+    narrow = '<paths><root-path name="limited" path="cache/mobileag/" /></paths>'
+    assert FileProviderAuditor().audit_xml_content(narrow).findings == []
+    first_id = result.findings[0].id
+    second_id = auditor.audit_xml_content(xml_content, "res/xml/file_paths.xml").findings[0].id
+    assert first_id == second_id
+
 
 def test_unpinning_engine_generates_multi_layer_script():
     engine = UnpinningEngine()
@@ -93,6 +101,10 @@ def test_bola_fuzzer_candidate_extraction_and_discrepancy():
         user_a_marker="victim@example.com",
     )
     assert res_vuln.is_vulnerable is True
+    assert res_vuln.marker_observed is True
+    assert "victim@example.com" not in res_vuln.evidence_reason
+    assert res_vuln.response_body_preview == ""
+    assert len(res_vuln.response_sha256) == 64
 
     # Negative test: 403 Forbidden
     res_safe = fuzzer.evaluate_response_discrepancy(
@@ -103,6 +115,31 @@ def test_bola_fuzzer_candidate_extraction_and_discrepancy():
         response_body='{"error": "Forbidden"}',
     )
     assert res_safe.is_vulnerable is False
+
+    # HTTP 200 with arbitrary response content is not enough to prove BOLA.
+    ambiguous = fuzzer.evaluate_response_discrepancy(
+        endpoint="/v1/orders/order_123", method="GET", resource_id="order_123",
+        status_code=200, response_body='{"status":"ok","id":"order_123"}',
+    )
+    assert ambiguous.is_vulnerable is False
+    assert ambiguous.marker_observed is False
+    assert "ownership and confidentiality are unverified" in ambiguous.evidence_reason
+
+
+def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
+    from types import SimpleNamespace
+    import mobileag.dast.provider_fuzzer as provider_module
+
+    monkeypatch.setattr(
+        provider_module.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="Row: 0 _id=1 name=synthetic", stderr=""),
+    )
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    traversal = fuzzer.fuzz_provider_traversal("com.example.provider", "com.example.app")
+    sql = fuzzer.fuzz_provider_sqli("com.example.provider")
+    assert traversal[0].status == "OBSERVED_READABLE"
+    assert sql[0].status == "QUERY_RESULT_OBSERVED"
+    assert all("VULNERABLE" not in item.status for item in traversal + sql)
 
 
 def test_poc_synthesizer_task_hijacking_and_provider_sqli():
@@ -174,6 +211,22 @@ def test_traffic_auditor_catalog_and_shadow_api():
     shadow_findings = auditor.find_shadow_apis(txs, declared)
     assert len(shadow_findings) == 1
     assert "/v1/hidden/debug" in shadow_findings[0].affected_component
+
+
+def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", "https://alice:secret@api-one.example/v1/items"))
+    catalog.ingest_request(CapturedRequest("GET", "https://api-two.example/v1/items"))
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/v1/items"]["get"]
+    assert operation["servers"] == [
+        {"url": "https://api-one.example"}, {"url": "https://api-two.example"}
+    ]
+    assert "alice" not in json.dumps(spec)
+    assert "secret" not in json.dumps(spec)
 
 
 def test_dependency_scanner_sbom_generation():
@@ -268,6 +321,8 @@ def test_har_exporter(tmp_path):
     assert entry["request"]["method"] == "POST"
     assert entry["request"]["url"] == "https://api.payment.com/v2/charge"
     assert entry["request"]["postData"]["text"] == '{"amount": 5000, "currency": "USD"}'
+    assert "tok_123" not in json.dumps(entry)
+    assert any(h["name"] == "Authorization" and h["value"] == "[REDACTED]" for h in entry["request"]["headers"])
     assert entry["response"]["status"] == 201
     assert "ch_9841" in entry["response"]["content"]["text"]
 
@@ -278,6 +333,29 @@ def test_har_exporter(tmp_path):
     with open(har_file, "r", encoding="utf-8") as f:
         loaded = json.load(f)
     assert loaded["log"]["version"] == "1.2"
+
+
+def test_har_exporter_redacts_auth_fields_in_url_and_bodies():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        method="POST",
+        url="https://api.example.test/path?access_token=syntheticUrlSecret",
+        headers={"Authorization": "Bearer syntheticBearerCredential"},
+        query_params={"refresh_token": "syntheticRefreshSecret", "page": "1"},
+        body='{"password":"syntheticPassword","amount":3}',
+        response_body='{"access_token":"syntheticResponseToken","ok":true}',
+    ))
+    har = catalog.export_har_json()
+    exported = json.dumps(har)
+    for secret in ("syntheticUrlSecret", "syntheticBearerCredential", "syntheticRefreshSecret",
+                   "syntheticPassword", "syntheticResponseToken"):
+        assert secret not in exported
+    entry = har["log"]["entries"][0]
+    assert json.loads(entry["request"]["postData"]["text"])["amount"] == 3
+    assert {q["name"]: q["value"] for q in entry["request"]["queryString"]}["page"] == "1"
 
 
 def test_web_export_endpoints_cyclonedx_xml_spdx_har():
@@ -427,6 +505,8 @@ def test_sbom_vulnerability_attachment():
     assert "vulnerabilities" in cdx_json
     assert cdx_json["vulnerabilities"][0]["id"] == "CVE-2021-0341"
     assert cdx_json["vulnerabilities"][0]["ratings"][0]["severity"] == "high"
+    component_ref = cdx_json["components"][0]["bom-ref"]
+    assert cdx_json["vulnerabilities"][0]["affects"][0]["ref"] == component_ref
 
     # Check CycloneDX XML
     cdx_xml = gen.generate_cyclonedx_xml()
@@ -434,6 +514,10 @@ def test_sbom_vulnerability_attachment():
     assert "<id>CVE-2021-0341</id>" in cdx_xml
     root = ET.fromstring(cdx_xml)
     assert any(child.tag.endswith("vulnerabilities") for child in root)
+    component = next(el for el in root.iter() if el.tag.endswith("component") and el.get("type") == "library")
+    target_ref = next(el.text for el in root.iter() if el.tag.endswith("ref"))
+    assert target_ref == component.get("bom-ref")
+    assert "<scope>required</scope>" in cdx_xml
 
 
 def test_web_endpoint_token_audit():

@@ -6,6 +6,7 @@ embedded native shared libraries, and build metadata.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -72,6 +73,11 @@ class MobileSbomGenerator:
             "cwe_ids": cwe_ids or [],
         })
 
+    def _component_refs(self) -> list[str]:
+        """Create stable, document-local unique CycloneDX component references."""
+        return [f"mobileag-component-{index}-{hashlib.sha256(c.purl.encode('utf-8')).hexdigest()[:12]}"
+                for index, c in enumerate(self.components, 1)]
+
 
     def generate_cyclonedx_json(self) -> Dict[str, Any]:
         """Generate CycloneDX v1.5 JSON formatted SBOM."""
@@ -79,8 +85,10 @@ class MobileSbomGenerator:
         timestamp = datetime.now(timezone.utc).isoformat()
 
         cyclonedx_components = []
-        for c in self.components:
+        component_refs = self._component_refs()
+        for c, bom_ref in zip(self.components, component_refs):
             comp_entry: Dict[str, Any] = {
+                "bom-ref": bom_ref,
                 "type": c.component_type,
                 "name": c.name,
                 "version": c.version,
@@ -119,11 +127,14 @@ class MobileSbomGenerator:
         if self.vulnerabilities:
             cyclonedx_vulns = []
             for v in self.vulnerabilities:
+                component_index = next((i for i, c in enumerate(self.components) if c.purl == v["purl"]), None)
+                if component_index is None:
+                    continue
                 v_entry: Dict[str, Any] = {
                     "id": v["id"],
                     "description": v["description"],
                     "ratings": [{"severity": v["severity"].lower()}],
-                    "affects": [{"ref": v["purl"]}],
+                    "affects": [{"ref": component_refs[component_index]}],
                 }
                 if v.get("cwe_ids"):
                     v_entry["cwes"] = [
@@ -216,16 +227,17 @@ class MobileSbomGenerator:
         app_ver_elem.text = self.app_version
 
         components = ET.SubElement(root, "components")
-        for c in self.components:
-            comp_elem = ET.SubElement(components, "component", {"type": c.component_type})
+        component_refs = self._component_refs()
+        for c, bom_ref in zip(self.components, component_refs):
+            comp_elem = ET.SubElement(components, "component", {"type": c.component_type, "bom-ref": bom_ref})
             c_name = ET.SubElement(comp_elem, "name")
             c_name.text = c.name
             c_ver = ET.SubElement(comp_elem, "version")
             c_ver.text = c.version
-            c_purl = ET.SubElement(comp_elem, "purl")
-            c_purl.text = c.purl
             c_scope = ET.SubElement(comp_elem, "scope")
             c_scope.text = c.scope
+            c_purl = ET.SubElement(comp_elem, "purl")
+            c_purl.text = c.purl
 
             if c.hashes:
                 hashes_elem = ET.SubElement(comp_elem, "hashes")
@@ -243,20 +255,29 @@ class MobileSbomGenerator:
         if self.vulnerabilities:
             vulns_elem = ET.SubElement(root, "vulnerabilities")
             for v in self.vulnerabilities:
+                component_index = next((i for i, c in enumerate(self.components) if c.purl == v["purl"]), None)
+                if component_index is None:
+                    continue
                 v_elem = ET.SubElement(vulns_elem, "vulnerability")
                 id_elem = ET.SubElement(v_elem, "id")
                 id_elem.text = v["id"]
-                if v.get("description"):
-                    desc_elem = ET.SubElement(v_elem, "description")
-                    desc_elem.text = v["description"]
                 ratings = ET.SubElement(v_elem, "ratings")
                 rating = ET.SubElement(ratings, "rating")
                 sev = ET.SubElement(rating, "severity")
                 sev.text = v["severity"].lower()
+                if v.get("cwe_ids"):
+                    cwes_elem = ET.SubElement(v_elem, "cwes")
+                    for cwe in v["cwe_ids"]:
+                        digits = re.sub(r"[^\d]", "", cwe)
+                        if digits:
+                            ET.SubElement(cwes_elem, "cwe").text = digits
+                if v.get("description"):
+                    desc_elem = ET.SubElement(v_elem, "description")
+                    desc_elem.text = v["description"]
                 affects = ET.SubElement(v_elem, "affects")
                 target = ET.SubElement(affects, "target")
                 ref = ET.SubElement(target, "ref")
-                ref.text = v["purl"]
+                ref.text = component_refs[component_index]
 
         ET.indent(root, space="  ")
         return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")

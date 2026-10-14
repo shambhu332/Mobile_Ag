@@ -136,8 +136,12 @@ class UICrawler:
         return {**base, "status": "observed", "screens_explored": 1, "planned_actions": plans,
                 "reason": "Read-only snapshot; no taps, consent, text input or transactions were performed"}
 
-    def get_smart_crawler(self, test_user: str = "testuser@example.com", test_pass: str = "TestPass123!") -> Any:
-        """Instantiate an autonomous SmartUICrawler instance."""
+    def get_smart_crawler(self, test_user: str | None = None, test_pass: str | None = None,
+                          allow_form_submit: bool = False,
+                          allow_exploratory_clicks: bool = False) -> Any:
+        """Instantiate a crawler; credentials and state-changing actions are opt-in."""
         from mobileag.dast.smart_crawler import SmartUICrawler
-        return SmartUICrawler(test_user=test_user, test_pass=test_pass)
+        return SmartUICrawler(test_user=test_user, test_pass=test_pass,
+                              allow_form_submit=allow_form_submit,
+                              allow_exploratory_clicks=allow_exploratory_clicks)
 

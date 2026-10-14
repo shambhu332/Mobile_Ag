@@ -6,6 +6,7 @@ external-path mappings, and unsafe grantUriPermissions configurations (CWE-22, C
 from __future__ import annotations
 
 import os
+import hashlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,9 +60,14 @@ class FileProviderAuditor:
             is_dangerous = False
             risk_reason = ""
 
-            if tag == "root-path":
+            if tag == "root-path" and path_val in {".", "", "/"}:
                 is_dangerous = True
                 risk_reason = "root-path exposes root filesystem (/)"
+            elif tag == "root-path":
+                # A narrower root-relative mapping is not equivalent to the
+                # entire filesystem. Record it for review without claiming
+                # broad exposure solely from the tag name.
+                risk_reason = "root-path maps a restricted root-relative subdirectory; review grants and resolved files"
             elif tag == "external-path" and (path_val in {".", "", "/"}):
                 is_dangerous = True
                 risk_reason = "external-path configured with root or current directory (.) exposing all external storage"
@@ -81,7 +87,9 @@ class FileProviderAuditor:
 
             if is_dangerous:
                 finding = Finding(
-                    id=f"FILEPROVIDER-{abs(hash((source_path, tag, name, path_val))) % 100000:05d}",
+                    id="FILEPROVIDER-" + hashlib.sha256(
+                        "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
+                    ).hexdigest()[:12].upper(),
                     title=f"Insecure FileProvider Path Configuration ({tag})",
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "

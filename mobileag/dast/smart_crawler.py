@@ -35,9 +35,14 @@ class CrawlerDecision:
 class SmartUICrawler:
     """Intelligently navigates Android application UIs based on semantic element detection."""
 
-    def __init__(self, test_user: str = "testuser@example.com", test_pass: str = "P@ssword123!"):
+    def __init__(self, test_user: Optional[str] = None, test_pass: Optional[str] = None,
+                 allow_form_submit: bool = False, allow_exploratory_clicks: bool = False):
+        # Credentials are supplied only by the authorized operator. Never ship
+        # reusable-looking defaults that could be entered into an unintended app.
         self.test_user = test_user
         self.test_pass = test_pass
+        self.allow_form_submit = allow_form_submit
+        self.allow_exploratory_clicks = allow_exploratory_clicks
         self.visited_states: Dict[str, int] = {}  # state_hash -> visit_count
 
     def parse_hierarchy_xml(self, xml_content: str) -> List[UIElement]:
@@ -127,18 +132,18 @@ class SmartUICrawler:
         visits = self.visited_states.get(state_hash, 0)
         self.visited_states[state_hash] = visits + 1
 
-        # Priority 1: Dismiss system permission prompts immediately
+        # OS permission and consent prompts are authorization boundaries. A
+        # classifier may recognize them, but the crawler must not consent.
         for el in elements:
             if el.semantic_role == "permission_allow":
-                return CrawlerDecision(
-                    action="CLICK",
-                    target_bounds=el.bounds,
-                    explanation=f"Auto-dismissing OS permission prompt: {el.text or el.content_desc}",
-                )
+                return CrawlerDecision(action="WAIT", explanation=(
+                    f"Permission/consent prompt requires explicit operator review: "
+                    f"{el.text or el.content_desc}"
+                ))
 
         # Priority 2: Fill empty username fields
         for el in elements:
-            if el.semantic_role == "username" and not el.text:
+            if el.semantic_role == "username" and not el.text and self.test_user:
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -148,7 +153,7 @@ class SmartUICrawler:
 
         # Priority 3: Fill empty password fields
         for el in elements:
-            if el.semantic_role == "password" and not el.text:
+            if el.semantic_role == "password" and not el.text and self.test_pass:
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -156,9 +161,18 @@ class SmartUICrawler:
                     explanation=f"Filling test password into: {el.resource_id or el.class_name}",
                 )
 
+        if any(el.semantic_role == "username" and not el.text for el in elements) and not self.test_user:
+            return CrawlerDecision(action="WAIT", explanation="Username field detected; no operator-supplied test identity")
+        if any(el.semantic_role == "password" and not el.text for el in elements) and not self.test_pass:
+            return CrawlerDecision(action="WAIT", explanation="Password field detected; no operator-supplied test credential")
+
         # Priority 4: Click login/submit if credentials are populated
         for el in elements:
             if el.semantic_role == "submit_button" and el.is_clickable:
+                if not self.allow_form_submit:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Form submission requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="CLICK",
                     target_bounds=el.bounds,
@@ -175,6 +189,10 @@ class SmartUICrawler:
         # Priority 6: Click an unvisited clickable element
         clickables = [e for e in elements if e.is_clickable and e.bounds]
         if clickables:
+            if not self.allow_exploratory_clicks:
+                return CrawlerDecision(action="WAIT", explanation=(
+                    "Exploratory UI interaction is disabled pending explicit operator approval"
+                ))
             target = clickables[visits % len(clickables)]
             return CrawlerDecision(
                 action="CLICK",

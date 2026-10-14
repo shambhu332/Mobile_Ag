@@ -82,7 +82,12 @@ class PrivacyManifestAuditor:
         return result
 
     def audit_android_data_safety_discrepancies(self, manifest_content: str, source_tree_dir: str | Path) -> List[Finding]:
-        """Correlate dangerous permissions with third-party tracking SDKs on Android."""
+        """Emit a review lead for permissions and SDK fingerprints in Android sources.
+
+        This is not a Google Play Data Safety compliance check: APK/source
+        evidence cannot establish what the developer declared in Play Console,
+        which SDK code executes, or whether data is transmitted/shared.
+        """
         findings: List[Finding] = []
         path = Path(source_tree_dir)
 
@@ -109,17 +114,28 @@ class PrivacyManifestAuditor:
             findings.append(
                 Finding(
                     id="GOOGLE_PLAY_DATA_SAFETY_DISCREPANCY",
-                    title="Potential Data Safety Discrepancy: Sensitive Permissions with Third-Party Trackers",
+                    title="Review Data Safety disclosures for sensitive permissions and SDK fingerprints",
                     description=(
-                        f"Application requests sensitive runtime permissions (Location/Contacts) while embedding "
-                        f"third-party analytics/attribution SDKs ({', '.join(sorted(detected_trackers))}). "
-                        "Google Play Data Safety rules mandate explicit declarations of third-party data sharing."
+                        f"Static source/manifest indicators include sensitive permissions and SDK package "
+                        f"fingerprints ({', '.join(sorted(detected_trackers))}). This does not establish that "
+                        "the SDK executes, collects or shares data, nor what was declared in Play Console. "
+                        "Compare the actual Play Console Data Safety declaration with the app's observed "
+                        "data collection/sharing behavior before alleging a discrepancy."
                     ),
-                    severity=Severity.LOW,
+                    severity=Severity.INFO,
                     status=FindingStatus.UNVERIFIED,
-                    cwe_id="CWE-200",
+                    cwe_id="CWE-Unknown",
                     file_path=str(path),
-                    metadata={"trackers": sorted(detected_trackers)},
+                    remediation="Manually review the publisher's current Data Safety declaration and validate SDK behavior using authorized, synthetic-data testing.",
+                    metadata={
+                        "trackers": sorted(detected_trackers),
+                        "evidence_state": "static_candidate",
+                        "compliance_verdict": "not_assessed",
+                        "limitations": [
+                            "Play Console declarations are not present in the APK/source tree",
+                            "package-name matches do not prove SDK execution or data sharing",
+                        ],
+                    },
                 )
             )
 

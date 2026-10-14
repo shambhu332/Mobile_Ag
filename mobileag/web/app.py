@@ -166,14 +166,17 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self.pending = 0
         self.sessions = {}
+        self.subscriptions: dict[WebSocket, str | None] = {}
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, scan_id: str | None = None) -> None:
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.subscriptions[websocket] = scan_id
         logger.info("WebSocket subscriber connected (%d active)", len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.sessions.pop(websocket,None)
+        self.subscriptions.pop(websocket, None)
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
             logger.info("WebSocket subscriber disconnected (%d remaining)", len(self.active_connections))
@@ -181,6 +184,9 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         for connection in list(self.active_connections):
             try:
+                subscribed_scan = self.subscriptions.get(connection)
+                if subscribed_scan is not None and message.get("scan_id") != subscribed_scan:
+                    continue
                 if time.monotonic() >= app.state.session_deadline or not authorized(self.sessions.get(connection),app.state.auth_token):
                     await connection.close(code=1008)
                     self.disconnect(connection)
@@ -195,7 +201,17 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time agent execution stream and live telemetry."""
+    """Authenticated legacy stream for all dashboard telemetry events."""
+    await _telemetry_stream(websocket)
+
+
+@app.websocket("/ws/scans/{scan_id}/telemetry")
+async def websocket_scan_telemetry(websocket: WebSocket, scan_id: str) -> None:
+    """Authenticated scan-specific stream; never delivers another scan's events."""
+    await _telemetry_stream(websocket, scan_id=scan_id)
+
+
+async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) -> None:
     if len(manager.active_connections) + manager.pending >= 32:
         await websocket.close(code=1013)
         return
@@ -211,12 +227,20 @@ async def websocket_telemetry(websocket: WebSocket) -> None:
         return
     finally:
         manager.pending -= 1
+    if scan_id is not None:
+        try:
+            await get_scan_details(scan_id)
+        except HTTPException:
+            await websocket.close(code=1008)
+            return
     manager.active_connections.append(websocket)
     manager.sessions[websocket] = auth["token"]
+    manager.subscriptions[websocket] = scan_id
     try:
         await websocket.send_json({
             "type": "connection_established",
             "message": "Connected to MobileAg Live Telemetry Stream",
+            **({"scan_id": scan_id} if scan_id is not None else {}),
             "timestamp": datetime.now().isoformat(),
             "neo4j_online": attack_graph._connected,
         })

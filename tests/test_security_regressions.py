@@ -87,6 +87,31 @@ def test_websocket_auth(client):
     with client.websocket_connect('/ws/telemetry') as ws:
         ws.send_json({'token':web.app.state.auth_token})
         assert ws.receive_json()['type'] == 'connection_established'
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect('/ws/scans/not-real/telemetry') as ws:
+            ws.send_json({'token':web.app.state.auth_token})
+            ws.receive_json()
+
+
+@pytest.mark.asyncio
+async def test_scan_telemetry_broadcast_isolation():
+    manager = web.ConnectionManager()
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = []
+        async def send_json(self, message):
+            self.messages.append(message)
+        async def close(self, code):
+            self.closed_code = code
+
+    first, second = FakeWebSocket(), FakeWebSocket()
+    token = web.app.state.auth_token
+    manager.active_connections[:] = [first, second]
+    manager.sessions.update({first: token, second: token})
+    manager.subscriptions.update({first: 'scan-one', second: 'scan-two'})
+    await manager.broadcast({'type': 'agent_progress', 'scan_id': 'scan-one', 'message': 'synthetic'})
+    assert [m['scan_id'] for m in first.messages] == ['scan-one']
+    assert second.messages == []
 
 def test_device_scope(client):
     assert client.post('/api/dast/root',json={'serial':'unscoped'}).status_code == 403

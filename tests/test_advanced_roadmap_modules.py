@@ -85,7 +85,7 @@ def test_macho_binary_parser():
 
 
 def test_smart_ui_crawler():
-    crawler = SmartUICrawler(test_user="admin@bank.com", test_pass="Secret123!")
+    crawler = SmartUICrawler(test_user="researcher@example.test", test_pass="Synthetic-Only-123!")
 
     # Simulate permission prompt screen
     perm_xml = """<hierarchy rotation="0">
@@ -95,8 +95,8 @@ def test_smart_ui_crawler():
     </hierarchy>"""
 
     decision1 = crawler.decide_next_action("com.example.app.MainActivity", perm_xml)
-    assert decision1.action == "CLICK"
-    assert "Auto-dismissing OS permission" in decision1.explanation
+    assert decision1.action == "WAIT"
+    assert "explicit operator review" in decision1.explanation
 
     # Simulate login screen
     login_xml = """<hierarchy rotation="0">
@@ -109,7 +109,18 @@ def test_smart_ui_crawler():
 
     decision2 = crawler.decide_next_action("com.example.app.LoginActivity", login_xml)
     assert decision2.action == "TYPE_TEXT"
-    assert decision2.input_text == "admin@bank.com"
+    assert decision2.input_text == "researcher@example.test"
+
+    # No embedded/default credentials and no submit action without an
+    # operator-provided synthetic identity.
+    default_crawler = SmartUICrawler()
+    decision3 = default_crawler.decide_next_action("com.example.app.LoginActivity", login_xml)
+    assert decision3.action == "WAIT"
+    assert "operator-supplied" in decision3.explanation
+    populated_login = login_xml.replace('text=""', 'text="synthetic"')
+    decision4 = crawler.decide_next_action("com.example.app.LoginActivity", populated_login)
+    assert decision4.action == "WAIT"
+    assert "explicit operator approval" in decision4.explanation
 
 
 def test_frida_stealth_harness():
@@ -150,3 +161,21 @@ def test_privacy_manifest_auditor():
         assert res.tracking_enabled is True
         assert "analytics.thirdparty.com" in res.tracking_domains
         assert "NSPrivacyAccessedAPITypeUserDefaults" in res.declared_api_categories
+
+
+def test_android_data_safety_indicator_is_only_a_static_review_lead():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = os.path.join(tmp_dir, "App.java")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write("com.google.firebase.analytics.FirebaseAnalytics")
+        manifest = '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
+
+        findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.severity.value == "INFO"
+    assert finding.status.value == "UNVERIFIED"
+    assert finding.metadata["evidence_state"] == "static_candidate"
+    assert finding.metadata["compliance_verdict"] == "not_assessed"
+    assert "does not establish" in finding.description

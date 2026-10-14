@@ -1,7 +1,8 @@
-"""ContentProvider Traversal and SQL Injection Dynamic Fuzzer.
+"""Bounded ContentProvider probes that report observations, not proof.
 
-Probes exported Android ContentProviders via ADB queries and reads to verify
-arbitrary file access and SQL injection without relying on simulated guesses.
+ADB read/query success and SQL parser errors are not by themselves evidence of
+unauthorized disclosure or injection; classification requires comparison with
+the provider contract and synthetic control data.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ class ProviderFuzzResult:
     target_uri: str
     action: str  # query, read
     payload: str
-    status: str  # VULNERABLE, ACCESS_DENIED, NOT_FOUND, SAFE
+    status: str  # OBSERVATION_* or ACCESS_DENIED/NOT_FOUND/ERROR; never a vulnerability verdict alone
     output_snippet: str = ""
     error_message: Optional[str] = None
 
@@ -56,13 +57,15 @@ class ContentProviderFuzzer:
                 err = proc.stderr.strip()
 
                 if proc.returncode == 0 and len(output) > 0 and "SecurityException" not in err and "Permission Denial" not in err:
-                    status = "VULNERABLE"
+                    # Readability is an observation, not proof that the rows are
+                    # sensitive, unauthorized, or outside the provider contract.
+                    status = "OBSERVED_READABLE"
                 elif "SecurityException" in err or "Permission Denial" in err:
                     status = "ACCESS_DENIED"
                 elif "FileNotFoundException" in err or "does not exist" in err:
                     status = "NOT_FOUND"
                 else:
-                    status = "SAFE"
+                    status = "INCONCLUSIVE"
 
                 results.append(ProviderFuzzResult(
                     authority=authority,
@@ -100,13 +103,13 @@ class ContentProviderFuzzer:
 
                 # If query succeeds or reflects SQL error syntax rather than SecurityException
                 if "sqlite" in err.lower() or "syntax error" in err.lower():
-                    status = "VULNERABLE_SQL_SYNTAX"
+                    status = "SQL_ERROR_OBSERVED"
                 elif proc.returncode == 0 and "Row:" in output:
-                    status = "VULNERABLE"
+                    status = "QUERY_RESULT_OBSERVED"
                 elif "SecurityException" in err or "Permission Denial" in err:
                     status = "ACCESS_DENIED"
                 else:
-                    status = "SAFE"
+                    status = "INCONCLUSIVE"
 
                 results.append(ProviderFuzzResult(
                     authority=authority,

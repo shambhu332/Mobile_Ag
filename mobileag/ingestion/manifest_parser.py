@@ -332,6 +332,7 @@ class ManifestParser:
                 "declaredTaskAffinity": task_affinity_raw,
                 "taskAffinityExplicit": task_affinity_raw is not None,
                 "launchMode": launch_mode,
+                "launchModeOrigin": "component" if launch_mode_raw else "platform_default",
                 "launchModeExplicit": bool(launch_mode_raw),
                 "intent_filters": intent_filters,
                 "meta_data": meta_data,
@@ -637,8 +638,40 @@ class ManifestParser:
         # Parse components
         activities = self._parse_components(app_elem, "activity", target_sdk,
                                             permission_resources, package_name)
-        activities.extend(self._parse_components(app_elem, "activity-alias", target_sdk,
-                                                 permission_resources, package_name))
+        aliases = self._parse_components(app_elem, "activity-alias", target_sdk,
+                                         permission_resources, package_name)
+
+        def canonical_component_name(value: str) -> str:
+            if value.startswith("."):
+                return f"{package_name}{value}"
+            if "." not in value:
+                return f"{package_name}.{value}" if package_name else value
+            return value
+
+        activity_index: dict[str, list[dict[str, Any]]] = {}
+        for activity in activities:
+            activity_index.setdefault(canonical_component_name(activity["name"]), []).append(activity)
+        for alias in aliases:
+            target_raw = alias.get("alias_target")
+            matches = activity_index.get(canonical_component_name(target_raw), []) if isinstance(target_raw, str) and target_raw else []
+            if len(matches) != 1:
+                alias["alias_target_resolution"] = "unresolved"
+                alias["taskAffinity"] = None
+                alias["taskAffinityOrigin"] = "alias_target_unresolved"
+                alias["launchMode"] = "unknown"
+                alias["launchModeOrigin"] = "alias_target_unresolved"
+                continue
+            target = matches[0]
+            alias["alias_target_resolution"] = "resolved"
+            alias["alias_target_resolved_name"] = target["name"]
+            # Android specifies that activity-alias attributes absent from its
+            # supported subset inherit from the target activity. Do not treat
+            # similarly named raw attributes on the alias as effective policy.
+            alias["taskAffinity"] = target.get("taskAffinity")
+            alias["taskAffinityOrigin"] = "alias_target"
+            alias["launchMode"] = target.get("launchMode", "unknown")
+            alias["launchModeOrigin"] = "alias_target"
+        activities.extend(aliases)
         services = self._parse_components(app_elem, "service", target_sdk,
                                           permission_resources, package_name)
         receivers = self._parse_components(app_elem, "receiver", target_sdk,

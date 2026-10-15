@@ -202,7 +202,8 @@ def test_task_affinity_inventory_resolves_inheritance_launch_mode_and_review_lea
         <activity android:name=".Explicit" android:exported="true" android:taskAffinity="org.partner.task" android:launchMode="standard"/>
         <activity android:name=".Default" android:exported="true"/>
         <activity android:name=".NoAffinity" android:exported="true" android:taskAffinity=""/>
-        <activity-alias android:name=".Alias" android:targetActivity=".Explicit" android:exported="true" android:taskAffinity="org.alias.task"/>
+        <activity-alias android:name=".Alias" android:targetActivity="org.example.Explicit" android:exported="true" android:taskAffinity="org.alias.task"/>
+        <activity-alias android:name=".BrokenAlias" android:targetActivity=".Missing" android:exported="true"/>
       </application></manifest>''')
 
     parsed = ManifestParser().parse(str(path))
@@ -214,19 +215,30 @@ def test_task_affinity_inventory_resolves_inheritance_launch_mode_and_review_lea
     assert (defaulted["taskAffinity"], defaulted["taskAffinityOrigin"]) == ("org.shared.task", "application")
     assert no_affinity["taskAffinity"] == ""
     assert no_affinity["taskAffinityOrigin"] == "component"
-    alias = parsed["components"][-1]
-    assert alias["alias_target"] == ".Explicit"
+    alias = parsed["components"][-2]
+    assert alias["alias_target"] == "org.example.Explicit"
+    assert alias["alias_target_resolution"] == "resolved"
+    assert alias["alias_target_resolved_name"] == ".Explicit"
+    assert (alias["taskAffinity"], alias["taskAffinityOrigin"]) == ("org.partner.task", "alias_target")
+    assert (alias["launchMode"], alias["launchModeOrigin"]) == ("standard", "alias_target")
+    unresolved_alias = parsed["components"][-1]
+    assert unresolved_alias["alias_target_resolution"] == "unresolved"
+    assert unresolved_alias["taskAffinity"] is None
+    assert unresolved_alias["taskAffinityOrigin"] == "alias_target_unresolved"
 
     findings = __import__('asyncio').run(ManifestAuditor(None).audit(parsed, parsed["package_name"]))
     leads = [item for item in findings if item.metadata.get("analysis_kind") == "exported_non_default_task_affinity"]
-    assert len(leads) == 3
-    assert {item.affected_component for item in leads} == {".Inherited", ".Explicit", ".Default"}
+    assert len(leads) == 4
+    assert {item.affected_component for item in leads} == {".Inherited", ".Explicit", ".Default", ".Alias"}
     assert all(item.status == FindingStatus.UNVERIFIED and item.cvss_score == 0 for item in leads)
     explicit_lead = next(item for item in leads if item.affected_component == ".Explicit")
     assert explicit_lead.metadata["launch_mode"] == "standard"
     assert explicit_lead.metadata["task_affinity_origin"] == "component"
     assert "does not demonstrate task hijacking" in explicit_lead.description
-    assert not any(item.affected_component == ".Alias" for item in leads)
+    alias_lead = next(item for item in leads if item.affected_component == ".Alias")
+    assert alias_lead.metadata["task_affinity_origin"] == "alias_target"
+    assert alias_lead.metadata["alias_target_resolution"] == "resolved"
+    assert not any(item.affected_component == ".BrokenAlias" for item in leads)
 
     default_manifest = tmp_path / "DefaultAffinity.xml"
     default_manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.example">

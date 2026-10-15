@@ -193,8 +193,11 @@ class ManifestAuditor:
                 task_affinity_is_literal and bool(package_name)
                 and task_affinity != package_name
             )
+            alias_is_resolved = (
+                not comp.get("alias_target") or comp.get("alias_target_resolution") == "resolved"
+            )
             if (non_default_task_affinity and exported and comp_type.lower() == "activity"
-                    and not comp.get("alias_target")):
+                    and alias_is_resolved):
                 cwe = "CWE-1021"
                 findings.append(Finding(
                     title=f"Review Non-default Task Affinity: {name}",
@@ -217,7 +220,9 @@ class ManifestAuditor:
                               "task_affinity": task_affinity,
                               "task_affinity_origin": task_affinity_origin,
                               "launch_mode": launch_mode,
-                              "launch_mode_explicit": comp.get("launchModeExplicit", False)},
+                              "launch_mode_explicit": comp.get("launchModeExplicit", False),
+                              "alias_target": comp.get("alias_target"),
+                              "alias_target_resolution": comp.get("alias_target_resolution")},
                 ))
 
             # FileProvider misconfiguration check

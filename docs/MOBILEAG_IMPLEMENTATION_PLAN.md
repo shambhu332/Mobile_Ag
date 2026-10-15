@@ -356,7 +356,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 > **Audit correction (refreshed 2026-10-15): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At this
-> checkout, `python -m pytest -q` reports **891 passed** (157.25 s); these are
+> checkout, `python -m pytest -q` reports **892 passed** (57.51 s); these are
 > primarily mocked/synthetic regressions and do not establish device coverage,
 > exploitability, completeness, or production readiness. The implementation
 > names below indicate bounded prototypes unless the capability is separately
@@ -394,7 +394,9 @@ The API capture additions in the 2026-10-15 checkout expose observed, redacted
 transactions as OpenAPI/HAR inventory through authenticated endpoints. OpenAPI
 includes bounded JSON shape inference without example values; it describes
 observations, not a complete backend contract, and is not normatively
-schema-validated. HTTPS interception and automatic replay/fuzzing remain absent.
+schema-validated. Proxy capture retention is bounded by transaction count and
+an estimated in-memory byte budget, with omission/eviction counts exposed.
+HTTPS interception and automatic replay/fuzzing remain absent.
 
 ### Release gates still required
 
@@ -424,7 +426,7 @@ Timeline & Execution Inventory [audited 2026-10-14; NOT COMPLETE]
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & regression suite**: On 2026-10-15, `python -m pytest -q` completed with 891 passed in 157.25 s. Environment emitted 47,640 warnings (mostly pytest-asyncio deprecations); this result is not device/live-target validation.
+1. **Unit & regression suite**: On 2026-10-15, `python -m pytest -q` completed with 892 passed in 57.51 s. Environment emitted 47,706 warnings (mostly pytest-asyncio deprecations); this result is not device/live-target validation.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM schema check used upstream CycloneDX 1.5 JSON schema (`https://raw.githubusercontent.com/CycloneDX/specification/master/schema/bom-1.5.schema.json`, SHA-256 `2d956c1d05c092695457a91f3b5c57c749793c013ec224a0935807cfc8ae4480`), CycloneDX 1.5 XSD plus its SPDX import, and SPDX 2.3 JSON schema (`https://raw.githubusercontent.com/spdx/spdx-spec/v2.3/schemas/spdx-schema.json`, SHA-256 `239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b`). Schemas were temporary audit inputs, not vendored test dependencies.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

@@ -19,7 +19,11 @@ an APK or send requests by itself.
    normative schema/complete API model), optionally export the redacted
    `/api/dast/api-capture/har`, then use `/api/dast/api-capture/audit`. The proxy
    enforces both the persisted origin/method scope and the server environment
-   origin ceiling.
+   origin ceiling. In-memory capture retains at most 1,000 transactions and
+   16 MiB estimated redacted content; one record is capped at 2 MiB. Oversized
+   records are omitted, older entries may be evicted to stay within the budget,
+   and export metadata reports omission counts. This is an in-memory bound, not
+   a durable evidence store.
 
 This proxy does **not** intercept HTTPS CONNECT/TLS, configure a device, bypass
 certificate pinning, or automatically fuzz/replay captured routes. Use an

@@ -36,6 +36,8 @@ class MachoAnalysisResult:
     swift_type_name_candidates: List[str] = field(default_factory=list)
     swift_type_field_candidates: List[Dict[str, object]] = field(default_factory=list)
     swift_type_metadata_status: str = "not_attempted"
+    swift_protocol_name_candidates: List[str] = field(default_factory=list)
+    swift_protocol_metadata_status: str = "not_attempted"
 
 
 class MachoBinaryParser:
@@ -247,6 +249,11 @@ class MachoBinaryParser:
             for fields in slice_result.swift_type_field_candidates:
                 if fields not in result.swift_type_field_candidates and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append(fields)
+            for name in slice_result.swift_protocol_name_candidates:
+                if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
+                    result.swift_protocol_name_candidates.append(name)
+            if slice_result.swift_protocol_metadata_status != "not_attempted":
+                result.swift_protocol_metadata_status = "parsed" if result.swift_protocol_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_protocol_metadata_status == "parsed" else "partial"
             if slice_result.swift_type_metadata_status != "not_attempted":
                 result.swift_type_metadata_status = "parsed" if result.swift_type_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_type_metadata_status == "parsed" else "partial"
             result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
@@ -312,6 +319,7 @@ class MachoBinaryParser:
             self._parse_symbol_table(data, symtab, endian, is_64bit=False, result=result)
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
+        self._extract_swift_protocol_names(data, result, endian)
 
     def _extract_swift_type_names(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
         """Inventory bounded Swift nominal type names; this is not type reconstruction."""
@@ -417,6 +425,56 @@ class MachoBinaryParser:
                     field_names.append(field_name)
                 if field_names and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append({"type_name": candidate, "field_names": field_names})
+
+    def _extract_swift_protocol_names(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
+        """Inventory names from direct Swift protocol descriptor pointers."""
+        sections = [s for s in result.sections if s.get("name") == "__swift5_protos"]
+        if not sections:
+            return
+        result.swift_protocol_metadata_status = "parsed"
+        examined = 0
+        for section in sections:
+            offset, size = section.get("offset"), section.get("size")
+            if not isinstance(offset, int) or not isinstance(size, int) or size % 4 or size > 4 * 10000 or offset < 0 or offset > len(data) or size > len(data) - offset:
+                result.swift_protocol_metadata_status = "partial"
+                continue
+            for entry in range(offset, offset + size, 4):
+                examined += 1
+                if examined > 10000:
+                    result.swift_protocol_metadata_status = "partial"
+                    return
+                relative = struct.unpack_from(endian + "i", data, entry)[0]
+                # Avoid following relative-indirectable pointers: the referenced
+                # pointer can be authenticated or require another address mapping.
+                if relative & 1:
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                descriptor = entry + relative
+                if descriptor < 0 or descriptor > len(data) - 24:
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                flags = struct.unpack_from(endian + "I", data, descriptor)[0]
+                if flags & 0x1f != 3:  # Protocol context descriptor
+                    continue
+                name_relative = struct.unpack_from(endian + "i", data, descriptor + 8)[0]
+                name_offset = descriptor + 8 + name_relative
+                if name_offset < 0 or name_offset >= len(data):
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                end = data.find(b"\0", name_offset, min(len(data), name_offset + 256))
+                if end < 0:
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                try:
+                    name = data[name_offset:end].decode("utf-8", errors="strict")
+                except UnicodeDecodeError:
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                if not name or any(ord(char) < 0x20 or ord(char) == 0x7f for char in name):
+                    result.swift_protocol_metadata_status = "partial"
+                    continue
+                if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
+                    result.swift_protocol_name_candidates.append(name)
 
     def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:
@@ -560,6 +618,7 @@ class MachoBinaryParser:
             self._parse_symbol_table(data, symtab, endian, is_64bit=True, result=result)
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
+        self._extract_swift_protocol_names(data, result, endian)
 
     def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:

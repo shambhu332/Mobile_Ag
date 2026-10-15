@@ -273,6 +273,28 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     assert malformed_result.swift_type_field_candidates == []
 
 
+def test_macho_parser_inventories_direct_swift_protocol_descriptors(tmp_path):
+    import struct
+
+    section_offset = 32 + 152
+    metadata = bytearray(28)
+    struct.pack_into("<i", metadata, 0, 4)
+    struct.pack_into("<I", metadata, 4, 3)  # Protocol context descriptor kind
+    struct.pack_into("<i", metadata, 12, 16)
+    metadata.extend(b"Displayable\0")
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
+                          len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
+    protocol_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_protos", b"__TEXT",
+                                   0x2000, 4, section_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + protocol_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftProtocol"
+    binary.write_bytes(header + command + metadata)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_protocol_metadata_status == "parsed"
+    assert result.swift_protocol_name_candidates == ["Displayable"]
+
+
 def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):
     import struct
 

@@ -518,6 +518,14 @@ def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callba
     invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
+.method protected onActivityResult(IILandroid/content/Intent;)V
+    .registers 6
+    invoke-virtual {p3}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    sget-object v1, Lcom/example/LifecycleIntent;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
 .method public ordinaryHelper(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 4
     invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;
@@ -557,9 +565,9 @@ def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callba
     findings = engine.audit_smali_directory(tmp_path)
     flows = [finding for finding in findings
              if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
-    assert len(flows) == 2
+    assert len(flows) == 3
     assert {flow.metadata["source_kind"] for flow in flows} == {"LIFECYCLE_INTENT_PARAMETER"}
-    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 2
+    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 3
 
 
 def test_smali_clipdata_uri_flows_from_external_intent_to_webview_navigation(tmp_path):

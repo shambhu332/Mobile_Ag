@@ -100,6 +100,16 @@
         }
       ],
       "source": ".class public Lfixture/LifecycleRoute;\n.super Landroid/app/Activity;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 4\n invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;\n move-result-object v0\n sget-object v1, Lfixture/LifecycleRoute;->web:Landroid/webkit/WebView;\n invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "activity_result_intent_data_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 8
+        }
+      ],
+      "source": ".class public Lfixture/ActivityResultRoute;\n.super Landroid/app/Activity;\n.method protected onActivityResult(IILandroid/content/Intent;)V\n .registers 6\n invoke-virtual {p3}, Landroid/content/Intent;->getAction()Ljava/lang/String;\n move-result-object v0\n sget-object v1, Lfixture/ActivityResultRoute;->web:Landroid/webkit/WebView;\n invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     }
   ]
 }

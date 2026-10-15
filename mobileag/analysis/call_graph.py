@@ -405,13 +405,14 @@ class SmaliCallGraphEngine:
                 if invoke:
                     target_class, target_name, signature = invoke.group(2), invoke.group(3), invoke.group(4)
                     target_key = f"{target_class}->{target_name}"
-                    source_kind = next((kind for prefix, kind in SMALI_SOURCES.items()
-                                        if target_key == prefix or target_key.startswith(prefix)), None)
+                    # Match the complete owner + method name. Prefix matching
+                    # misclassified lookalikes such as getStringExtraCompat as
+                    # Android framework sources/sinks.
+                    source_kind = SMALI_SOURCES.get(target_key)
                     if source_kind:
                         pending = frozenset({(source_kind, line_no)})
 
-                    sink = next((candidate for candidate in SMALI_SINKS
-                                 if target_key == candidate or target_key.startswith(candidate)), None)
+                    sink = target_key if target_key in SMALI_SINKS else None
                     args_match = invoke_args_re.search(text)
                     args = _invocation_registers(args_match.group(1)) if args_match else []
                     if sink:
@@ -554,14 +555,12 @@ class SmaliCallGraphEngine:
                                         current_method.sinks_called.append(sink_prefix)
 
                         # Check if target is a known source
-                        for src_prefix in SMALI_SOURCES:
-                            if prefix_key == src_prefix or target_key.startswith(src_prefix):
-                                current_method.sources_called.append(prefix_key)
+                        if prefix_key in SMALI_SOURCES:
+                            current_method.sources_called.append(prefix_key)
 
                         # Check if target is a known sink
-                        for sink_prefix in SMALI_SINKS:
-                            if prefix_key == sink_prefix or target_key.startswith(sink_prefix):
-                                current_method.sinks_called.append(sink_prefix)
+                        if prefix_key in SMALI_SINKS:
+                            current_method.sinks_called.append(prefix_key)
 
     def find_source_sink_paths(self, max_depth: int = 6) -> list[CallChainFinding]:
         """Traverse the Call Graph to find paths from method sources to method sinks."""

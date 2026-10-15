@@ -357,7 +357,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
 > (57.51 s). Following the token-session evidence hardening, the full suite in
-> the pinned Python 3.14 validation environment reports **898 passed** (78.85 s).
+> the pinned Python 3.14 validation environment reports **900 passed** (62.04 s).
 > These are primarily mocked/synthetic regressions and do not establish device coverage,
 > exploitability, completeness, or production readiness. The implementation
 > names below indicate bounded prototypes unless the capability is separately
@@ -368,7 +368,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 | Blueprint area | Checkout evidence | Status / remaining work |
 |---|---|---|
-| Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Measure unsupported syntax and false negatives. |
+| Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Smali source/sink recognition now matches exact owner + method names, with lookalike-name negative controls; this does not resolve method descriptors, value flow across methods, or runtime reachability. Measure unsupported syntax and false negatives. |
 | IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. |
 | Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter and IL2CPP read bounded raw strings; Hermes checks a header and extracts printable strings. Credential-like matches now emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction, Hermes control-flow decompilation, or IL2CPP type/method table reconstruction is implemented. |
 | iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Bounded parser.** Synthetic format tests do not establish robust parsing of all architectures, fat binaries, malformed files, or Swift metadata semantics. |
@@ -467,7 +467,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & regression suite**: On 2026-10-15, baseline commit `728a007` completed with 892 passed in 57.51 s; after OpenAPI changes the suite completed with 893 passed in 88.52 s. The pinned Python 3.14 environment completed with 895 passed after SBOM schema validation and 898 passed after token-session evidence hardening (78.85 s; 1 synthetic duplicate-ZIP-entry warning). These results are not device/live-target validation.
+1. **Unit & regression suite**: On 2026-10-15, baseline commit `728a007` completed with 892 passed in 57.51 s; after OpenAPI changes the suite completed with 893 passed in 88.52 s. The pinned Python 3.14 environment completed with 895 passed after SBOM schema validation, 898 after token-session evidence hardening, and 900 after exact Smali source/sink matching (62.04 s; 1 synthetic duplicate-ZIP-entry warning). These results are not device/live-target validation.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38772215062` completed successfully on commit `f5a78da`: 896 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 898 passed and 1 warning (78.85 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

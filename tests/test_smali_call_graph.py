@@ -90,6 +90,30 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].metadata["register_dataflow"] == "same_method_move_result_and_move_object_only"
 
 
+@pytest.mark.parametrize(("source_method", "sink_method"), [
+    ("getStringExtraCompat", "loadUrl"),
+    ("getStringExtra", "loadUrlCompat"),
+])
+def test_framework_method_lookalike_names_do_not_match_source_or_sink_prefixes(
+        tmp_path, source_method, sink_method):
+    (tmp_path / "Lookalike.smali").write_text(f"""
+.class public Lcom/example/Lookalike;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 4
+    const-string v0, "url"
+    invoke-virtual {{p1, v0}}, Landroid/content/Intent;->{source_method}(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {{p2, v1}}, Landroid/webkit/WebView;->{sink_method}(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert findings == []
+
+
 @pytest.mark.parametrize("overwrite", [
     'const-string v2, "https://example.invalid"',
     "aget-object v2, v4, v5",

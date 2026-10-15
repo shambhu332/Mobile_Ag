@@ -177,6 +177,40 @@ def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
     assert invalid.response_sha256 == ""
     assert invalid.response_hash_status == "invalid_input"
 
+
+def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
+    fuzzer = BolaFuzzer()
+    positive = fuzzer.evaluate_dual_session_observations(
+        endpoint="https://api.example.test/v1/orders/order_1?account=synthetic",
+        method="GET", resource_id="order_1",
+        account_a_status=200, account_a_response_body='{"canary":"synthetic-account-a-marker"}',
+        account_b_status=206, account_b_response_body='{"canary":"synthetic-account-a-marker"}',
+        account_a_marker="synthetic-account-a-marker",
+    )
+    assert positive.is_vulnerable is True
+    assert positive.reference_marker_observed is True
+    assert positive.marker_observed is True
+    assert positive.comparison_status == "canary_observed_in_both_responses"
+    assert "synthetic-account-a-marker" not in positive.evidence_reason
+
+    missing_control = fuzzer.evaluate_dual_session_observations(
+        endpoint="/v1/orders/order_1", method="GET", resource_id="order_1",
+        account_a_status=200, account_a_response_body='{"canary":"other"}',
+        account_b_status=200, account_b_response_body='{"canary":"synthetic-account-a-marker"}',
+        account_a_marker="synthetic-account-a-marker",
+    )
+    assert missing_control.is_vulnerable is False
+    assert missing_control.comparison_status == "reference_not_established"
+
+    denied = fuzzer.evaluate_dual_session_observations(
+        endpoint="/v1/orders/order_1", method="GET", resource_id="order_1",
+        account_a_status=200, account_a_response_body='{"canary":"synthetic-account-a-marker"}',
+        account_b_status=403, account_b_response_body='{"error":"denied"}',
+        account_a_marker="synthetic-account-a-marker",
+    )
+    assert denied.is_vulnerable is False
+    assert denied.comparison_status == "canary_not_observed_in_b_response"
+
     # Positive test: User B receives User A's data
     res_vuln = fuzzer.evaluate_response_discrepancy(
         endpoint="/v1/users/usr_98472",

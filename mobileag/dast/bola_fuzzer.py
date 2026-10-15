@@ -25,10 +25,12 @@ class BolaTestResult:
     response_sha256: str = ""
     marker_observed: bool = False
     response_hash_status: str = "complete"
+    reference_marker_observed: bool = False
+    comparison_status: str = "not_compared"
 
 
 class BolaFuzzer:
-    """Detects IDOR and BOLA vulnerabilities by performing dual-session cross-account replays."""
+    """Offline BOLA candidate extraction and researcher-supplied response evaluation."""
 
     # Patterns matching resource IDs in URL paths or queries
     ID_PATTERN = re.compile(r"/(?:users|accounts|orders|items|profiles|invoices|documents)/([a-zA-Z0-9_\-]+)", re.IGNORECASE)
@@ -166,3 +168,54 @@ class BolaFuzzer:
             marker_observed=marker_observed,
             response_hash_status=hash_status,
         )
+
+    def evaluate_dual_session_observations(
+        self,
+        endpoint: str,
+        method: str,
+        resource_id: str,
+        account_a_status: int,
+        account_a_response_body: str,
+        account_b_status: int,
+        account_b_response_body: str,
+        account_a_marker: Optional[str] = None,
+    ) -> BolaTestResult:
+        """Compare supplied A-control and B-observation responses without sending requests.
+
+        A positive comparison requires a researcher-supplied canary to occur in
+        both successful responses. The evaluator cannot verify account identity,
+        request equivalence, resource ownership, or server authorization.
+        """
+        result = self.evaluate_response_discrepancy(
+            endpoint=endpoint,
+            method=method,
+            resource_id=resource_id,
+            status_code=account_b_status,
+            response_body=account_b_response_body,
+            user_a_marker=account_a_marker,
+        )
+        reference_valid = isinstance(account_a_response_body, str)
+        reference_bounded = (
+            account_a_response_body[:self.MAX_RESPONSE_CHARS] if reference_valid else ""
+        )
+        reference_marker = bool(
+            isinstance(account_a_marker, str) and account_a_marker
+            and reference_valid and account_a_marker in reference_bounded
+        )
+        result.reference_marker_observed = reference_marker
+        if not reference_marker or account_a_status not in {200, 206}:
+            result.is_vulnerable = False
+            result.comparison_status = "reference_not_established"
+            result.evidence_reason = (
+                "Account-A control did not establish the researcher-provided canary in a successful "
+                "response; cross-account exposure is not established."
+            )
+        elif result.is_vulnerable:
+            result.comparison_status = "canary_observed_in_both_responses"
+            result.evidence_reason = (
+                "Researcher-provided canary was observed in both supplied account-A and account-B "
+                "responses; account identity, request equivalence, and authorization remain unverified."
+            )
+        else:
+            result.comparison_status = "canary_not_observed_in_b_response"
+        return result

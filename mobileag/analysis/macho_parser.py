@@ -34,6 +34,7 @@ class MachoAnalysisResult:
     slice_count: int = 0
     symbol_names: List[str] = field(default_factory=list)
     swift_type_name_candidates: List[str] = field(default_factory=list)
+    swift_type_field_candidates: List[Dict[str, object]] = field(default_factory=list)
     swift_type_metadata_status: str = "not_attempted"
 
 
@@ -243,6 +244,9 @@ class MachoBinaryParser:
             for name in slice_result.swift_type_name_candidates:
                 if name not in result.swift_type_name_candidates and len(result.swift_type_name_candidates) < 1000:
                     result.swift_type_name_candidates.append(name)
+            for fields in slice_result.swift_type_field_candidates:
+                if fields not in result.swift_type_field_candidates and len(result.swift_type_field_candidates) < 1000:
+                    result.swift_type_field_candidates.append(fields)
             if slice_result.swift_type_metadata_status != "not_attempted":
                 result.swift_type_metadata_status = "parsed" if result.swift_type_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_type_metadata_status == "parsed" else "partial"
             result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
@@ -316,6 +320,7 @@ class MachoBinaryParser:
             return
         result.swift_type_metadata_status = "parsed"
         examined = 0
+        field_records_examined = 0
         for section in sections:
             offset, size = section.get("offset"), section.get("size")
             if not isinstance(offset, int) or not isinstance(size, int) or size % 4 or offset < 0 or size > 4 * 10000 or offset > len(data) or size > len(data) - offset:
@@ -333,7 +338,7 @@ class MachoBinaryParser:
                     result.swift_type_metadata_status = "partial"
                     continue
                 descriptor = entry + relative
-                if descriptor < 0 or descriptor > len(data) - 12:
+                if descriptor < 0 or descriptor > len(data) - 20:
                     result.swift_type_metadata_status = "partial"
                     continue
                 flags = struct.unpack_from(endian + "I", data, descriptor)[0]
@@ -361,6 +366,57 @@ class MachoBinaryParser:
                     continue
                 if candidate not in result.swift_type_name_candidates and len(result.swift_type_name_candidates) < 1000:
                     result.swift_type_name_candidates.append(candidate)
+                fields_relative = struct.unpack_from(endian + "i", data, descriptor + 16)[0]
+                if fields_relative == 0:
+                    continue
+                fields_pointer = descriptor + 16
+                field_descriptor = fields_pointer + fields_relative
+                field_sections = [s for s in result.sections if s.get("name") == "__swift5_fieldmd"]
+                field_section = next((s for s in field_sections
+                                      if isinstance(s.get("offset"), int) and isinstance(s.get("size"), int)
+                                      and s["offset"] <= field_descriptor <= s["offset"] + s["size"] - 16), None)
+                if field_section is None:
+                    result.swift_type_metadata_status = "partial"
+                    continue
+                field_end = field_section["offset"] + field_section["size"]
+                _mangled, _superclass, kind, record_size, field_count = struct.unpack_from(
+                    endian + "iiHHI", data, field_descriptor
+                )
+                if kind not in {0, 1, 2, 3} or record_size != 12 or field_count > 1000:
+                    result.swift_type_metadata_status = "partial"
+                    continue
+                records_start = field_descriptor + 16
+                if records_start > field_end or field_count * record_size > field_end - records_start:
+                    result.swift_type_metadata_status = "partial"
+                    continue
+                field_names: list[str] = []
+                for field_index in range(field_count):
+                    field_records_examined += 1
+                    if field_records_examined > 10000:
+                        result.swift_type_metadata_status = "partial"
+                        break
+                    record = records_start + field_index * record_size
+                    name_pointer = record + 8
+                    name_relative = struct.unpack_from(endian + "i", data, name_pointer)[0]
+                    name_offset = name_pointer + name_relative
+                    if name_relative == 0 or name_offset < 0 or name_offset >= len(data):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    name_end = data.find(b"\0", name_offset, min(len(data), name_offset + 256))
+                    if name_end < 0:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    try:
+                        field_name = data[name_offset:name_end].decode("utf-8", errors="strict")
+                    except UnicodeDecodeError:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    if not field_name or any(ord(char) < 0x20 or ord(char) == 0x7f for char in field_name):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    field_names.append(field_name)
+                if field_names and len(result.swift_type_field_candidates) < 1000:
+                    result.swift_type_field_candidates.append({"type_name": candidate, "field_names": field_names})
 
     def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:

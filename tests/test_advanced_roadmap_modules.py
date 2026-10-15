@@ -196,10 +196,10 @@ def test_macho_parser_inventories_only_bounded_swift_nominal_type_names(tmp_path
 
     # One __swift5_types relative pointer to a synthetic struct descriptor/name.
     section_offset = 32 + 152
-    metadata = bytearray(20)
+    metadata = bytearray(24)
     struct.pack_into("<i", metadata, 0, 4)
     struct.pack_into("<I", metadata, 4, 17)  # Swift struct context kind
-    struct.pack_into("<i", metadata, 12, 8)  # name pointer is relative to descriptor+8
+    struct.pack_into("<i", metadata, 12, 12)  # name pointer is relative to descriptor+8
     metadata.extend("CaféType".encode("utf-8") + b"\0")
     segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
                           len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
@@ -230,6 +230,47 @@ def test_macho_parser_does_not_dereference_indirect_swift_type_pointer(tmp_path)
     result = MachoBinaryParser().parse_binary(binary)
     assert result.swift_type_metadata_status == "partial"
     assert result.swift_type_name_candidates == []
+
+
+def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
+    import struct
+
+    body_offset = 32 + 232
+    type_name = b"Example\0"
+    type_blob = bytearray(24)
+    struct.pack_into("<i", type_blob, 0, 4)
+    struct.pack_into("<I", type_blob, 4, 17)
+    struct.pack_into("<i", type_blob, 12, 12)
+    type_blob.extend(type_name)
+    field_offset = body_offset + len(type_blob)
+    struct.pack_into("<i", type_blob, 20, field_offset - (body_offset + 20))
+    field_name = b"displayName\0"
+    field_blob = bytearray(struct.pack("<iiHHI", 0, 0, 0, 12, 1))
+    field_blob.extend(struct.pack("<Iii", 0, 0, 4))
+    field_blob.extend(field_name)
+
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 232, b"__TEXT", 0x1000,
+                          len(type_blob) + len(field_blob), body_offset,
+                          len(type_blob) + len(field_blob), 7, 5, 2, 0)
+    types_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT",
+                                0x2000, 4, body_offset, 0, 0, 0, 0, 0, 0, 0)
+    fields_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_fieldmd", b"__TEXT",
+                                 0x3000, len(field_blob), field_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + types_section + fields_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftFields"
+    binary.write_bytes(header + command + type_blob + field_blob)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_type_metadata_status == "parsed"
+    assert result.swift_type_field_candidates == [{"type_name": "Example", "field_names": ["displayName"]}]
+
+    malformed = bytearray(binary.read_bytes())
+    struct.pack_into("<H", malformed, field_offset + 10, 11)  # unsupported record stride
+    malformed_path = tmp_path / "SwiftFieldsMalformed"
+    malformed_path.write_bytes(malformed)
+    malformed_result = MachoBinaryParser().parse_binary(malformed_path)
+    assert malformed_result.swift_type_metadata_status == "partial"
+    assert malformed_result.swift_type_field_candidates == []
 
 
 def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):

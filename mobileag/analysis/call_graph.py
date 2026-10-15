@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -34,6 +35,7 @@ class MethodNode:
     method_name: str
     signature: str
     is_lifecycle_entrypoint: bool = False
+    is_static: bool = False
     invocations: list[str] = field(default_factory=list)  # list of target method keys
     sources_called: list[str] = field(default_factory=list)
     sinks_called: list[str] = field(default_factory=list)
@@ -218,6 +220,54 @@ def _invocation_registers(register_text: str) -> list[str]:
     return result
 
 
+def _parameter_descriptors(signature: str) -> list[tuple[int, int]] | None:
+    """Return (parameter index, register width), or None for malformed descriptors."""
+    if not signature.startswith("(") or ")" not in signature:
+        return None
+    body = signature[1:signature.index(")")]
+    params: list[tuple[int, int]] = []
+    index = 0
+    while index < len(body):
+        while index < len(body) and body[index] == "[":
+            index += 1
+        if index >= len(body):
+            return None
+        if body[index] == "L":
+            end = body.find(";", index)
+            if end < 0:
+                return None
+            index = end + 1
+            width = 1
+        elif body[index] in "ZBCSIFJD":
+            width = 2 if body[index] in "JD" and (index == 0 or body[index - 1] != "[") else 1
+            index += 1
+        else:
+            return None
+        params.append((len(params), width))
+    return params
+
+
+def _parameter_argument_registers(signature: str, is_static: bool, actuals: list[str]) -> list[tuple[str, str]]:
+    """Map narrow/wide invoke argument words to callee p-register aliases."""
+    descriptors = _parameter_descriptors(signature)
+    if descriptors is None:
+        return []
+    actual_index = 0 if is_static else 1  # Non-static invokes include receiver as word zero.
+    formal_index = 0 if is_static else 1  # Non-static p0 is `this`.
+    if not is_static and not actuals:
+        return []
+    mapped: list[tuple[str, str]] = []
+    for _parameter_index, width in descriptors:
+        if actual_index + width > len(actuals):
+            return []
+        mapped.append((f"p{formal_index}", actuals[actual_index]))
+        actual_index += width
+        formal_index += width
+    if actual_index != len(actuals):
+        return []
+    return mapped
+
+
 class SmaliCallGraphEngine:
     """Parses Smali files to construct a whole-program call graph and audit reachability."""
 
@@ -227,6 +277,8 @@ class SmaliCallGraphEngine:
         self.local_register_flows: list[dict[str, Any]] = []
         self.local_register_methods_skipped: list[str] = []
         self.local_register_analysis_warnings: list[str] = []
+        self.MAX_INTERPROCEDURAL_METHOD_RUNS = 100_000
+        self.MAX_INTERPROCEDURAL_TAINT_FACTS = 100_000
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
                          "proof_status": "not_proven", "exhaustive": False}
 
@@ -253,15 +305,65 @@ class SmaliCallGraphEngine:
                 inventory.record_limit('smali_method_count')
                 break
 
-        for method in self.methods.values():
+        parameter_taints: dict[str, dict[str, set[tuple[str, int, str, str]]]] = {}
+        worklist = deque(self.methods)
+        queued = set(self.methods)
+        interprocedural_runs = 0
+        taint_facts = 0
+        interprocedural_limited = False
+        seen_flows: set[tuple[Any, ...]] = set()
+        while worklist and interprocedural_runs < self.MAX_INTERPROCEDURAL_METHOD_RUNS:
+            method_key = worklist.popleft()
+            queued.discard(method_key)
+            method = self.methods[method_key]
+            interprocedural_runs += 1
             if len(method.instructions) > 20000:
-                self.local_register_methods_skipped.append(method.key)
-            else:
-                self.local_register_flows.extend(self._analyze_local_register_flows(method))
+                if method.key not in self.local_register_methods_skipped:
+                    self.local_register_methods_skipped.append(method.key)
+                continue
+            initial = {
+                register: frozenset(traces)
+                for register, traces in parameter_taints.get(method_key, {}).items()
+            }
+            flows, argument_flows = self._analyze_local_register_flows(method, initial)
+            for flow in flows:
+                flow_key = (flow["method"], flow["sink_line"], flow["sink"],
+                            flow["source_method"], flow["source_line"], flow["source_file"])
+                if flow_key not in seen_flows:
+                    seen_flows.add(flow_key)
+                    if len(self.local_register_flows) < 10_000:
+                        self.local_register_flows.append(flow)
+                    else:
+                        interprocedural_limited = True
+                        break
+            for target_key, formal_register, trace in argument_flows:
+                if target_key not in self.methods:
+                    continue
+                target_params = parameter_taints.setdefault(target_key, {})
+                traces = target_params.setdefault(formal_register, set())
+                if trace in traces:
+                    continue
+                if taint_facts >= self.MAX_INTERPROCEDURAL_TAINT_FACTS:
+                    interprocedural_limited = True
+                    break
+                traces.add(trace)
+                taint_facts += 1
+                if target_key not in queued:
+                    worklist.append(target_key)
+                    queued.add(target_key)
+
+        if worklist:
+            interprocedural_limited = True
 
         self.coverage = dict(inventory.coverage)
-        self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
-                             methods_analyzed=len(self.methods))
+        self.coverage.update(
+            runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
+            methods_analyzed=len(self.methods), interprocedural_method_runs=interprocedural_runs,
+            interprocedural_parameter_taint_facts=taint_facts,
+            interprocedural_flow_status="partial" if interprocedural_limited else "bounded_parameter_arguments",
+        )
+        if interprocedural_limited:
+            self.coverage.update(static_status="partial", limits_reached=True)
         logger.info("Constructed bounded call graph with %d methods", len(self.methods))
 
         self._resolve_synthetic_and_lambda_bridges()
@@ -298,15 +400,20 @@ class SmaliCallGraphEngine:
                         if snk not in caller.sinks_called:
                             caller.sinks_called.append(snk)
 
-    def _analyze_local_register_flows(self, method: MethodNode) -> list[dict[str, Any]]:
-        """Run bounded, path-sensitive-to-branches intraprocedural register flow.
+    def _analyze_local_register_flows(
+        self,
+        method: MethodNode,
+        initial_taints: dict[str, frozenset[tuple[str, int, str, str]]] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[tuple[str, str, tuple[str, int, str, str]]]]:
+        """Run bounded CFG register may-flow with exact-signature arg propagation.
 
         This is a may-analysis over a small Smali CFG: conditional branches
         have both successors, unconditional gotos only their target, and
         returns/throws terminate. Register writes kill prior taint; modeled
-        source results flow through move-result* and move-object. It does not
-        model fields, arrays, sanitizers, interprocedural arguments, or switch
-        payloads, and therefore emits candidates only.
+        source results flow through move-result* and move-object. Tainted actual
+        arguments may seed matching callee p-registers, but fields, arrays, returns,
+        sanitizers, dynamic dispatch and switch payloads are not modeled. Results
+        are candidates only.
         """
         instructions: list[tuple[int, str]] = []
         labels: dict[str, int] = {}
@@ -318,7 +425,7 @@ class SmaliCallGraphEngine:
             elif stripped and not stripped.startswith(("#", ".")):
                 instructions.append((line_no, stripped))
         if not instructions:
-            return []
+            return [], []
 
         successors: list[list[int]] = [[] for _ in instructions]
 
@@ -360,10 +467,11 @@ class SmaliCallGraphEngine:
                 successors[index].append(next_index)
 
         # Each state is (register -> source traces, pending invoke result).
-        empty: tuple[dict[str, frozenset[tuple[str, int]]], frozenset[tuple[str, int]]] = ({}, frozenset())
-        states: dict[int, tuple[dict[str, frozenset[tuple[str, int]]], frozenset[tuple[str, int]]]] = {0: empty}
+        empty = (dict(initial_taints or {}), frozenset())
+        states = {0: empty}
         queue = [0]
         flows: list[dict[str, Any]] = []
+        argument_flows: set[tuple[str, str, tuple[str, int, str, str]]] = set()
         visited_steps = 0
         invoke_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\},\s*(L[a-zA-Z0-9_$/]+;)->([a-zA-Z0-9_$<>-]+)(\([^)]*\)[^\s]+)")
         invoke_args_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\}")
@@ -410,7 +518,7 @@ class SmaliCallGraphEngine:
                     # Android framework sources/sinks.
                     source_kind = SMALI_SOURCES.get(target_key)
                     if source_kind:
-                        pending = frozenset({(source_kind, line_no)})
+                        pending = frozenset({(source_kind, line_no, method.key, method.file_path)})
 
                     sink = target_key if target_key in SMALI_SINKS else None
                     args_match = invoke_args_re.search(text)
@@ -421,8 +529,18 @@ class SmaliCallGraphEngine:
                             flows.append({
                                 "method": method.key, "file_path": method.file_path,
                                 "source_kind": trace[0], "source_line": trace[1], "sink": sink,
+                                "source_method": trace[2], "source_file": trace[3],
                                 "sink_line": line_no, "register": register,
                             })
+                    target_signature = invoke.group(4)
+                    exact_target_key = f"{target_class}->{target_name}{target_signature}"
+                    target_method = self.methods.get(exact_target_key)
+                    if target_method and args:
+                        for formal_register, actual_register in _parameter_argument_registers(
+                            target_signature, target_method.is_static, args,
+                        ):
+                            for trace in registers.get(actual_register, ()):
+                                argument_flows.add((exact_target_key, formal_register, trace))
 
             outgoing = (registers, pending)
             for successor in successors[index]:
@@ -440,7 +558,7 @@ class SmaliCallGraphEngine:
                     queue.append(successor)
         if queue:
             warn(f"register-flow worklist limit reached in {method.key}")
-        return flows
+        return flows, sorted(argument_flows)
 
     def _parse_smali_file(self, smali_file: Path, content: Optional[str] = None) -> None:
         """Parse class definition, methods, invoke instructions, and reflection in a Smali file."""
@@ -490,6 +608,7 @@ class SmaliCallGraphEngine:
                         method_name=m_name,
                         signature=m_sig,
                         is_lifecycle_entrypoint=is_lifecycle,
+                        is_static=" static " in f" {stripped} ",
                         file_path=str(smali_file),
                         line_number=line_num
                     )
@@ -668,20 +787,27 @@ class SmaliCallGraphEngine:
         # syntactic call-path inventory above. They remain unverified because
         # branch feasibility, Android reachability, sanitizers, and sink impact
         # are not established by this bounded pass.
-        seen_local: set[tuple[str, str, int, str]] = set()
+        seen_local: set[tuple[str, str, int, str, str, int]] = set()
         for flow in self.local_register_flows[:1000]:
             sink_spec = SMALI_SINKS[flow["sink"]]
-            key = (flow["method"], flow["file_path"], flow["sink_line"], flow["sink"])
+            key = (flow["method"], flow["file_path"], flow["sink_line"], flow["sink"],
+                   flow["source_method"], flow["source_line"])
             if key in seen_local:
                 continue
             seen_local.add(key)
+            is_cross_method = flow["source_method"] != flow["method"]
+            analysis_kind = ("smali_interprocedural_argument_flow" if is_cross_method
+                             else "smali_local_register_flow")
+            flow_scope = "across exact-signature method argument(s)" if is_cross_method else "within the same method"
             findings.append(Finding(
-                title=f"Same-method Smali register-flow candidate: {sink_spec['cwe']}",
-                description=(f"The bounded Smali pass tracked {flow['source_kind']} from line "
-                             f"{flow['source_line']} into register {flow['register']} used by "
-                             f"{flow['sink']} at line {flow['sink_line']} in the same method. "
-                             "This is a CFG-based may-flow candidate; branch-condition feasibility, "
-                             "sanitizers, component authorization, and security impact require validation."),
+                title=f"{'Interprocedural' if is_cross_method else 'Same-method'} Smali register-flow candidate: {sink_spec['cwe']}",
+                description=(f"The bounded Smali pass tracked {flow['source_kind']} from "
+                             f"{flow['source_file']}:{flow['source_line']} in {flow['source_method']} "
+                             f"into register {flow['register']} used by {flow['sink']} at "
+                             f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
+                             "This is a bounded CFG may-flow candidate; dynamic dispatch, field/array/return "
+                             "flows, sanitizers, branch feasibility, component authorization, and security "
+                             "impact require validation."),
                 severity=Severity.INFO, confidence=0.5, cwe_id=sink_spec["cwe"],
                 cvss_score=0.0, cvss_vector="", affected_component=flow["method"].split("->", 1)[0],
                 file_path=flow["file_path"], line_number=flow["sink_line"],
@@ -689,24 +815,26 @@ class SmaliCallGraphEngine:
                               f"sink line {flow['sink_line']}: {flow['sink']} (register {flow['register']})"),
                 remediation="Validate and constrain data at the actual trust boundary; use safe sink APIs and verify the runtime path.",
                 status=FindingStatus.UNVERIFIED,
-                detection_method="SmaliCallGraphEngine (bounded local register flow)",
-                metadata={"proof_state": "not_proven", "analysis_kind": "smali_local_register_flow",
-                          "register_dataflow": "same_method_move_result_and_move_object_only",
+                detection_method="SmaliCallGraphEngine (bounded register argument flow)",
+                metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
+                          "source_file": flow["source_file"], "source_line": flow["source_line"],
+                          "source_method": flow["source_method"],
+                          "register_dataflow": "same_method_moves_plus_exact_signature_parameter_arguments",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
 
         self.coverage.update(
-            register_dataflow_status=("partial_bounded_cfg_may_analysis"
+            register_dataflow_status=("partial_bounded_cfg_argument_may_analysis"
                                       if self.local_register_analysis_warnings or self.local_register_methods_skipped
-                                      else "bounded_same_method_move_result_move_object_cfg_may_analysis"),
+                                      else "bounded_same_method_and_argument_register_cfg_may_analysis"),
             local_register_flow_candidates=len(seen_local),
             local_register_methods_skipped=len(self.local_register_methods_skipped),
             skipped_method_keys=self.local_register_methods_skipped[:100],
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "fields, arrays, arithmetic, casts, and cross-method argument flow are not modeled",
+                "fields, arrays, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
             ],

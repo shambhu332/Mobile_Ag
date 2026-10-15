@@ -3,7 +3,18 @@
 import tempfile
 from pathlib import Path
 import pytest
-from mobileag.analysis.call_graph import SmaliCallGraphEngine
+from mobileag.analysis.call_graph import (
+    SmaliCallGraphEngine,
+    _parameter_argument_registers,
+)
+
+
+def test_smali_argument_mapper_accounts_for_receiver_and_wide_parameters():
+    assert _parameter_argument_registers("(JLjava/lang/String;)V", True,
+                                         ["v0", "v1", "v2"]) == [("p0", "v0"), ("p2", "v2")]
+    assert _parameter_argument_registers("(JLjava/lang/String;)V", False,
+                                         ["v0", "v1", "v2", "v3"]) == [("p1", "v1"), ("p3", "v3")]
+    assert _parameter_argument_registers("(Ljava/lang/String;)V", True, ["v0", "v1"]) == []
 
 
 def test_smali_call_graph_parsing_and_reachability():
@@ -87,7 +98,51 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].line_number == 14
     assert local[0].status.value == "UNVERIFIED"
     assert local[0].cvss_score == 0
-    assert local[0].metadata["register_dataflow"] == "same_method_move_result_and_move_object_only"
+    assert local[0].metadata["register_dataflow"] == "same_method_moves_plus_exact_signature_parameter_arguments"
+
+
+def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(tmp_path):
+    source_file = tmp_path / "Entry.smali"
+    sink_file = tmp_path / "Helper.smali"
+    source_file.write_text("""
+.class public Lcom/example/Entry;
+.super Landroid/app/Activity;
+.method public onCreate(Landroid/os/Bundle;)V
+    .registers 3
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "target"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v2}, Lcom/example/Helper;->load(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+    sink_file.write_text("""
+.class public Lcom/example/Helper;
+.super Ljava/lang/Object;
+.method public static load(Ljava/lang/String;)V
+    .registers 2
+    sget-object v0, Lcom/example/Helper;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, p0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    cross_method = [finding for finding in findings
+                    if finding.metadata.get("analysis_kind") == "smali_interprocedural_argument_flow"]
+
+    assert len(cross_method) == 1
+    finding = cross_method[0]
+    assert finding.cwe_id == "CWE-829"
+    assert finding.status.value == "UNVERIFIED"
+    assert finding.file_path == str(sink_file)
+    assert finding.metadata["source_file"] == str(source_file)
+    assert finding.metadata["source_method"].startswith("Lcom/example/Entry;->onCreate")
+    assert "dynamic dispatch" in finding.description
+    assert engine.coverage["interprocedural_flow_status"] == "bounded_parameter_arguments"
 
 
 @pytest.mark.parametrize(("source_method", "sink_method"), [

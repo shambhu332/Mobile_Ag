@@ -320,6 +320,28 @@ def test_openapi_catalog_redacts_token_shaped_opaque_path_segments():
     assert sample_a not in encoded and sample_b not in encoded
 
 
+def test_openapi_schema_redacts_dynamic_json_object_keys():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    private_email = "synthetic.user@example.invalid"
+    private_id = "f0e1d2c3b4a5968778695a4b3c2d1e0f"
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/directory",
+        response_body=json.dumps({private_email: {"token": "synthetic-secret"},
+                                  private_id: {"active": True}}),
+    ))
+
+    spec = catalog.export_openapi_json()
+    encoded = json.dumps(spec)
+    assert private_email not in encoded and private_id not in encoded
+    assert "synthetic-secret" not in encoded
+    schema = spec["paths"]["/v1/directory"]["get"]["responses"]["200"][
+        "content"]["application/json"]["schema"]
+    assert schema["x-mobileag-redacted-dynamic-keys"] is True
+
+
 def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
     import json
     from mobileag.web.app import _captured_api_catalog

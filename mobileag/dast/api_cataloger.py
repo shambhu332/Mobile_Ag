@@ -14,6 +14,19 @@ from urllib.parse import parse_qsl, urlparse
 from openapi_spec_validator import validate as validate_openapi_spec
 
 
+_DYNAMIC_JSON_KEY_PATTERNS = (
+    re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"),
+    re.compile(r"^[A-Za-z0-9_-]{24,}$"),
+    re.compile(r"^[0-9]{5,}$"),
+    re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$"),
+    re.compile(r"^[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$"),
+)
+
+
+def _looks_like_dynamic_json_key(value: str) -> bool:
+    return any(pattern.fullmatch(value) for pattern in _DYNAMIC_JSON_KEY_PATTERNS)
+
+
 @dataclass
 class CapturedRequest:
     method: str
@@ -62,13 +75,19 @@ class MobileApiCataloger:
             return {}
         if isinstance(value, dict):
             properties = {}
+            redacted_dynamic_keys = False
             for key, item in list(value.items())[:100]:
                 if isinstance(key, str) and len(key) <= 128:
+                    if _looks_like_dynamic_json_key(key):
+                        redacted_dynamic_keys = True
+                        continue
                     properties[key] = MobileApiCataloger._json_schema(item, depth + 1)
             result: Dict[str, Any] = {"type": "object", "properties": properties,
                                       "additionalProperties": True}
             if len(value) > 100:
                 result["x-mobileag-truncated-properties"] = True
+            if redacted_dynamic_keys:
+                result["x-mobileag-redacted-dynamic-keys"] = True
             return result
         if isinstance(value, list):
             schemas = [MobileApiCataloger._json_schema(item, depth + 1) for item in value[:12]]

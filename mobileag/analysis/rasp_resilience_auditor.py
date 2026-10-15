@@ -15,22 +15,22 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
 class ResilienceVectorScore:
     vector_name: str
     masvs_category: str
-    score: float  # 0.0 to 100.0
+    score: Optional[float]  # None when this vector is not meaningfully measured
     detected_indicators: List[str] = field(default_factory=list)
-    passed: bool = False
+    passed: Optional[bool] = False  # None means the analyzer cannot determine pass/fail
 
 
 @dataclass
 class ResilienceAssessmentResult:
-    overall_score: float = 0.0
-    grade: str = "F"
+    overall_score: Optional[float] = None
+    grade: str = "Not validated"
     vectors: Dict[str, ResilienceVectorScore] = field(default_factory=dict)
 
 
@@ -112,13 +112,14 @@ class RaspResilienceAuditor:
             passed=obf_ratio >= 40.0,
         )
 
-        # 2. Control Flow Complexity (estimated by class density)
+        # 2. Control flow cannot be inferred from class-name obfuscation. Do not
+        # fabricate a score or pass/fail result from an unrelated signal.
         v_flow = ResilienceVectorScore(
             vector_name="Control Flow Flattening",
             masvs_category="MASVS-RESILIENCE-2",
-            score=50.0 if obf_ratio > 50 else 20.0,
-            detected_indicators=["Heuristic flow complexity based on method branching"],
-            passed=obf_ratio > 50,
+            score=None,
+            detected_indicators=["Not assessed: control-flow graph/branch analysis is not implemented"],
+            passed=None,
         )
 
         # 3. String Pool Entropy
@@ -173,20 +174,9 @@ class RaspResilienceAuditor:
         }
 
         # Calculate Overall Weighted Score
-        weights = [0.25, 0.15, 0.15, 0.15, 0.15, 0.15]
-        scores = [v_obf.score, v_flow.score, v_entropy.score, v_root.score, v_debug.score, v_tamper.score]
-        result.overall_score = round(sum(w * s for w, s in zip(weights, scores)), 1)
-
-        if result.overall_score >= 80:
-            result.grade = "A"
-        elif result.overall_score >= 65:
-            result.grade = "B"
-        elif result.overall_score >= 50:
-            result.grade = "C"
-        elif result.overall_score >= 35:
-            result.grade = "D"
-        else:
-            result.grade = "F"
+        # An aggregate score would imply comparable, validated measurements;
+        # the current heuristics do not support that interpretation.
+        result.overall_score = None
 
         return result
 

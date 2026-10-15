@@ -168,7 +168,11 @@ def test_rasp_resilience_auditor():
         assert "root_detection" in res.vectors
         assert "/system/bin/su" in res.vectors["root_detection"].detected_indicators
         assert "isDebuggerConnected" in res.vectors["anti_debugging"].detected_indicators
-        assert res.overall_score >= 0.0
+        assert res.overall_score is None
+        assert res.grade == "Not validated"
+        assert res.vectors["control_flow"].score is None
+        assert res.vectors["control_flow"].passed is None
+        assert "not implemented" in res.vectors["control_flow"].detected_indicators[0].lower()
 
 
 def test_mobile_sbom_generator():

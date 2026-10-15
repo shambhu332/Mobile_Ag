@@ -331,10 +331,13 @@ class SmaliCallGraphEngine:
                 break
 
         parameter_taints: dict[str, dict[str, set[tuple[str, int, str, str]]]] = {}
+        static_field_taints: dict[str, set[tuple[str, int, str, str]]] = {}
+        static_field_readers: dict[str, set[str]] = {}
         worklist = deque(self.methods)
         queued = set(self.methods)
         interprocedural_runs = 0
         taint_facts = 0
+        parameter_taint_facts = 0
         interprocedural_limited = False
         seen_flows: set[tuple[Any, ...]] = set()
         while worklist and interprocedural_runs < self.MAX_INTERPROCEDURAL_METHOD_RUNS:
@@ -363,7 +366,11 @@ class SmaliCallGraphEngine:
                     initial.setdefault(f"p{formal_index}", set()).add(source_trace)
                     formal_index += width
             initial = {register: frozenset(traces) for register, traces in initial.items()}
-            flows, argument_flows = self._analyze_local_register_flows(method, initial)
+            flows, argument_flows, field_writes, field_reads = self._analyze_local_register_flows(
+                method, initial, static_field_taints,
+            )
+            for field_key in field_reads:
+                static_field_readers.setdefault(field_key, set()).add(method_key)
             for flow in flows:
                 flow_key = (flow["method"], flow["sink_line"], flow["sink"],
                             flow["source_method"], flow["source_line"], flow["source_file"])
@@ -386,9 +393,24 @@ class SmaliCallGraphEngine:
                     break
                 traces.add(trace)
                 taint_facts += 1
+                parameter_taint_facts += 1
                 if target_key not in queued:
                     worklist.append(target_key)
                     queued.add(target_key)
+
+            for field_key, trace in field_writes:
+                traces = static_field_taints.setdefault(field_key, set())
+                if trace in traces:
+                    continue
+                if taint_facts >= self.MAX_INTERPROCEDURAL_TAINT_FACTS:
+                    interprocedural_limited = True
+                    break
+                traces.add(trace)
+                taint_facts += 1
+                for reader_key in static_field_readers.get(field_key, ()):
+                    if reader_key not in queued:
+                        worklist.append(reader_key)
+                        queued.add(reader_key)
 
         if worklist:
             interprocedural_limited = True
@@ -397,8 +419,10 @@ class SmaliCallGraphEngine:
         self.coverage.update(
             runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
             methods_analyzed=len(self.methods), interprocedural_method_runs=interprocedural_runs,
-            interprocedural_parameter_taint_facts=taint_facts,
-            interprocedural_flow_status="partial" if interprocedural_limited else "bounded_parameter_arguments",
+            interprocedural_parameter_taint_facts=parameter_taint_facts,
+            interprocedural_static_field_taint_facts=sum(len(v) for v in static_field_taints.values()),
+            interprocedural_flow_status=("partial" if interprocedural_limited
+                                         else "bounded_arguments_and_static_fields"),
         )
         if interprocedural_limited:
             self.coverage.update(static_status="partial", limits_reached=True)
@@ -442,16 +466,18 @@ class SmaliCallGraphEngine:
         self,
         method: MethodNode,
         initial_taints: dict[str, frozenset[tuple[str, int, str, str]]] | None = None,
-    ) -> tuple[list[dict[str, Any]], list[tuple[str, str, tuple[str, int, str, str]]]]:
+        initial_static_field_taints: dict[str, set[tuple[str, int, str, str]]] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[tuple[str, str, tuple[str, int, str, str]]],
+               list[tuple[str, tuple[str, int, str, str]]], set[str]]:
         """Run bounded CFG register may-flow with exact-signature arg propagation.
 
         This is a may-analysis over a small Smali CFG: conditional branches
         have both successors, unconditional gotos only their target, and
         returns/throws terminate. Register writes kill prior taint; modeled
         source results flow through move-result* and move-object. Tainted actual
-        arguments may seed matching callee p-registers, and bounded array-element
-        summaries propagate stored values through array aliases. Fields, returns,
-        sanitizers, dynamic dispatch and switch payloads are not modeled. Results
+        arguments may seed matching callee p-registers, while bounded static-field
+        and array-element summaries propagate stored values. Instance fields,
+        returns, sanitizers, dynamic dispatch and switch payloads are not modeled. Results
         are candidates only.
         """
         instructions: list[tuple[int, str]] = []
@@ -511,9 +537,13 @@ class SmaliCallGraphEngine:
         queue = [0]
         flows: list[dict[str, Any]] = []
         argument_flows: set[tuple[str, str, tuple[str, int, str, str]]] = set()
+        static_field_writes: set[tuple[str, tuple[str, int, str, str]]] = set()
+        static_field_reads: set[str] = set()
         visited_steps = 0
         invoke_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\},\s*(L[a-zA-Z0-9_$/]+;)->([a-zA-Z0-9_$<>-]+)(\([^)]*\)[^\s]+)")
         invoke_args_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\}")
+        static_get_re = re.compile(r"sget(?:-[a-z]+)?\s+([vp]\d+),\s*(L[^;]+;->[A-Za-z0-9_$]+:[^\s]+)")
+        static_put_re = re.compile(r"sput(?:-[a-z]+)?\s+([vp]\d+),\s*(L[^;]+;->[A-Za-z0-9_$]+:[^\s]+)")
         write_re = re.compile(
             r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
             r"[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
@@ -530,7 +560,19 @@ class SmaliCallGraphEngine:
             move_alias = re.match(r"move-object(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
-            if move_result:
+            static_get = static_get_re.match(text)
+            static_put = static_put_re.match(text)
+            if static_get:
+                dest, field_key = static_get.groups()
+                static_field_reads.add(field_key)
+                registers.pop(f"@array:{dest}", None)
+                traces = (initial_static_field_taints or {}).get(field_key, ())
+                if traces:
+                    registers[dest] = frozenset(traces)
+                else:
+                    registers.pop(dest, None)
+                pending = frozenset()
+            elif move_result:
                 dest = move_result.group(1)
                 registers.pop(f"@array:{dest}", None)
                 if pending:
@@ -578,6 +620,11 @@ class SmaliCallGraphEngine:
                         registers[array_key] = frozenset(
                             set(registers.get(array_key, ())) | set(value_traces)
                         )
+
+                if static_put:
+                    value_register, field_key = static_put.groups()
+                    for trace in registers.get(value_register, ()):
+                        static_field_writes.add((field_key, trace))
 
                 invoke = invoke_re.search(text)
                 if invoke:
@@ -630,7 +677,7 @@ class SmaliCallGraphEngine:
                     queue.append(successor)
         if queue:
             warn(f"register-flow worklist limit reached in {method.key}")
-        return flows, sorted(argument_flows)
+        return flows, sorted(argument_flows), sorted(static_field_writes), static_field_reads
 
     def _parse_smali_file(self, smali_file: Path, content: Optional[str] = None) -> None:
         """Parse class definition, methods, invoke instructions, and reflection in a Smali file."""
@@ -903,7 +950,7 @@ class SmaliCallGraphEngine:
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_plus_exact_signature_arguments_and_array_elements",
+                          "register_dataflow": "same_method_moves_array_elements_static_fields_and_exact_signature_arguments",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
@@ -918,7 +965,7 @@ class SmaliCallGraphEngine:
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "fields, precise array indexes/objects, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
+                "instance fields, precise array indexes/objects, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",

@@ -1096,6 +1096,44 @@ def test_smali_files_new_buffered_reader_path_flows_to_webview(tmp_path):
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
 
 
+def test_smali_files_new_input_stream_path_flows_to_webview(tmp_path):
+    (tmp_path / "ExternalNioStream.smali").write_text("""
+.class public Lcom/example/ExternalNioStream;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 12
+    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
+    move-result-object v1
+    const/4 v2, 0
+    new-array v2, v2, [Ljava/lang/String;
+    invoke-static {v1, v2}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;
+    move-result-object v3
+    const/4 v4, 0
+    new-array v4, v4, [Ljava/nio/file/OpenOption;
+    invoke-static {v3, v4}, Ljava/nio/file/Files;->newInputStream(Ljava/nio/file/Path;[Ljava/nio/file/OpenOption;)Ljava/io/InputStream;
+    move-result-object v5
+    invoke-virtual {v5}, Ljava/io/InputStream;->read()I
+    move-result v6
+    new-instance v7, Ljava/lang/StringBuilder;
+    invoke-direct {v7}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v7, v6}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    move-result-object v7
+    invoke-virtual {v7}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v8
+    invoke-virtual {p2, v8}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
+
+
 def test_smali_tainted_file_object_flows_through_file_input_stream(tmp_path):
     (tmp_path / "ExternalFileObject.smali").write_text("""
 .class public Lcom/example/ExternalFileObject;
@@ -1228,6 +1266,28 @@ def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_pat
     invoke-virtual {v4}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v5
     invoke-virtual {p1, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public readInternalNioStream(Landroid/webkit/WebView;)V
+    .registers 10
+    const-string v0, "/data/user/0/com.example.app/files/config"
+    const/4 v1, 0
+    new-array v1, v1, [Ljava/lang/String;
+    invoke-static {v0, v1}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;
+    move-result-object v2
+    const/4 v3, 0
+    new-array v3, v3, [Ljava/nio/file/OpenOption;
+    invoke-static {v2, v3}, Ljava/nio/file/Files;->newInputStream(Ljava/nio/file/Path;[Ljava/nio/file/OpenOption;)Ljava/io/InputStream;
+    move-result-object v4
+    invoke-virtual {v4}, Ljava/io/InputStream;->read()I
+    move-result v5
+    new-instance v6, Ljava/lang/StringBuilder;
+    invoke-direct {v6}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v6, v5}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    move-result-object v6
+    invoke-virtual {v6}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v7
+    invoke-virtual {p1, v7}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
 """, encoding="utf-8")

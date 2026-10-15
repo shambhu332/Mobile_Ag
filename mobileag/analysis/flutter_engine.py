@@ -21,7 +21,7 @@ class FlutterAnalysisResult:
     api_endpoints: List[str] = field(default_factory=list)
     named_routes: List[str] = field(default_factory=list)
     bundled_assets: List[str] = field(default_factory=list)
-    potential_secrets: List[Dict[str, str]] = field(default_factory=list)
+    potential_secrets: List[Dict[str, object]] = field(default_factory=list)
 
 
 class FlutterEngineAnalyzer:
@@ -90,7 +90,9 @@ class FlutterEngineAnalyzer:
 
             secret_match = self.SECRET_PATTERN.search(s)
             if secret_match:
-                result.potential_secrets.append({"raw": s[:80], "candidate": secret_match.group(1)})
+                # Keep the signal, never copy a credential-like value from an
+                # application binary into a report or downstream persistence.
+                result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})
 
         result.api_endpoints = sorted(endpoints)[:100]
         result.named_routes = sorted(routes)[:100]

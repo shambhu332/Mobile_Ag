@@ -39,6 +39,9 @@ def test_hermes_bytecode_analyzer():
         assert res.bytecode_version == 84
         assert "https://api.example.com/mobile/v1" in res.api_endpoints
         assert len(res.secrets) >= 1
+        assert all(secret == {"name": "embedded credential", "value_redacted": True}
+                   for secret in res.secrets)
+        assert "abcdef0123456789abcdef" not in repr(res.secrets)
 
 
 def test_il2cpp_auditor():
@@ -49,7 +52,9 @@ def test_il2cpp_auditor():
         meta_file = os.path.join(meta_dir, "global-metadata.dat")
         # Magic: 0xFAB11BAF, Version: 29
         header = struct.pack("<II", 0xFAB11BAF, 29) + b"\x00" * 56
-        content = b"https://game-api.unity.com/v1" + b"\x00" * 20 + b"AuthenticationManager"
+        content = (b"https://game-api.unity.com/v1" + b"\x00" * 20
+                   + b"AuthenticationManager" + b"\x00"
+                   + b'apiKey: "synthetic-unity-secret-123"')
 
         with open(meta_file, "wb") as f:
             f.write(header + content)
@@ -61,6 +66,8 @@ def test_il2cpp_auditor():
         assert res.metadata_version == 29
         assert "https://game-api.unity.com/v1" in res.api_endpoints
         assert "AuthenticationManager" in res.reconstructed_classes
+        assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
+        assert "synthetic-unity-secret-123" not in repr(res.potential_secrets)
 
 
 def test_macho_binary_parser():

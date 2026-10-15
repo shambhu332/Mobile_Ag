@@ -370,7 +370,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 |---|---|---|
 | Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Measure unsupported syntax and false negatives. |
 | IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. |
-| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter and IL2CPP read bounded raw strings; Hermes checks a header and extracts printable strings. No Dart snapshot reconstruction, Hermes control-flow decompilation, or IL2CPP type/method table reconstruction is implemented. |
+| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter and IL2CPP read bounded raw strings; Hermes checks a header and extracts printable strings. Credential-like matches now emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction, Hermes control-flow decompilation, or IL2CPP type/method table reconstruction is implemented. |
 | iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Bounded parser.** Synthetic format tests do not establish robust parsing of all architectures, fat binaries, malformed files, or Swift metadata semantics. |
 | Frida stealth, TLS bypass, crypto harvesting | `dast/frida_stealth.py`, `unpinning_engine.py`, `crypto_harvester.py` | **Not accepted as a completed or safe feature.** Scripts are generators; no current-device validation is implied. Anti-detection/evasion and bypass behavior are outside this plan's completion criteria. Preserve explicit scope and do not treat modified-lab observations as ordinary-app proof. |
 | IPC fuzzing / PoC synthesis | `deeplink_intent_fuzzer.py`, `provider_fuzzer.py`, `generators/poc_apk_synthesizer.py` | **Prototype / not proof-grade.** Provider probes now report read/query success and SQL errors as observations, not vulnerability verdicts. Generated PoCs still need parameter validation and evidence-bound review; no gate establishes independent confirmation before generation. The dashboard now defers the generated-PoC request until the researcher explicitly opens that finding’s PoC tab; the read-only loopback navigator allows only the matching bounded GET route. Dynamic use requires exact authorization and human review. |
@@ -420,6 +420,17 @@ HTTPS interception and automatic replay/fuzzing remain absent.
 5. Keep operator approval at permission, credential entry, external network,
    instrumentation, generated-PoC review, and data-changing boundaries. Do not mark a feature done
    based only on a module, generated script, or mocked command.
+
+### Sensitive-value output handling
+
+On 2026-10-15, synthetic probes confirmed the Flutter, Hermes, and IL2CPP
+string scanners previously returned credential-like text and matched values
+in their result objects. They now return only a generic redacted review marker;
+regressions assert synthetic credential literals do not appear in that output.
+This narrows accidental report/API exposure but does not prove that all
+downstream logs, caches, or other analyzers are free of secrets. Static
+credential candidates remain unverified and must be reviewed locally against
+the preserved artifact; do not copy secrets into durable evidence.
 
 ```
 Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]

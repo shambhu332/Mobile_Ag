@@ -22,7 +22,7 @@ class HermesAnalysisResult:
     string_count: int = 0
     function_count: int = 0
     api_endpoints: List[str] = field(default_factory=list)
-    secrets: List[Dict[str, str]] = field(default_factory=list)
+    secrets: List[Dict[str, object]] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
 
 
@@ -98,10 +98,9 @@ class HermesBytecodeAnalyzer:
 
             secret_match = self.SECRET_PATTERN.search(s)
             if secret_match:
-                result.secrets.append({
-                    "raw": s[:80],
-                    "candidate": secret_match.group(1),
-                })
+                # A candidate is enough to trigger manual review. Do not leak
+                # the matched token or surrounding bytecode into reports.
+                result.secrets.append({"name": "embedded credential", "value_redacted": True})
 
         result.api_endpoints = sorted(endpoints)[:100]
         result.extracted_strings = strings_sample[:100]

@@ -23,7 +23,7 @@ class Il2CppAnalysisResult:
     string_literals_count: int = 0
     reconstructed_classes: List[str] = field(default_factory=list)
     api_endpoints: List[str] = field(default_factory=list)
-    potential_secrets: List[Dict[str, str]] = field(default_factory=list)
+    potential_secrets: List[Dict[str, object]] = field(default_factory=list)
 
 
 class Il2CppAuditor:
@@ -103,10 +103,8 @@ class Il2CppAuditor:
 
             secret_match = self.SECRET_PATTERN.search(s)
             if secret_match:
-                result.potential_secrets.append({
-                    "raw": s[:80],
-                    "candidate": secret_match.group(1),
-                })
+                # Retain only a review marker; do not persist credential bytes.
+                result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})
 
             # Detect class-like strings
             if re.match(r"^[A-Z][a-zA-Z0-9_]+Manager$|^[A-Z][a-zA-Z0-9_]+Controller$", s):

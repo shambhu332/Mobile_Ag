@@ -552,6 +552,82 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     assert not any(f.title == "JWT Token Missing Expiration Claim" for f in invalid_exp)
 
 
+def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
+    import base64
+    import hashlib
+    import hmac
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    def encode(value):
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    for alg, digest in (("HS256", hashlib.sha256), ("HS384", hashlib.sha384), ("HS512", hashlib.sha512)):
+        key = b"synthetic-research-only-hmac-key".ljust(digest().digest_size, b"x")
+        header = encode(json.dumps({"alg": alg, "typ": "JWT"}, separators=(",", ":")).encode())
+        payload = encode(json.dumps({"sub": "synthetic"}, separators=(",", ":")).encode())
+        signing_input = f"{header}.{payload}".encode("ascii")
+        signature = encode(hmac.new(key, signing_input, digest).digest())
+        token = f"{header}.{payload}.{signature}"
+
+        verified = auditor.verify_hmac_jwt_signature(token, key)
+        assert verified == {
+            "status": "valid_for_supplied_key", "algorithm": alg,
+            "key_source": "researcher_supplied", "server_acceptance": "not_tested",
+        }
+        wrong_key = b"different-synthetic-key".ljust(digest().digest_size, b"y")
+        assert auditor.verify_hmac_jwt_signature(token, wrong_key)["status"] == "invalid_for_supplied_key"
+        assert auditor.verify_hmac_jwt_signature(token, None)["status"] == "not_tested"
+
+        altered_payload = encode(b'{"sub":"changed"}')
+        altered = f"{header}.{altered_payload}.{signature}"
+        assert auditor.verify_hmac_jwt_signature(altered, key)["status"] == "invalid_for_supplied_key"
+        assert auditor.verify_hmac_jwt_signature(token, b"short")["status"] == "key_too_short"
+
+    unsupported_header = encode(b'{"alg":"RS256"}')
+    payload = encode(b'{"sub":"synthetic"}')
+    assert auditor.verify_hmac_jwt_signature(
+        f"{unsupported_header}.{payload}.AA", key
+    )["status"] == "unsupported_algorithm"
+    assert auditor.verify_hmac_jwt_signature(f"{unsupported_header}.{payload}.", key)["status"] == "unsupported_algorithm"
+    assert auditor.verify_hmac_jwt_signature(f"{unsupported_header}.{payload}.AA", b"x" * 4097)["status"] == "invalid_key"
+    assert auditor.verify_hmac_jwt_signature("not.a.jwt", key)["status"] == "invalid_compact_token"
+    hs256_header = encode(b'{"alg":"HS256"}')
+    min_key = b"k" * hashlib.sha256().digest_size
+    assert auditor.verify_hmac_jwt_signature(f"{hs256_header}.{payload}.", min_key)["status"] == "missing_signature"
+    critical_header = encode(b'{"alg":"HS256","crit":["b64"],"b64":false}')
+    assert auditor.verify_hmac_jwt_signature(
+        f"{critical_header}.{payload}.AA", min_key
+    )["status"] == "unsupported_header_parameters"
+    duplicate_header = encode(b'{"alg":"HS256","alg":"HS512"}')
+    assert auditor.verify_hmac_jwt_signature(
+        f"{duplicate_header}.{payload}.AA", min_key
+    )["status"] == "unsupported_header_parameters"
+    assert "synthetic-research-only-hmac-key" not in json.dumps(
+        auditor.verify_hmac_jwt_signature(token, key)
+    )
+
+
+def test_token_session_hmac_verifier_matches_rfc7515_hs256_vector():
+    import base64
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    # RFC 7515 Appendix A.1 JWS example; fixed public test vector, not a secret.
+    key_b64 = "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
+    key = base64.urlsafe_b64decode(key_b64 + "=" * (-len(key_b64) % 4))
+    token = (
+        "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9."
+        "eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFt"
+        "cGxlLmNvbS9pc19yb290Ijp0cnVlfQ."
+        "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    )
+    result = MobileTokenSessionAuditor().verify_hmac_jwt_signature(token, key)
+    assert result["status"] == "valid_for_supplied_key"
+    assert result["algorithm"] == "HS256"
+    assert result["server_acceptance"] == "not_tested"
+
+
 def test_token_session_auditor_transactions_and_logout_reuse():
     import json
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor

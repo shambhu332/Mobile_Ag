@@ -9,13 +9,16 @@ Audits intercepted mobile tokens and authentication sessions for security weakne
 6. Session token reuse after logout or de-authentication -> CWE-613
 7. Low-entropy or predictable session identifiers -> CWE-330
 
-JWT parsing is bounded and does not verify signatures, estimate HMAC key
-strength, or establish server-side token acceptance. Findings are review leads.
+JWT parsing is bounded. Signature verification is an explicit offline helper
+limited to researcher-keyed HS256/HS384/HS512 checks; it does not estimate key
+entropy or establish server-side token acceptance. Findings are review leads.
 """
 from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
+import hmac
 import json
 import math
 import re
@@ -61,6 +64,13 @@ class MobileTokenSessionAuditor:
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
     MAX_TRANSACTIONS = 10_000
     MAX_TRACKED_LOGOUT_TOKENS = 1_000
+    MAX_VERIFICATION_KEY_BYTES = 4 * 1024
+
+    HMAC_ALGORITHMS = {
+        "HS256": hashlib.sha256,
+        "HS384": hashlib.sha384,
+        "HS512": hashlib.sha512,
+    }
 
     @staticmethod
     def _safe_context_url(url: str) -> str:
@@ -150,6 +160,115 @@ class MobileTokenSessionAuditor:
             if isinstance(key, str) and key.lower() in self.SENSITIVE_CLAIM_KEYS
         )[:32]
         return {"header": safe_header, "payload": safe_payload, "has_signature": bool(parts[2])}
+
+    def verify_hmac_jwt_signature(self, token: str, verification_key: str | bytes | None) -> Dict[str, Any]:
+        """Optionally verify compact JWT HMAC using a researcher-supplied local key.
+
+        Implements HS256/HS384/HS512 JWS verification only (RFC 7515/7518),
+        including JWA's minimum key byte length and constant-time MAC comparison.
+        It does not discover keys, fetch JWKS, verify asymmetric algorithms, infer
+        key entropy/strength, or establish that any server accepts the token.
+        The key and token are never copied into the result.
+        """
+        if not isinstance(token, str) or len(token) > self.MAX_TOKEN_CHARS:
+            return {"status": "invalid_input", "algorithm": None, "key_source": "researcher_supplied"}
+
+        clean_token = token.strip()
+        if clean_token.lower().startswith("bearer "):
+            clean_token = clean_token[7:].strip()
+        parsed = self.decode_jwt(clean_token)
+        algorithm = parsed["header"].get("alg") if parsed else None
+        if verification_key is None:
+            return {"status": "not_tested", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+
+        if isinstance(verification_key, str):
+            if len(verification_key) > self.MAX_VERIFICATION_KEY_BYTES:
+                return {"status": "invalid_key", "algorithm": algorithm,
+                        "key_source": "researcher_supplied"}
+            key = verification_key.encode("utf-8")
+        elif isinstance(verification_key, bytes):
+            key = verification_key
+        else:
+            return {"status": "invalid_key", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+        if not key or len(key) > self.MAX_VERIFICATION_KEY_BYTES:
+            return {"status": "invalid_key", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+        if not parsed:
+            return {"status": "invalid_compact_token", "algorithm": None,
+                    "key_source": "researcher_supplied"}
+        parts = clean_token.split(".")
+        digest = self.HMAC_ALGORITHMS.get(algorithm)
+        if digest is None:
+            return {"status": "unsupported_algorithm", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+
+        # Fail closed on duplicate header members or unimplemented JOSE
+        # extensions so verification semantics cannot be guessed.
+        try:
+            decoded_segments = []
+            for segment in parts[:2]:
+                decoded = base64.b64decode(
+                    (segment + "=" * (-len(segment) % 4)).encode("ascii"),
+                    altchars=b"-_", validate=True,
+                )
+                canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+                if canonical != segment:
+                    raise ValueError("non-canonical base64url segment")
+                decoded_segments.append(decoded)
+            header_bytes = decoded_segments[0].decode("utf-8")
+
+            def reject_duplicate_header_members(pairs):
+                header_obj = {}
+                for name, value in pairs:
+                    if name in header_obj:
+                        raise ValueError("duplicate protected header member")
+                    header_obj[name] = value
+                return header_obj
+
+            protected_header = json.loads(
+                header_bytes, object_pairs_hook=reject_duplicate_header_members,
+            )
+            if (not isinstance(protected_header, dict)
+                    or protected_header.get("alg") != algorithm
+                    or "crit" in protected_header
+                    or ("b64" in protected_header and protected_header["b64"] is not True)):
+                raise ValueError("unsupported protected header")
+        except (ValueError, UnicodeError, binascii.Error, RecursionError):
+            return {"status": "unsupported_header_parameters", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+
+        if len(key) < digest().digest_size:
+            return {"status": "key_too_short", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+
+        signature_segment = parts[2]
+        if not signature_segment:
+            return {"status": "missing_signature", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+        try:
+            padded = signature_segment + "=" * (-len(signature_segment) % 4)
+            supplied_signature = base64.b64decode(
+                padded.encode("ascii"), altchars=b"-_", validate=True,
+            )
+            canonical_segment = base64.urlsafe_b64encode(supplied_signature).rstrip(b"=").decode("ascii")
+        except (ValueError, UnicodeError, binascii.Error):
+            return {"status": "invalid_compact_token", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+        if canonical_segment != signature_segment:
+            return {"status": "invalid_compact_token", "algorithm": algorithm,
+                    "key_source": "researcher_supplied"}
+
+        signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
+        expected_signature = hmac.new(key, signing_input, digest).digest()
+        valid = hmac.compare_digest(expected_signature, supplied_signature)
+        return {
+            "status": "valid_for_supplied_key" if valid else "invalid_for_supplied_key",
+            "algorithm": algorithm,
+            "key_source": "researcher_supplied",
+            "server_acceptance": "not_tested",
+        }
 
     def calculate_entropy(self, data: str) -> float:
         """Calculate Shannon entropy in bits per character."""

@@ -118,7 +118,7 @@
               ? data.kotlin_exploit_code
               : data.message || 'No standalone Kotlin exploit template available for this category.';
             if (copyBtn && data.available && data.kotlin_exploit_code) {
-              copyBtn.onclick = () => copySnippet(data.kotlin_exploit_code);
+              copyBtn.addEventListener('click', () => copySnippet(data.kotlin_exploit_code), { once: true });
             }
           })
           .catch(() => {

@@ -498,18 +498,25 @@ class IOSSecurityAnalyzer:
             from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
             p_auditor = PrivacyManifestAuditor()
             p_res = p_auditor.audit_ios_privacy_manifest(temp_extract_dir)
-            if p_res.has_privacy_manifest:
-                privacy_manifest_summary = {
-                    "has_privacy_manifest": True,
-                    "tracking_enabled": p_res.tracking_enabled,
-                    "tracking_domains": p_res.tracking_domains,
-                    "declared_api_categories": p_res.declared_api_categories,
-                }
-                if p_res.tracking_enabled and not p_res.tracking_domains:
+            privacy_manifest_summary = {
+                "has_privacy_manifest": p_res.has_privacy_manifest,
+                "parse_status": p_res.parse_status,
+                "manifest_count": p_res.manifest_count,
+                "manifest_paths": p_res.manifest_paths,
+                "manifests": p_res.manifests,
+                "errors": p_res.errors,
+                "tracking_enabled": p_res.tracking_enabled,
+                "tracking_domains": p_res.tracking_domains,
+                "declared_api_categories": p_res.declared_api_categories,
+            }
+            for manifest_index, manifest in enumerate(p_res.manifests, start=1):
+                if manifest["tracking_enabled"] is True and not manifest["tracking_domains"]:
                     all_findings.append(Finding(
-                        id="ios-privacy-001",
+                        id=f"ios-privacy-001-{manifest_index}",
                         title="CWE-359: Privacy Manifest Tracking Enabled Without Declared Tracking Domains",
-                        description="NSPrivacyTracking is enabled in PrivacyInfo.xcprivacy, but no NSPrivacyTrackingDomains are declared.",
+                        description=(f"NSPrivacyTracking is enabled in {manifest['path']}, but that manifest has no "
+                                     "NSPrivacyTrackingDomains declaration. This static consistency indicator "
+                                     "does not establish tracking behavior or regulatory non-compliance."),
                         severity=Severity.MEDIUM,
                         cwe_id="CWE-359",
                         affected_component="PrivacyInfo.xcprivacy",

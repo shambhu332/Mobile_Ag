@@ -168,6 +168,53 @@ def test_privacy_manifest_auditor():
         assert res.tracking_enabled is True
         assert "analytics.thirdparty.com" in res.tracking_domains
         assert "NSPrivacyAccessedAPITypeUserDefaults" in res.declared_api_categories
+        assert res.parse_status == "parsed"
+        assert res.manifest_count == 1
+        assert res.manifests[0]["path"] == "PrivacyInfo.xcprivacy"
+
+
+def test_ios_privacy_manifest_audit_reports_partial_parse_and_keeps_bundle_results_separate():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir)
+        main = base / "PrivacyInfo.xcprivacy"
+        nested = base / "Frameworks" / "Example.framework" / "PrivacyInfo.xcprivacy"
+        nested.parent.mkdir(parents=True)
+        with main.open("wb") as f:
+            plistlib.dump({"NSPrivacyTracking": True, "NSPrivacyTrackingDomains": [],
+                           "NSPrivacyAccessedAPITypes": []}, f)
+        nested.write_bytes(b"not a plist")
+
+        result = PrivacyManifestAuditor().audit_ios_privacy_manifest(base)
+
+    assert result.has_privacy_manifest
+    assert result.manifest_count == 2
+    assert result.parse_status == "partial"
+    assert result.manifest_paths == ["Frameworks/Example.framework/PrivacyInfo.xcprivacy",
+                                    "PrivacyInfo.xcprivacy"]
+    assert result.manifests == [{"path": "PrivacyInfo.xcprivacy", "tracking_enabled": True,
+                                 "tracking_domains": [], "declared_api_categories": []}]
+    assert result.tracking_enabled is True
+    assert result.errors == ["manifest_parse_error"]
+
+
+def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "PrivacyInfo.xcprivacy"
+        with path.open("wb") as f:
+            plistlib.dump({"NSPrivacyTracking": "false", "NSPrivacyTrackingDomains": [],
+                           "NSPrivacyAccessedAPITypes": []}, f)
+        result = PrivacyManifestAuditor().audit_ios_privacy_manifest(tmp_dir)
+    assert result.parse_status == "partial"
+    assert result.tracking_enabled is False
+    assert result.errors == ["invalid_tracking_value"]
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir)
+        link = base / "link"
+        link.symlink_to(base, target_is_directory=True)
+        result = PrivacyManifestAuditor().audit_ios_privacy_manifest(link)
+    assert result.parse_status == "invalid"
+    assert result.errors == ["invalid_scan_root"]
 
 
 def test_android_data_safety_indicator_is_only_a_static_review_lead():

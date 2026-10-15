@@ -377,7 +377,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 | API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. BOLA evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. It remains a response evaluator, not a complete dual-session replay system. OpenAPI grouping preserves per-origin servers and omits userinfo; generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. HTTPS capture and dual-session replay remain open. |
 | RASP / resilience | `rasp_resilience_auditor.py` | **Heuristic inventory only.** The numeric score is not a validated resilience measure or MASVS conformance result. |
 | Smart UI crawler | `smart_crawler.py`, `ui_crawler.py` | **Safety correction made in this revision.** No hard-coded credentials; permission/consent prompts, form submission, and exploratory taps now stop at `WAIT` unless the caller explicitly opts into the latter actions. The existing runtime UI snapshot remains read-only. |
-| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas now validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. This does not establish exhaustive inventory or actual privacy disclosure compliance. HAR recognized credential fields are redacted before export. |
+| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy-manifest inventory now parses bounded manifests across the app/framework tree, reports parse/shape errors and per-manifest declarations, and avoids coercing malformed tracking values to true. It does not inspect binary API use, prove manifest completeness, or establish privacy disclosure compliance. HAR recognized credential fields are redacted before export. |
 | Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. HAR exports now redact recognized credential fields. Synthetic browser navigation now verifies all eleven dashboard sections, explicit PoC retrieval, and axe checks at desktop/mobile viewports; test-plan legend contrast was corrected. This scoped browser check is not a complete WCAG claim. This does not demonstrate production-scale telemetry, complete graph data flow, OpenAPI conformance, or release readiness. |
 
 ### Safety and completion boundary
@@ -431,6 +431,16 @@ This narrows accidental report/API exposure but does not prove that all
 downstream logs, caches, or other analyzers are free of secrets. Static
 credential candidates remain unverified and must be reviewed locally against
 the preserved artifact; do not copy secrets into durable evidence.
+
+### iOS Privacy Manifest parsing boundary
+
+The iOS manifest pass now inspects at most 128 manifests and 50,000 tree
+entries, reads only regular non-symlink manifest files up to 2 MiB, and
+preserves per-manifest declarations so a tracking declaration in one framework
+cannot be incorrectly paired with domains from another. Results report
+`absent`, `parsed`, `partial`, or `invalid` plus bounded error codes. These are
+parser/inventory statuses only; required-reason API call analysis and validation
+against current Apple submission requirements remain unimplemented.
 
 ```
 Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]

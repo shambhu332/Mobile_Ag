@@ -341,14 +341,31 @@ def test_exploit_poc_synthesizer():
 
 
 def test_deeplink_fuzzer_mutations():
+    from urllib.parse import parse_qs, urlsplit
     from mobileag.dast.deeplink_intent_fuzzer import DeepLinkIntentFuzzer
 
     fuzzer = DeepLinkIntentFuzzer()
     mutations = fuzzer.generate_mutations("myapp://oauth/callback?code=123&redirect=home")
 
     assert len(mutations) > 5
-    assert any("https://attacker.com" in m for m in mutations)
-    assert any("javascript:" in m for m in mutations)
+    decoded_values = [value for mutation in mutations[1:]
+                      for values in parse_qs(urlsplit(mutation).query).values() for value in values]
+    assert "https://attacker.com" in decoded_values
+    assert "javascript:alert(document.domain)" in decoded_values
+    assert all(set(parse_qs(urlsplit(mutation).query)) == {"code", "redirect"}
+               for mutation in mutations[1:])
+
+
+def test_deeplink_fuzzer_generation_is_bounded_and_rejects_malformed_inputs():
+    from mobileag.dast.deeplink_intent_fuzzer import DeepLinkIntentFuzzer
+
+    fuzzer = DeepLinkIntentFuzzer()
+    assert fuzzer.generate_mutations("x" * (fuzzer.MAX_URI_LENGTH + 1)) == []
+    assert fuzzer.generate_mutations("https://[malformed/path?x=y") == []
+    assert fuzzer.generate_mutations("https://api.example.test:70000/path?x=y") == []
+    too_many = "&".join(f"q{i}=x" for i in range(fuzzer.MAX_QUERY_FIELDS + 1))
+    assert fuzzer.generate_mutations(f"myapp://host/path?{too_many}") == []
+    assert len(fuzzer.generate_mutations("myapp://host/path")) <= fuzzer.MAX_MUTATIONS
 
 
 def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
@@ -368,13 +385,22 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     args, _ = called[0]
     assert args[0][:3] == ["adb", "-s", "device-1"]
 
+    injection_shaped_uri = "myapp://host/path?next=x; touch /tmp/mobileag-not-run"
+    assert fuzzer.execute_fuzz_case(
+        injection_shaped_uri, serial="device-1", guard=lambda: None
+    ).status == "SUCCESS"
+    args, _ = called[1]
+    import shlex
+    remote_args = shlex.split(args[0][4])
+    assert remote_args[-2:] == ["-d", injection_shaped_uri]
+
     def deny():
         raise PermissionError("scope revoked")
 
     assert fuzzer.execute_fuzz_case(
         "https://example.test/path", serial="device-1", guard=deny
     ).status == "BLOCKED_SCOPE"
-    assert len(called) == 1
+    assert len(called) == 2
 
 
 def test_mobile_api_cataloger():

@@ -1052,6 +1052,36 @@ def test_smali_files_read_all_bytes_taints_loaded_array_elements(tmp_path):
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
 
 
+def test_smali_files_new_buffered_reader_path_flows_to_webview(tmp_path):
+    (tmp_path / "ExternalNioReader.smali").write_text("""
+.class public Lcom/example/ExternalNioReader;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 9
+    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
+    move-result-object v1
+    const/4 v2, 0
+    new-array v2, v2, [Ljava/lang/String;
+    invoke-static {v1, v2}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;
+    move-result-object v3
+    invoke-static {v3}, Ljava/nio/file/Files;->newBufferedReader(Ljava/nio/file/Path;)Ljava/io/BufferedReader;
+    move-result-object v4
+    invoke-virtual {v4}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v5
+    invoke-virtual {p2, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
+
+
 def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_path):
     (tmp_path / "InternalReads.smali").write_text("""
 .class public Lcom/example/InternalReads;
@@ -1118,6 +1148,20 @@ def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_pat
     invoke-virtual {v6}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v7
     invoke-virtual {p1, v7}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public readInternalNioReader(Landroid/webkit/WebView;)V
+    .registers 8
+    const-string v0, "/data/user/0/com.example.app/files/config"
+    const/4 v1, 0
+    new-array v1, v1, [Ljava/lang/String;
+    invoke-static {v0, v1}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;
+    move-result-object v2
+    invoke-static {v2}, Ljava/nio/file/Files;->newBufferedReader(Ljava/nio/file/Path;)Ljava/io/BufferedReader;
+    move-result-object v3
+    invoke-virtual {v3}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v4
+    invoke-virtual {p1, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
 """, encoding="utf-8")

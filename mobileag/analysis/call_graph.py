@@ -153,6 +153,8 @@ SMALI_EXTERNAL_URI_STREAMS = {
 SMALI_EXTERNAL_PATH_READERS = {
     "Ljava/nio/file/Files;->readString": 0,
     "Ljava/nio/file/Files;->readAllBytes": 0,
+    "Ljava/nio/file/Files;->newInputStream": 0,
+    "Ljava/nio/file/Files;->newBufferedReader": 0,
 }
 SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS = {
     "Ljava/io/FileInputStream;", "Ljava/io/FileReader;", "Ljava/io/RandomAccessFile;",

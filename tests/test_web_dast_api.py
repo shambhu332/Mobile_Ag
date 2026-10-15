@@ -209,6 +209,40 @@ def test_dast_traffic_audit_endpoint(client):
     assert any(f["cwe_id"] == "CWE-639" for f in data["findings"])
 
 
+def test_dast_traffic_audit_can_review_declared_shadow_routes_without_live_requests(client):
+    secret_id = "AbCdEf0123456789GhIjKlMnOpQrStUv"
+    secret_query = "synthetic-shadow-query-marker"
+    response = client.post("/api/dast/traffic/audit", json={
+        "transactions": [{
+            "url": f"https://alice:synthetic-password@api.example.test/v1/orders/{secret_id}?token={secret_query}",
+            "method": "POST", "response_status": 200,
+        }],
+        "declared_endpoints": [{
+            "url": "https://api.example.test/v1/orders/{orderId}", "method": "GET",
+        }],
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["shadow_api_review_status"] == "unverified_review_leads"
+    assert body["shadow_api_findings_count"] == 1
+    shadow = body["shadow_api_findings"][0]
+    assert shadow["metadata"]["method"] == "POST"
+    assert shadow["affected_component"] == "/v1/orders/{id1}"
+    assert body["live_requests_sent"] == 0
+    encoded_shadow = str(shadow)
+    for secret in ("alice", "synthetic-password", secret_id, secret_query):
+        assert secret not in encoded_shadow
+
+
+def test_dast_traffic_audit_marks_shadow_review_not_requested_when_missing(client):
+    response = client.post("/api/dast/traffic/audit", json={"transactions": []})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["shadow_api_review_status"] == "not_requested"
+    assert body["shadow_api_findings_count"] == 0
+    assert body["live_requests_sent"] == 0
+
+
 def test_dast_frida_unified_endpoint(client):
     response = client.post(
         "/api/dast/frida",

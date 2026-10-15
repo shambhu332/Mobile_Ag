@@ -60,11 +60,12 @@ class MobileApiCataloger:
         # deliberately errs on the side of parametrizing long mixed strings;
         # shorter or non-token-shaped identifiers remain unsupported.
         opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
+        email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
         segments = path.split("/")
         identifier_index = 0
         for index, segment in enumerate(segments):
             if (re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment)
-                    or opaque_token_segment.fullmatch(segment)):
+                    or opaque_token_segment.fullmatch(segment) or email_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"
         return "/".join(segments) or "/"

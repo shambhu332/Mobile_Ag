@@ -1099,8 +1099,15 @@ class CapturedTransaction(BaseModel):
     request_body: Optional[str] = Field(default=None, max_length=262144)
     response_body: Optional[str] = Field(default=None, max_length=262144)
 
+class DeclaredApiEndpoint(BaseModel):
+    model_config = {"extra": "forbid"}
+    url: str = Field(max_length=8192)
+    method: Optional[Literal["GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"]] = None
+
+
 class TrafficAuditRequest(BaseModel):
     transactions: list[CapturedTransaction] = Field(default_factory=list, max_length=100)
+    declared_endpoints: list[str | DeclaredApiEndpoint] = Field(default_factory=list, max_length=1000)
 
 
 
@@ -1433,13 +1440,22 @@ async def deploy_dast_frida(req: FridaDeployRequest, request: Request) -> dict[s
 
 @app.post("/api/dast/traffic/audit")
 async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
-    """Audit recorded HTTP transactions against OWASP API Security Top 10 rules."""
+    """Audit supplied captured traffic; never sends network requests."""
     txs = [HTTPTransaction(**item.model_dump()) for item in req.transactions]
     findings = traffic_auditor.audit_transactions(txs)
+    declared = [
+        item.model_dump(exclude_none=True) if isinstance(item, DeclaredApiEndpoint) else item
+        for item in req.declared_endpoints
+    ]
+    shadow_findings = (traffic_auditor.find_shadow_apis(txs, declared) if declared else [])
     return {
         "status": "success",
         "findings_count": len(findings),
         "findings": redact([f.to_dict() for f in findings]),
+        "shadow_api_review_status": ("unverified_review_leads" if declared else "not_requested"),
+        "shadow_api_findings_count": len(shadow_findings),
+        "shadow_api_findings": redact([f.to_dict() for f in shadow_findings]),
+        "live_requests_sent": 0,
     }
 
 

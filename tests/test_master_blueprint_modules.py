@@ -259,6 +259,28 @@ def test_traffic_auditor_catalog_and_shadow_api():
     assert "/v1/hidden/debug" in shadow_findings[0].affected_component
 
 
+def test_traffic_audit_findings_do_not_retain_credentials_or_dynamic_path_values():
+    import json
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+
+    secrets = ("alice", "synthetic-password", "987654321", "person@example.invalid",
+               "synthetic-query-secret", "synthetic-cookie-value", "synthetic-header-marker")
+    tx = HTTPTransaction(
+        url=("http://alice:synthetic-password@api.example.test/accounts/987654321/"
+             "person@example.invalid?token=synthetic-query-secret"),
+        method="GET",
+        response_headers={"Set-Cookie": "session_id=synthetic-cookie-value; Path=/",
+                          "Cache-Control": "private, max-age=0, synthetic-header-marker"},
+        response_body='{"ssn":"123-45-6789"}',
+    )
+    findings = TrafficAuditor().audit_transactions([tx])
+    assert {finding.cwe_id for finding in findings} >= {"CWE-319", "CWE-598", "CWE-524", "CWE-639"}
+    rendered = json.dumps([finding.to_dict() for finding in findings])
+    for secret in secrets:
+        assert secret not in rendered
+    assert "/accounts/{id1}/{id2}" in rendered
+
+
 def test_shadow_api_review_normalizes_ids_and_never_exports_url_secrets():
     import json
     from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor

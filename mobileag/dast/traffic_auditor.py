@@ -48,6 +48,9 @@ class TrafficAuditor:
             return []
 
         findings = []
+        safe_origin = self._safe_api_origin(parsed) or "<unknown-origin>"
+        safe_path = self._canonical_api_path(parsed.path or "/")
+        safe_location = f"{safe_origin}{safe_path}" if safe_origin != "<unknown-origin>" else safe_path
         # A comma can occur in Expires, so split only on new-cookie boundaries.
         cookies = re.split(r",(?=\s*[^;,=\s]+\s*=)", raw)
         for cookie in cookies[:20]:
@@ -74,7 +77,7 @@ class TrafficAuditor:
             findings.append(Finding(
                 title=f"Session Cookie Attribute Review: {name}",
                 description=(
-                    f"A response from {parsed.netloc}{parsed.path} set a cookie whose name "
+                    f"A response from {safe_location} set a cookie whose name "
                     f"resembles a session/authentication cookie and omitted: {', '.join(missing)}. "
                     "Cookie names are heuristic; confirm that this value is a session credential "
                     "and whether a browser or WebView consumes it. Cookie values are not recorded."
@@ -85,8 +88,8 @@ class TrafficAuditor:
                 cvss_score=0.0,
                 cvss_vector="",
                 owasp_masvs="MASVS-NETWORK-1",
-                affected_component=parsed.netloc,
-                file_path=f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+                affected_component=safe_origin,
+                file_path=safe_location,
                 line_number=1,
                 code_snippet=f"Set-Cookie: {name}=<redacted>; missing {', '.join(missing)}",
                 detection_method="TrafficAuditor (Dynamic)",
@@ -103,7 +106,17 @@ class TrafficAuditor:
         findings: list[Finding] = []
 
         for tx in transactions:
-            parsed = urlparse(tx.url)
+            try:
+                parsed = urlparse(tx.url)
+            except (TypeError, ValueError):
+                continue
+            safe_origin = self._safe_api_origin(parsed) or "<unknown-origin>"
+            safe_path = self._canonical_api_path(parsed.path or "/")
+            safe_location = f"{safe_origin}{safe_path}" if safe_origin != "<unknown-origin>" else safe_path
+            method_token = tx.method.upper() if isinstance(tx.method, str) and len(tx.method) <= 16 else ""
+            safe_method = (method_token if method_token in
+                           {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
+                           else "UNKNOWN")
 
             # Likely session-cookie flags are based on observed Set-Cookie headers.
             findings.extend(self._audit_session_cookies(tx, parsed))
@@ -112,10 +125,10 @@ class TrafficAuditor:
             if parsed.scheme == "http" and not (parsed.hostname in ("localhost", "127.0.0.1")):
                 cwe = "CWE-319"
                 findings.append(Finding(
-                    title=f"Cleartext HTTP Transmission to {parsed.netloc}",
+                    title=f"Cleartext HTTP Transmission to {safe_origin}",
                     description=(
                         f"The mobile application initiated an unencrypted HTTP connection to:\n"
-                        f"`{tx.method} {tx.url}`\n\n"
+                        f"`{safe_method} {safe_location}`\n\n"
                         f"Unencrypted network requests expose credentials and application payloads to "
                         f"Man-in-the-Middle (MitM) eavesdropping and tampering on untrusted Wi-Fi."
                     ),
@@ -125,26 +138,26 @@ class TrafficAuditor:
                     cvss_score=0.0,
                     cvss_vector="",
                     owasp_masvs="MASVS-NETWORK-1",
-                    affected_component=parsed.netloc,
-                    file_path=tx.url,
+                    affected_component=safe_origin,
+                    file_path=safe_location,
                     line_number=1,
-                    code_snippet=f"{tx.method} {tx.url}",
+                    code_snippet=f"{safe_method} {safe_location}",
                     detection_method="TrafficAuditor (Dynamic)",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Migrate all endpoint URLs to HTTPS and enforce TLS 1.3.",
                 ))
 
             # 2. Sensitive Credentials in GET Query Parameters (CWE-598)
-            if tx.method.upper() == "GET" and parsed.query:
+            if safe_method == "GET" and parsed.query:
                 query_params = parse_qs(parsed.query)
                 leaked_params = [k for k in query_params if self._sensitive_param_re.search(k)]
                 if leaked_params:
                     cwe = "CWE-598"
                     findings.append(Finding(
-                        title=f"Sensitive Token/Credential Passed in GET Query String: {parsed.netloc}",
+                        title=f"Sensitive Token/Credential Passed in GET Query String: {safe_origin}",
                         description=(
                             f"The query parameter(s) `{', '.join(leaked_params)}` appear in a GET URL:\n"
-                            f"`{tx.url}`\n\n"
+                            f"`{safe_location}`\n\n"
                             f"Parameters in GET requests are permanently recorded in intermediate proxy logs, "
                             f"browser caches, and server access logs."
                         ),
@@ -154,10 +167,10 @@ class TrafficAuditor:
                             cvss_score=0.0,
                             cvss_vector="",
                         owasp_masvs="MASVS-NETWORK-2",
-                        affected_component=parsed.netloc,
-                        file_path=tx.url,
+                        affected_component=safe_origin,
+                        file_path=safe_location,
                         line_number=1,
-                        code_snippet=f"GET {tx.url}",
+                        code_snippet=f"GET {safe_location}",
                         detection_method="TrafficAuditor (Dynamic)",
                         status=FindingStatus.UNVERIFIED,
                         remediation="Transmit sensitive authentication tokens in HTTP request headers (Authorization: Bearer <token>) or in encrypted POST bodies.",
@@ -171,9 +184,9 @@ class TrafficAuditor:
             if is_sensitive_path and ("no-store" not in cache_ctrl):
                 cwe = "CWE-524"
                 findings.append(Finding(
-                    title=f"Missing 'Cache-Control: no-store' on Sensitive API Route: {parsed.path}",
+                    title=f"Missing 'Cache-Control: no-store' on Sensitive API Route: {safe_path}",
                     description=(
-                        f"The sensitive endpoint `{parsed.path}` returned response status `{tx.response_status}` "
+                        f"The sensitive endpoint `{safe_path}` returned response status `{tx.response_status}` "
                         f"without setting `Cache-Control: no-store`. Cached responses can be recovered from device flash memory."
                     ),
                     severity=Severity.INFO,
@@ -182,10 +195,10 @@ class TrafficAuditor:
                     cvss_score=0.0,
                     cvss_vector="",
                     owasp_masvs="MASVS-STORAGE-1",
-                    affected_component=parsed.netloc,
-                    file_path=tx.url,
+                    affected_component=safe_origin,
+                    file_path=safe_location,
                     line_number=1,
-                    code_snippet=f"HTTP {tx.response_status}\nCache-Control: {resp_headers.get('cache-control', 'MISSING')}",
+                    code_snippet=("Cache-Control: no-store absent"),
                     detection_method="TrafficAuditor (Dynamic)",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Include `Cache-Control: no-store, no-cache` in all sensitive authentication and user data API responses.",
@@ -194,11 +207,10 @@ class TrafficAuditor:
             # 4. OWASP API1 - Broken Object Level Authorization / Predictable Sequential ID (CWE-639)
             bola_pattern = re.search(r"/(?:users|accounts|orders|customers|profiles|messages|invoices)/(\d+)(?:/|$|\?)", parsed.path, re.IGNORECASE)
             if bola_pattern:
-                rec_id = bola_pattern.group(1)
                 findings.append(Finding(
-                    title=f"Numeric Resource Identifier (Authorization Review Lead): {parsed.path}",
+                    title=f"Numeric Resource Identifier (Authorization Review Lead): {safe_path}",
                     description=(
-                        f"The endpoint `{parsed.path}` contains numeric identifier `{rec_id}`. "
+                        f"The endpoint `{safe_path}` contains a numeric resource identifier. "
                         "An identifier alone does not demonstrate predictability, missing ownership checks, or BOLA. "
                         "Validate authorization using two controlled accounts before classifying this lead."
                     ),
@@ -208,10 +220,10 @@ class TrafficAuditor:
                     cvss_score=0.0,
                     cvss_vector="",
                     owasp_masvs="MASVS-NETWORK-2",
-                    affected_component=parsed.netloc,
-                    file_path=tx.url,
+                    affected_component=safe_origin,
+                    file_path=safe_location,
                     line_number=1,
-                    code_snippet=f"{tx.method} {parsed.path}",
+                    code_snippet=f"{safe_method} {safe_path}",
                     detection_method="TrafficAuditor (Dynamic)",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Manually verify object ownership authorization; sequential IDs alone are not a vulnerability.",
@@ -235,7 +247,7 @@ class TrafficAuditor:
                     findings.append(Finding(
                         title=f"Sensitive PII / Credential Exposure in API Response: {', '.join(leaks)}",
                         description=(
-                            f"The response from `{parsed.netloc}{parsed.path}` contained unencrypted sensitive data: "
+                            f"The response from `{safe_location}` contained unencrypted sensitive data: "
                             f"{', '.join(leaks)}.\n\n"
                             "APIs should filter and omit sensitive PII from client-facing payloads."
                         ),
@@ -245,8 +257,8 @@ class TrafficAuditor:
                         cvss_score=0.0,
                         cvss_vector="",
                         owasp_masvs="MASVS-STORAGE-1",
-                        affected_component=parsed.netloc,
-                        file_path=tx.url,
+                        affected_component=safe_origin,
+                        file_path=safe_location,
                         line_number=1,
                         code_snippet=f"Payload matches sensitive patterns: {', '.join(leaks)}",
                         detection_method="TrafficAuditor (Dynamic)",
@@ -259,9 +271,9 @@ class TrafficAuditor:
                 if "strict-transport-security" not in resp_headers:
                     cwe = "CWE-16"
                     findings.append(Finding(
-                        title=f"Missing HSTS Header on HTTPS Endpoint: {parsed.netloc}",
+                        title=f"Missing HSTS Header on HTTPS Endpoint: {safe_origin}",
                         description=(
-                            f"The HTTPS server at `{parsed.netloc}` does not send a `Strict-Transport-Security` header. "
+                            f"The HTTPS server at `{safe_origin}` does not send a `Strict-Transport-Security` header. "
                             "Clients may be vulnerable to SSL stripping attacks on initial connection."
                         ),
                         severity=Severity.INFO,
@@ -270,8 +282,8 @@ class TrafficAuditor:
                         cvss_score=0.0,
                         cvss_vector="",
                         owasp_masvs="MASVS-NETWORK-1",
-                        affected_component=parsed.netloc,
-                        file_path=tx.url,
+                        affected_component=safe_origin,
+                        file_path=safe_location,
                         line_number=1,
                         code_snippet=f"Response headers missing Strict-Transport-Security",
                         detection_method="TrafficAuditor (Dynamic)",
@@ -285,9 +297,9 @@ class TrafficAuditor:
             if allow_origin == "*" and allow_creds == "true":
                 cwe = "CWE-942"
                 findings.append(Finding(
-                    title=f"CORS Wildcard/Credentials Configuration Review: {parsed.netloc}",
+                    title=f"CORS Wildcard/Credentials Configuration Review: {safe_origin}",
                     description=(
-                        f"The response from `{parsed.netloc}` combines wildcard origin with credentials. "
+                        f"The response from `{safe_origin}` combines wildcard origin with credentials. "
                         "This is an informational configuration signal, not proof of browser credential exposure: "
                         "standards-conforming browsers reject wildcard origins for credentialed CORS reads. "
                         "Verify the actual Origin-specific responses and client context before reporting."
@@ -298,8 +310,8 @@ class TrafficAuditor:
                     cvss_score=0.0,
                     cvss_vector="",
                     owasp_masvs="MASVS-NETWORK-1",
-                    affected_component=parsed.netloc,
-                    file_path=tx.url,
+                    affected_component=safe_origin,
+                    file_path=safe_location,
                     line_number=1,
                     code_snippet="Access-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true",
                     detection_method="TrafficAuditor (Dynamic)",

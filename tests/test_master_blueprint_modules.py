@@ -230,20 +230,27 @@ def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
 
 
 def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
+    import json
     from mobileag.web.app import _captured_api_catalog
     from mobileag.dast.traffic_auditor import HTTPTransaction
 
     txs = [
-        HTTPTransaction(url="https://api-a.example.test/v1/items?limit=2", method="GET",
-                        response_status=200, response_body='{"ok":true}'),
-        HTTPTransaction(url="https://api-b.example.test/v1/items?limit=3", method="GET",
+        HTTPTransaction(url="https://api-a.example.test/v1/items?limit=2", method="POST",
+                        request_body='{"account":"synthetic-private-marker","enabled":true}',
+                        response_status=200, response_body='{"ok":true,"count":4}'),
+        HTTPTransaction(url="https://api-b.example.test/v1/items?limit=3", method="POST",
                         response_status=403, response_body='{}'),
     ]
     spec = _captured_api_catalog(txs, "Synthetic observed traffic").export_openapi_json()
-    operation = spec["paths"]["/v1/items"]["get"]
+    operation = spec["paths"]["/v1/items"]["post"]
     assert spec["openapi"] == "3.0.0"
     assert len(operation["servers"]) == 2
     assert set(operation["responses"]) == {"200", "403"}
+    assert operation["x-mobileag-inferred-from-capture"] is True
+    req_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert req_schema["properties"]["account"]["type"] == "string"
+    assert req_schema["properties"]["enabled"]["type"] == "boolean"
+    assert "synthetic-private-marker" not in json.dumps(spec)
 
 
 def test_dependency_scanner_sbom_generation():

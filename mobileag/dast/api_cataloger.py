@@ -33,6 +33,66 @@ class MobileApiCataloger:
         self.omitted_requests = 0
         self.unmodeled_requests = 0
 
+    @staticmethod
+    def _json_schema(value: Any, depth: int = 0) -> Dict[str, Any]:
+        """Infer a bounded shape only; never copy captured values to OpenAPI."""
+        if depth >= 6:
+            return {}
+        if isinstance(value, dict):
+            properties = {}
+            for key, item in list(value.items())[:100]:
+                if isinstance(key, str) and len(key) <= 128:
+                    properties[key] = MobileApiCataloger._json_schema(item, depth + 1)
+            result: Dict[str, Any] = {"type": "object", "properties": properties,
+                                      "additionalProperties": True}
+            if len(value) > 100:
+                result["x-mobileag-truncated-properties"] = True
+            return result
+        if isinstance(value, list):
+            schemas = [MobileApiCataloger._json_schema(item, depth + 1) for item in value[:12]]
+            unique = {json.dumps(s, sort_keys=True) for s in schemas if s}
+            item_schemas = [json.loads(s) for s in sorted(unique)]
+            items = item_schemas[0] if len(item_schemas) == 1 else (
+                {"oneOf": item_schemas} if item_schemas else {})
+            return {"type": "array", "items": items}
+        if value is None:
+            return {"nullable": True}
+        if isinstance(value, bool):
+            return {"type": "boolean"}
+        if isinstance(value, int):
+            return {"type": "integer"}
+        if isinstance(value, float):
+            return {"type": "number"}
+        if isinstance(value, str):
+            return {"type": "string"}
+        return {}
+
+    @staticmethod
+    def _parse_json_schema(body: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not isinstance(body, str) or len(body.encode("utf-8", errors="replace")) > 1024 * 1024:
+            return None
+        try:
+            return MobileApiCataloger._json_schema(json.loads(body))
+        except (ValueError, TypeError, RecursionError):
+            return None
+
+    @staticmethod
+    def _merge_schemas(left: Optional[Dict[str, Any]], right: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if left is None:
+            return right
+        if right is None or left == right:
+            return left
+        if left.get("type") == right.get("type") == "object":
+            properties = dict(left.get("properties", {}))
+            for key, schema in right.get("properties", {}).items():
+                properties[key] = MobileApiCataloger._merge_schemas(properties.get(key), schema)
+            return {"type": "object", "properties": properties, "additionalProperties": True}
+        variants = {}
+        for schema in (left, right):
+            for option in schema.get("oneOf", [schema]):
+                variants[json.dumps(option, sort_keys=True)] = option
+        return {"oneOf": [variants[key] for key in sorted(variants)]}
+
     def ingest_request(self, req: CapturedRequest) -> None:
         """Process and index an intercepted request."""
         if len(self.captured_requests) >= 10000:
@@ -67,10 +127,21 @@ class MobileApiCataloger:
                 "query_params": list(req.query_params.keys()),
                 "sample_statuses": [req.response_status],
                 "has_body": req.body is not None,
+                "request_schema": self._parse_json_schema(req.body),
+                "response_schemas": {str(req.response_status): self._parse_json_schema(req.response_body)},
             }
         else:
-            if req.response_status not in self.endpoints[key]["sample_statuses"]:
-                self.endpoints[key]["sample_statuses"].append(req.response_status)
+            entry = self.endpoints[key]
+            if req.response_status not in entry["sample_statuses"]:
+                entry["sample_statuses"].append(req.response_status)
+            entry["headers"] = sorted(set(entry["headers"]) | set(req.headers))
+            entry["query_params"] = sorted(set(entry["query_params"]) | set(req.query_params))
+            entry["has_body"] = entry["has_body"] or req.body is not None
+            entry["request_schema"] = self._merge_schemas(
+                entry.get("request_schema"), self._parse_json_schema(req.body))
+            status = str(req.response_status)
+            entry.setdefault("response_schemas", {})[status] = self._merge_schemas(
+                entry.get("response_schemas", {}).get(status), self._parse_json_schema(req.response_body))
 
     def export_openapi_json(self) -> Dict[str, Any]:
         """Convert cataloged endpoints into an OpenAPI 3.0 schema dictionary."""
@@ -95,11 +166,20 @@ class MobileApiCataloger:
             operation = {
                 "summary": f"Automated capture for {method_str.upper()} {path_str}",
                 "parameters": parameters,
-                "responses": {
-                    str(status): {"description": f"Observed response HTTP {status}"}
-                    for status in entry["sample_statuses"]
-                },
+                "responses": {},
+                "x-mobileag-inferred-from-capture": True,
             }
+            for status in entry["sample_statuses"]:
+                response: Dict[str, Any] = {"description": f"Observed response HTTP {status}"}
+                schema = entry.get("response_schemas", {}).get(str(status))
+                if schema:
+                    response["content"] = {"application/json": {"schema": schema}}
+                operation["responses"][str(status)] = response
+            if entry.get("request_schema"):
+                operation["requestBody"] = {
+                    "required": False,
+                    "content": {"application/json": {"schema": entry["request_schema"]}},
+                }
             if entry.get("host"):
                 operation["servers"] = [{"url": entry["host"]}]
             existing = paths[path_str].get(method_str)
@@ -110,7 +190,22 @@ class MobileApiCataloger:
                     (p["name"], p["in"]): p
                     for p in existing["parameters"] + operation["parameters"]
                 }.values())
-                existing["responses"].update(operation["responses"])
+                for status, response in operation["responses"].items():
+                    prior = existing["responses"].get(status)
+                    if prior and prior.get("content") and response.get("content"):
+                        old_schema = prior["content"]["application/json"]["schema"]
+                        new_schema = response["content"]["application/json"]["schema"]
+                        prior["content"]["application/json"]["schema"] = self._merge_schemas(old_schema, new_schema)
+                    else:
+                        existing["responses"][status] = response
+                if operation.get("requestBody"):
+                    prior = existing.get("requestBody")
+                    if prior:
+                        old_schema = prior["content"]["application/json"]["schema"]
+                        new_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+                        prior["content"]["application/json"]["schema"] = self._merge_schemas(old_schema, new_schema)
+                    else:
+                        existing["requestBody"] = operation["requestBody"]
                 servers = {item["url"] for item in existing.get("servers", [])}
                 servers.update(item["url"] for item in operation.get("servers", []))
                 if servers:

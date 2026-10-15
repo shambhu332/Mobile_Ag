@@ -192,6 +192,57 @@ def test_component_permissions_resolve_application_defaults_and_provider_overrid
     assert not any("Exported Provider" in f.title for f in findings)
 
 
+def test_task_affinity_inventory_resolves_inheritance_launch_mode_and_review_lead(tmp_path):
+    from mobileag.analysis.manifest_auditor import ManifestAuditor
+
+    path = tmp_path / "AndroidManifest.xml"
+    path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.example">
+      <application android:taskAffinity="org.shared.task">
+        <activity android:name=".Inherited" android:exported="true" android:launchMode="singleTask"/>
+        <activity android:name=".Explicit" android:exported="true" android:taskAffinity="org.partner.task" android:launchMode="standard"/>
+        <activity android:name=".Default" android:exported="true"/>
+        <activity android:name=".NoAffinity" android:exported="true" android:taskAffinity=""/>
+        <activity-alias android:name=".Alias" android:targetActivity=".Explicit" android:exported="true" android:taskAffinity="org.alias.task"/>
+      </application></manifest>''')
+
+    parsed = ManifestParser().parse(str(path))
+    inherited, explicit, defaulted, no_affinity = parsed["components"][:4]
+    assert (inherited["taskAffinity"], inherited["taskAffinityOrigin"]) == ("org.shared.task", "application")
+    assert inherited["launchMode"] == "singleTask"
+    assert (explicit["taskAffinity"], explicit["taskAffinityOrigin"]) == ("org.partner.task", "component")
+    assert explicit["launchMode"] == "standard"
+    assert (defaulted["taskAffinity"], defaulted["taskAffinityOrigin"]) == ("org.shared.task", "application")
+    assert no_affinity["taskAffinity"] == ""
+    assert no_affinity["taskAffinityOrigin"] == "component"
+    alias = parsed["components"][-1]
+    assert alias["alias_target"] == ".Explicit"
+
+    findings = __import__('asyncio').run(ManifestAuditor(None).audit(parsed, parsed["package_name"]))
+    leads = [item for item in findings if item.metadata.get("analysis_kind") == "exported_non_default_task_affinity"]
+    assert len(leads) == 3
+    assert {item.affected_component for item in leads} == {".Inherited", ".Explicit", ".Default"}
+    assert all(item.status == FindingStatus.UNVERIFIED and item.cvss_score == 0 for item in leads)
+    explicit_lead = next(item for item in leads if item.affected_component == ".Explicit")
+    assert explicit_lead.metadata["launch_mode"] == "standard"
+    assert explicit_lead.metadata["task_affinity_origin"] == "component"
+    assert "does not demonstrate task hijacking" in explicit_lead.description
+    assert not any(item.affected_component == ".Alias" for item in leads)
+
+    default_manifest = tmp_path / "DefaultAffinity.xml"
+    default_manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.example">
+      <application><activity android:name=".Default" android:exported="true"/></application></manifest>''')
+    package_default = ManifestParser().parse(str(default_manifest))["components"][0]
+    assert (package_default["taskAffinity"], package_default["taskAffinityOrigin"]) == (
+        "org.example", "package_default",
+    )
+    default_data = ManifestParser().parse(str(default_manifest))
+    default_findings = __import__('asyncio').run(
+        ManifestAuditor(None).audit(default_data, default_data["package_name"]),
+    )
+    assert not any(item.metadata.get("analysis_kind") == "exported_non_default_task_affinity"
+                   for item in default_findings)
+
+
 @pytest.mark.asyncio
 async def test_exported_permission_resource_references_remain_unresolved_review_leads(tmp_path):
     from mobileag.analysis.manifest_auditor import ManifestAuditor

@@ -201,7 +201,20 @@ class ManifestParser:
                 permission_origin = "application_inherited" if app_permission_raw else "none"
             read_permission = self._get_attrib(elem, "readPermission") if tag == "provider" else ""
             write_permission = self._get_attrib(elem, "writePermission") if tag == "provider" else ""
-            task_affinity = self._get_attrib(elem, "taskAffinity")
+            affinity_key = f"{{{self.ANDROID_NS}}}taskAffinity"
+            task_affinity_raw = elem.attrib.get(affinity_key)
+            application_task_affinity = app_elem.attrib.get(affinity_key)
+            if task_affinity_raw is not None:
+                task_affinity = task_affinity_raw
+                task_affinity_origin = "component"
+            elif application_task_affinity is not None:
+                task_affinity = application_task_affinity
+                task_affinity_origin = "application"
+            else:
+                task_affinity = package_name
+                task_affinity_origin = "package_default"
+            launch_mode_raw = self._get_attrib(elem, "launchMode")
+            launch_mode = launch_mode_raw or "standard"
             intent_filters = self._parse_intent_filters(elem)
             
             # Default export logic is version-dependent. Apps targeting API 31+
@@ -315,6 +328,11 @@ class ManifestParser:
                 }),
                 "permission_resolution": permission_resolution,
                 "taskAffinity": task_affinity,
+                "taskAffinityOrigin": task_affinity_origin,
+                "declaredTaskAffinity": task_affinity_raw,
+                "taskAffinityExplicit": task_affinity_raw is not None,
+                "launchMode": launch_mode,
+                "launchModeExplicit": bool(launch_mode_raw),
                 "intent_filters": intent_filters,
                 "meta_data": meta_data,
                 "grant_uri_permissions": grant_uri_permissions,
@@ -635,6 +653,8 @@ class ManifestParser:
 
         application_dict = {
             "allowBackup": allow_backup_bool,
+            "taskAffinity": app_elem.attrib.get(f"{{{self.ANDROID_NS}}}taskAffinity"),
+            "taskAffinityExplicit": f"{{{self.ANDROID_NS}}}taskAffinity" in app_elem.attrib,
             "backup_rule_references": backup_rule_references,
             "backup_rules_inventory": backup_rules_inventory,
             "debuggable": debuggable_bool,

@@ -181,11 +181,28 @@ class ManifestAuditor:
                 ))
 
             task_affinity = comp.get("taskAffinity")
-            if task_affinity and exported:
+            task_affinity_origin = comp.get("taskAffinityOrigin", "unknown")
+            launch_mode = comp.get("launchMode", "unknown")
+            # An absent component attribute normally inherits app/package affinity;
+            # only an observed non-default literal is a task-affinity review lead.
+            task_affinity_is_literal = (
+                isinstance(task_affinity, str) and bool(task_affinity)
+                and not task_affinity.startswith(("@", "?"))
+            )
+            non_default_task_affinity = (
+                task_affinity_is_literal and bool(package_name)
+                and task_affinity != package_name
+            )
+            if (non_default_task_affinity and exported and comp_type.lower() == "activity"
+                    and not comp.get("alias_target")):
                 cwe = "CWE-1021"
                 findings.append(Finding(
-                    title=f"Task Affinity Hijacking Risk: {name}",
-                    description=f"Exported activity '{name}' declares taskAffinity '{task_affinity}'. This configuration alone does not demonstrate task hijacking; review launch mode, task behavior, platform version and a reproducible victim-flow impact.",
+                    title=f"Review Non-default Task Affinity: {name}",
+                    description=(f"Exported activity '{name}' has effective taskAffinity '{task_affinity}' "
+                                 f"(source: {task_affinity_origin}) and launchMode '{launch_mode}'. "
+                                 "This configuration alone does not demonstrate task hijacking. Inspect the "
+                                 "merged manifest, task/intent flags, reparenting behavior, platform version "
+                                 "and a reproducible victim-flow impact; launchMode by itself is not a security verdict."),
                     severity=Severity.INFO,
                     cwe_id=cwe,
                     cvss_score=0.0,
@@ -193,8 +210,14 @@ class ManifestAuditor:
                     affected_component=name,
                     detection_method="ManifestAuditor",
                     status=FindingStatus.UNVERIFIED,
-                    remediation="Avoid custom taskAffinity on exported activities unless strictly required, and configure launchMode properly.",
-                    file_path="AndroidManifest.xml"
+                    remediation="Avoid unnecessary cross-application task affinity. Preserve required task behavior and validate it on supported Android builds; do not change launchMode as a substitute for authorization or input validation.",
+                    file_path="AndroidManifest.xml",
+                    metadata={"analysis_kind": "exported_non_default_task_affinity",
+                              "proof_state": "not_proven",
+                              "task_affinity": task_affinity,
+                              "task_affinity_origin": task_affinity_origin,
+                              "launch_mode": launch_mode,
+                              "launch_mode_explicit": comp.get("launchModeExplicit", False)},
                 ))
 
             # FileProvider misconfiguration check

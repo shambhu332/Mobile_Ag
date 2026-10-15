@@ -20,6 +20,7 @@ class PendingIntentAuditor:
         self.coverage: Dict[str, Any] = {
             "static_status": "not_analyzed", "runtime_status": "not_tested",
             "proof_status": "not_proven", "exhaustive": False,
+            "target_sdk": None,
         }
         self._factory_pattern = re.compile(
             r"\bPendingIntent\s*\.\s*(getActivity|getActivities|getBroadcast|getService|getForegroundService)\s*\("
@@ -95,7 +96,7 @@ class PendingIntentAuditor:
         args.append(masked[arg_start:end])
         return args
 
-    def audit_file(self, file_path: str | Path) -> List[Finding]:
+    def audit_file(self, file_path: str | Path, target_sdk: int | None = None) -> List[Finding]:
         """Audit a single Java/Kotlin file for PendingIntent vulnerabilities."""
         inventory = self._inventory()
         path = Path(file_path)
@@ -103,12 +104,13 @@ class PendingIntentAuditor:
         record = next(records, None)
         records.close()
         self.coverage = dict(inventory.coverage)
+        self.coverage["target_sdk"] = target_sdk
         if record is None:
             return []
         _source_path, data = record
-        return self._audit_content(data.decode("utf-8", errors="replace"), str(path))
+        return self._audit_content(data.decode("utf-8", errors="replace"), str(path), target_sdk)
 
-    def _audit_content(self, content: str, path_str: str) -> List[Finding]:
+    def _audit_content(self, content: str, path_str: str, target_sdk: int | None = None) -> List[Finding]:
         findings: List[Finding] = []
         masked = self._mask_comments_and_strings(content)
         for match in self._factory_pattern.finditer(masked):
@@ -130,12 +132,25 @@ class PendingIntentAuditor:
                 finding_id = f"PENDING_INTENT_CONFLICTING_FLAGS_{idx}"
             elif not has_immutable and not has_mutable:
                 title = f"Missing PendingIntent Mutability Flag in {method}()"
-                description = (
-                    f"PendingIntent creation at line {idx} has no explicit mutability flag in its final argument. "
-                    "Apps targeting Android 12+ must specify mutability. Verify compile/target SDK and platform conditions; "
-                    "this source pattern alone does not demonstrate that another app can mutate the token."
-                )
-                severity = Severity.MEDIUM
+                if target_sdk is not None and target_sdk >= 31:
+                    description = (
+                        f"PendingIntent creation at line {idx} has no explicit mutability flag; the parsed manifest "
+                        f"declares targetSdkVersion {target_sdk}. Android 12+ enforces explicit mutability for "
+                        "apps targeting API 31+, typically by throwing IllegalArgumentException when this call executes. "
+                        "This is a compatibility lead, not evidence that a mutable token was created or exploitable."
+                    )
+                    severity = Severity.INFO
+                else:
+                    sdk_context = (
+                        f"The parsed manifest declares targetSdkVersion {target_sdk}; "
+                        if target_sdk is not None else "The target SDK was unavailable; "
+                    )
+                    description = (
+                        f"PendingIntent creation at line {idx} has no explicit mutability flag in its final argument. "
+                        f"{sdk_context}verify runtime compatibility behavior and whether a token can be obtained by an "
+                        "untrusted party. This source pattern alone does not demonstrate exploitability."
+                    )
+                    severity = Severity.MEDIUM
                 finding_id = f"PENDING_INTENT_MUTABLE_UNSPECIFIED_{idx}"
             elif has_mutable and not has_immutable:
                 title = f"Review Mutable PendingIntent in {method}()"
@@ -147,19 +162,25 @@ class PendingIntentAuditor:
                 finding_id = f"PENDING_INTENT_EXPLICIT_MUTABLE_{idx}"
             else:
                 continue
+            compatibility_only = (
+                not has_immutable and not has_mutable and target_sdk is not None and target_sdk >= 31
+            )
             findings.append(Finding(
                 id=finding_id, title=title, description=description, severity=severity,
-                status=FindingStatus.UNVERIFIED, cwe_id="CWE-927", file_path=path_str,
+                status=FindingStatus.UNVERIFIED, cwe_id="CWE-Unknown" if compatibility_only else "CWE-927", file_path=path_str,
                 line_number=idx,
+                metadata={"target_sdk": target_sdk,
+                          "review_kind": "compatibility_lead" if compatibility_only else "mutability_review_candidate"},
             ))
 
         return findings
 
-    def audit_directory(self, source_dir: str | Path) -> List[Finding]:
+    def audit_directory(self, source_dir: str | Path, target_sdk: int | None = None) -> List[Finding]:
         """Audit all source files in directory."""
         findings: List[Finding] = []
         inventory = self._inventory()
         for path, data in inventory.read(source_dir, {".java", ".kt"}):
-            findings.extend(self._audit_content(data.decode("utf-8", errors="replace"), str(path)))
+            findings.extend(self._audit_content(data.decode("utf-8", errors="replace"), str(path), target_sdk))
         self.coverage = dict(inventory.coverage)
+        self.coverage["target_sdk"] = target_sdk
         return findings

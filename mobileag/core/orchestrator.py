@@ -297,6 +297,13 @@ class Orchestrator:
         logger.info("[Stage 2] Analysis — running analysis agents in parallel...")
 
         all_findings: list[Finding] = []
+        manifest_data = state.get("manifest_data", {})
+        target_sdk_raw = manifest_data.get("target_sdk") if isinstance(manifest_data, dict) else None
+        target_sdk = None
+        if isinstance(target_sdk_raw, int) and not isinstance(target_sdk_raw, bool):
+            target_sdk = target_sdk_raw
+        elif isinstance(target_sdk_raw, str) and target_sdk_raw.isdecimal():
+            target_sdk = int(target_sdk_raw)
 
         # Run all agents concurrently
         tasks = {
@@ -318,7 +325,8 @@ class Orchestrator:
             "nsc": self._nsc_auditor.audit_directory_async(state["resource_path"]),
             "binary_protection": self._bin_protection.audit_directory_async(state["resource_path"]),
             "react_native": self._rn_scanner.scan_directory_async(state["resource_path"]),
-            "pending_intent": asyncio.to_thread(self._pending_intent_auditor.audit_directory, state["decompiled_path"]),
+            "pending_intent": asyncio.to_thread(
+                self._pending_intent_auditor.audit_directory, state["decompiled_path"], target_sdk=target_sdk),
             "intent_redirection": asyncio.to_thread(self._intent_redirection_auditor.audit_directory, state["decompiled_path"]),
             "native_jni": asyncio.to_thread(self._native_jni_analyzer.audit_package_libraries, state["resource_path"]),
             "hermes": asyncio.to_thread(self._hermes_analyzer.audit_package_bundles, state["resource_path"]),

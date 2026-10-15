@@ -10,6 +10,7 @@ from mobileag.analysis.intent_redirection_auditor import IntentRedirectionAudito
 from mobileag.analysis.flutter_engine import FlutterEngineAnalyzer
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 from mobileag.analysis.sbom_generator import MobileSbomGenerator
+from mobileag.reporting.finding import Severity
 
 
 def test_symbol_resolver():
@@ -94,6 +95,24 @@ def test_pending_intent_parser_handles_multiline_nested_calls_and_ignores_commen
     assert len(findings) == 1
     assert findings[0].line_number == 4
     assert PendingIntentAuditor().audit_file(tmp_path / "missing.kt") == []
+
+
+def test_pending_intent_review_uses_parsed_target_sdk_without_claiming_exploitability(tmp_path):
+    path = tmp_path / "Pending.java"
+    path.write_text("PendingIntent p = PendingIntent.getActivity(ctx, 0, intent, 0);")
+    auditor = PendingIntentAuditor()
+    current_target = auditor.audit_file(path, target_sdk=35)
+    legacy_target = auditor.audit_file(path, target_sdk=30)
+    unknown_target = auditor.audit_file(path)
+
+    assert len(current_target) == len(legacy_target) == len(unknown_target) == 1
+    assert current_target[0].severity == Severity.INFO
+    assert current_target[0].cwe_id == "CWE-Unknown"
+    assert current_target[0].metadata == {"target_sdk": 35, "review_kind": "compatibility_lead"}
+    assert "not evidence that a mutable token was created or exploitable" in current_target[0].description
+    assert legacy_target[0].cwe_id == "CWE-927"
+    assert legacy_target[0].metadata["target_sdk"] == 30
+    assert unknown_target[0].metadata["target_sdk"] is None
 
 
 def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):

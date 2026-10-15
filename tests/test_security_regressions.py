@@ -376,7 +376,7 @@ async def test_analysis_resource_routing(tmp_path):
     obj=Orchestrator(Settings(_env_file=None,offline=True))
     java=tmp_path/'jadx_out'; resources=tmp_path/'apktool_out'
     java.mkdir();resources.mkdir();(resources/'Test.smali').write_text('synthetic')
-    manifest=resources/'AndroidManifest.xml';manifest.write_text('<manifest package="test.app"><application/></manifest>')
+    manifest=resources/'AndroidManifest.xml';manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="test.app"><uses-sdk android:targetSdkVersion="35"/><application/></manifest>')
     obj._extractor.extract=AsyncMock(return_value={'jadx_dir':str(java),'apktool_dir':str(resources),'manifest_path':str(manifest),'package_name':'test.app'})
     state=await obj._run_ingestion(create_initial_state('test','test.apk',str(tmp_path)))
     assert state['coverage']['smali_files']==1
@@ -386,9 +386,11 @@ async def test_analysis_resource_routing(tmp_path):
         setattr(getattr(obj,attr),method,AsyncMock(return_value=[]))
     obj._api_mapper.map_apis=AsyncMock(return_value=([],[]))
     obj._call_graph_engine.audit_smali_directory=MagicMock(return_value=[])
+    obj._pending_intent_auditor.audit_directory=MagicMock(return_value=[])
     await obj._run_analysis(state)
     obj._call_graph_engine.audit_smali_directory.assert_called_once_with(str(resources))
     obj._nsc_auditor.audit_directory_async.assert_awaited_once_with(str(resources))
+    obj._pending_intent_auditor.audit_directory.assert_called_once_with(str(java), target_sdk=35)
 
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser

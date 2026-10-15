@@ -457,22 +457,57 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     auditor = MobileTokenSessionAuditor()
 
     # 1. JWT with 'none' algorithm and missing exp
-    hdr_none = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode().rstrip("=")
+    hdr_none = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT",
+        "jwk": {"k": "synthetic-header-secret-123"}}).encode()).decode().rstrip("=")
     pay_plain = base64.urlsafe_b64encode(json.dumps({"sub": "user123", "password": "supersecretpassword"}).encode()).decode().rstrip("=")
     jwt_insecure = f"{hdr_none}.{pay_plain}.sig"
 
-    findings = auditor.audit_token(jwt_insecure)
+    findings = auditor.audit_token(jwt_insecure,
+                                   context_url="https://researcher:pass@api.example.test/me?sessionid=query-secret-123#frag-secret")
     cwe_ids = [f.cwe_id for f in findings]
     assert "CWE-347" in cwe_ids  # alg none
     assert "CWE-613" in cwe_ids  # missing exp
     assert "CWE-312" in cwe_ids  # password in payload
+    serialized = json.dumps([finding.model_dump(mode="json") for finding in findings])
+    assert "synthetic-header-secret-123" not in serialized
+    assert "supersecretpassword" not in serialized
+    assert "query-secret-123" not in serialized
+    assert "frag-secret" not in serialized
+    assert "researcher:pass" not in serialized
+    assert "api.example.test/me" in serialized
+    alg_finding = next(f for f in findings if f.cwe_id == "CWE-347")
+    assert alg_finding.status.value == "UNVERIFIED"
+    assert "Verification Not Established" in alg_finding.title
+    assert "jwk" not in json.dumps(alg_finding.metadata)
+    assert "raw_token" not in auditor.decode_jwt(jwt_insecure)
+    decoded = auditor.decode_jwt(jwt_insecure)
+    assert decoded["header"] == {"alg": "none"}
+    assert decoded["payload"]["sensitive_claim_names"] == ["password"]
+    assert "supersecretpassword" not in json.dumps(decoded)
+    assert auditor._safe_context_url(
+        "https://api.example.test/reset/abCDef01234567890123456789012345?x=secret#frag") == (
+            "https://api.example.test/reset/[REDACTED]")
 
     # 2. Low entropy token
     low_ent_findings = auditor.audit_token("aaaaaaaaaaaaaaaa")
     assert any(f.cwe_id == "CWE-330" for f in low_ent_findings)
 
+    # Malformed claim roots and excessive attacker-controlled token strings
+    # are treated as non-decodable input rather than raising or parsing as JWT.
+    json_list = base64.urlsafe_b64encode(b"[]").decode().rstrip("=")
+    valid_object = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
+    assert auditor.decode_jwt(f"{json_list}.{valid_object}.sig") is None
+    assert auditor.decode_jwt(f"{valid_object}.{json_list}.sig") is None
+    assert auditor.audit_token("x" * (auditor.MAX_TOKEN_CHARS + 1)) == []
+
+    # A present but non-numeric exp is not misreported as an absent claim.
+    pay_invalid_exp = base64.urlsafe_b64encode(json.dumps({"exp": True}).encode()).decode().rstrip("=")
+    invalid_exp = auditor.audit_token(f"{valid_object}.{pay_invalid_exp}.sig")
+    assert not any(f.title == "JWT Token Missing Expiration Claim" for f in invalid_exp)
+
 
 def test_token_session_auditor_transactions_and_logout_reuse():
+    import json
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest
 
@@ -510,6 +545,24 @@ def test_token_session_auditor_transactions_and_logout_reuse():
     assert "CWE-319" in cwe_ids  # Cleartext HTTP
     assert "CWE-598" in cwe_ids  # Query token
     assert "CWE-613" in cwe_ids  # Logout reuse
+    serialized = json.dumps([finding.model_dump(mode="json") for finding in findings])
+    assert "secret_session_token_xyz_123" not in serialized
+    assert "super_secret_query_tok_123" not in serialized
+
+
+def test_token_session_auditor_does_not_call_unauthorized_responses_successful_reuse():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    token = "synthetic-session-token-98765"
+    transactions = [
+        CapturedRequest(method="POST", url="https://api.example.test/logout",
+                        headers={"Authorization": f"Bearer {token}"}, response_status=204),
+        CapturedRequest(method="GET", url="https://api.example.test/account",
+                        headers={"AUTHORIZATION": f"Bearer {token}"}, response_status=401),
+    ]
+    findings = MobileTokenSessionAuditor().audit_transactions(transactions)
+    assert not any(f.cwe_id == "CWE-613" for f in findings)
 
 
 def test_api_security_tester_get_token_auditor():

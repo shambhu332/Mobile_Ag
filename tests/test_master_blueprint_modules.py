@@ -136,14 +136,23 @@ def test_provider_fuzzer_traversal_and_sqli_payloads():
 
 
 def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_arguments(monkeypatch):
+    import io
     import shlex
     import subprocess
-    from types import SimpleNamespace
 
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     called = []
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: called.append((args, kwargs)) or
-                        SimpleNamespace(stdout="", stderr="Permission Denial", returncode=1))
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            called.append((args, kwargs))
+            self.stdout = io.BytesIO(b"")
+            self.stderr = io.BytesIO(b"Permission Denial")
+        def wait(self, timeout=None):
+            return 1
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     blocked = fuzzer.fuzz_provider_traversal("com.example.provider", "com.example.app")
     assert len(blocked) == 1 and blocked[0].status == "BLOCKED_SCOPE"
     invalid = fuzzer.fuzz_provider_traversal("provider; id", "com.example.app",
@@ -298,15 +307,22 @@ def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
 
 
 def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
+    import io
     import json
-    from types import SimpleNamespace
     import mobileag.dast.provider_fuzzer as provider_module
 
-    monkeypatch.setattr(
-        provider_module.subprocess, "run",
-        lambda *a, **k: SimpleNamespace(returncode=0,
-            stdout="Row: 0 _id=1 name=synthetic-provider-private-value", stderr=""),
-    )
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.BytesIO(
+                b"Row: 0 _id=1 name=synthetic-provider-private-value " + b"x" * 100_000
+            )
+            self.stderr = io.BytesIO(b"")
+        def wait(self, timeout=None):
+            return 0
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(provider_module.subprocess, "Popen", FakeProcess)
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     scope_guard = lambda: None
     traversal = fuzzer.fuzz_provider_traversal(
@@ -319,6 +335,8 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     assert sql[0].status == "QUERY_RESULT_OBSERVED"
     assert all("VULNERABLE" not in item.status for item in traversal + sql)
     assert all(not item.output_snippet for item in traversal + sql)
+    assert all(item.output_truncated for item in traversal + sql)
+    assert all(item.output_bytes_observed > 100_000 for item in traversal + sql)
     assert "synthetic-provider-private-value" not in json.dumps([item.__dict__ for item in traversal + sql])
 
 

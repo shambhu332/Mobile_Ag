@@ -24,6 +24,7 @@ class BolaTestResult:
     response_body_preview: str = ""
     response_sha256: str = ""
     marker_observed: bool = False
+    response_hash_status: str = "complete"
 
 
 class BolaFuzzer:
@@ -35,6 +36,7 @@ class BolaFuzzer:
     MAX_QUERY_FIELDS = 100
     MAX_CANDIDATES = 100
     MAX_CANDIDATE_LENGTH = 256
+    MAX_RESPONSE_CHARS = 1024 * 1024
     _UUID = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     _EMAIL = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
     _OPAQUE_ID = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
@@ -118,7 +120,15 @@ class BolaFuzzer:
         """Evaluate whether a request made with User B's token leaked User A's private data."""
         is_vuln = False
         reason = "Access denied or safe behavior observed."
-        marker_observed = bool(user_a_marker and user_a_marker in response_body)
+        valid_response = isinstance(response_body, str)
+        bounded_response = response_body[:self.MAX_RESPONSE_CHARS] if valid_response else ""
+        hash_status = "invalid_input" if not valid_response else (
+            "truncated" if len(response_body) > self.MAX_RESPONSE_CHARS else "complete"
+        )
+        marker_observed = bool(
+            isinstance(user_a_marker, str) and user_a_marker and valid_response
+            and user_a_marker in bounded_response
+        )
 
         if status_code in {200, 206}:
             # A successful response alone cannot establish that the object is
@@ -149,6 +159,10 @@ class BolaFuzzer:
             # bounded observation record; raw HTTP evidence belongs in an
             # authorized, separately redacted capture store.
             response_body_preview="",
-            response_sha256=hashlib.sha256(response_body.encode("utf-8", errors="replace")).hexdigest(),
+            response_sha256=(
+                hashlib.sha256(bounded_response.encode("utf-8", errors="replace")).hexdigest()
+                if valid_response else ""
+            ),
             marker_observed=marker_observed,
+            response_hash_status=hash_status,
         )

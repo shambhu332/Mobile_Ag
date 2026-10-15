@@ -153,6 +153,30 @@ def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls()
     )
     assert candidates == ["order_1", "acc_1122"]
 
+
+def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
+    import hashlib
+
+    fuzzer = BolaFuzzer()
+    response = "a" * (BolaFuzzer.MAX_RESPONSE_CHARS + 10) + "synthetic-canary"
+    result = fuzzer.evaluate_response_discrepancy(
+        endpoint="/v1/orders/order_1", method="GET", resource_id="order_1",
+        status_code=200, response_body=response, user_a_marker="synthetic-canary",
+    )
+    assert result.response_hash_status == "truncated"
+    assert result.response_sha256 == hashlib.sha256(
+        ("a" * BolaFuzzer.MAX_RESPONSE_CHARS).encode()
+    ).hexdigest()
+    assert result.marker_observed is False
+    assert result.is_vulnerable is False
+
+    invalid = fuzzer.evaluate_response_discrepancy(
+        endpoint="/v1/orders/order_1", method="GET", resource_id="order_1",
+        status_code=200, response_body=None, user_a_marker="canary",
+    )
+    assert invalid.response_sha256 == ""
+    assert invalid.response_hash_status == "invalid_input"
+
     # Positive test: User B receives User A's data
     res_vuln = fuzzer.evaluate_response_discrepancy(
         endpoint="/v1/users/usr_98472",

@@ -122,7 +122,7 @@ class TrafficAuditor:
             findings.extend(self._audit_session_cookies(tx, parsed))
 
             # 1. Cleartext HTTP Traffic (CWE-319)
-            if parsed.scheme == "http" and not (parsed.hostname in ("localhost", "127.0.0.1")):
+            if parsed.scheme == "http" and not self._is_loopback_host(parsed.hostname):
                 cwe = "CWE-319"
                 findings.append(Finding(
                     title=f"Cleartext HTTP Transmission to {safe_origin}",
@@ -267,7 +267,7 @@ class TrafficAuditor:
                     ))
 
             # 6. OWASP API7 - Missing HSTS Header on Production HTTPS (CWE-16)
-            if parsed.scheme == "https" and not (parsed.hostname in ("localhost", "127.0.0.1")):
+            if parsed.scheme == "https" and not self._is_loopback_host(parsed.hostname):
                 if "strict-transport-security" not in resp_headers:
                     cwe = "CWE-16"
                     findings.append(Finding(
@@ -340,6 +340,18 @@ class TrafficAuditor:
                 )
             )
         return cataloger
+
+    @staticmethod
+    def _is_loopback_host(hostname: str | None) -> bool:
+        if not hostname:
+            return False
+        if hostname.lower() == "localhost":
+            return True
+        address = hostname.split("%", 1)[0]
+        try:
+            return ipaddress.ip_address(address).is_loopback
+        except ValueError:
+            return False
 
     @staticmethod
     def _safe_api_origin(parsed) -> str | None:

@@ -259,6 +259,22 @@ def test_traffic_auditor_catalog_and_shadow_api():
     assert "/v1/hidden/debug" in shadow_findings[0].affected_component
 
 
+def test_traffic_audit_recognizes_ipv4_and_ipv6_loopback_hosts():
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+
+    auditor = TrafficAuditor()
+    loopback_http = auditor.audit_transactions([
+        HTTPTransaction(url="http://localhost/v1/items"),
+        HTTPTransaction(url="http://127.0.0.2/v1/items"),
+        HTTPTransaction(url="http://[::1]/v1/items"),
+    ])
+    assert not any(f.cwe_id == "CWE-319" for f in loopback_http)
+    loopback_https = auditor.audit_transactions([HTTPTransaction(url="https://[::1]/v1/items")])
+    assert not any(f.cwe_id == "CWE-16" for f in loopback_https)
+    external_http = auditor.audit_transactions([HTTPTransaction(url="http://192.0.2.3/v1/items")])
+    assert any(f.cwe_id == "CWE-319" for f in external_http)
+
+
 def test_traffic_audit_findings_do_not_retain_credentials_or_dynamic_path_values():
     import json
     from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor

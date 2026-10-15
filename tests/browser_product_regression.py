@@ -212,6 +212,12 @@ def main():
                     page.evaluate('() => {window.auditXssCount=0;window.auditXssProbe=()=>{window.auditXssCount++;return 0};}')
                     assert page.evaluate('window.auditXssCount')==0
                     page.locator('#nav-findings').click()
+                    generated_poc_url='/api/scans/scan_synthetic/findings/synthetic-finding/poc'
+                    assert not any(generated_poc_url in request for request in requests)
+                    page.locator('#subtab-btn-exploit').click()
+                    wait_condition(page, "document.querySelector('#poc-exploit-box').textContent !== '// Loading synthesized exploit...' && document.querySelector('#poc-exploit-box').textContent !== 'Loading generated PoC for review…'")
+                    assert sum(generated_poc_url in request for request in requests)==1
+                    poc_generation_is_explicit=True
                     copied={}
                     for pane,expression in [('poc','getOrGeneratePocGuide(currentScan.findings[0])'),('adb',"'adb shell ' + getOrGenerateAdbCommand(currentScan.findings[0])"),('frida','getOrGenerateFridaScript(currentScan.findings[0])'),('ast','currentScan.findings[0].code_snippet')]:
                         page.locator('#subtab-btn-'+pane).click()
@@ -220,6 +226,7 @@ def main():
                         copied[pane]=page.evaluate('navigator.clipboard.readText()')==expected
                     page.locator('#subtab-btn-proof').click();proof=page.locator('#poc-pane-proof').inner_text()
                     result={'keyboard_connection':{'initial_token_focus':keyboard_initial_focus,'tab_to_submit':keyboard_submit_focus,'enter_submits':not page.locator('#session-connect').evaluate('(e) => e.open')}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
+                            'poc_generation_is_explicit':poc_generation_is_explicit,
                             'xss_marker_executions':page.evaluate('window.auditXssCount'),'exact_clipboard_copies':copied,
                             'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_kpi_present':page.locator('#kpi-masvs').count()==1,
                             'inline_handlers':page.evaluate('() => [...document.querySelectorAll("*")].flatMap(e=>[...e.attributes]).filter(a=>/^on/i.test(a.name)).length'),

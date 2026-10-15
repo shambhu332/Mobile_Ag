@@ -51,7 +51,8 @@ def safe_endpoint(path):
     if parsed.scheme or parsed.netloc or parsed.fragment:
         return False
     known = parsed.path in SAFE_ENDPOINTS or bool(re.fullmatch(
-        r'/api/scans/scan_[A-Za-z0-9_-]+(?:/(?:graph|apis|sarif|decisions|retention))?', parsed.path))
+        r'/api/scans/scan_[A-Za-z0-9_-]+(?:/(?:graph|apis|sarif|decisions|retention|resilience|test-plan)'
+        r'|/findings/[A-Za-z0-9_-]+/poc)?', parsed.path))
     if not known:
         return False
     query = parse_qsl(parsed.query, keep_blank_values=True)

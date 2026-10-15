@@ -83,6 +83,7 @@
     }
 
     let currentFindingSubTab = 'poc';
+    let loadedExploitPocForFinding = null;
 
     function switchFindingSubTab(tab) {
       currentFindingSubTab = tab;
@@ -97,6 +98,33 @@
       if (targetBtn) {
         targetBtn.classList.add('bg-sky-950', 'text-sky-400', 'border', 'border-sky-800');
         targetBtn.classList.remove('text-slate-400');
+      }
+      // Fetch generated PoC material only after an explicit tab selection,
+      // not while merely opening/reviewing a finding.
+      if (tab === 'exploit' && selectedFindingId && currentScan?.scan_id &&
+          loadedExploitPocForFinding !== `${currentScan.scan_id}:${selectedFindingId}`) {
+        const box = document.getElementById('poc-exploit-box');
+        const copyBtn = document.getElementById('btn-copy-exploit-code');
+        const scanId = currentScan.scan_id;
+        const findingId = selectedFindingId;
+        const cacheKey = `${scanId}:${findingId}`;
+        loadedExploitPocForFinding = cacheKey;
+        if (box) box.textContent = 'Loading generated PoC for review…';
+        fetch(`/api/scans/${encodeURIComponent(scanId)}/findings/${encodeURIComponent(findingId)}/poc`)
+          .then(response => response.json())
+          .then(data => {
+            if (selectedFindingId !== findingId || currentScan?.scan_id !== scanId) return;
+            if (box) box.textContent = data.available && data.kotlin_exploit_code
+              ? data.kotlin_exploit_code
+              : data.message || 'No standalone Kotlin exploit template available for this category.';
+            if (copyBtn && data.available && data.kotlin_exploit_code) {
+              copyBtn.onclick = () => copySnippet(data.kotlin_exploit_code);
+            }
+          })
+          .catch(() => {
+            if (box && selectedFindingId === findingId) box.textContent = 'PoC generation unavailable.';
+            loadedExploitPocForFinding = null;
+          });
       }
       window.lucide?.createIcons();
     }
@@ -417,26 +445,10 @@
         </div>
       `;
 
-      if (currentScan?.scan_id) {
-        fetch(`/api/scans/${encodeURIComponent(currentScan.scan_id)}/findings/${encodeURIComponent(f.id)}/poc`)
-          .then(r => r.json())
-          .then(data => {
-            const box = document.getElementById('poc-exploit-box');
-            const copyBtn = document.getElementById('btn-copy-exploit-code');
-            if (box) {
-              if (data.available && data.kotlin_exploit_code) {
-                box.innerHTML = `<code>${escapeHtml(data.kotlin_exploit_code)}</code>`;
-                if (copyBtn) copyBtn.addEventListener('click', () => copySnippet(data.kotlin_exploit_code));
-              } else {
-                box.innerHTML = `<span class="text-slate-500">// ${escapeHtml(data.message || 'No standalone Kotlin exploit template available for this category.')}</span>`;
-              }
-            }
-          })
-          .catch(() => {});
-      }
-
       window.MobileAgEvidence?.finding(detailContainer, f);
-      switchFindingSubTab(currentFindingSubTab || 'poc');
+      // A newly inspected finding starts on its safe reproduction guide. A
+      // generated exploit remains opt-in for each finding.
+      switchFindingSubTab('poc');
       window.lucide?.createIcons();
     }
 

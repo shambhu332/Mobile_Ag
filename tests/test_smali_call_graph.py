@@ -956,6 +956,38 @@ def test_smali_external_stream_read_buffer_taint_flows_through_array_and_builder
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
 
 
+def test_smali_external_stream_single_value_read_flows_to_webview(tmp_path):
+    (tmp_path / "ExternalSingleRead.smali").write_text("""
+.class public Lcom/example/ExternalSingleRead;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 8
+    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    move-result-object v0
+    invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v1
+    invoke-virtual {v1, v0}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v2
+    invoke-virtual {v2}, Ljava/io/InputStream;->read()I
+    move-result v3
+    new-instance v4, Ljava/lang/StringBuilder;
+    invoke-direct {v4}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v4, v3}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    move-result-object v4
+    invoke-virtual {v4}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v5
+    invoke-virtual {p2, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
+
+
 def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_path):
     (tmp_path / "InternalReads.smali").write_text("""
 .class public Lcom/example/InternalReads;

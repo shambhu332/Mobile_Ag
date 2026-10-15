@@ -860,6 +860,12 @@ class SmaliCallGraphEngine:
                                 set(registers.get(array_key, ())) | set(receiver_traces)
                             )
                             pending = frozenset()
+                        elif target_name == "read" and signature.startswith("()I"):
+                            # InputStream.read() and Reader.read() return one
+                            # byte/character directly instead of filling an
+                            # array. Keep the return tainted so subsequent
+                            # scalar/string operations remain visible.
+                            pending = receiver_traces
                         elif target_name in {"readLine", "readAllBytes", "readText"}:
                             pending = receiver_traces
                     if receiver_traces and target_class in SMALI_CONTENT_LINE_READERS and target_name in {

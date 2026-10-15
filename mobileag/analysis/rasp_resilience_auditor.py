@@ -11,11 +11,12 @@ Evaluates an Android application binary across 6 core resilience vectors:
 from __future__ import annotations
 
 import math
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from mobileag.analysis.bounded_sources import SourceInventory
 
 
 @dataclass
@@ -32,6 +33,7 @@ class ResilienceAssessmentResult:
     overall_score: Optional[float] = None
     grade: str = "Not validated"
     vectors: Dict[str, ResilienceVectorScore] = field(default_factory=dict)
+    coverage: Dict[str, object] = field(default_factory=dict)
 
 
 class RaspResilienceAuditor:
@@ -65,42 +67,35 @@ class RaspResilienceAuditor:
         tamper_detections: set[str] = set()
         string_samples: List[str] = []
 
-        if not path.is_dir():
-            return result
+        # Bound traversal and reads; extracted APK trees are untrusted input.
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
+                                    max_total_bytes=32 * 1024 * 1024)
+        for _file_path, data in inventory.read(path, {".smali"}):
+            total_classes += 1
+            base_name = _file_path.stem
+            # This is a filename heuristic, not a class-identifier parser.
+            if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
+                obfuscated_classes += 1
 
-        for root, _, files in os.walk(path):
-            for file in files:
-                if file.endswith(".smali"):
-                    total_classes += 1
-                    base_name = file[:-6]
-                    # Obfuscated names are typically 1-3 characters (e.g. a.smali, b.smali, x1.smali)
-                    if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
-                        obfuscated_classes += 1
+            content = data.decode("utf-8", errors="replace")
+            for ind in self.ROOT_INDICATORS:
+                if ind in content:
+                    root_detections.add(ind)
+            for ind in self.DEBUG_INDICATORS:
+                if ind in content:
+                    debug_detections.add(ind)
+            for ind in self.TAMPER_INDICATORS:
+                if ind in content:
+                    tamper_detections.add(ind)
 
-                    full_path = os.path.join(root, file)
-                    try:
-                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                            content = f.read()
-                    except OSError:
-                        continue
-
-                    # Scan indicators
-                    for ind in self.ROOT_INDICATORS:
-                        if ind in content:
-                            root_detections.add(ind)
-                    for ind in self.DEBUG_INDICATORS:
-                        if ind in content:
-                            debug_detections.add(ind)
-                    for ind in self.TAMPER_INDICATORS:
-                        if ind in content:
-                            tamper_detections.add(ind)
-
-                    # Extract const-string samples for entropy
-                    for s_match in re.findall(r'const-string[^\"]*\"([^\"]+)\"', content):
-                        if len(s_match) > 8:
-                            string_samples.append(s_match)
-                            if len(string_samples) >= 500:
-                                break
+            # Cap both sample count and individual sample work for predictable CPU.
+            for match in re.finditer(r'const-string[^\"]*\"([^\"]+)\"', content):
+                s_match = match.group(1)
+                if len(s_match) > 8:
+                    if len(string_samples) >= 500:
+                        break
+                    string_samples.append(s_match[:256])
+        result.coverage = dict(inventory.coverage)
 
         # These are candidate indicators only. Their observed presence does not
         # prove that a defense is reachable, effective, or complete.

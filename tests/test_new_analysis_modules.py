@@ -175,6 +175,20 @@ def test_rasp_resilience_auditor():
         assert "not implemented" in res.vectors["control_flow"].detected_indicators[0].lower()
         assert all(v.score is None and v.passed is None for v in res.vectors.values())
         assert res.vectors["string_encryption"].detected_indicators[0].endswith("encryption not inferred")
+        assert res.coverage["static_status"] == "analyzed_heuristically"
+        assert res.coverage["source_files_analyzed"] == 1
+
+
+def test_rasp_resilience_inventory_bounds_oversized_smali(tmp_path):
+    oversized = tmp_path / "Huge.smali"
+    oversized.write_bytes(b".class public Lfixture/Huge;\n" + b"x" * (2 * 1024 * 1024))
+
+    result = RaspResilienceAuditor().audit_package(tmp_path)
+
+    assert result.coverage["static_status"] == "partial"
+    assert result.coverage["source_files_analyzed"] == 0
+    assert result.coverage["source_files_skipped"] == 1
+    assert result.coverage["source_file_skip_reasons"]["file_size_limit"] == 1
 
 
 def test_mobile_sbom_generator():

@@ -565,7 +565,7 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
 
 @app.get("/api/scans/{scan_id}/resilience")
 async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
-    """Return MASVS-RESILIENCE scoring from RaspResilienceAuditor."""
+    """Return heuristic resilience inventory and its bounded-input coverage."""
     scan = await get_scan_details(scan_id)
     out_dir = OUTPUT_DIR / scan_id
     smali_dir = out_dir / "apktool_out" / "smali"
@@ -583,6 +583,7 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
         "scan_id": scan_id,
         "overall_score": res.overall_score,
         "grade": res.grade,
+        "coverage": res.coverage,
         "vectors": {
             k: {
                 "name": v.vector_name,

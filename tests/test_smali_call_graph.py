@@ -570,6 +570,41 @@ def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callba
     assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 3
 
 
+@pytest.mark.parametrize("class_name,parent,method_signature,return_code,registers", [
+    ("StartCommandService", "Landroid/app/Service;",
+     "onStartCommand(Landroid/content/Intent;II)I", "const/4 v0, 0\n    return v0", 6),
+    ("IntentWorker", "Landroid/app/IntentService;",
+     "onHandleIntent(Landroid/content/Intent;)V", "return-void", 4),
+    ("BoundService", "Landroid/app/Service;",
+     "onBind(Landroid/content/Intent;)Landroid/os/IBinder;", "const/4 v0, 0\n    return-object v0", 4),
+    ("UnboundService", "Landroid/app/Service;",
+     "onUnbind(Landroid/content/Intent;)Z", "const/4 v0, 0\n    return v0", 4),
+])
+def test_smali_service_lifecycle_intent_parameters_are_seeded(
+        class_name, parent, method_signature, return_code, registers, tmp_path):
+    owner = f"Lcom/example/{class_name};"
+    (tmp_path / f"{class_name}.smali").write_text(f"""
+.class public {owner}
+.super {parent}
+.method public {method_signature}
+    .registers {registers}
+    invoke-virtual {{p1}}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    sget-object p0, {owner}->web:Landroid/webkit/WebView;
+    invoke-virtual {{p0, v0}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    {return_code}
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "LIFECYCLE_INTENT_PARAMETER"
+    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 1
+
+
 def test_smali_clipdata_uri_flows_from_external_intent_to_webview_navigation(tmp_path):
     (tmp_path / "ClipDataFlow.smali").write_text("""
 .class public Lcom/example/ClipDataFlow;

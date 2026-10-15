@@ -173,6 +173,8 @@ def test_rasp_resilience_auditor():
         assert res.vectors["control_flow"].score is None
         assert res.vectors["control_flow"].passed is None
         assert "not implemented" in res.vectors["control_flow"].detected_indicators[0].lower()
+        assert all(v.score is None and v.passed is None for v in res.vectors.values())
+        assert res.vectors["string_encryption"].detected_indicators[0].endswith("encryption not inferred")
 
 
 def test_mobile_sbom_generator():

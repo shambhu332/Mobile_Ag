@@ -1,4 +1,4 @@
-"""OWASP MASVS-RESILIENCE Binary Hardening & RASP Auditor.
+"""Bounded Smali string-inventory helper for resilience review (not MASVS scoring).
 
 Evaluates an Android application binary across 6 core resilience vectors:
 1. Identifier Obfuscation Ratio
@@ -24,7 +24,7 @@ class ResilienceVectorScore:
     masvs_category: str
     score: Optional[float]  # None when this vector is not meaningfully measured
     detected_indicators: List[str] = field(default_factory=list)
-    passed: Optional[bool] = False  # None means the analyzer cannot determine pass/fail
+    passed: Optional[bool] = None  # None means the analyzer cannot determine pass/fail
 
 
 @dataclass
@@ -35,7 +35,7 @@ class ResilienceAssessmentResult:
 
 
 class RaspResilienceAuditor:
-    """Evaluates mobile binary resilience against reverse engineering and tampering."""
+    """Inventory candidate resilience-related strings without scoring effectiveness."""
 
     ROOT_INDICATORS = [
         "su", "/system/bin/su", "/system/xbin/su", "/sbin/su", "daemonsu",
@@ -102,14 +102,15 @@ class RaspResilienceAuditor:
                             if len(string_samples) >= 500:
                                 break
 
-        # 1. Identifier Obfuscation
+        # These are candidate indicators only. Their observed presence does not
+        # prove that a defense is reachable, effective, or complete.
         obf_ratio = (obfuscated_classes / total_classes * 100.0) if total_classes > 0 else 0.0
         v_obf = ResilienceVectorScore(
             vector_name="Identifier Obfuscation",
             masvs_category="MASVS-RESILIENCE-1",
-            score=min(100.0, obf_ratio * 1.25),
+            score=None,
             detected_indicators=[f"Obfuscated class ratio: {obf_ratio:.1f}% ({obfuscated_classes}/{total_classes})"],
-            passed=obf_ratio >= 40.0,
+            passed=None,
         )
 
         # 2. Control flow cannot be inferred from class-name obfuscation. Do not
@@ -122,46 +123,41 @@ class RaspResilienceAuditor:
             passed=None,
         )
 
-        # 3. String Pool Entropy
+        # Entropy is a content statistic, not evidence of string encryption.
         avg_entropy = self._calculate_average_entropy(string_samples)
-        # High entropy (> 4.5 bits) suggests encrypted or packed strings
-        entropy_score = min(100.0, max(0.0, (avg_entropy - 3.0) * 50.0))
         v_entropy = ResilienceVectorScore(
             vector_name="String Pool Encryption",
             masvs_category="MASVS-RESILIENCE-3",
-            score=entropy_score,
-            detected_indicators=[f"Average string entropy: {avg_entropy:.2f} bits/byte"],
-            passed=avg_entropy >= 4.2,
+            score=None,
+            detected_indicators=[f"Average entropy of sampled strings: {avg_entropy:.2f} bits/character; encryption not inferred"],
+            passed=None,
         )
 
         # 4. Anti-Root / Jailbreak
-        root_score = min(100.0, len(root_detections) * 20.0)
         v_root = ResilienceVectorScore(
             vector_name="Device Integrity & Root Detection",
             masvs_category="MASVS-RESILIENCE-4",
-            score=root_score,
-            detected_indicators=sorted(root_detections),
-            passed=len(root_detections) >= 3,
+            score=None,
+            detected_indicators=sorted(root_detections) or ["No root-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         # 5. Anti-Debugging
-        debug_score = min(100.0, len(debug_detections) * 33.3)
         v_debug = ResilienceVectorScore(
             vector_name="Anti-Debugging & Dynamic Inspection",
             masvs_category="MASVS-RESILIENCE-5",
-            score=debug_score,
-            detected_indicators=sorted(debug_detections),
-            passed=len(debug_detections) >= 2,
+            score=None,
+            detected_indicators=sorted(debug_detections) or ["No debug-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         # 6. Tamper Resistance
-        tamper_score = min(100.0, len(tamper_detections) * 33.3)
         v_tamper = ResilienceVectorScore(
             vector_name="Signature Verification & Tamper Resistance",
             masvs_category="MASVS-RESILIENCE-6",
-            score=tamper_score,
-            detected_indicators=sorted(tamper_detections),
-            passed=len(tamper_detections) >= 2,
+            score=None,
+            detected_indicators=sorted(tamper_detections) or ["No signature/tamper-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         result.vectors = {
@@ -173,9 +169,8 @@ class RaspResilienceAuditor:
             "tamper_resistance": v_tamper,
         }
 
-        # Calculate Overall Weighted Score
-        # An aggregate score would imply comparable, validated measurements;
-        # the current heuristics do not support that interpretation.
+        # No aggregate score: these unrelated string/name heuristics are not
+        # validated measures of resilience or MASVS conformance.
         result.overall_score = None
 
         return result

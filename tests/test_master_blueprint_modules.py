@@ -122,12 +122,49 @@ def test_crypto_harvester_script_and_event_parsing():
 
 def test_provider_fuzzer_traversal_and_sqli_payloads():
     fuzzer = ContentProviderFuzzer(adb_path="echo")
-    results = fuzzer.fuzz_provider_traversal("com.example.provider", "com.example.app")
+    scope = lambda: None
+    results = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope
+    )
     assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
     assert any("databases" in r.target_uri for r in results)
 
-    sqli_results = fuzzer.fuzz_provider_sqli("com.example.provider")
+    sqli_results = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=scope
+    )
     assert len(sqli_results) == len(ContentProviderFuzzer.SQLI_PROBES)
+
+
+def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_arguments(monkeypatch):
+    import shlex
+    import subprocess
+    from types import SimpleNamespace
+
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    called = []
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: called.append((args, kwargs)) or
+                        SimpleNamespace(stdout="", stderr="Permission Denial", returncode=1))
+    blocked = fuzzer.fuzz_provider_traversal("com.example.provider", "com.example.app")
+    assert len(blocked) == 1 and blocked[0].status == "BLOCKED_SCOPE"
+    invalid = fuzzer.fuzz_provider_traversal("provider; id", "com.example.app",
+                                             serial="synthetic-device", guard=lambda: None)
+    assert len(invalid) == 1 and invalid[0].status == "INVALID_INPUT"
+    assert called == []
+
+    guarded_calls = []
+    def guard():
+        guarded_calls.append(True)
+
+    results = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=guard,
+    )
+    assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
+    assert len(called) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
+    assert len(guarded_calls) == len(called)
+    command = called[0][0][0]
+    assert command[:4] == ["adb", "-s", "synthetic-device", "shell"]
+    remote_args = shlex.split(command[4])
+    assert remote_args[:2] == ["content", "read"]
 
 
 def test_bola_fuzzer_candidate_extraction_and_discrepancy():
@@ -261,19 +298,28 @@ def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
 
 
 def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
+    import json
     from types import SimpleNamespace
     import mobileag.dast.provider_fuzzer as provider_module
 
     monkeypatch.setattr(
         provider_module.subprocess, "run",
-        lambda *a, **k: SimpleNamespace(returncode=0, stdout="Row: 0 _id=1 name=synthetic", stderr=""),
+        lambda *a, **k: SimpleNamespace(returncode=0,
+            stdout="Row: 0 _id=1 name=synthetic-provider-private-value", stderr=""),
     )
     fuzzer = ContentProviderFuzzer(adb_path="adb")
-    traversal = fuzzer.fuzz_provider_traversal("com.example.provider", "com.example.app")
-    sql = fuzzer.fuzz_provider_sqli("com.example.provider")
+    scope_guard = lambda: None
+    traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope_guard
+    )
+    sql = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=scope_guard
+    )
     assert traversal[0].status == "OBSERVED_READABLE"
     assert sql[0].status == "QUERY_RESULT_OBSERVED"
     assert all("VULNERABLE" not in item.status for item in traversal + sql)
+    assert all(not item.output_snippet for item in traversal + sql)
+    assert "synthetic-provider-private-value" not in json.dumps([item.__dict__ for item in traversal + sql])
 
 
 def test_poc_synthesizer_task_hijacking_and_provider_sqli():

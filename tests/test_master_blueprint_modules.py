@@ -329,6 +329,20 @@ def test_traffic_audit_recognizes_ipv4_and_ipv6_loopback_hosts():
     assert any(f.cwe_id == "CWE-319" for f in external_http)
 
 
+def test_traffic_audit_reports_incomplete_query_review_after_field_cap():
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+
+    query = "&".join(f"q{i}=x" for i in range(256)) + "&access_token=synthetic-query-secret"
+    findings = TrafficAuditor().audit_transactions([
+        HTTPTransaction(url=f"https://api.example.test/v1/items?{query}")
+    ])
+    coverage = [f for f in findings if f.detection_method == "TrafficAuditor (Coverage Limit)"]
+    assert len(coverage) == 1
+    assert coverage[0].metadata == {"analysis_state": "incomplete", "max_query_fields": 256}
+    assert not any(f.cwe_id == "CWE-598" for f in findings)
+    assert "synthetic-query-secret" not in str(coverage[0].model_dump(mode="json"))
+
+
 def test_traffic_audit_findings_do_not_retain_credentials_or_dynamic_path_values():
     import json
     from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor

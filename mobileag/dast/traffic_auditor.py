@@ -28,6 +28,8 @@ class HTTPTransaction:
 class TrafficAuditor:
     """Audits captured HTTP/HTTPS traffic streams for transport and header vulnerabilities."""
 
+    MAX_QUERY_FIELDS = 256
+
     def __init__(self) -> None:
         self._sensitive_param_re = re.compile(
             r"(?i)^(token|access_token|auth|password|pwd|api_key|secret|session_id|jwt)$"
@@ -149,7 +151,28 @@ class TrafficAuditor:
 
             # 2. Sensitive Credentials in GET Query Parameters (CWE-598)
             if safe_method == "GET" and parsed.query:
-                query_params = parse_qs(parsed.query)
+                try:
+                    query_params = parse_qs(parsed.query, max_num_fields=self.MAX_QUERY_FIELDS)
+                except ValueError:
+                    # Preserve the coverage gap explicitly; do not treat a
+                    # skipped over-limit query as a clean CWE-598 assessment.
+                    findings.append(Finding(
+                        title="Traffic Query Parameter Analysis Limit Reached",
+                        description=(
+                            f"Query analysis for {safe_location} was skipped because the captured URL "
+                            f"exceeded the {self.MAX_QUERY_FIELDS}-field bound. Sensitive query "
+                            "parameter review is incomplete for this transaction."
+                        ),
+                        severity=Severity.INFO,
+                        confidence=1.0,
+                        affected_component=safe_origin,
+                        file_path=safe_location,
+                        line_number=1,
+                        detection_method="TrafficAuditor (Coverage Limit)",
+                        status=FindingStatus.UNVERIFIED,
+                        metadata={"analysis_state": "incomplete", "max_query_fields": self.MAX_QUERY_FIELDS},
+                    ))
+                    query_params = {}
                 leaked_params = [k for k in query_params if self._sensitive_param_re.search(k)]
                 if leaked_params:
                     cwe = "CWE-598"

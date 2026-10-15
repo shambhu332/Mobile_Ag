@@ -42,10 +42,15 @@ class MobileApiCataloger:
         uuid_segment = re.compile(
             r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         )
+        # Redact token-shaped opaque IDs in exported route templates. This
+        # deliberately errs on the side of parametrizing long mixed strings;
+        # shorter or non-token-shaped identifiers remain unsupported.
+        opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
         segments = path.split("/")
         identifier_index = 0
         for index, segment in enumerate(segments):
-            if re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment):
+            if (re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment)
+                    or opaque_token_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"
         return "/".join(segments) or "/"

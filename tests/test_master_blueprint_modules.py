@@ -303,6 +303,23 @@ def test_openapi_catalog_templates_identifier_paths_and_keeps_query_signatures()
     assert "31415" not in encoded
 
 
+
+def test_openapi_catalog_redacts_token_shaped_opaque_path_segments():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    sample_a = "AbCdEf0123456789GhIjKlMnOpQrStUv"
+    sample_b = "ZaYxWv9876543210UtSrQpOnMlKjIhGf"
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", f"https://api.example.test/v1/sessions/{sample_a}"))
+    catalog.ingest_request(CapturedRequest("GET", f"https://api.example.test/v1/sessions/{sample_b}"))
+
+    spec = catalog.export_openapi_json()
+    assert "/v1/sessions/{id1}" in spec["paths"]
+    encoded = json.dumps(spec)
+    assert sample_a not in encoded and sample_b not in encoded
+
+
 def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
     import json
     from mobileag.web.app import _captured_api_catalog

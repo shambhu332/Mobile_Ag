@@ -489,6 +489,8 @@ class IOSSecurityAnalyzer:
                         "parse_status": m_res.parse_status,
                         "parse_errors": m_res.parse_errors,
                         "load_commands_count": m_res.load_commands_count,
+                        "architectures": m_res.architectures,
+                        "slice_count": m_res.slice_count,
                         "imported_dylibs": m_res.imported_dylibs,
                         "sections": m_res.sections,
                         "swift_sections": m_res.swift_sections_detected,

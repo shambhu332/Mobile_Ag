@@ -190,6 +190,37 @@ def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path)
     assert "Invalid load-command size" in result.parse_errors
 
 
+def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):
+    import struct
+
+    arm_slice = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 0, 0, 0, 0)
+    x64_slice = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x01000007, 0, 2, 0, 0, 0, 0)
+    arm_offset = 8 + 2 * 20
+    x64_offset = arm_offset + len(arm_slice)
+    fat_header = struct.pack(">II", 0xCAFEBABE, 2)
+    arch_table = struct.pack(">iiIII", 0x0100000C, 0, arm_offset, len(arm_slice), 2)
+    arch_table += struct.pack(">iiIII", 0x01000007, 0, x64_offset, len(x64_slice), 2)
+    binary = tmp_path / "UniversalMachO"
+    binary.write_bytes(fat_header + arch_table + arm_slice + x64_slice)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.is_macho is True
+    assert result.parse_status == "complete"
+    assert result.slice_count == 2
+    assert result.architectures == ["ARM64", "X86_64"]
+
+
+def test_macho_parser_reports_invalid_fat_slice_range(tmp_path):
+    import struct
+
+    binary = tmp_path / "MalformedFatMachO"
+    binary.write_bytes(struct.pack(">IIiiIII", 0xCAFEBABE, 1, 0x0100000C, 0,
+                                  0xFFFFFF00, 64, 2))
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "partial"
+    assert "Fat slice 0 has an invalid bounded file range" in result.parse_errors
+
+
 def test_smart_ui_crawler():
     crawler = SmartUICrawler(test_user="researcher@example.test", test_pass="Synthetic-Only-123!")
 

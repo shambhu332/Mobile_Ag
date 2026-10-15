@@ -30,6 +30,8 @@ class MachoAnalysisResult:
     parse_errors: List[str] = field(default_factory=list)
     sections: List[Dict[str, object]] = field(default_factory=list)
     cstring_samples: List[str] = field(default_factory=list)
+    architectures: List[str] = field(default_factory=list)
+    slice_count: int = 0
 
 
 class MachoBinaryParser:
@@ -38,6 +40,7 @@ class MachoBinaryParser:
     MH_MAGIC_64 = 0xFEEDFACF
     MH_CIGAM_64 = 0xCFFAEDFE
     FAT_MAGIC = 0xCAFEBABE
+    FAT_MAGIC_64 = 0xCAFEBABF
 
     SWIFT5_SECTION_NAMES = [
         "__swift5_types",
@@ -91,7 +94,9 @@ class MachoBinaryParser:
         if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
             result.is_macho = True
             result.is_64bit = True
-        elif magic == self.FAT_MAGIC or magic_le == self.FAT_MAGIC:
+        elif magic in {self.FAT_MAGIC, self.FAT_MAGIC_64} or magic_le in {
+            self.FAT_MAGIC, self.FAT_MAGIC_64,
+        }:
             result.is_macho = True
             result.cpu_type = "Universal Fat Binary"
         else:
@@ -118,8 +123,7 @@ class MachoBinaryParser:
             elif result.parse_status == "not_attempted":
                 result.parse_status = "complete"
         else:
-            result.parse_status = "partial"
-            result.parse_errors.append("Universal/fat Mach-O recognized but slice tables are not parsed")
+            self._parse_fat(data, result)
 
         # Keep legacy whole-file name matches explicitly separate from
         # sections resolved from LC_SEGMENT_64 section records.
@@ -149,6 +153,67 @@ class MachoBinaryParser:
         result.api_endpoints = sorted(endpoints)[:100]
         return result
 
+    def _parse_fat(self, data: bytes, result: MachoAnalysisResult) -> None:
+        """Parse bounded FAT/FAT64 slice tables and aggregate supported thin-64 slices."""
+        if len(data) < 8:
+            result.parse_status = "truncated"
+            result.parse_errors.append("Truncated fat Mach-O header")
+            return
+        magic_be, magic_le = struct.unpack_from(">I", data, 0)[0], struct.unpack_from("<I", data, 0)[0]
+        is_64 = magic_be == self.FAT_MAGIC_64 or magic_le == self.FAT_MAGIC_64
+        endian = ">" if magic_be in {self.FAT_MAGIC, self.FAT_MAGIC_64} else "<"
+        arch_count = struct.unpack_from(endian + "I", data, 4)[0]
+        entry_size = 32 if is_64 else 20
+        if arch_count == 0 or arch_count > 128 or 8 + arch_count * entry_size > len(data):
+            result.parse_status = "partial"
+            result.parse_errors.append("Fat architecture table exceeds bounded input or count limit")
+            return
+
+        result.slice_count = arch_count
+        statuses: list[str] = []
+        for index in range(arch_count):
+            entry_offset = 8 + index * entry_size
+            if is_64:
+                cpu_type, _subtype, slice_offset, slice_size, _align, _reserved = struct.unpack_from(
+                    endian + "iiQQII", data, entry_offset
+                )
+            else:
+                cpu_type, _subtype, slice_offset, slice_size, _align = struct.unpack_from(
+                    endian + "iiIII", data, entry_offset
+                )
+            arch_name = {0x0100000C: "ARM64", 0x01000007: "X86_64",
+                         12: "ARM", 7: "X86"}.get(cpu_type, f"0x{cpu_type & 0xffffffff:08x}")
+            result.architectures.append(arch_name)
+            if slice_offset > len(data) or slice_size > len(data) - slice_offset or slice_size < 4:
+                statuses.append("partial")
+                result.parse_errors.append(f"Fat slice {index} has an invalid bounded file range")
+                continue
+            slice_data = data[slice_offset:slice_offset + slice_size]
+            slice_magic = struct.unpack_from("<I", slice_data, 0)[0]
+            if slice_magic not in {self.MH_MAGIC_64, self.MH_CIGAM_64}:
+                statuses.append("unsupported")
+                result.parse_errors.append(f"Fat slice {index} is not a supported thin 64-bit Mach-O")
+                continue
+            slice_result = MachoAnalysisResult(is_macho=True)
+            self._parse_thin_64(slice_data, slice_result)
+            statuses.append(slice_result.parse_status)
+            result.load_commands_count += slice_result.load_commands_count
+            result.sections.extend({**section, "architecture": arch_name}
+                                   for section in slice_result.sections)
+            for name in slice_result.imported_dylibs:
+                if name not in result.imported_dylibs:
+                    result.imported_dylibs.append(name)
+            for name in slice_result.swift_sections_detected:
+                if name not in result.swift_sections_detected:
+                    result.swift_sections_detected.append(name)
+            for sample in slice_result.cstring_samples:
+                if sample not in result.cstring_samples and len(result.cstring_samples) < 1000:
+                    result.cstring_samples.append(sample)
+            result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
+        result.parse_status = "complete" if statuses and all(status == "not_attempted" for status in statuses) else (
+            "complete" if statuses and all(status == "complete" for status in statuses) else "partial"
+        )
+
     def _parse_thin_64(self, data: bytes, result: MachoAnalysisResult) -> None:
         """Parse bounded 64-bit Mach-O load commands and section file ranges."""
         if len(data) < 32:
@@ -166,6 +231,8 @@ class MachoBinaryParser:
             result.parse_errors.append("Malformed 64-bit Mach-O header")
             return
         result.cpu_type = {0x0100000C: "ARM64", 0x01000007: "X86_64"}.get(cpu_type, f"0x{cpu_type & 0xffffffff:08x}")
+        if not result.architectures:
+            result.architectures.append(result.cpu_type)
         if ncmds > 65536 or sizeofcmds > self.MAX_BINARY_BYTES or 32 + sizeofcmds > len(data):
             result.parse_status = "partial"
             result.parse_errors.append("Load-command region exceeds available bounded input")

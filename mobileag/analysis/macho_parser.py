@@ -23,8 +23,13 @@ class MachoAnalysisResult:
     load_commands_count: int = 0
     imported_dylibs: List[str] = field(default_factory=list)
     swift_sections_detected: List[str] = field(default_factory=list)
+    swift_section_name_candidates: List[str] = field(default_factory=list)
     api_endpoints: List[str] = field(default_factory=list)
     crypto_frameworks: List[str] = field(default_factory=list)
+    parse_status: str = "not_attempted"
+    parse_errors: List[str] = field(default_factory=list)
+    sections: List[Dict[str, object]] = field(default_factory=list)
+    cstring_samples: List[str] = field(default_factory=list)
 
 
 class MachoBinaryParser:
@@ -43,6 +48,12 @@ class MachoBinaryParser:
     ]
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
+    MAX_BINARY_BYTES = 15 * 1024 * 1024
+    LC_SEGMENT_64 = 0x19
+    DYLIB_COMMANDS = {
+        0x0C, 0x0D, 0x18 | 0x80000000, 0x1F | 0x80000000,
+        0x20, 0x23 | 0x80000000,
+    }
 
     def parse_binary(self, binary_path: str | Path) -> MachoAnalysisResult:
         """Parse an iOS Mach-O binary file."""
@@ -52,7 +63,17 @@ class MachoBinaryParser:
         if not path.is_file():
             return result
 
-        result.file_size_bytes = path.stat().st_size
+        try:
+            details = path.lstat()
+            if path.is_symlink() or not path.is_file():
+                result.parse_status = "rejected_input"
+                result.parse_errors.append("Input must be a regular non-symlink file")
+                return result
+            result.file_size_bytes = details.st_size
+        except OSError as exc:
+            result.parse_status = "read_error"
+            result.parse_errors.append(type(exc).__name__)
+            return result
 
         try:
             with open(path, "rb") as f:
@@ -60,7 +81,8 @@ class MachoBinaryParser:
         except OSError:
             return result
 
-        if len(header) < 16:
+        if len(header) < 4:
+            result.parse_status = "truncated"
             return result
 
         magic = struct.unpack(">I", header[:4])[0]
@@ -73,19 +95,37 @@ class MachoBinaryParser:
             result.is_macho = True
             result.cpu_type = "Universal Fat Binary"
         else:
+            result.parse_status = "not_macho"
             return result
 
         # Read binary data for section analysis
         try:
             with open(path, "rb") as f:
-                data = f.read(15 * 1024 * 1024)  # Read up to 15MB
-        except OSError:
+                data = f.read(self.MAX_BINARY_BYTES + 1)
+        except OSError as exc:
+            result.parse_status = "read_error"
+            result.parse_errors.append(type(exc).__name__)
             return result
 
-        # Check for Swift 5 sections
+        truncated = len(data) > self.MAX_BINARY_BYTES
+        data = data[:self.MAX_BINARY_BYTES]
+
+        if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
+            self._parse_thin_64(data, result)
+            if truncated:
+                result.parse_errors.append("Binary exceeds bounded read limit; file-backed sections may be incomplete")
+                result.parse_status = "partial"
+            elif result.parse_status == "not_attempted":
+                result.parse_status = "complete"
+        else:
+            result.parse_status = "partial"
+            result.parse_errors.append("Universal/fat Mach-O recognized but slice tables are not parsed")
+
+        # Keep legacy whole-file name matches explicitly separate from
+        # sections resolved from LC_SEGMENT_64 section records.
         for sec in self.SWIFT5_SECTION_NAMES:
             if sec.encode() in data:
-                result.swift_sections_detected.append(sec)
+                result.swift_section_name_candidates.append(sec)
 
         # Check for crypto framework imports
         if b"CommonCrypto" in data:
@@ -108,6 +148,95 @@ class MachoBinaryParser:
 
         result.api_endpoints = sorted(endpoints)[:100]
         return result
+
+    def _parse_thin_64(self, data: bytes, result: MachoAnalysisResult) -> None:
+        """Parse bounded 64-bit Mach-O load commands and section file ranges."""
+        if len(data) < 32:
+            result.parse_status = "truncated"
+            result.parse_errors.append("Truncated 64-bit Mach-O header")
+            return
+        magic_bytes = data[:4]
+        endian = "<" if magic_bytes == b"\xcf\xfa\xed\xfe" else ">"
+        try:
+            _magic, cpu_type, _subtype, _filetype, ncmds, sizeofcmds, _flags, _reserved = struct.unpack_from(
+                endian + "IiiIIIII", data, 0
+            )
+        except struct.error:
+            result.parse_status = "truncated"
+            result.parse_errors.append("Malformed 64-bit Mach-O header")
+            return
+        result.cpu_type = {0x0100000C: "ARM64", 0x01000007: "X86_64"}.get(cpu_type, f"0x{cpu_type & 0xffffffff:08x}")
+        if ncmds > 65536 or sizeofcmds > self.MAX_BINARY_BYTES or 32 + sizeofcmds > len(data):
+            result.parse_status = "partial"
+            result.parse_errors.append("Load-command region exceeds available bounded input")
+            return
+
+        command_end = 32 + sizeofcmds
+        cursor = 32
+        swift_names = set(self.SWIFT5_SECTION_NAMES)
+        for _ in range(ncmds):
+            if cursor + 8 > command_end:
+                result.parse_errors.append("Load-command header exceeds declared command region")
+                result.parse_status = "partial"
+                break
+            command, command_size = struct.unpack_from(endian + "II", data, cursor)
+            if command_size < 8 or cursor + command_size > command_end:
+                result.parse_errors.append("Invalid load-command size")
+                result.parse_status = "partial"
+                break
+            if command == self.LC_SEGMENT_64:
+                self._parse_segment_64(data, cursor, command_size, endian, result)
+            if command in self.DYLIB_COMMANDS:
+                if command_size >= 24:
+                    name_offset = struct.unpack_from(endian + "I", data, cursor + 8)[0]
+                    name_start = cursor + name_offset
+                    name_end = data.find(b"\0", name_start, cursor + command_size)
+                    if 24 <= name_offset < command_size and name_end >= 0:
+                        name = data[name_start:name_end].decode("utf-8", errors="replace")
+                        if name and name not in result.imported_dylibs:
+                            result.imported_dylibs.append(name)
+            cursor += command_size
+        result.load_commands_count = ncmds
+        for section in result.sections:
+            if section["name"] in swift_names and section["name"] not in result.swift_sections_detected:
+                result.swift_sections_detected.append(str(section["name"]))
+            if section["name"] == "__cstring":
+                offset, size = int(section["offset"]), int(section["size"])
+                if offset <= len(data) and size <= len(data) - offset:
+                    raw = data[offset:offset + size]
+                    for value in re.findall(rb"[\x20-\x7e]{4,}", raw):
+                        sample = value.decode("ascii", errors="replace")
+                        if sample not in result.cstring_samples:
+                            result.cstring_samples.append(sample)
+                            if len(result.cstring_samples) >= 1000:
+                                result.parse_errors.append("C-string sample limit reached")
+                                result.parse_status = "partial"
+                                break
+                else:
+                    result.parse_errors.append("__cstring file range exceeds bounded input")
+                    result.parse_status = "partial"
+
+    def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,
+                          endian: str, result: MachoAnalysisResult) -> None:
+        if command_size < 72:
+            result.parse_errors.append("Truncated LC_SEGMENT_64 command")
+            result.parse_status = "partial"
+            return
+        segment_name = data[cursor + 8:cursor + 24].split(b"\0", 1)[0].decode("ascii", errors="replace")
+        section_count = struct.unpack_from(endian + "I", data, cursor + 64)[0]
+        if section_count > 4096 or 72 + section_count * 80 > command_size:
+            result.parse_errors.append("LC_SEGMENT_64 section table exceeds command bounds")
+            result.parse_status = "partial"
+            return
+        section_cursor = cursor + 72
+        for _ in range(section_count):
+            raw = struct.unpack_from(endian + "16s16sQQIIIIIIII", data, section_cursor)
+            section_name = raw[0].split(b"\0", 1)[0].decode("ascii", errors="replace")
+            owner = raw[1].split(b"\0", 1)[0].decode("ascii", errors="replace")
+            section_size, file_offset = raw[3], raw[4]
+            result.sections.append({"segment": owner or segment_name, "name": section_name,
+                                    "size": section_size, "offset": file_offset})
+            section_cursor += 80
 
     def audit_app_bundle(self, app_dir: str | Path) -> Optional[MachoAnalysisResult]:
         """Audit the main Mach-O executable in an extracted .app directory."""

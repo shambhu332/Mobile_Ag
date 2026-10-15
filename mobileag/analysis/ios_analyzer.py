@@ -486,7 +486,13 @@ class IOSSecurityAnalyzer:
                 m_res = m_parser.parse_binary(extracted["binary_path"])
                 if m_res.is_macho:
                     swift_metadata = {
+                        "parse_status": m_res.parse_status,
+                        "parse_errors": m_res.parse_errors,
+                        "load_commands_count": m_res.load_commands_count,
+                        "imported_dylibs": m_res.imported_dylibs,
+                        "sections": m_res.sections,
                         "swift_sections": m_res.swift_sections_detected,
+                        "swift_section_name_candidates": m_res.swift_section_name_candidates,
                         "crypto_frameworks": m_res.crypto_frameworks,
                         "api_endpoints": m_res.api_endpoints,
                     }

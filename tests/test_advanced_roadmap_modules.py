@@ -143,9 +143,51 @@ def test_macho_binary_parser():
 
         assert res.is_macho is True
         assert res.is_64bit is True
-        assert "__swift5_types" in res.swift_sections_detected
+        assert "__swift5_types" in res.swift_section_name_candidates
+        assert "__swift5_types" not in res.swift_sections_detected
         assert "CommonCrypto" in res.crypto_frameworks
         assert "https://ios.example.com/api" in res.api_endpoints
+
+
+def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tmp_path):
+    import struct
+
+    strings = b"https://api.example.test/v1\0"
+    dylib_name = b"/System/Library/Frameworks/Security.framework/Security\0"
+    dylib_size = (24 + len(dylib_name) + 7) & ~7
+    dylib = struct.pack("<IIIIII", 0x0C, dylib_size, 24, 0, 0, 0) + dylib_name
+    dylib += b"\0" * (dylib_size - len(dylib))
+    string_offset = 32 + 232 + len(dylib)
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 232, b"__TEXT", 0x1000,
+                          len(strings), string_offset, len(strings), 7, 5, 2, 0)
+    cstrings = struct.pack("<16s16sQQIIIIIIII", b"__cstring", b"__TEXT", 0x1000,
+                           len(strings), string_offset, 0, 0, 0, 0, 0, 0, 0)
+    swift = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT", 0x2000,
+                        4, string_offset, 0, 0, 0, 0, 0, 0, 0)
+    commands = segment + cstrings + swift + dylib
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2,
+                         2, len(commands), 0, 0)
+    binary = tmp_path / "ValidMachO"
+    binary.write_bytes(header + commands + strings)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "complete"
+    assert result.load_commands_count == 2
+    assert "/System/Library/Frameworks/Security.framework/Security" in result.imported_dylibs
+    assert "__swift5_types" in result.swift_sections_detected
+    assert "https://api.example.test/v1" in result.cstring_samples
+
+
+def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path):
+    import struct
+
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, 8, 0, 0)
+    binary = tmp_path / "MalformedMachO"
+    binary.write_bytes(header + struct.pack("<II", 0x19, 0))
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.is_macho is True
+    assert result.parse_status == "partial"
+    assert "Invalid load-command size" in result.parse_errors
 
 
 def test_smart_ui_crawler():

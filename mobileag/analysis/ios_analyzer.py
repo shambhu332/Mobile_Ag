@@ -496,6 +496,8 @@ class IOSSecurityAnalyzer:
                         "sections": m_res.sections,
                         "swift_sections": m_res.swift_sections_detected,
                         "swift_section_name_candidates": m_res.swift_section_name_candidates,
+                        "swift_type_metadata_status": m_res.swift_type_metadata_status,
+                        "swift_type_name_candidates": m_res.swift_type_name_candidates,
                         "crypto_frameworks": m_res.crypto_frameworks,
                         "api_endpoints": m_res.api_endpoints,
                     }

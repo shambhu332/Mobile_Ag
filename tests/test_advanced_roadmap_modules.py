@@ -191,6 +191,47 @@ def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path)
     assert "Invalid load-command size" in result.parse_errors
 
 
+def test_macho_parser_inventories_only_bounded_swift_nominal_type_names(tmp_path):
+    import struct
+
+    # One __swift5_types relative pointer to a synthetic struct descriptor/name.
+    section_offset = 32 + 152
+    metadata = bytearray(20)
+    struct.pack_into("<i", metadata, 0, 4)
+    struct.pack_into("<I", metadata, 4, 17)  # Swift struct context kind
+    struct.pack_into("<i", metadata, 12, 8)  # name pointer is relative to descriptor+8
+    metadata.extend(b"SyntheticType\0")
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
+                          len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
+    swift_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT",
+                                0x2000, 4, section_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + swift_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftTypes"
+    binary.write_bytes(header + command + metadata)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_type_metadata_status == "parsed"
+    assert result.swift_type_name_candidates == ["SyntheticType"]
+
+
+def test_macho_parser_does_not_dereference_indirect_swift_type_pointer(tmp_path):
+    import struct
+
+    section_offset = 32 + 152
+    metadata = struct.pack("<i", 5)  # low bit marks an indirectable pointer
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
+                          4, section_offset, 4, 7, 5, 1, 0)
+    swift_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT",
+                                0x2000, 4, section_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + swift_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftIndirect"
+    binary.write_bytes(header + command + metadata)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_type_metadata_status == "partial"
+    assert result.swift_type_name_candidates == []
+
+
 def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):
     import struct
 

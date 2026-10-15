@@ -66,6 +66,7 @@ def test_pending_intent_auditor():
         findings = auditor.audit_file(file_path)
 
         assert len(findings) >= 2
+        assert auditor.coverage["static_status"] == "analyzed_heuristically"
         # pi1 should be flagged for missing mutability flags
         unspecified = [f for f in findings if "PENDING_INTENT_MUTABLE_UNSPECIFIED" in f.id]
         assert len(unspecified) == 1
@@ -92,6 +93,26 @@ def test_pending_intent_parser_handles_multiline_nested_calls_and_ignores_commen
     findings = PendingIntentAuditor().audit_file(path)
     assert len(findings) == 1
     assert findings[0].line_number == 4
+    assert PendingIntentAuditor().audit_file(tmp_path / "missing.kt") == []
+
+
+def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
+    outside = tmp_path.parent / "pending-intent-outside.java"
+    outside.write_text("PendingIntent.getActivity(ctx, 0, intent, 0);")
+    (tmp_path / "Link.java").symlink_to(outside)
+    (tmp_path / "Large.kt").write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+    (tmp_path / "Local.java").write_text("PendingIntent.getBroadcast(ctx, 0, intent, 0);")
+
+    auditor = PendingIntentAuditor()
+    findings = auditor.audit_directory(tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0].file_path.endswith("Local.java")
+    assert auditor.coverage["static_status"] == "partial"
+    assert auditor.coverage["source_files_skipped"] == 2
+    assert auditor.coverage["source_file_skip_reasons"] == {
+        "symlink_entry": 1, "file_size_limit": 1,
+    }
 
 
 def test_intent_redirection_auditor():
@@ -135,6 +156,7 @@ def test_intent_redirection_does_not_match_launch_before_later_extraction(tmp_pa
 
     auditor = IntentRedirectionAuditor()
     assert auditor.audit_file(source) == []
+    assert auditor.audit_file(tmp_path / "missing.java") == []
 
 
 def test_intent_redirection_directory_scan_is_bounded_and_skips_symlinks(tmp_path):

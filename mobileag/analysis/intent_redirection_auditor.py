@@ -88,7 +88,7 @@ class IntentRedirectionAuditor:
         """Audit a file for Intent redirection patterns."""
         inventory = self._inventory()
         path = Path(file_path)
-        records = inventory.read(path.parent, names={path.name}, suffixes={path.suffix})
+        records = inventory.read(path.parent, names={path.name})
         candidate = next(records, None)
         records.close()
         self.coverage = dict(inventory.coverage)

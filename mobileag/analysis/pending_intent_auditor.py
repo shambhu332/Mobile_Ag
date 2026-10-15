@@ -5,16 +5,30 @@ FLAG_IMMUTABLE and unsafe FLAG_MUTABLE configurations (CWE-927 / OWASP MASVS-COD
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
+from mobileag.analysis.bounded_sources import SourceInventory
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 
 class PendingIntentAuditor:
     """Audits PendingIntent factory invocations for mutability flags."""
+
+    def __init__(self):
+        self.coverage: Dict[str, Any] = {
+            "static_status": "not_analyzed", "runtime_status": "not_tested",
+            "proof_status": "not_proven", "exhaustive": False,
+        }
+        self._factory_pattern = re.compile(
+            r"\bPendingIntent\s*\.\s*(getActivity|getActivities|getBroadcast|getService|getForegroundService)\s*\("
+        )
+
+    @staticmethod
+    def _inventory() -> SourceInventory:
+        return SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
+                               max_total_bytes=32 * 1024 * 1024)
 
     # Factory methods on PendingIntent
     FACTORY_METHODS = (
@@ -25,10 +39,6 @@ class PendingIntentAuditor:
         "getForegroundService",
     )
 
-    def __init__(self):
-        self._factory_pattern = re.compile(
-            r"\bPendingIntent\s*\.\s*(getActivity|getActivities|getBroadcast|getService|getForegroundService)\s*\("
-        )
 
     @staticmethod
     def _mask_comments_and_strings(source: str) -> str:
@@ -87,15 +97,19 @@ class PendingIntentAuditor:
 
     def audit_file(self, file_path: str | Path) -> List[Finding]:
         """Audit a single Java/Kotlin file for PendingIntent vulnerabilities."""
+        inventory = self._inventory()
+        path = Path(file_path)
+        records = inventory.read(path.parent, names={path.name})
+        record = next(records, None)
+        records.close()
+        self.coverage = dict(inventory.coverage)
+        if record is None:
+            return []
+        _source_path, data = record
+        return self._audit_content(data.decode("utf-8", errors="replace"), str(path))
+
+    def _audit_content(self, content: str, path_str: str) -> List[Finding]:
         findings: List[Finding] = []
-        path_str = str(file_path)
-
-        try:
-            with open(path_str, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-        except OSError:
-            return findings
-
         masked = self._mask_comments_and_strings(content)
         for match in self._factory_pattern.finditer(masked):
             method = match.group(1)
@@ -144,8 +158,8 @@ class PendingIntentAuditor:
     def audit_directory(self, source_dir: str | Path) -> List[Finding]:
         """Audit all source files in directory."""
         findings: List[Finding] = []
-        for root, _, files in os.walk(source_dir):
-            for file in files:
-                if file.endswith((".java", ".kt")):
-                    findings.extend(self.audit_file(os.path.join(root, file)))
+        inventory = self._inventory()
+        for path, data in inventory.read(source_dir, {".java", ".kt"}):
+            findings.extend(self._audit_content(data.decode("utf-8", errors="replace"), str(path)))
+        self.coverage = dict(inventory.coverage)
         return findings

@@ -392,6 +392,25 @@ def test_openapi_catalog_tracks_malformed_and_unsupported_urls_without_crashing(
     assert len(har["log"]["entries"]) == 4
 
 
+def test_openapi_catalog_rejects_unbounded_query_metadata():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    too_many_url_fields = "&".join(f"k{i}=v" for i in range(101))
+    catalog.ingest_request(CapturedRequest("GET", f"https://api.example.test/v1/items?{too_many_url_fields}"))
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/items", query_params={f"k{i}": "v" for i in range(101)}
+    ))
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/items", query_params={"x" * 257: "v"}
+    ))
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/v1/good?search=ok"))
+
+    spec = catalog.export_openapi_json()
+    assert spec["x-mobileag-capture-limits"]["unmodeledRequests"] == 3
+    assert list(spec["paths"]) == ["/v1/good"]
+
+
 def test_openapi_catalog_normalizes_default_http_ports():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 

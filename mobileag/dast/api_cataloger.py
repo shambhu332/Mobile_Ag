@@ -23,6 +23,9 @@ _DYNAMIC_JSON_KEY_PATTERNS = (
     re.compile(r"^[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$"),
 )
 
+_MAX_QUERY_FIELDS = 100
+_MAX_QUERY_NAME_LENGTH = 256
+
 
 def _looks_like_dynamic_json_key(value: str) -> bool:
     return any(pattern.fullmatch(value) for pattern in _DYNAMIC_JSON_KEY_PATTERNS)
@@ -160,6 +163,25 @@ class MobileApiCataloger:
             self.invalid_urls += 1
             self.unmodeled_requests += 1
             return
+        try:
+            parsed_query = parse_qsl(
+                parsed.query, keep_blank_values=True, max_num_fields=_MAX_QUERY_FIELDS
+            )
+        except ValueError:
+            self.unmodeled_requests += 1
+            return
+        if not isinstance(req.query_params, dict) or len(req.query_params) > _MAX_QUERY_FIELDS:
+            self.unmodeled_requests += 1
+            return
+        if any(not isinstance(name, str) or len(name) > _MAX_QUERY_NAME_LENGTH
+               for name in req.query_params):
+            self.unmodeled_requests += 1
+            return
+        if any(not isinstance(name, str) or len(name) > _MAX_QUERY_NAME_LENGTH
+               for name, _ in parsed_query):
+            self.unmodeled_requests += 1
+            return
+
         path = self._path_template(parsed.path or "/")
         method = req.method.lower() if isinstance(req.method, str) and len(req.method) <= 16 else ""
         if method not in {"get", "put", "post", "delete", "options", "head", "patch", "trace"}:
@@ -182,8 +204,8 @@ class MobileApiCataloger:
             server_url += f":{port}"
 
         query_names = set(req.query_params)
-        query_names.update(name for name, _ in parse_qsl(parsed.query, keep_blank_values=True))
-        query_signature = tuple(sorted(name for name in query_names if isinstance(name, str)))
+        query_names.update(name for name, _ in parsed_query)
+        query_signature = tuple(sorted(query_names))
         key = f"{method}:{server_url}:{path}:{json.dumps(query_signature)}"
         if key not in self.endpoints:
             self.endpoints[key] = {

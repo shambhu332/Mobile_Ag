@@ -32,6 +32,52 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert first_id == second_id
 
 
+def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
+    xml_dir = tmp_path / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "paths.xml").write_text('<paths><root-path name="root" path="." /></paths>')
+    (xml_dir / "broken.xml").write_text('<paths><root-path name="broken"')
+    # This non-FileProvider file must not consume matching-file byte budget.
+    unrelated = tmp_path / "assets" / "xml"
+    unrelated.mkdir(parents=True)
+    (unrelated / "ignored.xml").write_text('x' * (2 * 1024 * 1024 + 1))
+
+    auditor = FileProviderAuditor()
+    results = auditor.audit_resource_directory(str(tmp_path))
+
+    assert len(results) == 2  # No recursive/direct-glob duplicates.
+    broken = next(result for result in results if result.xml_path.endswith("broken.xml"))
+    assert broken.parse_status == "invalid"
+    assert broken.error_code == "xml_parse_error"
+    paths_result = next(result for result in results if result.xml_path.endswith("paths.xml"))
+    assert len(paths_result.findings) == 1
+    assert auditor.coverage["static_status"] == "analyzed_heuristically"
+    assert auditor.coverage["fileprovider_xml_candidates"] == 2
+    assert auditor.coverage["fileprovider_xml_parse_errors"] == 1
+    assert auditor.coverage["fileprovider_xml_error_codes"] == {"xml_parse_error": 1}
+
+
+def test_fileprovider_resource_scan_reports_oversized_candidate_as_partial(tmp_path):
+    xml_dir = tmp_path / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "huge.xml").write_bytes(b"<paths>" + b"x" * (2 * 1024 * 1024))
+
+    auditor = FileProviderAuditor()
+    assert auditor.audit_resource_directory(str(tmp_path)) == []
+    assert auditor.coverage["static_status"] == "partial"
+    assert auditor.coverage["source_file_skip_reasons"]["file_size_limit"] == 1
+
+
+def test_fileprovider_parser_bounds_direct_xml_input_and_validates_root():
+    auditor = FileProviderAuditor()
+    too_large = auditor.audit_xml_content(" " * (FileProviderAuditor.MAX_XML_CHARS + 1))
+    assert too_large.parse_status == "invalid"
+    assert too_large.error_code == "xml_size_limit"
+    wrong_root = auditor.audit_xml_content('<not-paths><root-path name="root" path="." /></not-paths>')
+    assert wrong_root.parse_status == "invalid"
+    assert wrong_root.error_code == "unexpected_root_element"
+
+
 def test_unpinning_engine_generates_multi_layer_script():
     engine = UnpinningEngine()
     config = UnpinningConfig(target_package="com.example.bank", bypass_java=True, bypass_boringssl=True, bypass_flutter=True)

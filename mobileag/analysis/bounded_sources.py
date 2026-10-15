@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import Callable
 
 
 class SourceInventory:
@@ -71,11 +72,15 @@ class SourceInventory:
                                     else 'analyzed_heuristically' if info['source_files_analyzed']
                                     else 'not_analyzed')
 
-    def read(self, directory, extensions=(), *, names=(), suffixes=()):
+    def read(
+        self, directory, extensions=(), *, names=(), suffixes=(),
+        path_filter: Callable[[Path], bool] | None = None,
+    ):
         """Yield bounded regular files selected by extension, exact name or suffix.
 
-        Selection is case-insensitive. Limits and skipped/partial status are
-        retained in ``coverage`` even when traversal stops early.
+        Selection is case-insensitive. ``path_filter`` can further restrict
+        selected paths before opening them. Limits and skipped/partial status
+        are retained in ``coverage`` even when traversal stops early.
         """
         allowed_extensions = {ext.lower() for ext in extensions}
         allowed_names = {name.lower() for name in names}
@@ -109,6 +114,13 @@ class SourceInventory:
                                     and path.name.lower() not in allowed_names
                                     and not any(path.name.lower().endswith(suffix) for suffix in allowed_suffixes)):
                                 continue
+                            if path_filter is not None:
+                                try:
+                                    if not path_filter(path):
+                                        continue
+                                except Exception:
+                                    self.record_skip('path_filter_error')
+                                    continue
                             try:
                                 # O_NOFOLLOW also closes the final-component symlink race.
                                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)

@@ -42,6 +42,24 @@ def test_entry_and_total_byte_budgets(tmp_path):
     assert reader.coverage['limit_reasons'] == {'total_byte_budget': 1}
 
 
+def test_bounded_source_path_filter_excludes_unselected_files_before_read(tmp_path):
+    selected = tmp_path / 'res' / 'xml' / 'paths.xml'
+    ignored = tmp_path / 'assets' / 'paths.xml'
+    selected.parent.mkdir(parents=True)
+    ignored.parent.mkdir(parents=True)
+    selected.write_text('<paths/>')
+    ignored.write_text('x' * 100)
+
+    reader = SourceInventory(max_file_bytes=16)
+    rows = list(reader.read(
+        tmp_path, {'.xml'},
+        path_filter=lambda path: path.parent.name.startswith('xml') and path.parent.parent.name == 'res',
+    ))
+
+    assert [path.relative_to(tmp_path).as_posix() for path, _ in rows] == ['res/xml/paths.xml']
+    assert reader.coverage['source_files_skipped'] == 0
+
+
 @pytest.mark.asyncio
 async def test_auth_comments_ignored_and_no_source_values_stored(tmp_path):
     source = tmp_path / 'Auth.java'

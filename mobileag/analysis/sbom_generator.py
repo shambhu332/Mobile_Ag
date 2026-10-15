@@ -236,9 +236,6 @@ class MobileSbomGenerator:
             c_ver.text = c.version
             c_scope = ET.SubElement(comp_elem, "scope")
             c_scope.text = c.scope
-            c_purl = ET.SubElement(comp_elem, "purl")
-            c_purl.text = c.purl
-
             if c.hashes:
                 hashes_elem = ET.SubElement(comp_elem, "hashes")
                 for alg, h_val in c.hashes.items():
@@ -251,6 +248,11 @@ class MobileSbomGenerator:
                     license_elem = ET.SubElement(licenses_elem, "license")
                     id_elem = ET.SubElement(license_elem, "id")
                     id_elem.text = lic
+
+            # CycloneDX 1.5 component sequence places purl after hashes,
+            # licenses, copyright and cpe. Keep XML output in schema order.
+            c_purl = ET.SubElement(comp_elem, "purl")
+            c_purl.text = c.purl
 
         if self.vulnerabilities:
             vulns_elem = ET.SubElement(root, "vulnerabilities")

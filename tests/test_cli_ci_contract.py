@@ -74,5 +74,5 @@ def test_ci_pins_python_and_test_build_toolchain_constraints():
     for name in ("build", "setuptools", "wheel", "pytest", "pytest-asyncio", "jsonschema",
                  "jsonschema-specifications", "openapi-spec-validator", "openapi-schema-validator",
                  "jsonschema-path", "pathable", "lazy-object-proxy", "rfc3339-validator",
-                 "referencing", "rpds-py", "tree-sitter", "tree-sitter-java"):
+                 "referencing", "rpds-py", "lxml", "tree-sitter", "tree-sitter-java"):
         assert name in pins, f"CI lock/constraints missing exact pin for {name}"

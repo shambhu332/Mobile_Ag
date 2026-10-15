@@ -182,6 +182,62 @@ def test_javascript_interface_parameters_are_only_candidate_sources(
         assert "does not prove the object is registered" in finding.description
 
 
+@pytest.mark.parametrize(("container_call", "container_sig", "accessor_call", "accessor_sig", "source_kind"), [
+    ("getExtras", "()Landroid/os/Bundle;", "Landroid/os/Bundle;->getString", "(Ljava/lang/String;)Ljava/lang/String;", "INTENT_BUNDLE"),
+    ("getData", "()Landroid/net/Uri;", "Landroid/net/Uri;->getQueryParameter", "(Ljava/lang/String;)Ljava/lang/String;", "INTENT_DATA_URI"),
+])
+def test_bundle_and_uri_accessors_only_derive_existing_intent_taint(
+        tmp_path, container_call, container_sig, accessor_call, accessor_sig, source_kind):
+    (tmp_path / "Derived.smali").write_text(f"""
+.class public Lcom/example/Derived;
+.super Landroid/app/Activity;
+.method public onCreate(Landroid/os/Bundle;)V
+    .registers 5
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {{v0}}, Landroid/content/Intent;->{container_call}{container_sig}
+    move-result-object v1
+    const-string v2, "key"
+    invoke-virtual {{v1, v2}}, {accessor_call}{accessor_sig}
+    move-result-object v3
+    sget-object v4, Lcom/example/Derived;->web:Landroid/webkit/WebView;
+    invoke-virtual {{v4, v3}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    derived = [finding for finding in findings
+               if finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+               and finding.metadata.get("source_kind") == source_kind]
+    assert len(derived) == 1
+    assert derived[0].cwe_id == "CWE-829"
+    assert derived[0].status.value == "UNVERIFIED"
+
+
+def test_internal_bundle_getter_is_not_unconditionally_treated_as_external_input(tmp_path):
+    (tmp_path / "InternalBundle.smali").write_text("""
+.class public Lcom/example/InternalBundle;
+.super Ljava/lang/Object;
+.method public load()V
+    .registers 4
+    new-instance v0, Landroid/os/Bundle;
+    invoke-direct {v0}, Landroid/os/Bundle;-><init>()V
+    const-string v1, "key"
+    invoke-virtual {v0, v1}, Landroid/os/Bundle;->getString(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    sget-object v3, Lcom/example/InternalBundle;->web:Landroid/webkit/WebView;
+    invoke-virtual {v3, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    assert not any(finding.metadata.get("analysis_kind") in {
+        "smali_local_register_flow", "smali_interprocedural_argument_flow",
+    } for finding in findings)
+
+
 @pytest.mark.parametrize(("source_method", "sink_method"), [
     ("getStringExtraCompat", "loadUrl"),
     ("getStringExtra", "loadUrlCompat"),

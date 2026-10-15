@@ -333,12 +333,12 @@ def test_dependency_scanner_sbom_generation():
 
 
 def test_call_graph_and_taint_pending_intent():
-    from mobileag.analysis.call_graph import SMALI_SINKS, SMALI_SOURCES
+    from mobileag.analysis.call_graph import SMALI_DERIVED_SOURCES, SMALI_SINKS, SMALI_SOURCES
     from mobileag.analysis.taint_engine import _SINK_SPECS, _SOURCE_PATTERNS
 
     assert "Landroid/app/PendingIntent;->send" in SMALI_SINKS
     assert "Landroid/content/Intent;->getScheme" in SMALI_SOURCES
-    assert "Landroid/net/Uri;->getScheme" in SMALI_SOURCES
+    assert "Landroid/net/Uri;->getScheme" in SMALI_DERIVED_SOURCES
 
     sink_types = [s["type"] for s in _SINK_SPECS]
     assert "PENDING_INTENT_FORWARDING" in sink_types

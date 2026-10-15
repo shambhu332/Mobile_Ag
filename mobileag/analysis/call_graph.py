@@ -96,8 +96,6 @@ SMALI_SOURCES = {
     "Landroid/content/Intent;->getCharSequenceExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getCharSequenceArrayExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getCharSequenceArrayListExtra": "INTENT_EXTRA",
-    "Landroid/net/Uri;->getQueryParameter": "DEEP_LINK_PARAM",
-    "Landroid/net/Uri;->getLastPathSegment": "DEEP_LINK_PATH",
     "Landroid/content/Context;->getIntent": "ACTIVITY_INTENT",
     "Landroid/app/Activity;->getIntent": "ACTIVITY_INTENT",
     "Landroid/content/ClipboardManager;->getPrimaryClip": "CLIPBOARD_DATA",
@@ -108,7 +106,31 @@ SMALI_SOURCES = {
     "Landroid/telephony/TelephonyManager;->getImei": "DEVICE_IMEI",
     "Landroid/location/LocationManager;->getLastKnownLocation": "GEOLOCATION",
     "Landroid/content/Intent;->getScheme": "INTENT_SCHEME",
-    "Landroid/net/Uri;->getScheme": "URI_SCHEME",
+}
+
+# Accessors that only preserve taint from a known untrusted container/URI.
+# These are deliberately not unconditional sources: ordinary internal Bundles
+# and Uris are not automatically attacker-controlled.
+SMALI_DERIVED_SOURCES = {
+    "Landroid/os/Bundle;->getString",
+    "Landroid/os/Bundle;->getCharSequence",
+    "Landroid/os/Bundle;->getInt",
+    "Landroid/os/Bundle;->getLong",
+    "Landroid/os/Bundle;->getBoolean",
+    "Landroid/os/Bundle;->getByteArray",
+    "Landroid/os/Bundle;->getStringArray",
+    "Landroid/os/Bundle;->getStringArrayList",
+    "Landroid/os/Bundle;->getParcelable",
+    "Landroid/os/Bundle;->getSerializable",
+    "Landroid/net/Uri;->getQueryParameter",
+    "Landroid/net/Uri;->getLastPathSegment",
+    "Landroid/net/Uri;->getPath",
+    "Landroid/net/Uri;->getEncodedPath",
+    "Landroid/net/Uri;->getQuery",
+    "Landroid/net/Uri;->getFragment",
+    "Landroid/net/Uri;->getAuthority",
+    "Landroid/net/Uri;->getHost",
+    "Landroid/net/Uri;->getScheme",
 }
 
 # Smali Sink signatures and corresponding CWE classifications
@@ -529,16 +551,18 @@ class SmaliCallGraphEngine:
                 if invoke:
                     target_class, target_name, signature = invoke.group(2), invoke.group(3), invoke.group(4)
                     target_key = f"{target_class}->{target_name}"
+                    args_match = invoke_args_re.search(text)
+                    args = _invocation_registers(args_match.group(1)) if args_match else []
                     # Match the complete owner + method name. Prefix matching
                     # misclassified lookalikes such as getStringExtraCompat as
                     # Android framework sources/sinks.
                     source_kind = SMALI_SOURCES.get(target_key)
                     if source_kind:
                         pending = frozenset({(source_kind, line_no, method.key, method.file_path)})
+                    elif target_key in SMALI_DERIVED_SOURCES and args:
+                        pending = frozenset(registers.get(args[0], ()))
 
                     sink = target_key if target_key in SMALI_SINKS else None
-                    args_match = invoke_args_re.search(text)
-                    args = _invocation_registers(args_match.group(1)) if args_match else []
                     if sink:
                         tainted = [(register, trace) for register in args for trace in registers.get(register, ())]
                         for register, trace in tainted:

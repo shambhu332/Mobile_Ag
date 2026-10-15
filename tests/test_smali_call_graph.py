@@ -530,7 +530,8 @@ def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callba
 .end method
 .method public ordinaryHelper(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 4
-    invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    const-string v0, "url"
+    invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
     move-result-object v0
     invoke-virtual {p2, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
@@ -563,13 +564,29 @@ def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callba
 .end method
 """, encoding="utf-8")
 
+
+    (tmp_path / "LifecycleExtraActivity.smali").write_text("""
+.class public Lcom/example/LifecycleExtraActivity;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;)V
+    .registers 4
+    const-string v0, "url"
+    invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    sget-object v1, Lcom/example/LifecycleExtraActivity;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
     engine = SmaliCallGraphEngine()
     findings = engine.audit_smali_directory(tmp_path)
     flows = [finding for finding in findings
              if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
-    assert len(flows) == 3
-    assert {flow.metadata["source_kind"] for flow in flows} == {"LIFECYCLE_INTENT_PARAMETER"}
-    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 3
+    assert len(flows) == 4
+    assert sum(flow.metadata["source_kind"] == "INTENT_EXTRA" for flow in flows) == 1
+    assert sum(flow.metadata["source_kind"] == "LIFECYCLE_INTENT_PARAMETER" for flow in flows) == 3
+    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 4
 
 
 @pytest.mark.parametrize("class_name,parent,method_signature,return_code,registers", [

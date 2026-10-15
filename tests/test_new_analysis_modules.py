@@ -196,6 +196,31 @@ def test_flutter_engine_analyzer():
         assert "/dashboard" in res.named_routes
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-secret-value-123" not in repr(res.potential_secrets)
+        assert res.scan_status == "complete"
+
+
+def test_flutter_analyzer_reports_bounded_binary_truncation_and_skips_symlinks():
+    with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as outside_dir:
+        root = Path(tmp_dir)
+        lib = root / "lib" / "arm64-v8a"
+        lib.mkdir(parents=True)
+        outside = Path(outside_dir) / "libapp.so"
+        outside.write_bytes(b"https://external.example.invalid/not-in-tree")
+        other_abi = root / "lib" / "x86_64"
+        other_abi.mkdir()
+        (other_abi / "libapp.so").symlink_to(outside)
+        binary = lib / "libapp.so"
+        binary.write_bytes(b"x" * 32 + b"https://late.example.invalid/endpoint")
+        analyzer = FlutterEngineAnalyzer()
+        analyzer.MAX_BINARY_BYTES = 16
+        result = analyzer.analyze_package_directory(root)
+
+    assert result.libapp_present is True
+    assert result.api_endpoints == []
+    assert result.binary_truncated is True
+    assert result.binary_bytes_scanned == 16
+    assert result.scan_status == "partial"
+    assert "symlink_binary_skipped" in result.scan_errors
 
 
 def test_rasp_resilience_auditor():

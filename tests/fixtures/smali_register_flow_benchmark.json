@@ -13,6 +13,11 @@
       "source": ".class public Lfixture/Alias;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n # comment before result is allowed\n move-result-object v2\n move-object v3, v2\n sget-object v0, Lfixture/Alias;->web:Landroid/webkit/WebView;\n invoke-virtual/range {v0 .. v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     },
     {
+      "id": "conditional_branch_target_reachable_sink",
+      "expected_candidates": [{"cwe": "CWE-829", "sink_line": 13}],
+      "source": ".class public Lfixture/BranchTarget;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;I)V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n if-eqz p2, :use\n return-void\n:use\n invoke-virtual {p1, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
       "id": "two_sink_instances_same_cwe",
       "expected_candidates": [
         {"cwe": "CWE-829", "sink_line": 10},

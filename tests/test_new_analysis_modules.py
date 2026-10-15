@@ -120,6 +120,38 @@ def test_intent_redirection_auditor():
         assert len(findings) == 1
         assert "INTENT_REDIRECTION" in findings[0].id
         assert findings[0].cwe_id == "CWE-926"
+        assert findings[0].severity == "INFO"
+        assert findings[0].metadata["method_scope"] == "not_resolved"
+        assert "does not resolve" in findings[0].description
+        assert auditor.coverage["static_status"] == "analyzed_heuristically"
+
+
+def test_intent_redirection_does_not_match_launch_before_later_extraction(tmp_path):
+    source = tmp_path / "WrongOrder.java"
+    source.write_text('''class Proxy {
+        void launchFirst() { startActivity(forwardIntent); }
+        void extractLater() { Intent forwardIntent = getIntent().getParcelableExtra("nested"); }
+    }''')
+
+    auditor = IntentRedirectionAuditor()
+    assert auditor.audit_file(source) == []
+
+
+def test_intent_redirection_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
+    target = tmp_path.parent / "intent-redirection-outside.java"
+    target.write_text('''class Outside {
+      void open() { Intent next = getIntent().getParcelableExtra("next"); startActivity(next); }
+    }''')
+    (tmp_path / "link.java").symlink_to(target)
+    (tmp_path / "large.java").write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+
+    auditor = IntentRedirectionAuditor()
+    assert auditor.audit_directory(tmp_path) == []
+    assert auditor.coverage["static_status"] == "partial"
+    assert auditor.coverage["source_files_skipped"] == 2
+    assert auditor.coverage["source_file_skip_reasons"] == {
+        "symlink_entry": 1, "file_size_limit": 1,
+    }
 
 
 def test_flutter_engine_analyzer():

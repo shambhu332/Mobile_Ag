@@ -347,7 +347,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -410,6 +410,9 @@ class Orchestrator:
                 for fp_res in (result or []):
                     all_findings.extend(fp_res.findings)
                 state["coverage"][name] = dict(self._fileprovider_auditor.coverage)
+            elif name == "intent_redirection":
+                all_findings.extend(result)
+                state["coverage"][name] = dict(self._intent_redirection_auditor.coverage)
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":

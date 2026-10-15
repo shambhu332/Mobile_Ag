@@ -1,267 +1,405 @@
 # MobileAg
 
-**A local-first workbench for authorized mobile application security review.**
+**A local-first workbench for authorized Android and iOS application security review.**
 
 [![Project validation](https://github.com/shambhu332/Mobile_Ag/actions/workflows/project-validation.yml/badge.svg)](https://github.com/shambhu332/Mobile_Ag/actions/workflows/project-validation.yml)
 
-[Quick start](#quick-start) · [Contribute](CONTRIBUTING.md) · [Starter tasks](docs/CONTRIBUTOR_ROADMAP.md) · [Report a bug](https://github.com/shambhu332/Mobile_Ag/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/shambhu332/Mobile_Ag/issues/new?template=feature_request.yml)
+[Quick start](#quick-start) · [Architecture](#architecture) · [System design](#system-design) · [Security model](#security-model-and-scope) · [API capture](#dynamic-api-discovery-and-capture) · [Testing](#validation-and-tests) · [Contributing](CONTRIBUTING.md)
 
-See the [market-informed product implementation roadmap](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md) for prioritized MobileAg improvements, acceptance criteria, and explicit non-goals. It is a plan, not a claim that proposed work is already implemented.
+MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting, a local operator dashboard, and separately authorized device/API workflows. It helps a researcher inventory attack surfaces and prioritize manual review. It is **not** an autonomous exploit verifier, a guarantee of complete analysis, or authorization to test an app/backend.
 
-Review static candidates, inspect evidence, configure optional AI review, and run explicitly scoped device diagnostics from an authenticated local dashboard.
+> **Research boundary:** Test only applications, devices, and backend origins you own or are explicitly authorized to assess. Use researcher-controlled accounts and synthetic data. Static candidates and captured traffic do not prove server-side vulnerabilities. The project is private and has no selected project-level license; dependency licenses do not license this repository.
 
-- Android APK decompilation through JADX/APKTool; iOS IPA static inspection.
-- Source, manifest, resource, native-symbol and bounded lexical taint review candidates (including limited same-file method summaries and callback-shaped Intent parameters).
-- Markdown, JSON and SARIF reports with explicit unverified finding status.
-- Opt-in, scoped ADB diagnostics and bounded Frida initialization checks.
-- Authenticated HTTP/WebSocket APIs, bounded uploads, and scope-controlled HTTP replay.
-- [Dashboard UI tools and evidence review](docs/dashboard-ui-2026-10-11/README.md), with session controls, guided navigation, HTTP/curl reads and visible evidence/coverage gaps.
-- [Dashboard self-connection, section navigation and read-only curl](docs/dashboard-self-navigation-2026-10-11/README.md) with ephemeral tokens and no automatic scan/device actions.
+## What it does
 
-This is research tooling, not an autonomous exploit verifier. Read the limitations below before relying on a report.
+- **Android static review:** APK extraction/decompilation, artifact/build metadata and hashes, manifest/component review, source/resource rules, API route inventory, secret/config candidates, native and cross-platform artifact review, dependency inventory, and bounded source-to-sink heuristics.
+- **iOS static review:** IPA/Info.plist, ATS, Mach-O and related static checks through the iOS analyzer.
+- **Coverage-aware findings:** Markdown, JSON and SARIF outputs retain candidate status, provenance, static/runtime/proof state, parser/coverage limits, and analyst evidence boundaries.
+- **Local dashboard and API:** Authenticated local session, upload/review/scan workflow, report/history and triage, scoped settings, guided assessments, and local evidence views.
+- **Explicit dynamic operations:** individually approved ADB/device diagnostics, selected-package observation and scoped API replay. Dynamic actions are separate from a static APK scan and require exact scope.
+- **API discovery/capture:** static route literals plus opt-in loopback HTTP capture of researcher-generated traffic; inspect redacted transactions and run offline heuristics against the capture.
+- **Optional integrations:** approved CLI-only cloud LLM review, explicit OSV advisory lookup, and optional Neo4j/Qdrant services. Their presence does not establish that a stage ran or that a finding is true.
+- **Import/interchange:** bounded, offline projection of external SARIF and a supported MobSF JSON subset as unverified candidates; bounded AAB input inventory; OpenAPI/HAR exports for observed/inventoried API data.
 
-![MobileAg light security console showing a synthetic application, upload controls and candidate severity cards](docs/djini-console-2026-10-08/validation/desktop-overview.png)
+## Contents
 
-*The overview uses real selected-job data; this screenshot uses synthetic fixtures. The Djini-inspired interface retains MobileAg branding and is not affiliated with Djini.*
+- [Architecture](#architecture)
+- [System design](#system-design)
+- [Quick start](#quick-start)
+- [CLI workflows](#cli-workflows)
+- [Static Android/iOS analysis](#static-android-and-ios-analysis)
+- [Dynamic API discovery and capture](#dynamic-api-discovery-and-capture)
+- [Device diagnostics](#device-diagnostics)
+- [Evidence, coverage, and interpretation](#evidence-coverage-and-interpretation)
+- [Security model and scope](#security-model-and-scope)
+- [Configuration and data handling](#configuration-and-data-handling)
+- [Validation and tests](#validation-and-tests)
+- [Repository map](#repository-map)
+- [Known limitations and roadmap](#known-limitations-and-roadmap)
+- [Contributing](#contributing)
 
-## Contribute
+## Architecture
 
-Recent work adds bounded offline authentication/Firebase review, structured
-confirmation evidence and more conservative reports. See the
-[validated changes and remaining gaps](docs/workflow-hardening-2026-10-08/README.md)
-and [contributor starter tasks](docs/CONTRIBUTOR_ROADMAP.md).
+```mermaid
+flowchart TB
+  OP[Researcher / local operator]
+  CLI[CLI: scan, iOS, diff, import, inventory]
+  UI[Local dashboard]
+  API[FastAPI routes + session/security middleware]
+  JOB[Isolated analysis worker]
+  ING[Validated APK/IPA ingestion]
+  DEC[JADX / APKTool / platform parsers]
+  ORCH[Core orchestrator + scan state]
+  STATIC[Bounded static analyzers]
+  REVIEW[Candidate annotation / optional approved providers]
+  REPORT[Markdown / JSON / SARIF + coverage]
+  REPO[Local SQLite scan/evidence repository]
+  DEVICE[Explicit ADB device actions]
+  REPLAY[Scoped API replay]
+  PROXY[Loopback HTTP capture proxy]
+  AUDIT[Traffic audit / API catalog]
+  OUT[Local output, uploads, reports]
+  EXT[Optional OSV / LLM / Neo4j / Qdrant]
 
-Help improve the workbench through **documentation, accessible UI, synthetic regression fixtures, and evidence-quality improvements**. Small, focused pull requests are welcome; a live device or paid AI account is not required for the mocked regression suite.
+  OP --> CLI
+  OP --> UI
+  UI --> API
+  CLI --> ING
+  API --> JOB
+  JOB --> ING --> DEC --> ORCH --> STATIC --> REVIEW --> REPORT
+  API <--> REPO
+  REPORT --> REPO
+  REPORT --> OUT
+  API --> DEVICE
+  API --> REPLAY
+  UI -. explicit start/stop .-> PROXY --> AUDIT --> API
+  REVIEW -. explicit CLI consent only .-> EXT
+  STATIC -. explicit advisory lookup only .-> EXT
+```
 
-1. Read the [contributor guide](CONTRIBUTING.md).
-2. Pick a [bounded starter task](docs/CONTRIBUTOR_ROADMAP.md) or discuss an idea in an issue.
-3. Include a reproducible synthetic test and an honest description of what was validated.
+The diagram shows logical boundaries, not a claim that every optional integration is enabled. Web static analysis is isolated in a worker; the authenticated dashboard does not silently inherit provider credentials or turn an APK upload into a live test. Device/API work is a distinct operator-controlled path.
 
-This repository is currently private: collaborators need access from the owner. No project-level license has been selected yet; bundled dependency licenses do not license the whole project. Public-release and licensing decisions remain with the owner.
+### Component responsibilities
 
+| Layer | Main code | Responsibility |
+|---|---|---|
+| CLI and configuration | `mobileag/cli.py`, `config/` | Commands, typed settings, explicit offline/advisory/provider choices. |
+| Ingestion | `mobileag/ingestion/` | Validate/extract APK inputs, parse manifests, detect frameworks/packers/obfuscation, retain artifact provenance and bounded inventory. |
+| Orchestration | `mobileag/core/` | Coordinate analysis stages, state, coverage, errors and report inputs. A failed stage is not represented as a clean result. |
+| Static analysis | `mobileag/analysis/` | Manifest, API, secrets, code, taint, native, dependency, network-security, framework and platform checks. Results are bounded review candidates. |
+| Candidate annotation | `mobileag/filters/`, `mobileag/llm/` | Optional heuristic prioritization or explicitly approved model review; annotations do not prove exploitability or silently erase candidates. |
+| Dynamic testing | `mobileag/dast/`, `mobileag/security/network.py` | Device diagnostics, traffic auditing/capture, route cataloging, explicit replay and selected narrow test helpers. Exact scope is enforced at action/network boundaries. |
+| Web application | `mobileag/web/`, `mobileag/dashboard/` | Authenticated local API/UI, scope policy, isolated jobs, scan/evidence persistence, reporting and interaction. Browser scripts are not separate security principals. |
+| Reporting/evidence | `mobileag/reporting/` | Finding schema, coverage, reports, SARIF interchange/import, structured analyst confirmation and provenance. |
+| Optional knowledge | `mobileag/knowledge/` | Neo4j/Qdrant adapters and feedback abstractions. Not required for the standard offline scan. |
+| Regression and docs | `tests/`, `docs/` | Synthetic, isolated checks; workflow evidence; schemas and roadmap. Tests do not certify field recall or absence of vulnerabilities. |
+
+For a lower-level architecture inventory, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For market-derived priorities and explicitly unimplemented work, see [`docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md`](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md); that roadmap is not evidence that proposed features exist.
+
+## System design
+
+### Static scan lifecycle
+
+```mermaid
+sequenceDiagram
+  actor Analyst
+  participant CLI as CLI or Dashboard
+  participant Gate as Scope / upload / job gate
+  participant Worker as Isolated worker
+  participant Extract as APK/IPA extractor
+  participant Engine as Orchestrator + analyzers
+  participant Store as Local repository/output
+  Analyst->>CLI: Select artifact and requested workflow
+  CLI->>Gate: Submit artifact and explicit options
+  Gate->>Gate: Validate bounded input, session, scope, worker readiness
+  Gate->>Worker: Queue static job (no device/network by default)
+  Worker->>Extract: Hash and extract/decompile input
+  Extract->>Engine: Manifest, source, resources, native/bundle inputs
+  Engine->>Engine: Run bounded analyzers and record limits/errors
+  Engine->>Store: Findings + provenance + coverage + report
+  Store-->>CLI: Job state and reviewable results
+  Note over Analyst,Store: Uploading or reviewing a scan does not start DAST.
+```
+
+1. **Select an artifact.** The CLI or dashboard receives an APK/IPA. Dashboard upload is staging, not consent to scan or test.
+2. **Validate and identify.** Input/archive bounds, artifact identity and tool metadata are recorded. APK splits, unsupported content and extraction failures may limit coverage.
+3. **Extract/decompile.** Android uses configured JADX/APKTool tools; parsers are not perfect and obfuscation/native code may reduce visibility. iOS uses the IPA analyzer.
+4. **Analyze.** Independent engines inspect bounded inputs. The orchestrator captures per-engine status and errors; it does not convert missing coverage into a pass.
+5. **Report and retain.** Findings, coverage, artifact provenance and report metadata are written to the local workspace/repository. Reports are review artifacts, not proof.
+6. **Validate manually.** Analysts inspect source/context, reproduce only within authorized scope, and attach structured evidence where justified.
+
+### Dynamic/API lifecycle
+
+Dynamic actions do not follow automatically from a static scan. The operator separately configures exact device/origin/method scope, explicitly selects the target/action, and uses synthetic data. API capture forwards only traffic that the configured client sends through the local proxy; it does not autonomously explore app screens or discover every backend route.
+
+### Data and trust boundaries
+
+- **Untrusted inputs:** APK/IPA archives, imported SARIF/MobSF JSON, source/binary strings, device output, captured HTTP traffic and analyst notes.
+- **Trusted control plane:** local operator session, environment ceilings, persisted scope, server-side validation and worker policy.
+- **Evidence:** values may be redacted before persistence/export; captures can still contain sensitive metadata, so keep the data directory protected and test only with synthetic accounts.
+- **External egress:** disabled for offline scans. Cloud source review is restricted to explicit CLI consent/configuration; web workers do not receive provider keys. OSV lookups are separately explicit. See [configuration and data handling](#configuration-and-data-handling).
+- **Scope is conjunctive:** persisted UI scope can narrow, never enlarge, the server environment allowlists. API replay and capture also validate server-side destination/method constraints; the UI is not the security boundary.
 
 ## Quick start
+
+### Requirements
+
+- Python 3.11+ (project metadata); use a supported, tested environment from [`requirements/validated-python314.txt`](requirements/validated-python314.txt) for closest CI parity.
+- `jadx` and `apktool` installed and available in `PATH` for Android APK extraction/decompilation.
+- For dashboard web static jobs: Linux bubblewrap (`bwrap`) and a working ordinary-user systemd manager/user cgroup. Missing isolation fails closed. Use **Settings → Check local readiness**.
+- Optional: Android SDK Platform Tools (`adb`) for device workflows; Frida Python/server only for the explicitly approved Frida diagnostic path; Chromium/Playwright for browser regressions.
+
+### Install and launch
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -e '.[test]'
 [ -f .env ] || cp .env.example .env
 python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-Python 3.11+ is declared; the release validation snapshot uses Linux Python 3.14.7. Web static scans additionally require bubblewrap and a working ordinary-user systemd manager; use Settings → Check local readiness. Missing isolation fails closed. Open the URL printed by the CLI and paste its session token. A fresh token is generated unless `MOBILEAG_API_TOKEN` is configured. Keep it secret; do not place it in URLs or reports. Data lives under the working directory, or `MOBILEAG_DATA_DIR` when configured.
+Open the local URL printed by the CLI and authenticate with the session token. Unless `MOBILEAG_API_TOKEN` is configured, the server generates a temporary token. Keep it secret; do not place it in URLs, screenshots, reports or source control. Use one local operator and one loopback worker; remote/multi-user hosting is unsupported.
 
-### Static scans
+Data is stored under the current working directory by default, or `MOBILEAG_DATA_DIR` when configured. Preserve original artifacts and user data; do not place secrets in test fixtures.
 
-Install `jadx` and `apktool` in PATH for Android analysis, then upload an authorized APK/IPA or run:
+### Install only what you need
 
 ```bash
+python -m pip install -e '.[frida]'      # optional Frida bindings
+python -m pip install -e '.[dashboard]'  # optional Playwright version for browser work
+```
+
+## CLI workflows
+
+```bash
+# Offline Android APK scan, Markdown by default
 python -m mobileag.cli scan --apk owned.apk --offline --output ./output
+
+# JSON or SARIF report
 python -m mobileag.cli scan --apk owned.apk --offline --format json
+python -m mobileag.cli scan --apk owned.apk --offline --format sarif
+
+# iOS static inspection
 python -m mobileag.cli ios --ipa owned.ipa --format markdown
-```
 
-The Android scan command is suitable for a local CI job with exit status `0`
-when the scan completes without pipeline errors and nonzero when the scan is
-incomplete or fails. Findings do not themselves change the exit status. JSON
-reports carry `report_schema_version: 1`; the envelope is described by
-[`docs/schemas/mobileag-report-v1.schema.json`](docs/schemas/mobileag-report-v1.schema.json).
-Run timestamps and scan IDs are intentionally per-run values, so report files
-are schema-stable, not byte-for-byte reproducible across scans.
-To verify wheel packaging reproducibility under the installed build toolchain,
-run `python scripts/check-reproducible-wheel.py`; it performs two isolated
-offline builds with a fixed archive timestamp and compares wheel SHA-256 hashes.
-This check does not establish hosted-runner or dependency-supply-chain
-reproducibility.
+# Compare two APK versions
+python -m mobileag.cli diff --old old.apk --new new.apk --output ./output/diff
 
-`--offline` prevents LLM/OSV requests. OSV dependency lookups are disabled unless that invocation explicitly includes `--lookup-advisories`; this sends parsed Maven or npm coordinates and exact versions from supported local metadata (including Gradle/Maven metadata and npm `package-lock.json` v1/v2/v3 and Yarn v1 `yarn.lock`) to OSV. This only covers lockfiles present in the analyzed tree; APKs often omit build-time lockfiles, so absence does not mean no dependencies. Unsupported or dynamic lock entries remain unresolved and make inventory coverage partial. The two options cannot be combined. The example environment defaults to offline; explicitly set `OFFLINE=false`, configure provider keys and set `APPROVED_LLM_PROVIDERS='["openai"]'` (or exact approved router names) only if transmitting source for cloud review is permitted. Web static workers are always offline and receive no provider keys. Source/snippet cloud review is supported only through the explicitly approved CLI flow, not by enabling network access in the upload parser. The dashboard has a separately consented aggregate-metadata-only review stage described below. Supported settings persist locally in SQLite and new scans record their actual execution policy. Reports include Markdown, JSON and SARIF. Decompilation errors fail the scan; they do not produce simulated findings.
+# Bounded source taint candidates
+python -m mobileag.cli taint --src ./decompiled/java --output ./output/taint
 
-Offline dependency inventory recognizes literal Maven/Gradle declarations, direct dependencies in DTD-free `pom.xml` files (including bounded whole-value property references declared in that same root POM), `gradle.lockfile`, embedded `pom.properties`, npm `package-lock.json` v1/v2/v3, and Yarn v1 `yarn.lock`. Gradle version-catalog aliases count as dependencies only when a bounded supported dependency declaration references the exact alias; unused catalog entries are not treated as resolved packages. It does not resolve dynamic versions, plugins, providers, dependency graphs, Yarn Berry, or workspace aliases; unresolved declarations and parse failures are counted as partial coverage. Inventory alone is not a vulnerability result. PendingIntent mutability review also resolves only unique bounded Java `final int` or Kotlin `const val Int` flag aliases; helper calls, reassigned variables, ambiguous aliases, and unsupported expressions remain manual-review leads.
+# Bounded Android App Bundle input inventory only (not analysis)
+python -m mobileag.cli inventory-aab --input owned.aab --output aab-inventory.json
 
-Import an external SARIF 2.1.0 file into a separate, untrusted candidate
-projection (offline; output must be a new file):
-
-```bash
+# Import external results as a separate untrusted candidate projection
 python -m mobileag.cli import-sarif --input external.sarif --output imported-candidates.json
-```
-
-The importer validates the vendored OASIS SARIF 2.1.0 schema offline before
-projecting a bounded subset. It enforces size/run/result limits, records the
-source SHA-256 and producer provenance, deduplicates rule/location instances,
-rejects unsafe file URIs, and discards producer evidence/status. Schema
-conformance does not make external claims trustworthy: imported results remain
-`UNVERIFIED`; this is not a MobileAg scan report and does not add findings to
-scan history. See [`docs/schemas/README.md`](docs/schemas/README.md) for schema
-provenance and digest.
-
-For a MobSF Android static JSON report, MobileAg can project a bounded subset
-offline:
-
-```bash
 python -m mobileag.cli import-mobsf-json --input mobsf-report.json --output imported-mobsf-candidates.json
 ```
 
-Only `code_analysis.findings` and `manifest_analysis.manifest_findings` are
-projected, as `UNVERIFIED` candidates. The CLI applies a 5 MiB input limit,
-caps finding counts, redacts output, drops unsafe source locations and never
-updates scan history or binds the producer's package assertion to a MobileAg
-artifact. MobSF JSON has no importer-enforced producer-version compatibility
-matrix here: unsupported shapes are rejected, and a synthetic fixture is not
-evidence of compatibility with every MobSF release. The output projection
-schema is [`docs/schemas/mobsf-import-v1.schema.json`](docs/schemas/mobsf-import-v1.schema.json).
-The recognized field names follow MobSF's current [Android static-analysis
-report template](https://github.com/MobSF/Mobile-Security-Framework-MobSF/blob/master/mobsf/templates/static_analysis/android_source_analysis.html),
-not a guaranteed stable interchange contract.
+The `dast` CLI command is deliberately disabled. Use individual approved dashboard actions instead; it will not pick a device, install an app or contact a target. Android scan exit status indicates pipeline completion/error, not whether findings exist. A completed scan can still have partial coverage.
 
-For an Android App Bundle, run the separate bounded input-only inventory:
+`--offline` prevents LLM/OSV requests. OSV lookups are disabled unless a scan explicitly includes `--lookup-advisories`; that sends supported parsed dependency coordinates and exact versions to OSV. Do not combine `--offline` and `--lookup-advisories`. Lockfile/dependency support is bounded and incomplete; APKs often omit build-time metadata.
+
+## Static Android and iOS analysis
+
+### Android inputs and analyzers
+
+The Android orchestrator can inspect decoded Java/Kotlin and Smali plus selected resources/configuration, manifest, native libraries and framework artifacts. Depending on input/tool support, analysis includes:
+
+- exported components, permissions, intent/deep-link/provider surfaces and manifest flags;
+- API endpoints and route-shaped strings (including supported Smali/resource/bundle literals), cleartext/dev URL and sensitive-looking route review leads;
+- hardcoded secret/config candidates;
+- WebView, PendingIntent, intent redirection and related source/config patterns;
+- bounded source-to-sink and Smali local-flow heuristics;
+- network security config and transport settings;
+- native/JNI and binary-protection indicators;
+- React Native/Hermes, Flutter and IL2CPP artifact heuristics;
+- dependency inventory from supported Gradle/Maven/npm/Yarn metadata.
+
+These are not full Android semantic analysis. Unsupported languages, reflection, generated code, splits, dynamic loading, native flows, obfuscation, incomplete decompilation and analyzer budgets can leave gaps. An endpoint literal is not proof it is used; a route name does not establish authentication/authorization behavior.
+
+### iOS analysis
+
+The iOS analyzer performs static IPA inspection (including Info.plist, ATS and Mach-O-related checks). This is not a full iOS dynamic test or complete Swift/Objective-C call-graph analysis.
+
+### External report imports
+
+- SARIF 2.1.0 is schema-validated offline and projected into bounded candidate data. Producer status/evidence is not trusted; imported results remain unverified, do not alter scan history, and are not MobileAg's own findings.
+- MobSF import supports a bounded subset (`code_analysis.findings` and `manifest_analysis.manifest_findings`). Shape/version compatibility is not universal; unsupported structures fail rather than being guessed.
+- AAB inventory records bounded module/DEX/native member metadata and artifact SHA-256. It does **not** decode protobuf manifests, generate device split APKs, decompile, or analyze code.
+
+## Dynamic API discovery and capture
+
+### Static route inventory
+
+During APK analysis, the API mapper inventories recognized Retrofit annotations, URL strings and bounded route-shaped literals in selected source/resource formats. Binary/resource hits may be emitted with `method: UNKNOWN` and `evidence_type: route_literal`. They are static leads—not necessarily valid or reachable routes. Runtime status remains `not_tested` unless separate runtime evidence is actually collected.
+
+### Scoped HTTP proxy
+
+The optional authenticated capture proxy listens on loopback `127.0.0.1:8082` and requires `MOBILEAG_PROXY_TOKEN`. It forwards researcher-generated HTTP requests only when the origin and method match the persisted `api_capture` scope and server origin ceiling. It records bounded/redacted transactions for inspection and offline traffic heuristics.
+
+1. Configure server allowlists and proxy token (example below).
+2. In dashboard **Authorized scope**, enter exact authorized backend origins, allowed methods, and enable the `api_capture` action. The UI scope cannot expand server scope.
+3. Explicitly start capture through the authenticated `/api/dast/api-capture/start` route.
+4. Configure a controlled client to use the loopback proxy and proxy bearer credential; exercise only authorized flows with synthetic accounts/data.
+5. Inspect `/api/dast/api-capture/transactions`, run `/api/dast/api-capture/audit`, then stop capture.
+
+The workflow is operator-driven. It does not launch an APK, configure Android proxy settings, perform TLS interception, bypass pinning, fuzz every route or replay traffic automatically. HTTPS `CONNECT` is explicitly unsupported. For HTTPS, use an authorized interception setup and import/inspect captures through the supported workflow. Do not use real customer credentials or data.
+
+### Explicit API replay
+
+The dashboard replay path requires exact server-approved origins and methods. Destination resolution is validated/pinned, TLS verification stays enabled, redirects are not followed, and response size/time are bounded. API replay is an actual network action: inspect the exact URL/method/body and account context before approving it. A successful request or a `200` response alone does not prove an access-control flaw.
+
+## Device diagnostics
+
+Set exact server-side scope before using the dashboard:
 
 ```bash
-python -m mobileag.cli inventory-aab --input owned.aab --output aab-inventory.json
+export MOBILEAG_ALLOWED_DEVICES='emulator-5554'
+# Only when explicitly authorizing a TCP-connected emulator/device:
+export MOBILEAG_ALLOWED_CONNECT='127.0.0.1:5555'
 ```
 
-This records bundle module, DEX-header class-count, and native-library member
-inventory with artifact SHA-256. It does not decode protobuf manifests, create
-device splits/APKs, decompile or analyze code, or establish delivery/runtime
-coverage. See the versioned
-[`AAB inventory schema`](docs/schemas/android-app-bundle-inventory-v1.schema.json).
+Select a specific researcher-controlled device; no first-device/implicit target selection. UI observation is intended to be read-only; it does not consent, enter credentials or tap through account flows. Device actions require individual scope and current session checks. Root/shell/Frida output is privileged diagnostic evidence and is **not** proof that an ordinary app can achieve the same access. No automated root/SSL bypass is implemented. Frida checks require optional bindings, compatible server and an already running app; script generation or initialization is not an exploit result.
 
-Java Tree-sitter AST support is installed by the default package dependencies
-and used by taint review when parsing succeeds. Per-scan coverage records the
-available backend and parse fallbacks; Kotlin and unparsed Java still use bounded
-lexical heuristics. The AST pass remains bounded/local and does not prove Android
-reachability or exploitability.
+## Evidence, coverage, and interpretation
 
-### Authorized dynamic testing
+MobileAg distinguishes:
 
-Set exact device scope before starting the dashboard:
+- **Inventory:** a string, component, API route or configuration item exists in inspected input.
+- **Candidate:** a heuristic/static rule identified a pattern for review.
+- **Runtime observation:** behavior was observed under a recorded device/build/account/traffic context.
+- **Confirmed finding:** an analyst has reproducible evidence of security impact within an authorized threat model.
 
-```bash
-export MOBILEAG_ALLOWED_DEVICES=emulator-5554
-# Only if connecting over TCP:
-export MOBILEAG_ALLOWED_CONNECT=127.0.0.1:5555
+Most automated results are `UNVERIFIED` candidates. Severity labels are provisional triage values, not impact proof or bounty scores. Taint heuristics are bounded; AST support does not prove reachability. Missing headers, route names, root-shell access, crashes, LLM consensus and absent findings do not prove backend access control or exploitability.
+
+Coverage should be read with every result: static/runtime/proof states, `exhaustive` flag, stage errors, limits and skipped formats. `not_tested`, `not_analyzed`, `incomplete` and `unknown` are not passes. Review exact artifact hash, package/version, OS/device/build and tool versions when reproducing results. Decompilers can omit or transform code; inspect Smali/native/artifact material when appropriate.
+
+Structured analyst evidence binds to scan/artifact identity and requires independent validation; notes or imported data are not automatically verified. Historical comparisons and relocation leads are not proof that a finding was fixed. Reports are schema-stable where documented, but run timestamps/IDs mean outputs are not byte-identical across scans.
+
+## Security model and scope
+
+### Scope requirements
+
+Dynamic scope is explicit and conjunctive:
+
+- `MOBILEAG_ALLOWED_DEVICES`: exact device serials;
+- `MOBILEAG_ALLOWED_CONNECT`: exact approved TCP connection hosts/ports, only if needed;
+- `MOBILEAG_ALLOWED_ORIGINS`: exact HTTP(S) origins (including non-default port);
+- persisted dashboard scope: may narrow server ceilings, including devices/packages/origins/methods/actions;
+- explicit operator session and per-action confirmation.
+
+An empty dynamic scope means static-only. Private/local network targets additionally need `MOBILEAG_ALLOW_PRIVATE_TARGETS=1`; do not enable it casually. Never point the tool at unrelated targets, broad CIDRs, third-party services or production customer data without explicit authorization.
+
+### Local deployment assumptions
+
+The dashboard is designed for a loopback, single-user research lab. It is not a multi-tenant security boundary. Keep it bound to `127.0.0.1`, protect the host and data directory, use a strong secret where configured, and do not expose it through a public reverse proxy. Browser hiding/disabled controls are not authorization; server policy and network gates are authoritative.
+
+### Example environment
+
+Start from `.env.example`; do not commit `.env` or credentials. A minimal offline/local setup may look like:
+
+```dotenv
+OFFLINE=true
+MOBILEAG_DATA_DIR=/path/to/private/mobileag-data
+MOBILEAG_API_TOKEN=replace-with-a-long-random-local-session-secret
+MOBILEAG_PROXY_TOKEN=replace-with-a-separate-random-proxy-secret
+MOBILEAG_ALLOWED_DEVICES=emulator-5554
+MOBILEAG_ALLOWED_ORIGINS=https://api.example.test
+MOBILEAG_ALLOW_PRIVATE_TARGETS=false
 ```
 
-Choose an explicitly authorized device; the dashboard never selects the first device automatically. UI observation is read-only and blocks unrelated packages/system dialogs; it never accepts consent, fills credentials or taps controls. Drag-and-drop stages an artifact for scope review; it does not start testing. CLI dynamic testing uses `--package` (not `--pkg`):
+Only set origins/devices after authorization. Proxy capture additionally requires persisted scope with `api_capture`, exact origins and allowed methods. Never reuse app passwords, API keys or bearer tokens as the dashboard/proxy session secrets.
 
-```bash
-python -m mobileag.cli dast --serial emulator-5554 --package com.example.owned \
-  --no-audit-storage --no-audit-memory
-```
+## Configuration and data handling
 
-The Frida workbench requires `pip install -e '.[frida]'`, a matching server on the selected authorized device, and an already running app. It checks script initialization and detaches. Persistent hook orchestration and automatic root/SSL bypass are not implemented; automatic bypass requests fail explicitly. Root/shell observations do not establish ordinary-app exploitability.
+- **Default/offline posture:** configure `OFFLINE=true` for deterministic local analysis. Dashboard workers are offline and do not receive cloud provider keys.
+- **LLM providers:** only configure providers/destinations approved for the source being reviewed. CLI cloud review is an explicit egress decision; source snippets may contain secrets or proprietary logic. Dashboard optional AI review is separately consented and metadata-only as implemented. LLM content is advisory and not a verifier.
+- **OSV:** only explicit `--lookup-advisories` sends parsed supported Maven/npm coordinates and versions. It is not whole dependency resolution.
+- **Proxy/replay:** only authorized origins/methods; captured data is redacted but still sensitive. Store reports and captures in a restricted directory and delete them under your retention policy.
+- **Optional databases:** Neo4j/Qdrant are not needed for baseline analysis. Configure strong credentials before `docker compose up -d`; compose binds ports to loopback. Historical feedback is not proof of model training/vector synchronization.
+- **Retention:** scan history/triage lives in local SQLite; outputs/uploads are local files. Review deletion/purge confirmation carefully. Uploaded original artifacts are preserved by the workflow; don't manually overwrite evidence.
 
-### API replay and capture
+## Validation and tests
 
-Outbound API replay is disabled until exact HTTP(S) origins are configured with `MOBILEAG_ALLOWED_ORIGINS` (comma-separated, include non-default ports). Private/local targets also require `MOBILEAG_ALLOW_PRIVATE_TARGETS=1`. Destination DNS is validated and pinned, TLS is verified, responses are bounded, and redirects are not followed.
-
-The optional capture proxy requires `MOBILEAG_PROXY_TOKEN`, accepts only loopback binding, and uses the same destination scope. It supports bounded HTTP framing through h11. **CONNECT/TLS interception is unsupported** and returns 501 rather than pretending to inspect encrypted traffic.
-
-### Optional databases
-
-Configure strong `NEO4J_PASSWORD` and `QDRANT_API_KEY` before `docker compose up -d`. Database ports bind to loopback only. The main scan pipeline does not perform historical learning; feedback must not be interpreted as vector-store synchronization.
-
-## Evidence and limitations
-
-### Security Overview
-
-The default light dashboard brings together APK/IPA upload, selected-job activity, five candidate-severity cards, scan identity, and next-step navigation. An absent scan shows unknown values rather than an invented clean result. APK upload opens scope review; IPA upload opens the existing advanced static settings. Uploading alone never starts a scan.
-
-See [console implementation and validation](docs/djini-console-2026-10-08/README.md).
-
-### Advanced workspace navigation
-
-Use **Find a section** or **Ctrl/Command K** for keyboard-first workflow navigation across all eleven views, including the new Security Overview. The **Next steps** guide uses the actual selected job and offers navigation only—not execution. Compact density and desktop focus layout are page-local preferences; scan/device/model authorization is unchanged.
-
-Configuration includes searchable local/cloud provider cards, primary/secondary comparison, setup/consent checklists and server-enforced broker limits. Token consumption, cost, quota and tokens/minute are not measured. See [advanced workspace validation](docs/advanced-workspace-2026-10-07/README.md).
-
-### Automatic readiness and approved stage orchestration
-
-**Start Assessment → Automatic readiness checklist** runs after session connection and again before Start: harmless local sandbox probe, trusted worker-tool presence, host-only ADB inventory, saved scope and public provider configuration. It never selects/connects/boots a device, installs tools, starts a test or contacts a model. Missing worker prerequisites or an unavailable/unapproved DAST serial block guided submission. The backend remains authoritative and fails closed independently of the UI.
-
-Explicitly upload, choose exact scope/stages and approve Start once; the existing guided pipeline then runs offline SAST → approved read-only API cases → approved DAST mapping → optional consented metadata-only AI. Navigation input still requires exact action review. Opt in to a single evidence JSON download when those stages finish or pause; loading history never opts in.
-
-Device Diagnostics now distinguishes executable availability, online/approved inventory and **not checked** root/Frida state. After explicit device selection, automatic process observation requires the saved **frida_status** action for that exact dedicated device; it only uses ordinary-shell `ps -A`, never starts Frida, attaches hooks or runs a preset. A process name is not compatibility/attachment proof. Preview is generation-only. Root/TLS bypass, installs, fuzzing and logcat remain separately scoped explicit operations. See [implementation and synthetic validation](docs/auto-ready-2026-10-07/README.md).
-
-### Dashboard LLM configuration
-
-Use **Configuration → LLM provider configuration** to choose the primary provider and an optional distinct secondary, inspect exact server-configured models/setup, and refresh the provider catalog. Selection alone never starts AI review. Choices stay in the current dashboard session; they reset on reload and are not persisted by Save Settings. API keys/models and allowed destinations remain privately server-configured, not editable credentials in the browser.
-
-**Start Assessment → Optional AI review** shows the selected pair and requires explicit primary metadata-egress consent and separate secondary consent. Secondary runs once only after primary HTTP 429; static analysis stays offline. See [configuration UI validation](docs/llm-configuration-2026-10-07/README.md) and [fallback boundaries](docs/provider-fallback-2026-10-06/README.md).
-
-Automated findings are **UNVERIFIED review candidates**, not proven vulnerabilities. Taint detection is a straight-line heuristic, not a complete inter-procedural engine. Symbol presence, exported components, URL paths, shell-readable data and LLM votes do not prove exploitation. Confirmation requires analyst evidence. Dashboard triage is scan-scoped, revision-checked and saved transactionally in local SQLite; legacy original report files are preserved. The legacy unscoped feedback endpoint rejects requests rather than guessing the target scan.
-
-Completed scans support a manual, record-only test plan through authenticated `GET`/`PUT /api/scans/{scan_id}/test-plan`. Plans bind to the scan's package and artifact SHA-256 and use optimistic revisions. They hold role/flow descriptions, test-account aliases (never credentials), coverage states and analyst notes. They do not approve or run device/API actions; notes remain unverified analyst input. A retest plan snapshots its same-package baseline scan ID, artifact SHA-256, and version; `GET /api/scans/{scan_id}/planned-comparison` rechecks that frozen package/hash/version binding before comparing. `GET /api/scans/{current_scan_id}/comparison/{baseline_scan_id}` remains available for explicit read-only exact-location comparisons. A separate `relocation_leads` list can suggest a unique possible file move only when rule/CWE, qualified method identity, and sink operation agree; the exact-location rows remain `not_proof_of_fix`/new, and the lead is never a match or fix verdict. Neither route infers that a missing candidate is fixed. Run the isolated Chromium workflow check with `python tests/browser_test_plan_comparison.py` (or pass its `--chromium` option); it uses only synthetic loopback scan records and runs in the Project validation CI browser job.
-
-The current behavior supersedes the historical capability descriptions above and older architecture/session notes. See [fix status and validation](docs/audit-2026-10-05/FIX_STATUS.md) and the [original review](docs/audit-2026-10-05/REVIEW.md). The subsequent product review and its fixes are tracked in [current product-fix status](docs/product-security-review-2026-10-05/FIX_STATUS.md).
-
-## Tests
+Run the unit/regression suite:
 
 ```bash
 python -m pytest -q
 ```
 
-Tests isolate real device operations and provider credentials. Use synthetic data and controlled loopback targets when adding regressions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the CI-aligned environment, browser commands, and PR checklist.
-
-The first versioned source-to-sink smoke corpus can be evaluated with
-`python scripts/evaluate-sast-benchmark.py`. It reports per-case TP/FP/FN and
-precision/recall for the bounded `TaintEngine` only. It includes small
-interprocedural return/parameter-flow cases and callback-shaped Intent sources,
-but does not resolve overloads, fields, callback overrides, manifest reachability,
-full Android lifecycle/ICC, or native flows. Its metrics are **not**
-whole-app or product recall. Extend the labeled corpus before claiming improved
-coverage.
-
-The separate synthetic Smali local-register smoke corpus is evaluated with
-`python scripts/evaluate-smali-flow-benchmark.py`. It covers only modeled
-same-method `move-result*` / `move-object` flows and overwrite negatives; it is
-not evidence of whole-program DEX/Smali recall or exploitability.
-
-### Browser regression (optional)
-
-Install Playwright in a separate test environment and use an installed Chromium executable:
+Additional bounded checks:
 
 ```bash
-python tests/browser_product_regression.py --server-python /path/to/project/venv/bin/python --chromium /path/to/chromium
+python scripts/evaluate-sast-benchmark.py
+python scripts/evaluate-smali-flow-benchmark.py
+python scripts/check-reproducible-wheel.py
+python scripts/verify-dashboard-assets.py
 ```
 
-This starts and cleans up an isolated loopback server with synthetic source/findings, mocked device/database integration and no cloud model calls. All runtime assets load locally; the page's real CSP is not bypassed.
+The two micro-benchmarks cover only their labeled synthetic cases; metrics are not whole-app detection recall. For an isolated synthetic browser regression, see [`CONTRIBUTING.md`](CONTRIBUTING.md) and `tests/browser_product_regression.py`. The compiled Android regression uses a synthetic APK; the Genymotion fixture regression requires an explicitly approved test emulator. Old/rooted emulator results validate integration only, not ordinary-app exploitability on a current device.
 
-## Current transformation and release boundaries
+Passing tests prove only the tested implementation paths and fixtures. Production-device, representative APK corpus, external interoperability, and manual accessibility acceptance are separate validation gates. The latest project validation workflow badge is informative; verify CI run status before making release claims.
 
-See [current transformation status and requirement matrix](docs/product-security-review-2026-10-05/TRANSFORMATION_STATUS.md), [current API inventory](docs/product-security-review-2026-10-05/CURRENT_API_MATRIX.md), and [validation evidence](docs/product-security-review-2026-10-05/transformation-validation/README.md). Historical audit observations are retained, not silently rewritten as current findings.
+## Repository map
 
-- Connect using the labelled session form. Tokens stay in memory; sessions expire after eight hours. Settings provides rotation/logout and explicit reconnect.
-- Settings → Authorized scope can only narrow server device/origin ceilings; empty scope means static-only. Root/shell/install/Frida approval is device-wide, not package confinement. Device and live replay operations require explicit scope and synthetic accounts/data.
-- Static jobs use a read-only input, offline bubblewrap namespace and a user-systemd resource cgroup. No automatic device actions or cloud parser egress. Default web output location is fixed.
-- History supports pagination, cancellation, explicit retry of unchanged originals, and preview/confirm deletion of inactive scan output/metadata/decisions. Uploaded originals are preserved. Interrupted jobs are not automatically replayed after restart.
-- Use one loopback API worker and one local operator. Remote/multiuser hosting is unsupported; hiding controls does not provide authorization.
-- UI CSS/vendor assets are packaged locally. Rebuild with `npm ci --prefix assets --ignore-scripts && python scripts/build-dashboard-assets.py`; check with `python scripts/verify-dashboard-assets.py`.
-- Tested Python versions are pinned in `requirements/validated-python314.txt` as environment constraints, not a fully hashed cross-platform lock or a guarantee against future advisories.
-- Actual process regression: `PYTHONPATH=. python tests/sandbox_process_regression.py --output /tmp/mobileag-process-evidence` using the project environment. Only generated ZIP/header fixtures and an owned user cgroup are exercised; no real device/cloud target.
-
-Production/device, representative-corpus and manual assistive-technology acceptance gates remain explicitly open. Automated tests do not certify an entire codebase free of vulnerabilities.
-
-### Optional acceptance checks (not ordinary-app exploit proof)
-
-```bash
-PYTHONPATH=. python tests/compiled_android_regression.py --output /tmp/mobileag-acceptance
-# Only after explicitly approving this device; refuses existing fixture package:
-PYTHONPATH=. python tests/genymotion_fixture_regression.py --serial EXACT_SERIAL --output /tmp/mobileag-acceptance
+```text
+Mobile_Ag/
+├── config/                 Settings and provider configuration
+├── data/                   CWE/MASVS and detection reference data
+├── docs/                   Architecture, schemas, reviews, validation, roadmap
+├── mobileag/
+│   ├── analysis/           Static analyzers and platform/framework scanners
+│   ├── assessments/        Guided assessment/test-plan models and services
+│   ├── automation/         Explicit workflow/task orchestration
+│   ├── core/               Scan orchestration and state
+│   ├── dashboard/          Dashboard API/UI routes and commands
+│   ├── dast/               Device, traffic, proxy and runtime modules
+│   ├── diffing/            Version comparison
+│   ├── filters/            Candidate annotation/ranking signals
+│   ├── generators/         Manual guide/script generators
+│   ├── ingestion/          Archive extraction, manifest/framework parsing
+│   ├── knowledge/          Optional graph/vector integrations
+│   ├── llm/                Provider router/adapters and consent controls
+│   ├── reporting/          Findings, evidence, coverage and report formats
+│   ├── security/           Archive/network/privacy/sandbox helpers
+│   └── web/                FastAPI application, policy, templates and assets
+├── scripts/                Build, validation and benchmark utilities
+├── tests/                  Synthetic unit, integration and boundary regressions
+├── ARCHITECTURE.md          Detailed architecture/component map
+├── CONTRIBUTING.md          Development and validation guidance
+└── pyproject.toml           Package metadata and dependencies
 ```
 
-The first command builds a permission-free synthetic binary-manifest/DEX APK
-using a trusted APKTool JAR and exercises actual isolated JADX/APKTool parsing.
-It requires the same namespace/cgroup support as web scanning. The second signs
-that fixture with a temporary key, installs/launches only its unique package,
-records Android build/current shell identity, and uninstalls its own fixture.
-It does not root, invoke `su`, clear logs or inspect unrelated applications.
-Old/rooted emulator results validate integration only. Current unrooted-device,
-representative production-corpus and human accessibility acceptance remain
-separate gates.
+## Known limitations and roadmap
 
-Dashboard code is split into ordered local scripts by workflow: session/actions,
-workspace, findings, history/settings, copilot, uploads/exports, telemetry, device,
-taint and API. These are classic-script modules with shared workspace state,
-not separate tenant/security boundaries; change their template order only with
-browser regression coverage.
+- Static discovery is heuristic, bounded and dependent on extraction/parser coverage. No tool can establish completeness from a clean report alone.
+- Dynamic testing is not automatic; this README's capture proxy handles HTTP only and does not configure a device or decrypt TLS.
+- The legacy all-in-one DAST CLI is disabled. Use individually scoped dashboard actions.
+- API fuzz/replay capabilities are deliberately constrained; authenticated cross-account authorization testing still needs explicit, safe setup and human interpretation.
+- Web app is single-user/local-first; remote multi-user hosting is unsupported.
+- Some security checks are inventory/rule heuristics, not deep semantic analysis. Native/reflection/dynamic code paths and complex frameworks may be missed.
+- Provider cost/quota/token usage is not measured. External service features require a separate egress decision.
+
+See the [market adaptation roadmap](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md) for prioritized future work and the [contributor roadmap](docs/CONTRIBUTOR_ROADMAP.md) for bounded starter tasks. A roadmap item is not an implemented capability until code and validation evidence exist.
+
+## Contributing
+
+1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md).
+2. Choose a bounded task in [`docs/CONTRIBUTOR_ROADMAP.md`](docs/CONTRIBUTOR_ROADMAP.md) or open an issue.
+3. Add synthetic regression fixtures; isolate devices, provider credentials and network access.
+4. State precisely what you changed, what passed, what was not tested and any coverage limits.
+
+Small documentation, accessibility, evidence-quality and synthetic-test improvements are welcome. Live device or paid AI access is not required for the mocked regression suite. The repository is currently private; collaborators need owner-granted access. No project-level license has been selected.
+
+## Project references
+
+- [Architecture and component map](ARCHITECTURE.md)
+- [Contributor guide](CONTRIBUTING.md)
+- [Contributor starter roadmap](docs/CONTRIBUTOR_ROADMAP.md)
+- [Market-informed implementation roadmap](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md)
+- [Report schemas](docs/schemas/README.md)
+- [Scoped API capture workflow](docs/API_CAPTURE_WORKFLOW.md)
+- [Current API matrix](docs/product-security-review-2026-10-05/CURRENT_API_MATRIX.md)

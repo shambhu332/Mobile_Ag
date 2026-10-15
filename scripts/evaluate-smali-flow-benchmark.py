@@ -7,6 +7,7 @@ recall. Keep all examples synthetic and preserve negative controls.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 import sys
 import tempfile
@@ -23,14 +24,27 @@ def evaluate(corpus: dict) -> dict:
             smali_path = Path(directory) / f"{case['id']}.smali"
             smali_path.write_text(case["source"], encoding="utf-8")
             findings = SmaliCallGraphEngine().audit_smali_directory(directory)
-        observed = {finding.cwe_id for finding in findings
-                    if finding.metadata.get("analysis_kind") == "smali_local_register_flow"}
-        expected = set(case["expected_cwes"])
-        case_tp, case_fp, case_fn = len(expected & observed), len(observed - expected), len(expected - observed)
+        observed = Counter(
+            (finding.cwe_id, finding.line_number)
+            for finding in findings
+            if finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+        )
+        expected = Counter(
+            (candidate["cwe"], candidate["sink_line"])
+            for candidate in case["expected_candidates"]
+        )
+        matched = expected & observed
+        case_tp = sum(matched.values())
+        case_fp = sum((observed - expected).values())
+        case_fn = sum((expected - observed).values())
         tp += case_tp
         fp += case_fp
         fn += case_fn
-        cases.append({"id": case["id"], "expected": sorted(expected), "observed": sorted(observed),
+        cases.append({"id": case["id"],
+                      "expected": sorted([{"cwe": cwe, "sink_line": line} for cwe, line in expected.elements()],
+                                         key=lambda item: (item["cwe"], item["sink_line"])),
+                      "observed": sorted([{"cwe": cwe, "sink_line": line} for cwe, line in observed.elements()],
+                                         key=lambda item: (item["cwe"], item["sink_line"])),
                       "tp": case_tp, "fp": case_fp, "fn": case_fn})
     return {
         "benchmark": "synthetic_smali_register_flow_smoke",

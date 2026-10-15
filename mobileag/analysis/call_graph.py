@@ -141,6 +141,37 @@ SMALI_DERIVED_SOURCES = {
     "Landroid/net/Uri;->getScheme",
 }
 
+# External content is modeled only when the file/URI selector is already
+# tainted. These are review candidates, not a claim that arbitrary app files
+# are attacker-writable.
+SMALI_EXTERNAL_URI_STREAMS = {
+    "Landroid/content/ContentResolver;->openInputStream": 1,
+    "Landroid/content/ContentResolver;->openFileDescriptor": 1,
+    "Landroid/content/ContentResolver;->openAssetFileDescriptor": 1,
+    "Landroid/content/ContentResolver;->openTypedAssetFileDescriptor": 1,
+}
+SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS = {
+    "Ljava/io/FileInputStream;", "Ljava/io/FileReader;", "Ljava/io/RandomAccessFile;",
+    "Ljava/util/Scanner;",
+}
+SMALI_STREAM_WRAPPER_CONSTRUCTORS = {
+    "Ljava/io/InputStreamReader;", "Ljava/io/BufferedReader;",
+    "Ljava/io/BufferedInputStream;", "Ljava/io/DataInputStream;",
+    "Ljava/io/FilterInputStream;", "Ljava/io/SequenceInputStream;",
+    "Landroid/os/ParcelFileDescriptor$AutoCloseInputStream;",
+    "Ljava/util/Scanner;",
+}
+SMALI_BUFFER_READERS = {
+    "Ljava/io/InputStream;", "Ljava/io/FileInputStream;", "Ljava/io/FilterInputStream;",
+    "Ljava/io/BufferedInputStream;", "Ljava/io/DataInputStream;",
+    "Ljava/io/Reader;", "Ljava/io/InputStreamReader;", "Ljava/io/FileReader;",
+    "Ljava/io/BufferedReader;", "Ljava/io/RandomAccessFile;",
+}
+SMALI_CONTENT_LINE_READERS = {"Ljava/io/BufferedReader;", "Ljava/util/Scanner;"}
+SMALI_STREAM_SOURCE_ACCESSORS = {
+    "Landroid/content/res/AssetFileDescriptor;->createInputStream",
+}
+
 # Pure transformations preserve input taint; they are not sources on their
 # own. Keep this list exact-owner/method to avoid matching app lookalikes.
 SMALI_TAINT_TRANSFORMS = {
@@ -795,6 +826,46 @@ class SmaliCallGraphEngine:
                         )
                     elif target_key in SMALI_BUILDER_TO_STRING and args:
                         pending = frozenset(registers.get(f"@builder:{args[0]}", ()))
+                    if target_key in SMALI_STREAM_SOURCE_ACCESSORS and args:
+                        pending = frozenset(registers.get(args[0], ()))
+
+                    external_uri_index = SMALI_EXTERNAL_URI_STREAMS.get(target_key)
+                    if external_uri_index is not None and len(args) > external_uri_index:
+                        if registers.get(args[external_uri_index]):
+                            pending = frozenset({(
+                                "EXTERNAL_FILE_CONTENT_CANDIDATE", line_no,
+                                method.key, method.file_path,
+                            )})
+
+                    if target_name == "<init>" and args:
+                        if target_class in SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS:
+                            path_traces = frozenset(trace for register in args[1:]
+                                                    for trace in registers.get(register, ()))
+                            if path_traces:
+                                registers[args[0]] = frozenset({(
+                                    "EXTERNAL_FILE_CONTENT_CANDIDATE", line_no,
+                                    method.key, method.file_path,
+                                )})
+                        elif target_class in SMALI_STREAM_WRAPPER_CONSTRUCTORS:
+                            wrapped_traces = frozenset(trace for register in args[1:]
+                                                       for trace in registers.get(register, ()))
+                            if wrapped_traces:
+                                registers[args[0]] = wrapped_traces
+
+                    receiver_traces = frozenset(registers.get(args[0], ())) if args else frozenset()
+                    if receiver_traces and target_class in SMALI_BUFFER_READERS:
+                        if target_name == "read" and len(args) > 1 and "[" in signature:
+                            array_key = f"@array:{args[1]}"
+                            registers[array_key] = frozenset(
+                                set(registers.get(array_key, ())) | set(receiver_traces)
+                            )
+                            pending = frozenset()
+                        elif target_name in {"readLine", "readAllBytes", "readText"}:
+                            pending = receiver_traces
+                    if receiver_traces and target_class in SMALI_CONTENT_LINE_READERS and target_name in {
+                        "next", "nextLine", "nextInt", "nextLong", "nextFloat", "nextDouble",
+                    }:
+                        pending = receiver_traces
 
                     exact_target_key = f"{target_class}->{target_name}{signature}"
                     if exact_target_key in SMALI_BUILDER_CONSTRUCTORS and len(args) > 1:

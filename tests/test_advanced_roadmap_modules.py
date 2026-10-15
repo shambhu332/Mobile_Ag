@@ -258,6 +258,24 @@ def test_macho_parser_supports_32_bit_slice_in_fat_binary(tmp_path):
     assert result.architectures == ["ARM"]
 
 
+def test_macho_parser_reads_bounded_64_bit_symbol_names(tmp_path):
+    import struct
+
+    strings = b"\0_$s4Demo3fooyyF\0"
+    symbol_offset = 32 + 24
+    string_offset = symbol_offset + 16
+    symtab_command = struct.pack("<IIIIII", 2, 24, symbol_offset, 1,
+                                 string_offset, len(strings))
+    symbol = struct.pack("<IBBHQ", 1, 0x0F, 1, 0, 0)
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, 24, 0, 0)
+    binary = tmp_path / "SymbolsMachO"
+    binary.write_bytes(header + symtab_command + symbol + strings)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "complete"
+    assert result.symbol_names == ["_$s4Demo3fooyyF"]
+
+
 def test_smart_ui_crawler():
     crawler = SmartUICrawler(test_user="researcher@example.test", test_pass="Synthetic-Only-123!")
 

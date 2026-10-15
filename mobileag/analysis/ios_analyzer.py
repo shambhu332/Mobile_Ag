@@ -492,6 +492,7 @@ class IOSSecurityAnalyzer:
                         "architectures": m_res.architectures,
                         "slice_count": m_res.slice_count,
                         "imported_dylibs": m_res.imported_dylibs,
+                        "symbol_names": m_res.symbol_names,
                         "sections": m_res.sections,
                         "swift_sections": m_res.swift_sections_detected,
                         "swift_section_name_candidates": m_res.swift_section_name_candidates,

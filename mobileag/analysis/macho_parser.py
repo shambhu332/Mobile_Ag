@@ -32,6 +32,7 @@ class MachoAnalysisResult:
     cstring_samples: List[str] = field(default_factory=list)
     architectures: List[str] = field(default_factory=list)
     slice_count: int = 0
+    symbol_names: List[str] = field(default_factory=list)
 
 
 class MachoBinaryParser:
@@ -56,6 +57,7 @@ class MachoBinaryParser:
     MAX_BINARY_BYTES = 15 * 1024 * 1024
     LC_SEGMENT_64 = 0x19
     LC_SEGMENT_32 = 0x01
+    LC_SYMTAB = 0x02
     DYLIB_COMMANDS = {
         0x0C, 0x0D, 0x18 | 0x80000000, 0x1F | 0x80000000,
         0x20, 0x23 | 0x80000000,
@@ -227,6 +229,9 @@ class MachoBinaryParser:
             for sample in slice_result.cstring_samples:
                 if sample not in result.cstring_samples and len(result.cstring_samples) < 1000:
                     result.cstring_samples.append(sample)
+            for name in slice_result.symbol_names:
+                if name not in result.symbol_names and len(result.symbol_names) < 2000:
+                    result.symbol_names.append(name)
             result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
         result.parse_status = "complete" if statuses and all(status == "not_attempted" for status in statuses) else (
             "complete" if statuses and all(status == "complete" for status in statuses) else "partial"
@@ -257,6 +262,7 @@ class MachoBinaryParser:
             return
         command_end = 28 + sizeofcmds
         cursor = 28
+        symtab = None
         for _ in range(ncmds):
             if cursor + 8 > command_end:
                 result.parse_errors.append("32-bit load-command header exceeds declared command region")
@@ -269,6 +275,12 @@ class MachoBinaryParser:
                 break
             if command == self.LC_SEGMENT_32:
                 self._parse_segment_32(data, cursor, command_size, endian, result)
+            if command == self.LC_SYMTAB:
+                if command_size >= 24:
+                    symtab = struct.unpack_from(endian + "IIII", data, cursor + 8)
+                else:
+                    result.parse_status = "partial"
+                    result.parse_errors.append("Truncated LC_SYMTAB command")
             if command in self.DYLIB_COMMANDS and command_size >= 24:
                 name_offset = struct.unpack_from(endian + "I", data, cursor + 8)[0]
                 name_start = cursor + name_offset
@@ -279,6 +291,8 @@ class MachoBinaryParser:
                         result.imported_dylibs.append(name)
             cursor += command_size
         result.load_commands_count = ncmds
+        if symtab:
+            self._parse_symbol_table(data, symtab, endian, is_64bit=False, result=result)
         self._extract_section_contents(data, result)
 
     def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
@@ -325,6 +339,44 @@ class MachoBinaryParser:
                         result.parse_status = "partial"
                         break
 
+    def _parse_symbol_table(self, data: bytes, symtab: tuple[int, int, int, int],
+                            endian: str, *, is_64bit: bool, result: MachoAnalysisResult) -> None:
+        symbol_offset, symbol_count, string_offset, string_size = symtab
+        entry_size = 16 if is_64bit else 12
+        if symbol_count > 100_000 or string_size > 8 * 1024 * 1024:
+            result.parse_status = "partial"
+            result.parse_errors.append("Symbol/string table exceeds bounded count or size")
+            return
+        symbol_bytes = symbol_count * entry_size
+        if (symbol_offset > len(data) or symbol_bytes > len(data) - symbol_offset
+                or string_offset > len(data) or string_size > len(data) - string_offset):
+            result.parse_status = "partial"
+            result.parse_errors.append("Symbol/string table range exceeds bounded input")
+            return
+        strings = data[string_offset:string_offset + string_size]
+        for index in range(symbol_count):
+            offset = symbol_offset + index * entry_size
+            if is_64bit:
+                name_index, _symbol_type, _section, _description, _value = struct.unpack_from(
+                    endian + "IBBHQ", data, offset
+                )
+            else:
+                name_index, _symbol_type, _section, _description, _value = struct.unpack_from(
+                    endian + "IBBHI", data, offset
+                )
+            if name_index == 0 or name_index >= len(strings):
+                continue
+            end = strings.find(b"\0", name_index)
+            if end < 0 or end - name_index > 4096:
+                continue
+            name = strings[name_index:end].decode("utf-8", errors="replace")
+            if name and name not in result.symbol_names:
+                result.symbol_names.append(name)
+                if len(result.symbol_names) >= 2000:
+                    result.parse_status = "partial"
+                    result.parse_errors.append("Symbol name sample limit reached")
+                    break
+
     def _parse_thin_64(self, data: bytes, result: MachoAnalysisResult) -> None:
         """Parse bounded 64-bit Mach-O load commands and section file ranges."""
         if len(data) < 32:
@@ -351,6 +403,7 @@ class MachoBinaryParser:
 
         command_end = 32 + sizeofcmds
         cursor = 32
+        symtab = None
         for _ in range(ncmds):
             if cursor + 8 > command_end:
                 result.parse_errors.append("Load-command header exceeds declared command region")
@@ -363,6 +416,12 @@ class MachoBinaryParser:
                 break
             if command == self.LC_SEGMENT_64:
                 self._parse_segment_64(data, cursor, command_size, endian, result)
+            if command == self.LC_SYMTAB:
+                if command_size >= 24:
+                    symtab = struct.unpack_from(endian + "IIII", data, cursor + 8)
+                else:
+                    result.parse_status = "partial"
+                    result.parse_errors.append("Truncated LC_SYMTAB command")
             if command in self.DYLIB_COMMANDS:
                 if command_size >= 24:
                     name_offset = struct.unpack_from(endian + "I", data, cursor + 8)[0]
@@ -374,6 +433,8 @@ class MachoBinaryParser:
                             result.imported_dylibs.append(name)
             cursor += command_size
         result.load_commands_count = ncmds
+        if symtab:
+            self._parse_symbol_table(data, symtab, endian, is_64bit=True, result=result)
         self._extract_section_contents(data, result)
 
     def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,

@@ -36,6 +36,9 @@ class MethodNode:
     signature: str
     is_lifecycle_entrypoint: bool = False
     is_static: bool = False
+    is_public: bool = False
+    is_javascript_interface: bool = False
+    javascript_interface_annotation_line: int | None = None
     invocations: list[str] = field(default_factory=list)  # list of target method keys
     sources_called: list[str] = field(default_factory=list)
     sinks_called: list[str] = field(default_factory=list)
@@ -322,9 +325,22 @@ class SmaliCallGraphEngine:
                     self.local_register_methods_skipped.append(method.key)
                 continue
             initial = {
-                register: frozenset(traces)
+                register: set(traces)
                 for register, traces in parameter_taints.get(method_key, {}).items()
             }
+            if method.is_public and method.is_javascript_interface:
+                descriptors = _parameter_descriptors(method.signature) or []
+                formal_index = 0 if method.is_static else 1
+                for _parameter_index, width in descriptors:
+                    source_trace = (
+                        "WEBVIEW_JAVASCRIPT_INTERFACE_PARAMETER",
+                        method.javascript_interface_annotation_line or method.line_number,
+                        method.key,
+                        method.file_path,
+                    )
+                    initial.setdefault(f"p{formal_index}", set()).add(source_trace)
+                    formal_index += width
+            initial = {register: frozenset(traces) for register, traces in initial.items()}
             flows, argument_flows = self._analyze_local_register_flows(method, initial)
             for flow in flows:
                 flow_key = (flow["method"], flow["sink_line"], flow["sink"],
@@ -609,6 +625,7 @@ class SmaliCallGraphEngine:
                         signature=m_sig,
                         is_lifecycle_entrypoint=is_lifecycle,
                         is_static=" static " in f" {stripped} ",
+                        is_public=" public " in f" {stripped} ",
                         file_path=str(smali_file),
                         line_number=line_num
                     )
@@ -624,6 +641,12 @@ class SmaliCallGraphEngine:
 
             elif current_method:
                 current_method.instructions.append((line_num, stripped))
+                if re.match(
+                    r"\.annotation\s+(?:runtime|system|build)\s+Landroid/webkit/JavascriptInterface;",
+                    stripped,
+                ):
+                    current_method.is_javascript_interface = True
+                    current_method.javascript_interface_annotation_line = line_num
 
                 # Track string constants loaded into registers
                 str_match = const_str_re.search(stripped)
@@ -799,6 +822,11 @@ class SmaliCallGraphEngine:
             analysis_kind = ("smali_interprocedural_argument_flow" if is_cross_method
                              else "smali_local_register_flow")
             flow_scope = "across exact-signature method argument(s)" if is_cross_method else "within the same method"
+            source_context_note = (
+                " The JavascriptInterface annotation does not prove the object is registered with a WebView, "
+                "JavaScript is enabled, or the calling frame/content is attacker-controlled."
+                if flow["source_kind"] == "WEBVIEW_JAVASCRIPT_INTERFACE_PARAMETER" else ""
+            )
             findings.append(Finding(
                 title=f"{'Interprocedural' if is_cross_method else 'Same-method'} Smali register-flow candidate: {sink_spec['cwe']}",
                 description=(f"The bounded Smali pass tracked {flow['source_kind']} from "
@@ -807,7 +835,7 @@ class SmaliCallGraphEngine:
                              f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
                              "This is a bounded CFG may-flow candidate; dynamic dispatch, field/array/return "
                              "flows, sanitizers, branch feasibility, component authorization, and security "
-                             "impact require validation."),
+                             f"impact require validation.{source_context_note}"),
                 severity=Severity.INFO, confidence=0.5, cwe_id=sink_spec["cwe"],
                 cvss_score=0.0, cvss_vector="", affected_component=flow["method"].split("->", 1)[0],
                 file_path=flow["file_path"], line_number=flow["sink_line"],
@@ -818,7 +846,7 @@ class SmaliCallGraphEngine:
                 detection_method="SmaliCallGraphEngine (bounded register argument flow)",
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
-                          "source_method": flow["source_method"],
+                          "source_method": flow["source_method"], "source_kind": flow["source_kind"],
                           "register_dataflow": "same_method_moves_plus_exact_signature_parameter_arguments",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
@@ -837,6 +865,7 @@ class SmaliCallGraphEngine:
                 "fields, arrays, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
+                "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",
             ],
         )
         if self.local_register_methods_skipped:

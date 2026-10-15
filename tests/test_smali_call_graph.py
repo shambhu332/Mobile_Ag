@@ -145,6 +145,43 @@ def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(
     assert engine.coverage["interprocedural_flow_status"] == "bounded_parameter_arguments"
 
 
+@pytest.mark.parametrize("annotated,visibility,expected", [
+    (True, "public", True),
+    (False, "public", False),
+    (True, "private", False),
+])
+def test_javascript_interface_parameters_are_only_candidate_sources(
+        tmp_path, annotated, visibility, expected):
+    annotation = (
+        ".annotation runtime Landroid/webkit/JavascriptInterface;\n    .end annotation"
+        if annotated else ""
+    )
+    (tmp_path / "Bridge.smali").write_text(f"""
+.class public Lcom/example/Bridge;
+.super Ljava/lang/Object;
+.method {visibility} bridge(Ljava/lang/String;)V
+    .registers 3
+    {annotation}
+    sget-object v0, Lcom/example/Bridge;->web:Landroid/webkit/WebView;
+    invoke-virtual {{v0, p1}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    bridge_flows = [finding for finding in findings
+                    if finding.metadata.get("source_kind") == "WEBVIEW_JAVASCRIPT_INTERFACE_PARAMETER"]
+
+    assert bool(bridge_flows) is expected
+    if expected:
+        finding = bridge_flows[0]
+        assert finding.cwe_id == "CWE-829"
+        assert finding.metadata["proof_state"] == "not_proven"
+        assert finding.line_number == 9
+        assert "does not prove the object is registered" in finding.description
+
+
 @pytest.mark.parametrize(("source_method", "sink_method"), [
     ("getStringExtraCompat", "loadUrl"),
     ("getStringExtra", "loadUrlCompat"),

@@ -49,6 +49,7 @@ class MobileApiCataloger:
         self.captured_requests: List[CapturedRequest] = []
         self.omitted_requests = 0
         self.unmodeled_requests = 0
+        self.invalid_urls = 0
 
     @staticmethod
     def _path_template(path: str) -> str:
@@ -142,20 +143,31 @@ class MobileApiCataloger:
             self.omitted_requests += 1
             return
         self.captured_requests.append(req)
-        parsed = urlparse(req.url)
+        if not isinstance(req.url, str) or len(req.url) > 8192:
+            self.invalid_urls += 1
+            self.unmodeled_requests += 1
+            return
+        try:
+            parsed = urlparse(req.url)
+            # Accessing hostname/port validates malformed authority syntax.
+            hostname = parsed.hostname
+            port = parsed.port
+        except (TypeError, ValueError):
+            self.invalid_urls += 1
+            self.unmodeled_requests += 1
+            return
+        if parsed.scheme and (parsed.scheme.lower() not in {"http", "https"} or not hostname):
+            self.invalid_urls += 1
+            self.unmodeled_requests += 1
+            return
         path = self._path_template(parsed.path or "/")
-        method = req.method.lower()
+        method = req.method.lower() if isinstance(req.method, str) and len(req.method) <= 16 else ""
         if method not in {"get", "put", "post", "delete", "options", "head", "patch", "trace"}:
             self.unmodeled_requests += 1
             return
         # Keep a normalized origin so same-path APIs on different hosts are
         # not silently collapsed. urlparse().netloc may contain userinfo; do
         # not export it.
-        try:
-            hostname = parsed.hostname
-            port = parsed.port
-        except ValueError:
-            hostname, port = None, None
         if parsed.scheme and hostname:
             host_literal = hostname
             try:
@@ -285,6 +297,7 @@ class MobileApiCataloger:
                 "maxRequests": 10000,
                 "omittedRequests": self.omitted_requests,
                 "unmodeledRequests": self.unmodeled_requests,
+                "invalidURLs": self.invalid_urls,
             },
         }
         # Do not silently emit a document that fails the normative OpenAPI

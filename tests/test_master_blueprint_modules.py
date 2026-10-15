@@ -368,6 +368,30 @@ def test_openapi_catalog_formats_ipv6_server_origins():
     assert operation["servers"] == [{"url": "https://[2001:db8::1]:8443"}]
 
 
+def test_openapi_catalog_tracks_malformed_and_unsupported_urls_without_crashing():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    bad_requests = [
+        CapturedRequest("GET", "https://[malformed?token=synthetic-secret"),
+        CapturedRequest("GET", "https://api.example.test:70000/v1/bad"),
+        CapturedRequest("GET", "ftp://api.example.test/v1/unsupported"),
+    ]
+    for request in bad_requests:
+        catalog.ingest_request(request)
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/v1/good"))
+
+    spec = catalog.export_openapi_json()
+    limits = spec["x-mobileag-capture-limits"]
+    assert limits["invalidURLs"] == 3
+    assert limits["unmodeledRequests"] == 3
+    assert list(spec["paths"]) == ["/v1/good"]
+    har = catalog.export_har_json()
+    assert "synthetic-secret" not in json.dumps(har)
+    assert len(har["log"]["entries"]) == 4
+
+
 def test_openapi_catalog_normalizes_default_http_ports():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 

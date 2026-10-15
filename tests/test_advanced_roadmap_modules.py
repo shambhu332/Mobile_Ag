@@ -96,6 +96,35 @@ def test_il2cpp_auditor():
         assert "AuthenticationManager" in res.reconstructed_classes
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-unity-secret-123" not in repr(res.potential_secrets)
+        assert res.scan_status == "complete"
+        assert res.metadata_truncated is False
+
+
+def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
+    with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as outside_dir:
+        base = Path(tmp_dir)
+        metadata_dir = base / "assets/bin/Data/Managed/Metadata"
+        metadata_dir.mkdir(parents=True)
+        metadata = metadata_dir / "global-metadata.dat"
+        metadata.write_bytes(struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
+                             + b"\x00" * 56 + b"https://late.example.invalid/api")
+        auditor = Il2CppAuditor()
+        auditor.MAX_METADATA_BYTES = 32
+        truncated = auditor.audit_package(base)
+
+        outside = Path(outside_dir) / "global-metadata.dat"
+        outside.write_bytes(struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
+                            + b"\x00" * 56)
+        metadata.unlink()
+        metadata.symlink_to(outside)
+        linked = Il2CppAuditor().audit_package(base)
+
+    assert truncated.metadata_version == 29
+    assert truncated.metadata_truncated is True
+    assert truncated.metadata_bytes_scanned == 32
+    assert truncated.scan_status == "partial"
+    assert "symlink_metadata_skipped" in linked.scan_errors
+    assert linked.global_metadata_present is False
 
 
 def test_macho_binary_parser():

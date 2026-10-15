@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,12 +25,21 @@ class Il2CppAnalysisResult:
     reconstructed_classes: List[str] = field(default_factory=list)
     api_endpoints: List[str] = field(default_factory=list)
     potential_secrets: List[Dict[str, object]] = field(default_factory=list)
+    scan_status: str = "not_started"
+    tree_entries_scanned: int = 0
+    metadata_bytes_scanned: int = 0
+    metadata_truncated: bool = False
+    scan_errors: List[str] = field(default_factory=list)
 
 
 class Il2CppAuditor:
     """Parses Unity IL2CPP binaries and global-metadata.dat structures."""
 
     IL2CPP_METADATA_MAGIC = 0xFAB11BAF
+    MAX_TREE_ENTRIES = 50_000
+    MAX_METADATA_BYTES = 10 * 1024 * 1024
+    MAX_ENDPOINTS = 100
+    MAX_CLASS_CANDIDATES = 50
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
     SECRET_PATTERN = re.compile(
@@ -41,74 +51,118 @@ class Il2CppAuditor:
         """Scan extracted package for Unity IL2CPP assets and binaries."""
         base = Path(extracted_dir)
         result = Il2CppAnalysisResult()
+        if base.is_symlink() or not base.is_dir():
+            result.scan_status = "invalid"
+            result.scan_errors.append("invalid_scan_root")
+            return result
 
         lib_dir = base / "lib"
         metadata_file = base / "assets" / "bin" / "Data" / "Managed" / "Metadata" / "global-metadata.dat"
 
         # Check for libil2cpp.so
-        if lib_dir.is_dir():
-            for root, _, files in os.walk(lib_dir):
-                if "libil2cpp.so" in files:
-                    result.libil2cpp_present = True
-                    result.is_il2cpp = True
+        limited = False
+        if lib_dir.is_symlink():
+            result.scan_errors.append("symlink_library_directory_skipped")
+        elif lib_dir.is_dir():
+            for root, dirs, files in os.walk(
+                lib_dir, followlinks=False,
+                onerror=lambda _error: result.scan_errors.append("directory_scan_error"),
+            ):
+                symlink_dirs = [name for name in dirs if (Path(root) / name).is_symlink()]
+                if symlink_dirs:
+                    result.scan_errors.append("symlink_directory_skipped")
+                dirs[:] = sorted(name for name in dirs if not (Path(root) / name).is_symlink())
+                files.sort()
+                result.tree_entries_scanned += len(dirs) + len(files)
+                if result.tree_entries_scanned > self.MAX_TREE_ENTRIES:
+                    limited = True
+                    result.scan_errors.append("tree_entry_limit")
                     break
+                if "libil2cpp.so" in files:
+                    library = Path(root) / "libil2cpp.so"
+                    if library.is_symlink():
+                        result.scan_errors.append("symlink_library_skipped")
+                    else:
+                        result.libil2cpp_present = True
+                        result.is_il2cpp = True
 
         # Check for global-metadata.dat
-        if metadata_file.is_file():
+        metadata_parent_symlink = False
+        for parent in metadata_file.parents:
+            if parent == base:
+                break
+            if parent.is_symlink():
+                metadata_parent_symlink = True
+                break
+        if metadata_file.is_symlink() or metadata_parent_symlink:
+            result.scan_errors.append("symlink_metadata_skipped")
+        elif metadata_file.is_file():
             result.global_metadata_present = True
             result.is_il2cpp = True
             self._parse_metadata_file(metadata_file, result)
+
+        result.scan_errors = sorted(set(result.scan_errors))
+        result.scan_status = (
+            "partial" if limited or result.scan_errors or result.metadata_truncated
+            else "complete"
+        )
 
         return result
 
     def _parse_metadata_file(self, metadata_path: Path, result: Il2CppAnalysisResult) -> None:
         """Parse global-metadata.dat header and string literal pools."""
         try:
-            with open(metadata_path, "rb") as f:
-                header = f.read(64)
+            fd = os.open(metadata_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as f:
+                details = os.fstat(f.fileno())
+                if not stat.S_ISREG(details.st_mode):
+                    result.scan_errors.append("non_regular_metadata_skipped")
+                    return
+                data = f.read(self.MAX_METADATA_BYTES + 1)
         except OSError:
+            result.scan_errors.append("metadata_read_error")
             return
 
-        if len(header) < 12:
+        if len(data) > self.MAX_METADATA_BYTES:
+            result.metadata_truncated = True
+            data = data[:self.MAX_METADATA_BYTES]
+        result.metadata_bytes_scanned = len(data)
+
+        if len(data) < 12:
+            result.scan_errors.append("metadata_header_truncated")
             return
 
-        magic, version = struct.unpack("<II", header[:8])
+        magic, version = struct.unpack("<II", data[:8])
         if magic != self.IL2CPP_METADATA_MAGIC:
+            result.scan_errors.append("metadata_magic_mismatch")
             return
 
         result.metadata_version = version
-
-        # Scan string literal pool
-        try:
-            with open(metadata_path, "rb") as f:
-                data = f.read(10 * 1024 * 1024)  # Read up to 10MB
-        except OSError:
-            return
-
-        raw_strings = re.findall(b"[\x20-\x7E]{4,}", data)
-        result.string_literals_count = len(raw_strings)
+        # Printable strings are review candidates, not parsed IL2CPP tables.
 
         endpoints: Set[str] = set()
         classes: Set[str] = set()
 
-        for m in raw_strings:
-            try:
-                s = m.decode("utf-8", errors="ignore")
-            except Exception:
-                continue
+        secret_marker_added = False
+        for m in re.finditer(b"[\x20-\x7E]{4,}", data):
+            result.string_literals_count += 1
+            s = m.group().decode("utf-8", errors="ignore")
 
             for url in self.URL_PATTERN.findall(s):
                 if not url.endswith((".png", ".jpg", ".asset", ".unity")):
-                    endpoints.add(url)
+                    if len(endpoints) < self.MAX_ENDPOINTS:
+                        endpoints.add(url)
 
             secret_match = self.SECRET_PATTERN.search(s)
-            if secret_match:
+            if secret_match and not secret_marker_added:
                 # Retain only a review marker; do not persist credential bytes.
                 result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})
+                secret_marker_added = True
 
             # Detect class-like strings
-            if re.match(r"^[A-Z][a-zA-Z0-9_]+Manager$|^[A-Z][a-zA-Z0-9_]+Controller$", s):
+            if (len(classes) < self.MAX_CLASS_CANDIDATES
+                    and re.match(r"^[A-Z][a-zA-Z0-9_]+Manager$|^[A-Z][a-zA-Z0-9_]+Controller$", s)):
                 classes.add(s)
 
-        result.api_endpoints = sorted(endpoints)[:100]
-        result.reconstructed_classes = sorted(classes)[:50]
+        result.api_endpoints = sorted(endpoints)
+        result.reconstructed_classes = sorted(classes)

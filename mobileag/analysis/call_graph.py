@@ -133,6 +133,28 @@ SMALI_DERIVED_SOURCES = {
     "Landroid/net/Uri;->getScheme",
 }
 
+# Pure conversions/concatenation preserve input taint; they are not sources on
+# their own. Keep this list exact-owner/method to avoid matching app lookalikes.
+SMALI_TAINT_TRANSFORMS = {
+    "Ljava/lang/String;->concat",
+    "Ljava/lang/String;->valueOf",
+    "Ljava/lang/String;->format",
+    "Ljava/lang/Integer;->toString",
+    "Ljava/lang/Long;->toString",
+    "Ljava/lang/Float;->toString",
+    "Ljava/lang/Double;->toString",
+    "Ljava/lang/Boolean;->toString",
+    "Ljava/lang/Character;->toString",
+}
+SMALI_BUILDER_APPENDERS = {
+    "Ljava/lang/StringBuilder;->append",
+    "Ljava/lang/StringBuffer;->append",
+}
+SMALI_BUILDER_TO_STRING = {
+    "Ljava/lang/StringBuilder;->toString",
+    "Ljava/lang/StringBuffer;->toString",
+}
+
 # Smali Sink signatures and corresponding CWE classifications
 SMALI_SINKS = {
     "Landroid/webkit/WebView;->loadUrl": {
@@ -589,11 +611,13 @@ class SmaliCallGraphEngine:
             return_value = return_value_re.match(text)
             if not move_result:
                 registers.pop("@pending_return", None)
+                registers.pop("@pending_builder", None)
             if static_get:
                 dest, field_key = static_get.groups()
                 static_field_reads.add(field_key)
                 registers.pop(f"@array:{dest}", None)
                 registers.pop(f"@returned:{dest}", None)
+                registers.pop(f"@builder:{dest}", None)
                 traces = (initial_static_field_taints or {}).get(field_key, ())
                 if traces:
                     registers[dest] = frozenset(traces)
@@ -603,7 +627,9 @@ class SmaliCallGraphEngine:
             elif move_result:
                 dest = move_result.group(1)
                 registers.pop(f"@array:{dest}", None)
+                registers.pop(f"@builder:{dest}", None)
                 return_taints = registers.pop("@pending_return", frozenset())
+                builder_taints = registers.pop("@pending_builder", frozenset())
                 registers.pop(f"@returned:{dest}", None)
                 if pending:
                     registers[dest] = pending
@@ -611,6 +637,8 @@ class SmaliCallGraphEngine:
                     registers.pop(dest, None)
                 if return_taints:
                     registers[f"@returned:{dest}"] = return_taints
+                if builder_taints:
+                    registers[f"@builder:{dest}"] = builder_taints
                 pending = frozenset()
             elif move_alias:
                 dest, src = move_alias.groups()
@@ -627,6 +655,12 @@ class SmaliCallGraphEngine:
                     registers[dest_array_key] = registers[array_key]
                 else:
                     registers.pop(dest_array_key, None)
+                builder_key = f"@builder:{src}"
+                dest_builder_key = f"@builder:{dest}"
+                if text.startswith("move-object") and builder_key in registers:
+                    registers[dest_builder_key] = registers[builder_key]
+                else:
+                    registers.pop(dest_builder_key, None)
                 returned_key = f"@returned:{src}"
                 dest_returned_key = f"@returned:{dest}"
                 if returned_key in registers:
@@ -637,6 +671,7 @@ class SmaliCallGraphEngine:
             elif array_get:
                 dest, array_register = array_get.groups()
                 registers.pop(f"@array:{dest}", None)
+                registers.pop(f"@builder:{dest}", None)
                 registers.pop(f"@returned:{dest}", None)
                 traces = registers.get(f"@array:{array_register}", registers.get(array_register, ()))
                 if traces:
@@ -663,6 +698,7 @@ class SmaliCallGraphEngine:
                 if write:
                     registers.pop(write.group(1), None)
                     registers.pop(f"@array:{write.group(1)}", None)
+                    registers.pop(f"@builder:{write.group(1)}", None)
                     registers.pop(f"@returned:{write.group(1)}", None)
                     if arithmetic_traces:
                         registers[write.group(1)] = frozenset(arithmetic_traces)
@@ -695,6 +731,25 @@ class SmaliCallGraphEngine:
                         pending = frozenset({(source_kind, line_no, method.key, method.file_path)})
                     elif target_key in SMALI_DERIVED_SOURCES and args:
                         pending = frozenset(registers.get(args[0], ()))
+                    elif target_key in SMALI_TAINT_TRANSFORMS:
+                        pending = frozenset(
+                            trace for register in args for trace in registers.get(register, ())
+                        )
+                    elif target_key in SMALI_BUILDER_TO_STRING and args:
+                        pending = frozenset(registers.get(f"@builder:{args[0]}", ()))
+
+                    if target_key in SMALI_BUILDER_APPENDERS and args:
+                        builder_key = f"@builder:{args[0]}"
+                        builder_traces = set(registers.get(builder_key, ()))
+                        for register in args[1:]:
+                            builder_traces.update(registers.get(register, ()))
+                        if builder_traces:
+                            builder_summary = frozenset(builder_traces)
+                            registers[builder_key] = builder_summary
+                            if signature.split(")", 1)[-1] in {
+                                "Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;",
+                            }:
+                                registers["@pending_builder"] = builder_summary
 
                     sink = target_key if target_key in SMALI_SINKS else None
                     if sink:
@@ -712,7 +767,10 @@ class SmaliCallGraphEngine:
                     target_method = self.methods.get(exact_target_key)
                     if target_method:
                         called_methods.add(exact_target_key)
-                        if not source_kind and target_key not in SMALI_DERIVED_SOURCES:
+                        if (not source_kind and target_key not in SMALI_DERIVED_SOURCES
+                                and target_key not in SMALI_TAINT_TRANSFORMS
+                                and target_key not in SMALI_BUILDER_APPENDERS
+                                and target_key not in SMALI_BUILDER_TO_STRING):
                             pending = frozenset((callee_return_taints or {}).get(exact_target_key, ()))
                             if pending:
                                 registers["@pending_return"] = pending
@@ -1002,7 +1060,8 @@ class SmaliCallGraphEngine:
                              f"into register {flow['register']} used by {flow['sink']} at "
                              f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
                              "This is a bounded CFG may-flow candidate using exact-signature argument and tainted "
-                             "register-return summaries, primitive moves/arithmetic, exact static-field names, and "
+                             "register-return summaries, primitive moves/arithmetic, supported String conversions, "
+                             "local StringBuilder/StringBuffer append chains, exact static-field names, and "
                              "imprecise array-element summaries. "
                              "dynamic dispatch, instance/heap identity, array indexes, sanitizers, branch "
                              "feasibility, component authorization, and security impact remain unresolved. "
@@ -1018,7 +1077,7 @@ class SmaliCallGraphEngine:
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_primitive_arithmetic_array_elements_static_fields_exact_signature_arguments_and_returns",
+                          "register_dataflow": "same_method_moves_arithmetic_string_transforms_builder_chains_array_elements_static_fields_exact_signature_arguments_and_returns",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
@@ -1033,7 +1092,7 @@ class SmaliCallGraphEngine:
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "instance fields, precise array indexes/objects, casts, returned heap side effects, and polymorphic dispatch are not modeled",
+                "instance fields, precise array indexes/objects, casts, returned heap side effects, builder identity across fields/calls, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",

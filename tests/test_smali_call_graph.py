@@ -99,11 +99,11 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].status.value == "UNVERIFIED"
     assert local[0].cvss_score == 0
     assert local[0].metadata["register_dataflow"] == (
-        "same_method_moves_array_elements_static_fields_and_exact_signature_arguments"
+        "same_method_moves_array_elements_static_fields_exact_signature_arguments_and_returns"
     )
 
 
-def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(tmp_path):
+def test_smali_interprocedural_register_flow_reports_both_source_and_sink_files(tmp_path):
     source_file = tmp_path / "Entry.smali"
     sink_file = tmp_path / "Helper.smali"
     source_file.write_text("""
@@ -134,7 +134,7 @@ def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(
     engine = SmaliCallGraphEngine()
     findings = engine.audit_smali_directory(tmp_path)
     cross_method = [finding for finding in findings
-                    if finding.metadata.get("analysis_kind") == "smali_interprocedural_argument_flow"]
+                    if finding.metadata.get("analysis_kind") == "smali_interprocedural_register_flow"]
 
     assert len(cross_method) == 1
     finding = cross_method[0]
@@ -144,7 +144,7 @@ def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(
     assert finding.metadata["source_file"] == str(source_file)
     assert finding.metadata["source_method"].startswith("Lcom/example/Entry;->onCreate")
     assert "dynamic dispatch" in finding.description
-    assert engine.coverage["interprocedural_flow_status"] == "bounded_arguments_and_static_fields"
+    assert engine.coverage["interprocedural_flow_status"] == "bounded_arguments_static_fields_and_returns"
 
 
 def test_smali_static_field_taint_flows_between_methods(tmp_path):
@@ -179,7 +179,7 @@ def test_smali_static_field_taint_flows_between_methods(tmp_path):
     engine = SmaliCallGraphEngine()
     findings = engine.audit_smali_directory(tmp_path)
     field_flows = [finding for finding in findings
-                   if finding.metadata.get("analysis_kind") == "smali_interprocedural_argument_flow"]
+                   if finding.metadata.get("analysis_kind") == "smali_interprocedural_register_flow"]
 
     assert len(field_flows) == 1
     assert field_flows[0].file_path == str(sink_file)
@@ -205,7 +205,81 @@ def test_internal_static_field_value_is_not_assumed_untrusted(tmp_path):
     engine = SmaliCallGraphEngine()
     findings = engine.audit_smali_directory(tmp_path)
     assert not any(finding.metadata.get("analysis_kind") in {
-        "smali_local_register_flow", "smali_interprocedural_argument_flow",
+        "smali_local_register_flow", "smali_interprocedural_register_flow",
+    } for finding in findings)
+
+
+def test_smali_taint_flows_through_exact_method_return_summary(tmp_path):
+    source_file = tmp_path / "Entry.smali"
+    helper_file = tmp_path / "Helper.smali"
+    source_file.write_text("""
+.class public Lcom/example/Entry;
+.super Landroid/app/Activity;
+.method public onCreate(Landroid/os/Bundle;)V
+    .registers 4
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v2}, Lcom/example/Helper;->identity(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v3
+    sget-object v0, Lcom/example/Entry;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+    helper_file.write_text("""
+.class public Lcom/example/Helper;
+.super Ljava/lang/Object;
+.method public static identity(Ljava/lang/String;)Ljava/lang/String;
+    .registers 1
+    return-object p0
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    return_flows = [finding for finding in findings
+                    if finding.metadata.get("analysis_kind") == "smali_interprocedural_register_flow"]
+
+    assert len(return_flows) == 1
+    assert return_flows[0].file_path == str(source_file)
+    assert return_flows[0].metadata["source_file"] == str(source_file)
+    assert engine.coverage["interprocedural_return_taint_facts"] == 1
+    assert engine.coverage["interprocedural_flow_status"] == (
+        "bounded_arguments_static_fields_and_returns"
+    )
+
+
+def test_smali_untainted_return_value_does_not_inherit_tainted_arguments(tmp_path):
+    (tmp_path / "ReturnConstant.smali").write_text("""
+.class public Lcom/example/ReturnConstant;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 4
+    const-string v0, "url"
+    invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v1
+    invoke-static {v1}, Lcom/example/Helper;->constant(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-virtual {p2, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+    (tmp_path / "Helper.smali").write_text("""
+.class public Lcom/example/Helper;
+.super Ljava/lang/Object;
+.method public static constant(Ljava/lang/String;)Ljava/lang/String;
+    .registers 2
+    const-string v0, "constant"
+    return-object v0
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    assert not any(finding.metadata.get("analysis_kind") in {
+        "smali_local_register_flow", "smali_interprocedural_register_flow",
     } for finding in findings)
 
 
@@ -298,7 +372,7 @@ def test_internal_bundle_getter_is_not_unconditionally_treated_as_external_input
 
     findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
     assert not any(finding.metadata.get("analysis_kind") in {
-        "smali_local_register_flow", "smali_interprocedural_argument_flow",
+        "smali_local_register_flow", "smali_interprocedural_register_flow",
     } for finding in findings)
 
 

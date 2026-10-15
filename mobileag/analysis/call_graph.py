@@ -333,6 +333,8 @@ class SmaliCallGraphEngine:
         parameter_taints: dict[str, dict[str, set[tuple[str, int, str, str]]]] = {}
         static_field_taints: dict[str, set[tuple[str, int, str, str]]] = {}
         static_field_readers: dict[str, set[str]] = {}
+        method_return_taints: dict[str, set[tuple[str, int, str, str]]] = {}
+        return_callers: dict[str, set[str]] = {}
         worklist = deque(self.methods)
         queued = set(self.methods)
         interprocedural_runs = 0
@@ -366,11 +368,13 @@ class SmaliCallGraphEngine:
                     initial.setdefault(f"p{formal_index}", set()).add(source_trace)
                     formal_index += width
             initial = {register: frozenset(traces) for register, traces in initial.items()}
-            flows, argument_flows, field_writes, field_reads = self._analyze_local_register_flows(
-                method, initial, static_field_taints,
+            flows, argument_flows, field_writes, field_reads, return_flows, called_methods = self._analyze_local_register_flows(
+                method, initial, static_field_taints, method_return_taints,
             )
             for field_key in field_reads:
                 static_field_readers.setdefault(field_key, set()).add(method_key)
+            for callee_key in called_methods:
+                return_callers.setdefault(callee_key, set()).add(method_key)
             for flow in flows:
                 flow_key = (flow["method"], flow["sink_line"], flow["sink"],
                             flow["source_method"], flow["source_line"], flow["source_file"])
@@ -412,6 +416,20 @@ class SmaliCallGraphEngine:
                         worklist.append(reader_key)
                         queued.add(reader_key)
 
+            return_traces = method_return_taints.setdefault(method_key, set())
+            for trace in return_flows:
+                if trace in return_traces:
+                    continue
+                if taint_facts >= self.MAX_INTERPROCEDURAL_TAINT_FACTS:
+                    interprocedural_limited = True
+                    break
+                return_traces.add(trace)
+                taint_facts += 1
+                for caller_key in return_callers.get(method_key, ()):
+                    if caller_key not in queued:
+                        worklist.append(caller_key)
+                        queued.add(caller_key)
+
         if worklist:
             interprocedural_limited = True
 
@@ -421,8 +439,9 @@ class SmaliCallGraphEngine:
             methods_analyzed=len(self.methods), interprocedural_method_runs=interprocedural_runs,
             interprocedural_parameter_taint_facts=parameter_taint_facts,
             interprocedural_static_field_taint_facts=sum(len(v) for v in static_field_taints.values()),
+            interprocedural_return_taint_facts=sum(len(v) for v in method_return_taints.values()),
             interprocedural_flow_status=("partial" if interprocedural_limited
-                                         else "bounded_arguments_and_static_fields"),
+                                         else "bounded_arguments_static_fields_and_returns"),
         )
         if interprocedural_limited:
             self.coverage.update(static_status="partial", limits_reached=True)
@@ -467,17 +486,19 @@ class SmaliCallGraphEngine:
         method: MethodNode,
         initial_taints: dict[str, frozenset[tuple[str, int, str, str]]] | None = None,
         initial_static_field_taints: dict[str, set[tuple[str, int, str, str]]] | None = None,
+        callee_return_taints: dict[str, set[tuple[str, int, str, str]]] | None = None,
     ) -> tuple[list[dict[str, Any]], list[tuple[str, str, tuple[str, int, str, str]]],
-               list[tuple[str, tuple[str, int, str, str]]], set[str]]:
+               list[tuple[str, tuple[str, int, str, str]]], set[str],
+               set[tuple[str, int, str, str]], set[str]]:
         """Run bounded CFG register may-flow with exact-signature arg propagation.
 
         This is a may-analysis over a small Smali CFG: conditional branches
         have both successors, unconditional gotos only their target, and
         returns/throws terminate. Register writes kill prior taint; modeled
         source results flow through move-result* and move-object. Tainted actual
-        arguments may seed matching callee p-registers, while bounded static-field
-        and array-element summaries propagate stored values. Instance fields,
-        returns, sanitizers, dynamic dispatch and switch payloads are not modeled. Results
+        arguments may seed matching callee p-registers, while bounded static-field,
+        method-return, and array-element summaries propagate values. Instance fields,
+        sanitizers, dynamic dispatch and switch payloads are not modeled. Results
         are candidates only.
         """
         instructions: list[tuple[int, str]] = []
@@ -539,11 +560,14 @@ class SmaliCallGraphEngine:
         argument_flows: set[tuple[str, str, tuple[str, int, str, str]]] = set()
         static_field_writes: set[tuple[str, tuple[str, int, str, str]]] = set()
         static_field_reads: set[str] = set()
+        return_flows: set[tuple[str, int, str, str]] = set()
+        called_methods: set[str] = set()
         visited_steps = 0
         invoke_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\},\s*(L[a-zA-Z0-9_$/]+;)->([a-zA-Z0-9_$<>-]+)(\([^)]*\)[^\s]+)")
         invoke_args_re = re.compile(r"invoke-[a-z/]+\s+\{([^}]+)\}")
         static_get_re = re.compile(r"sget(?:-[a-z]+)?\s+([vp]\d+),\s*(L[^;]+;->[A-Za-z0-9_$]+:[^\s]+)")
         static_put_re = re.compile(r"sput(?:-[a-z]+)?\s+([vp]\d+),\s*(L[^;]+;->[A-Za-z0-9_$]+:[^\s]+)")
+        return_value_re = re.compile(r"return(?:-object|-wide)?\s+([vp]\d+)")
         write_re = re.compile(
             r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
             r"[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
@@ -562,10 +586,14 @@ class SmaliCallGraphEngine:
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             static_get = static_get_re.match(text)
             static_put = static_put_re.match(text)
+            return_value = return_value_re.match(text)
+            if not move_result:
+                registers.pop("@pending_return", None)
             if static_get:
                 dest, field_key = static_get.groups()
                 static_field_reads.add(field_key)
                 registers.pop(f"@array:{dest}", None)
+                registers.pop(f"@returned:{dest}", None)
                 traces = (initial_static_field_taints or {}).get(field_key, ())
                 if traces:
                     registers[dest] = frozenset(traces)
@@ -575,10 +603,14 @@ class SmaliCallGraphEngine:
             elif move_result:
                 dest = move_result.group(1)
                 registers.pop(f"@array:{dest}", None)
+                return_taints = registers.pop("@pending_return", frozenset())
+                registers.pop(f"@returned:{dest}", None)
                 if pending:
                     registers[dest] = pending
                 else:
                     registers.pop(dest, None)
+                if return_taints:
+                    registers[f"@returned:{dest}"] = return_taints
                 pending = frozenset()
             elif move_alias:
                 dest, src = move_alias.groups()
@@ -595,10 +627,17 @@ class SmaliCallGraphEngine:
                     registers[dest_array_key] = registers[array_key]
                 else:
                     registers.pop(dest_array_key, None)
+                returned_key = f"@returned:{src}"
+                dest_returned_key = f"@returned:{dest}"
+                if returned_key in registers:
+                    registers[dest_returned_key] = registers[returned_key]
+                else:
+                    registers.pop(dest_returned_key, None)
                 pending = frozenset()
             elif array_get:
                 dest, array_register = array_get.groups()
                 registers.pop(f"@array:{dest}", None)
+                registers.pop(f"@returned:{dest}", None)
                 traces = registers.get(f"@array:{array_register}", registers.get(array_register, ()))
                 if traces:
                     registers[dest] = traces
@@ -607,10 +646,14 @@ class SmaliCallGraphEngine:
                 pending = frozenset()
             else:
                 pending = frozenset()
+                registers.pop("@pending_return", None)
+                if return_value:
+                    return_flows.update(registers.get(return_value.group(1), ()))
                 write = write_re.match(text)
                 if write:
                     registers.pop(write.group(1), None)
                     registers.pop(f"@array:{write.group(1)}", None)
+                    registers.pop(f"@returned:{write.group(1)}", None)
 
                 if array_put:
                     value_register, array_register = array_put.groups()
@@ -650,10 +693,17 @@ class SmaliCallGraphEngine:
                                 "source_kind": trace[0], "source_line": trace[1], "sink": sink,
                                 "source_method": trace[2], "source_file": trace[3],
                                 "sink_line": line_no, "register": register,
+                                "via_interprocedural_return": trace in registers.get(f"@returned:{register}", ()),
                             })
                     target_signature = invoke.group(4)
                     exact_target_key = f"{target_class}->{target_name}{target_signature}"
                     target_method = self.methods.get(exact_target_key)
+                    if target_method:
+                        called_methods.add(exact_target_key)
+                        if not source_kind and target_key not in SMALI_DERIVED_SOURCES:
+                            pending = frozenset((callee_return_taints or {}).get(exact_target_key, ()))
+                            if pending:
+                                registers["@pending_return"] = pending
                     if target_method and args:
                         for formal_register, actual_register in _parameter_argument_registers(
                             target_signature, target_method.is_static, args,
@@ -677,7 +727,8 @@ class SmaliCallGraphEngine:
                     queue.append(successor)
         if queue:
             warn(f"register-flow worklist limit reached in {method.key}")
-        return flows, sorted(argument_flows), sorted(static_field_writes), static_field_reads
+        return (flows, sorted(argument_flows), sorted(static_field_writes), static_field_reads,
+                return_flows, called_methods)
 
     def _parse_smali_file(self, smali_file: Path, content: Optional[str] = None) -> None:
         """Parse class definition, methods, invoke instructions, and reflection in a Smali file."""
@@ -921,10 +972,12 @@ class SmaliCallGraphEngine:
             if key in seen_local:
                 continue
             seen_local.add(key)
-            is_cross_method = flow["source_method"] != flow["method"]
-            analysis_kind = ("smali_interprocedural_argument_flow" if is_cross_method
+            is_cross_method = (flow["source_method"] != flow["method"]
+                               or flow.get("via_interprocedural_return", False))
+            analysis_kind = ("smali_interprocedural_register_flow" if is_cross_method
                              else "smali_local_register_flow")
-            flow_scope = "across exact-signature method argument(s)" if is_cross_method else "within the same method"
+            flow_scope = ("across supported exact-signature calls, static fields, or method returns"
+                          if is_cross_method else "within the same method")
             source_context_note = (
                 " The JavascriptInterface annotation does not prove the object is registered with a WebView, "
                 "JavaScript is enabled, or the calling frame/content is attacker-controlled."
@@ -936,9 +989,11 @@ class SmaliCallGraphEngine:
                              f"{flow['source_file']}:{flow['source_line']} in {flow['source_method']} "
                              f"into register {flow['register']} used by {flow['sink']} at "
                              f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
-                             "This is a bounded CFG may-flow candidate; dynamic dispatch, field/array/return "
-                             "flows, sanitizers, branch feasibility, component authorization, and security "
-                             f"impact require validation.{source_context_note}"),
+                             "This is a bounded CFG may-flow candidate using exact-signature argument and tainted "
+                             "register-return summaries, exact static-field names, and imprecise array-element summaries. "
+                             "dynamic dispatch, instance/heap identity, array indexes, sanitizers, branch "
+                             "feasibility, component authorization, and security impact remain unresolved. "
+                             f"{source_context_note}"),
                 severity=Severity.INFO, confidence=0.5, cwe_id=sink_spec["cwe"],
                 cvss_score=0.0, cvss_vector="", affected_component=flow["method"].split("->", 1)[0],
                 file_path=flow["file_path"], line_number=flow["sink_line"],
@@ -946,26 +1001,26 @@ class SmaliCallGraphEngine:
                               f"sink line {flow['sink_line']}: {flow['sink']} (register {flow['register']})"),
                 remediation="Validate and constrain data at the actual trust boundary; use safe sink APIs and verify the runtime path.",
                 status=FindingStatus.UNVERIFIED,
-                detection_method="SmaliCallGraphEngine (bounded register argument flow)",
+                detection_method="SmaliCallGraphEngine (bounded register may-flow)",
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_array_elements_static_fields_and_exact_signature_arguments",
+                          "register_dataflow": "same_method_moves_array_elements_static_fields_exact_signature_arguments_and_returns",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
 
         self.coverage.update(
-            register_dataflow_status=("partial_bounded_cfg_argument_may_analysis"
+            register_dataflow_status=("partial_bounded_cfg_register_may_analysis"
                                       if self.local_register_analysis_warnings or self.local_register_methods_skipped
-                                      else "bounded_same_method_and_argument_register_cfg_may_analysis"),
+                                      else "bounded_same_method_and_interprocedural_register_cfg_may_analysis"),
             local_register_flow_candidates=len(seen_local),
             local_register_methods_skipped=len(self.local_register_methods_skipped),
             skipped_method_keys=self.local_register_methods_skipped[:100],
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "instance fields, precise array indexes/objects, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
+                "instance fields, precise array indexes/objects, arithmetic, casts, returned heap side effects, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",

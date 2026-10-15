@@ -506,6 +506,61 @@ def test_smali_intent_metadata_getters_derive_taint_from_external_intent(getter,
     assert flows[0].metadata["source_line"] < flows[0].line_number
 
 
+def test_smali_clipdata_uri_flows_from_external_intent_to_webview_navigation(tmp_path):
+    (tmp_path / "ClipDataFlow.smali").write_text("""
+.class public Lcom/example/ClipDataFlow;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/webkit/WebView;)V
+    .registers 5
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getClipData()Landroid/content/ClipData;
+    move-result-object v1
+    const/4 v2, 0x0
+    invoke-virtual {v1, v2}, Landroid/content/ClipData;->getItemAt(I)Landroid/content/ClipData$Item;
+    move-result-object v3
+    invoke-virtual {v3}, Landroid/content/ClipData$Item;->getUri()Landroid/net/Uri;
+    move-result-object v3
+    invoke-virtual {v3}, Landroid/net/Uri;->toString()Ljava/lang/String;
+    move-result-object v4
+    invoke-virtual {p1, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "ACTIVITY_INTENT"
+    assert flows[0].metadata["source_line"] < flows[0].line_number
+
+
+def test_smali_clipdata_accessors_are_not_unconditional_sources(tmp_path):
+    (tmp_path / "InternalClipData.smali").write_text("""
+.class public Lcom/example/InternalClipData;
+.super Ljava/lang/Object;
+.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 5
+    invoke-virtual {p1}, Landroid/content/Intent;->getClipData()Landroid/content/ClipData;
+    move-result-object v0
+    const/4 v1, 0x0
+    invoke-virtual {v0, v1}, Landroid/content/ClipData;->getItemAt(I)Landroid/content/ClipData$Item;
+    move-result-object v2
+    invoke-virtual {v2}, Landroid/content/ClipData$Item;->getUri()Landroid/net/Uri;
+    move-result-object v2
+    invoke-virtual {v2}, Landroid/net/Uri;->toString()Ljava/lang/String;
+    move-result-object v3
+    invoke-virtual {p2, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    assert not any(finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+                   for finding in findings)
+
+
 @pytest.mark.parametrize("annotated,visibility,expected", [
     (True, "public", True),
     (False, "public", False),

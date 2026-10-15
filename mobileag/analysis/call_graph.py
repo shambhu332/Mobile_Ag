@@ -116,6 +116,10 @@ SMALI_DERIVED_SOURCES = {
     # Intent receiver itself was sourced from an external/activity boundary.
     "Landroid/content/Intent;->getAction",
     "Landroid/content/Intent;->getType",
+    "Landroid/content/Intent;->getClipData",
+    "Landroid/content/ClipData;->getItemAt",
+    "Landroid/content/ClipData$Item;->getUri",
+    "Landroid/content/ClipData$Item;->getText",
     "Landroid/os/Bundle;->getString",
     "Landroid/os/Bundle;->getCharSequence",
     "Landroid/os/Bundle;->getInt",
@@ -154,6 +158,7 @@ SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/String;->replace",
     "Ljava/lang/String;->replaceAll",
     "Ljava/lang/String;->replaceFirst",
+    "Landroid/net/Uri;->toString",
     "Ljava/lang/Integer;->toString",
     "Ljava/lang/Long;->toString",
     "Ljava/lang/Float;->toString",

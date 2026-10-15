@@ -98,8 +98,6 @@ SMALI_SOURCES = {
     "Landroid/content/Intent;->getStringArrayExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getStringArrayListExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getIntegerArrayListExtra": "INTENT_EXTRA",
-    "Landroid/content/Intent;->getData": "INTENT_DATA_URI",
-    "Landroid/content/Intent;->getDataString": "INTENT_DATA_URI",
     "Landroid/content/Intent;->getParcelableExtra": "INTENT_PARCELABLE",
     "Landroid/content/Intent;->getParcelableArrayExtra": "INTENT_PARCELABLE",
     "Landroid/content/Intent;->getParcelableArrayListExtra": "INTENT_PARCELABLE",
@@ -127,6 +125,8 @@ SMALI_SOURCES = {
 SMALI_DERIVED_SOURCES = {
     # Metadata read from an Intent is only considered untrusted when the
     # Intent receiver itself was sourced from an external/activity boundary.
+    "Landroid/content/Intent;->getData",
+    "Landroid/content/Intent;->getDataString",
     "Landroid/content/Intent;->getAction",
     "Landroid/content/Intent;->getType",
     "Landroid/content/Intent;->getClipData",
@@ -884,7 +884,16 @@ class SmaliCallGraphEngine:
                     if source_kind:
                         pending = frozenset({(source_kind, line_no, method.key, method.file_path)})
                     elif target_key in SMALI_DERIVED_SOURCES and args:
-                        pending = frozenset(registers.get(args[0], ()))
+                        receiver_traces = registers.get(args[0], ())
+                        if target_key in {
+                            "Landroid/content/Intent;->getData",
+                            "Landroid/content/Intent;->getDataString",
+                        }:
+                            pending = frozenset((
+                                "INTENT_DATA_URI", line_no, trace[2], trace[3]
+                            ) for trace in receiver_traces)
+                        else:
+                            pending = frozenset(receiver_traces)
                     elif target_key in SMALI_TAINT_TRANSFORMS:
                         pending = frozenset(
                             trace for register in args for trace in registers.get(register, ())

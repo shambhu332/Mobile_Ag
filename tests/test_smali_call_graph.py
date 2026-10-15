@@ -256,14 +256,16 @@ def test_smali_untainted_return_value_does_not_inherit_tainted_arguments(tmp_pat
     (tmp_path / "ReturnConstant.smali").write_text("""
 .class public Lcom/example/ReturnConstant;
 .super Landroid/app/Activity;
-.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public inspect(Landroid/webkit/WebView;)V
     .registers 4
-    const-string v0, "url"
-    invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
     move-result-object v1
     invoke-static {v1}, Lcom/example/Helper;->constant(Ljava/lang/String;)Ljava/lang/String;
     move-result-object v2
-    invoke-virtual {p2, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    invoke-virtual {p1, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
 """, encoding="utf-8")
@@ -968,7 +970,7 @@ def test_smali_call_graph_synthetic_bridge_resolution():
 
         caller_smali = """
 .class public Lcom/target/app/ReceiverActivity;
-.super Landroid/app/Activity;
+.super Landroid/content/BroadcastReceiver;
 
 .method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
     .registers 4
@@ -990,9 +992,11 @@ def test_smali_external_content_flows_through_reader_and_file_path_to_webview(tm
     (tmp_path / "ExternalContent.smali").write_text("""
 .class public Lcom/example/ExternalContent;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 8
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
     move-result-object v1
@@ -1007,9 +1011,11 @@ def test_smali_external_content_flows_through_reader_and_file_path_to_webview(tm
     invoke-virtual {p2, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
-.method public onNewIntentViaPath(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntentViaPath(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 8
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1036,9 +1042,11 @@ def test_smali_external_stream_read_buffer_taint_flows_through_array_and_builder
     (tmp_path / "ExternalBuffer.smali").write_text("""
 .class public Lcom/example/ExternalBuffer;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 9
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
     move-result-object v1
@@ -1073,9 +1081,11 @@ def test_smali_external_stream_single_value_read_flows_to_webview(tmp_path):
     (tmp_path / "ExternalSingleRead.smali").write_text("""
 .class public Lcom/example/ExternalSingleRead;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 8
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
     move-result-object v1
@@ -1105,9 +1115,11 @@ def test_smali_tainted_path_files_read_flows_to_webview(tmp_path):
     (tmp_path / "ExternalNioRead.smali").write_text("""
 .class public Lcom/example/ExternalNioRead;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 8
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1133,9 +1145,11 @@ def test_smali_files_read_all_bytes_taints_loaded_array_elements(tmp_path):
     (tmp_path / "ExternalNioBytes.smali").write_text("""
 .class public Lcom/example/ExternalNioBytes;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 12
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1169,9 +1183,11 @@ def test_smali_files_new_buffered_reader_path_flows_to_webview(tmp_path):
     (tmp_path / "ExternalNioReader.smali").write_text("""
 .class public Lcom/example/ExternalNioReader;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 9
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1199,9 +1215,11 @@ def test_smali_files_new_input_stream_path_flows_to_webview(tmp_path):
     (tmp_path / "ExternalNioStream.smali").write_text("""
 .class public Lcom/example/ExternalNioStream;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 12
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1274,9 +1292,11 @@ def test_smali_tainted_file_object_flows_through_file_input_stream(tmp_path):
     (tmp_path / "ExternalFileObject.smali").write_text("""
 .class public Lcom/example/ExternalFileObject;
 .super Landroid/app/Activity;
-.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+.method public readActivityIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
     .registers 12
-    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
     move-result-object v0
     invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;
     move-result-object v1
@@ -1338,6 +1358,29 @@ def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_pat
     invoke-virtual {v3}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
     move-result-object v4
     invoke-virtual {p1, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public readInternalIntent(Landroid/webkit/WebView;)V
+    .registers 12
+    new-instance v0, Landroid/content/Intent;
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+    const-string v1, "content://com.example.internal/settings"
+    invoke-static {v1}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+    move-result-object v2
+    invoke-virtual {v0, v2}, Landroid/content/Intent;->setData(Landroid/net/Uri;)Landroid/content/Intent;
+    invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    move-result-object v2
+    invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v3
+    invoke-virtual {v3, v2}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v4
+    new-instance v5, Ljava/io/InputStreamReader;
+    invoke-direct {v5, v4}, Ljava/io/InputStreamReader;-><init>(Ljava/io/InputStream;)V
+    new-instance v6, Ljava/io/BufferedReader;
+    invoke-direct {v6, v5}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V
+    invoke-virtual {v6}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v7
+    invoke-virtual {p1, v7}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
 .end method
 .method public readInternalNio(Landroid/webkit/WebView;)V

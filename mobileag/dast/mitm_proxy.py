@@ -9,6 +9,7 @@ import asyncio
 import hmac
 import os
 import h11
+from urllib.parse import urlsplit
 from typing import Optional
 from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
 from mobileag.security.network import scoped_request
@@ -16,8 +17,11 @@ from mobileag.security.privacy import redact
 
 
 class AsyncMITMProxy:
-    def __init__(self, host='127.0.0.1', port=8082, auditor: Optional[TrafficAuditor]=None):
+    def __init__(self, host='127.0.0.1', port=8082, auditor: Optional[TrafficAuditor]=None,
+                 allowed_origins=None, allowed_methods=None):
         self.host, self.port = host, port
+        self.allowed_origins = set(allowed_origins or ())
+        self.allowed_methods = {str(m).upper() for m in (allowed_methods or ())}
         self.auditor = auditor or TrafficAuditor()
         self.transactions = []
         self._server = None
@@ -113,6 +117,10 @@ class AsyncMITMProxy:
                         return
                 if request is None: return
                 method=request.method.decode('ascii');url=request.target.decode('ascii')
+                parsed = urlsplit(url)
+                origin = f'{parsed.scheme}://{parsed.netloc}'
+                if origin not in self.allowed_origins or method.upper() not in self.allowed_methods:
+                    await respond(403,b'Destination or method outside operator scope');return
                 try:
                     response=await scoped_request(url,method,headers,bytes(body),timeout=5,raw=True)
                 except PermissionError:

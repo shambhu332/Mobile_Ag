@@ -42,6 +42,8 @@ async def lifespan(application):
     automation_service().store().recover()
     assessment_service().store().recover()
     yield
+    if api_capture_proxy is not None:
+        await api_capture_proxy.stop()
     CANCELLED.update(PROCESSES)
     assessments=assessment_service()
     for task in list(assessments.tasks.values()):task.cancel()
@@ -95,6 +97,7 @@ logger = logging.getLogger(__name__)
 adb_manager = ADBManager()
 logcat_auditor = LogcatAuditor()
 traffic_auditor = TrafficAuditor()
+api_capture_proxy = None
 storage_auditor = StorageAuditor(adb=adb_manager)
 provider_auditor = ProviderAuditor(adb=adb_manager)
 deeplink_fuzzer = DeepLinkFuzzer(adb=adb_manager)
@@ -1437,6 +1440,71 @@ async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
         "findings_count": len(findings),
         "findings": redact([f.to_dict() for f in findings]),
     }
+
+
+@app.post("/api/dast/api-capture/start")
+async def start_api_capture(request: Request) -> dict[str, Any]:
+    """Start authenticated loopback HTTP capture; HTTPS CONNECT is unsupported."""
+    global api_capture_proxy
+    from mobileag.web.policy import check_action
+    require_current_session(request)
+    policy = repository().get_policy()
+    if not check_action(policy, 'api_capture', {}):
+        raise HTTPException(403, 'API capture is not enabled in the operator scope policy')
+    if not policy.get('origins') or not policy.get('methods'):
+        raise HTTPException(403, 'API capture requires explicitly scoped origins and methods')
+    from mobileag.dast.mitm_proxy import AsyncMITMProxy
+    if (api_capture_proxy is not None and api_capture_proxy.is_running and
+            (api_capture_proxy.allowed_origins != set(policy['origins']) or
+             api_capture_proxy.allowed_methods != {m.upper() for m in policy['methods']})):
+        raise HTTPException(409, 'Stop the running capture proxy before changing its scope')
+    if api_capture_proxy is None:
+        api_capture_proxy = AsyncMITMProxy(host='127.0.0.1', port=8082,
+            auditor=traffic_auditor, allowed_origins=policy['origins'],
+            allowed_methods=policy['methods'])
+    try:
+        await api_capture_proxy.start()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(503, str(exc))
+    require_current_session(request)
+    return {'status': 'listening', 'host': '127.0.0.1', 'port': 8082,
+            'https_interception': False, 'scope_origins': policy['origins'],
+            'scope_methods': policy['methods'],
+            'note': 'Configure a researcher-controlled client to use the authenticated local proxy; no APK/device is changed.'}
+
+
+@app.post("/api/dast/api-capture/stop")
+async def stop_api_capture(request: Request) -> dict[str, Any]:
+    global api_capture_proxy
+    require_current_session(request)
+    count = len(api_capture_proxy.get_transactions()) if api_capture_proxy else 0
+    if api_capture_proxy:
+        await api_capture_proxy.stop()
+    require_current_session(request)
+    return {'status': 'stopped', 'captured_transactions': count}
+
+
+@app.get("/api/dast/api-capture/transactions")
+async def get_api_capture_transactions(request: Request) -> dict[str, Any]:
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    require_current_session(request)
+    return {'count': len(txs), 'transactions': redact([tx.__dict__ if hasattr(tx, '__dict__') else {
+        'url': tx.url, 'method': tx.method, 'request_headers': tx.request_headers,
+        'response_status': tx.response_status, 'response_headers': tx.response_headers,
+        'request_body': tx.request_body, 'response_body': tx.response_body,
+    } for tx in txs])}
+
+
+@app.post("/api/dast/api-capture/audit")
+async def audit_api_capture(request: Request) -> dict[str, Any]:
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    findings = traffic_auditor.audit_transactions(txs)
+    require_current_session(request)
+    return {'status': 'capture_analysis', 'transactions_reviewed': len(txs),
+            'findings': redact([finding.to_dict() for finding in findings]),
+            'live_requests_sent': 0}
 
 
 @app.post("/api/analysis/taint")

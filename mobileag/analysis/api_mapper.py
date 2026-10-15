@@ -19,6 +19,14 @@ class APIMapper:
         self.router = router
         self.retrofit_pattern = re.compile(r'@(GET|POST|PUT|DELETE|PATCH)\(\s*"([^"]+)"\s*\)')
         self.url_pattern = re.compile(r'https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9._/?%&=-]*)?')
+        # Decompiled APKs are not always available as Java/Kotlin: obfuscated
+        # apps and cross-platform bundles often leave useful route literals in
+        # Smali, XML/JSON resources, JS bundles, or Dart output. These are
+        # inventory leads only; the HTTP method and reachability are unknown.
+        self.route_literal_pattern = re.compile(
+            r'''["']((?:/)(?:api|graphql|v[0-9]+|auth|oauth|login|users?|account|payments?)(?:/[A-Za-z0-9._~%{}:-]+)*(?:\?[A-Za-z0-9._~%{}=&%-]*)?)["']''',
+            re.IGNORECASE,
+        )
         self.graphql_pattern = re.compile(r'query\s*\{|mutation\s*\{')
         self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
                          "proof_status":"not_proven", "exhaustive":False}
@@ -29,7 +37,8 @@ class APIMapper:
         raw_findings: list[dict] = []
 
         inventory = SourceInventory()
-        for file_path, data in inventory.read(base_path, {".java", ".kt"}):
+        for file_path, data in inventory.read(
+                base_path, {".java", ".kt", ".smali", ".xml", ".json", ".js", ".mjs", ".dart"}):
             try:
                 content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
@@ -57,6 +66,19 @@ class APIMapper:
                             "component": stem,
                             "file_path": rel_path
                             })
+
+                # Extract route-shaped literals from binary/resource/decompiled
+                # sources, without pretending a literal is a callable endpoint.
+                if file_path.suffix.lower() not in {".java", ".kt"}:
+                    for route in self.route_literal_pattern.findall(content):
+                        if len(endpoints) >= 5000:
+                            inventory.record_limit('endpoint_count')
+                            break
+                        if not any(ep.get("url") == route for ep in endpoints):
+                            endpoints.append({"method": "UNKNOWN", "url": route,
+                                              "class_name": stem, "requires_auth": None,
+                                              "evidence_type": "route_literal",
+                                              "source_file": rel_path})
                         else:
                             inventory.record_limit('api_candidate_count')
 

@@ -185,6 +185,23 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(mock_router):
+    mapper = APIMapper(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "Api.smali").write_text(
+            '.class public Lx/Api;\n const-string v0, "/api/v2/profile"\n',
+            encoding="utf-8",
+        )
+        endpoints, findings = await mapper.map_apis(tmpdir)
+    ep = next(e for e in endpoints if e["url"] == "/api/v2/profile")
+    assert ep["method"] == "UNKNOWN"
+    assert ep["evidence_type"] == "route_literal"
+    assert ep["requires_auth"] is None
+    assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.asyncio
 async def test_bounded_secret_scan_caps_candidates_and_reports_partial_coverage(mock_router):
     scanner = SecretScanner(mock_router)
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -439,7 +439,7 @@ async def test_proxy_framing_binary_and_auth(monkeypatch):
     monkeypatch.setenv('MOBILEAG_PROXY_TOKEN','synthetic-proxy-token')
     request=AsyncMock(return_value={'status_code':200,'headers':{},'body':b'\xff\x00binary'})
     monkeypatch.setattr(module,'scoped_request',request)
-    proxy=module.AsyncMITMProxy(port=0)
+    proxy=module.AsyncMITMProxy(port=0, allowed_origins={'http://scope.invalid'}, allowed_methods={'POST'})
     await proxy.start()
     port=proxy._server.sockets[0].getsockname()[1]
     try:

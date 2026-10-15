@@ -200,7 +200,7 @@ def test_macho_parser_inventories_only_bounded_swift_nominal_type_names(tmp_path
     struct.pack_into("<i", metadata, 0, 4)
     struct.pack_into("<I", metadata, 4, 17)  # Swift struct context kind
     struct.pack_into("<i", metadata, 12, 8)  # name pointer is relative to descriptor+8
-    metadata.extend(b"SyntheticType\0")
+    metadata.extend("CaféType".encode("utf-8") + b"\0")
     segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
                           len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
     swift_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT",
@@ -211,7 +211,7 @@ def test_macho_parser_inventories_only_bounded_swift_nominal_type_names(tmp_path
     binary.write_bytes(header + command + metadata)
     result = MachoBinaryParser().parse_binary(binary)
     assert result.swift_type_metadata_status == "parsed"
-    assert result.swift_type_name_candidates == ["SyntheticType"]
+    assert result.swift_type_name_candidates == ["CaféType"]
 
 
 def test_macho_parser_does_not_dereference_indirect_swift_type_pointer(tmp_path):

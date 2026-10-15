@@ -349,9 +349,16 @@ class MachoBinaryParser:
                     result.swift_type_metadata_status = "partial"
                     continue
                 raw = data[name_offset:end]
-                if not raw or any(byte < 0x20 or byte > 0x7e for byte in raw):
+                if not raw:
                     continue
-                candidate = raw.decode("ascii")
+                try:
+                    candidate = raw.decode("utf-8", errors="strict")
+                except UnicodeDecodeError:
+                    result.swift_type_metadata_status = "partial"
+                    continue
+                if any(ord(character) < 0x20 or ord(character) == 0x7f for character in candidate):
+                    result.swift_type_metadata_status = "partial"
+                    continue
                 if candidate not in result.swift_type_name_candidates and len(result.swift_type_name_candidates) < 1000:
                     result.swift_type_name_candidates.append(candidate)
 

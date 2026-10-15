@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class SbomComponent:
     name: str
-    version: str
+    version: Optional[str]
     purl: str
     component_type: str = "library"  # library, framework, operating-system
     scope: str = "required"
@@ -39,7 +39,7 @@ class MobileSbomGenerator:
     def add_component(
         self,
         name: str,
-        version: str,
+        version: Optional[str],
         purl: str,
         component_type: str = "library",
         hashes: Optional[Dict[str, str]] = None,
@@ -95,6 +95,8 @@ class MobileSbomGenerator:
                 "purl": c.purl,
                 "scope": c.scope,
             }
+            if c.version is None:
+                comp_entry.pop("version")
             if c.hashes:
                 comp_entry["hashes"] = [{"alg": k.upper(), "content": v} for k, v in c.hashes.items()]
             if c.licenses:
@@ -157,7 +159,6 @@ class MobileSbomGenerator:
             pkg: Dict[str, Any] = {
                 "SPDXID": f"SPDXRef-Package-{idx}",
                 "name": c.name,
-                "versionInfo": c.version,
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": False,
                 "externalRefs": [
@@ -168,6 +169,8 @@ class MobileSbomGenerator:
                     }
                 ],
             }
+            if c.version is not None:
+                pkg["versionInfo"] = c.version
             if c.licenses:
                 pkg["licenseConcluded"] = c.licenses[0]
             else:
@@ -232,8 +235,9 @@ class MobileSbomGenerator:
             comp_elem = ET.SubElement(components, "component", {"type": c.component_type, "bom-ref": bom_ref})
             c_name = ET.SubElement(comp_elem, "name")
             c_name.text = c.name
-            c_ver = ET.SubElement(comp_elem, "version")
-            c_ver.text = c.version
+            if c.version is not None:
+                c_ver = ET.SubElement(comp_elem, "version")
+                c_ver.text = c.version
             c_scope = ET.SubElement(comp_elem, "scope")
             c_scope.text = c.scope
             if c.hashes:

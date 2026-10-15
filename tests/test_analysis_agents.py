@@ -233,6 +233,64 @@ async def test_dependency_scanner(mock_router):
         assert isinstance(findings, list)
 
 
+def _synthetic_elf_shared_object(machine: int = 183) -> bytes:
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    header[4] = 2  # ELFCLASS64
+    header[5] = 1  # ELFDATA2LSB
+    header[6] = 1  # EV_CURRENT
+    header[16:18] = (3).to_bytes(2, "little")  # ET_DYN
+    header[18:20] = machine.to_bytes(2, "little")
+    header[20:24] = (1).to_bytes(4, "little")
+    return bytes(header) + b"synthetic ELF payload"
+
+
+@pytest.mark.asyncio
+async def test_dependency_scan_inventories_bounded_elf_files_into_versionless_sbom(tmp_path):
+    import hashlib
+
+    native_path = tmp_path / "lib" / "arm64-v8a" / "libsample.so"
+    native_path.parent.mkdir(parents=True)
+    binary = _synthetic_elf_shared_object()
+    native_path.write_bytes(binary)
+    (native_path.parent / "fake.so").write_bytes(b"not an ELF binary")
+    (native_path.parent / "liblink.so").symlink_to(native_path)
+
+    scanner = DependencyScanner()
+    findings = await scanner.scan(str(tmp_path))
+
+    assert findings == []  # no online OSV lookup without per-run consent
+    assert scanner.coverage["native_inventory_status"] == "partial"  # symlink skipped
+    assert scanner.coverage["native_candidate_files"] == 3
+    assert scanner.coverage["native_elf_candidates"] == 1
+    assert scanner.coverage["native_non_elf_candidates"] == 1
+    assert scanner.coverage["native_symlinks_skipped"] == 1
+    assert scanner.coverage["native_bytes_hashed"] == len(binary)
+
+    generator = scanner.generate_sbom("NativeFixture", "1.0")
+    components = generator.generate_cyclonedx_json()["components"]
+    native = next(component for component in components if component["name"] == "libsample.so")
+    assert native["purl"] == "pkg:generic/lib/arm64-v8a/libsample.so"
+    assert native["hashes"] == [{"alg": "SHA-256", "content": hashlib.sha256(binary).hexdigest()}]
+    assert "version" not in native  # no binary release version was inferred
+
+
+def test_native_library_inventory_reports_size_limit_as_partial(tmp_path, monkeypatch):
+    import mobileag.analysis.dependency_scanner as scanner_module
+
+    native_path = tmp_path / "libsample.so"
+    native_path.write_bytes(_synthetic_elf_shared_object())
+    monkeypatch.setattr(scanner_module, "_MAX_NATIVE_LIBRARY_BYTES", 16)
+
+    records, coverage = DependencyScanner()._sync_find_native_libraries(tmp_path)
+
+    assert records == []
+    assert coverage["native_oversized_files_skipped"] == 1
+    assert coverage["native_limits_reached"] is True
+    assert coverage["native_inventory_status"] == "partial"
+
+
+
 def test_dependency_inventory_understands_literal_kotlin_and_groovy_notation(tmp_path, mock_router):
     (tmp_path / "build.gradle").write_text(
         'dependencies { implementation("org.example:core:1.2.3") }\n'

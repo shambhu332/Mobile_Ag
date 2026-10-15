@@ -356,8 +356,8 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 > **Audit correction (refreshed 2026-10-15): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
-> (57.51 s). Following the token-session evidence hardening, the full suite in
-> the pinned Python 3.14 validation environment reports **900 passed** (62.04 s).
+> (57.51 s). After bounded native ELF SBOM inventory, the full suite in the
+> pinned Python 3.14 validation environment reports **902 passed** (39.04 s).
 > These are primarily mocked/synthetic regressions and do not establish device coverage,
 > exploitability, completeness, or production readiness. The implementation
 > names below indicate bounded prototypes unless the capability is separately
@@ -377,7 +377,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 | API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. BOLA evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. It remains a response evaluator, not a complete dual-session replay system. JWT parsing is bounded and claim findings are explicitly unverified; output omits raw tokens and arbitrary header/claim values, retains only algorithm/lifecycle/claim-name indicators, and sanitizes endpoint URLs. Logout/reuse is only a same-token, status-sequence observation, not proof a protected resource was authorized. Signature verification and HMAC key-strength validation are not implemented. OpenAPI grouping preserves per-origin servers and omits userinfo; generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. HTTPS capture and dual-session replay remain open. |
 | RASP / resilience | `rasp_resilience_auditor.py` | **Heuristic inventory only.** The numeric score is not a validated resilience measure or MASVS conformance result. |
 | Smart UI crawler | `smart_crawler.py`, `ui_crawler.py` | **Safety correction made in this revision.** No hard-coded credentials; permission/consent prompts, form submission, and exploratory taps now stop at `WAIT` unless the caller explicitly opts into the latter actions. The existing runtime UI snapshot remains read-only. |
-| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy-manifest inventory now parses bounded manifests across the app/framework tree, reports parse/shape errors and per-manifest declarations, and avoids coercing malformed tracking values to true. It does not inspect binary API use, prove manifest completeness, or establish privacy disclosure compliance. HAR recognized credential fields are redacted before export. |
+| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Dependency scans now inventory bounded ELF `ET_DYN` `.so` candidates by path, SHA-256, class and machine; native release versions and vulnerability advisories are not inferred. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy-manifest inventory now parses bounded manifests across the app/framework tree, reports parse/shape errors and per-manifest declarations, and avoids coercing malformed tracking values to true. It does not inspect binary API use, prove manifest completeness, or establish privacy disclosure compliance. HAR recognized credential fields are redacted before export. |
 | Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. HAR exports now redact recognized credential fields. Synthetic browser navigation now verifies all eleven dashboard sections, explicit PoC retrieval, and axe checks at desktop/mobile viewports; test-plan legend contrast was corrected. This scoped browser check is not a complete WCAG claim. This does not demonstrate production-scale telemetry, complete graph data flow, OpenAPI conformance, or release readiness. |
 
 ### Safety and completion boundary
@@ -454,6 +454,20 @@ are explicitly unverified observations. A captured HTTP status does not prove
 that a protected operation was authorized; no dual-account replay or live API
 testing was performed.
 
+### Native ELF SBOM inventory boundary
+
+The dependency scan now includes `.so` files with valid 32-/64-bit ELF headers
+and `ET_DYN` type as generic components in its CycloneDX/SPDX inputs. This is
+an inventory candidate classification, not proof a file is a shared library or
+loaded by the app. It streams SHA-256 hashes and records a generic PURL derived
+from the extracted relative path;
+no vendor version, SONAME identity, dependency graph, or native advisory match
+is inferred. Limits are 50,000 tree entries, 1,000 libraries, 128 MiB per
+library, and 1 GiB total hashed data. Symlinks, non-ELF `.so` candidates,
+oversized inputs, and I/O failures make native inventory status partial or
+invalid rather than a clean complete result. This is not exhaustive supply-chain
+inventory and does not establish that a library is loaded or used at runtime.
+
 ```
 Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
 ├── Phase 1: Static Engine & Frameworks [PARTIAL; bounded analyzers exist]
@@ -467,7 +481,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & regression suite**: On 2026-10-15, baseline commit `728a007` completed with 892 passed in 57.51 s; after OpenAPI changes the suite completed with 893 passed in 88.52 s. The pinned Python 3.14 environment completed with 895 passed after SBOM schema validation, 898 after token-session evidence hardening, and 900 after exact Smali source/sink matching (62.04 s; 1 synthetic duplicate-ZIP-entry warning). These results are not device/live-target validation.
+1. **Unit & regression suite**: On 2026-10-15, baseline commit `728a007` completed with 892 passed in 57.51 s; after OpenAPI changes the suite completed with 893 passed in 88.52 s. The pinned Python 3.14 environment completed with 895 passed after SBOM schema validation, 898 after token-session evidence hardening, 900 after exact Smali source/sink matching, and 902 after native ELF inventory (39.04 s; 1 synthetic duplicate-ZIP-entry warning). These results are not device/live-target validation.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38773264543` completed successfully on commit `6933e8e`: 898 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 900 passed and 1 warning (62.04 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

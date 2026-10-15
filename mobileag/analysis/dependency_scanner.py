@@ -1,12 +1,17 @@
 import asyncio
 import csv
+import hashlib
 import json
 import logging
+import os
 import re
+import stat
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Any
+from urllib.parse import quote
 import httpx
 
 from mobileag.llm.router import LLMRouter
@@ -23,6 +28,10 @@ _MAX_OSV_SUMMARY_CHARS = 4096
 _MAX_PACKAGE_LOCK_ENTRIES = 10_000
 _MAX_POM_XML_ELEMENTS = 10_000
 _MAX_POM_PROPERTIES = 1_000
+_MAX_NATIVE_TREE_ENTRIES = 50_000
+_MAX_NATIVE_LIBRARIES = 1_000
+_MAX_NATIVE_LIBRARY_BYTES = 128 * 1024 * 1024
+_MAX_NATIVE_TOTAL_BYTES = 1024 * 1024 * 1024
 _NPM_NAME = re.compile(r"^(?:@[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+$")
 _EXACT_NPM_VERSION = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 _GRADLE_CATALOG_ACCESSOR = re.compile(
@@ -30,6 +39,7 @@ _GRADLE_CATALOG_ACCESSOR = re.compile(
     r"testCompileOnly|testRuntimeOnly|androidTestImplementation|annotationProcessor|kapt|ksp)"
     r"\b\s*\(?\s*(?:(?:platform|enforcedPlatform)\s*\(\s*)?libs\.([A-Za-z0-9_.-]+)"
 )
+_NATIVE_LIBRARY_NAME = re.compile(r".+\.so(?:\.\d+(?:\.\d+)*)?$", re.IGNORECASE)
 
 
 def _catalog_accessor(alias: str) -> str:
@@ -180,6 +190,7 @@ class DependencyScanner:
         self.dep_pattern = re.compile(r"(?:implementation|api|compile)\s+['\"]([^:]+):([^:]+):([^'\"]+)['\"]")
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
                          "proof_status": "not_proven", "exhaustive": False}
+        self._last_native_libraries: list[dict[str, Any]] = []
         self._lookup_results = {"successful": 0, "failed": 0, "oversized_responses": 0,
                                 "vulnerability_results_omitted": 0,
                                 "malformed_vulnerabilities": 0, "findings_omitted": 0}
@@ -476,6 +487,126 @@ class DependencyScanner:
             self.coverage["static_status"] = "partial"
         return dependencies
 
+    def _sync_find_native_libraries(self, base_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Hash bounded ELF ET_DYN .so candidates without following links or buffering binaries."""
+        records: list[dict[str, Any]] = []
+        coverage: dict[str, Any] = {
+            "native_inventory_status": "completed",
+            "native_candidate_files": 0,
+            "native_elf_candidates": 0,
+            "native_non_elf_candidates": 0,
+            "native_read_failures": 0,
+            "native_symlinks_skipped": 0,
+            "native_oversized_files_skipped": 0,
+            "native_entries_seen": 0,
+            "native_bytes_hashed": 0,
+            "native_limits_reached": False,
+            "native_inventory_limits": {
+                "tree_entries": _MAX_NATIVE_TREE_ENTRIES,
+                "libraries": _MAX_NATIVE_LIBRARIES,
+                "per_library_bytes": _MAX_NATIVE_LIBRARY_BYTES,
+                "total_bytes": _MAX_NATIVE_TOTAL_BYTES,
+            },
+        }
+        root = Path(base_path)
+        if root.is_symlink() or not root.is_dir():
+            coverage.update(native_inventory_status="invalid", native_read_failures=1)
+            return records, coverage
+
+        stopped = False
+
+        def record_walk_error(_error: OSError) -> None:
+            coverage["native_read_failures"] += 1
+
+        try:
+            for current, dirs, files in os.walk(root, followlinks=False, onerror=record_walk_error):
+                current_path = Path(current)
+                symlink_dirs = {name for name in dirs if (current_path / name).is_symlink()}
+                coverage["native_symlinks_skipped"] += len(symlink_dirs)
+                dirs[:] = sorted(name for name in dirs if name not in symlink_dirs)
+                coverage["native_entries_seen"] += len(dirs) + len(files)
+                if coverage["native_entries_seen"] > _MAX_NATIVE_TREE_ENTRIES:
+                    coverage["native_limits_reached"] = True
+                    stopped = True
+                    break
+
+                for filename in sorted(files):
+                    if not _NATIVE_LIBRARY_NAME.fullmatch(filename):
+                        continue
+                    coverage["native_candidate_files"] += 1
+                    candidate = current_path / filename
+                    if candidate.is_symlink():
+                        coverage["native_symlinks_skipped"] += 1
+                        continue
+                    if len(records) >= _MAX_NATIVE_LIBRARIES:
+                        coverage["native_limits_reached"] = True
+                        stopped = True
+                        break
+                    try:
+                        fd = os.open(candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                                     | getattr(os, "O_NONBLOCK", 0))
+                        with os.fdopen(fd, "rb") as stream:
+                            details = os.fstat(stream.fileno())
+                            if not stat.S_ISREG(details.st_mode):
+                                coverage["native_read_failures"] += 1
+                                continue
+                            if details.st_size > _MAX_NATIVE_LIBRARY_BYTES:
+                                coverage["native_oversized_files_skipped"] += 1
+                                coverage["native_limits_reached"] = True
+                                continue
+                            if coverage["native_bytes_hashed"] + details.st_size > _MAX_NATIVE_TOTAL_BYTES:
+                                coverage["native_limits_reached"] = True
+                                stopped = True
+                                break
+                            header = stream.read(64)
+                            elf_class = header[4] if len(header) > 4 else 0
+                            data_encoding = header[5] if len(header) > 5 else 0
+                            byte_order = "little" if data_encoding == 1 else "big"
+                            required_header = 52 if elf_class == 1 else 64 if elf_class == 2 else 0
+                            valid_elf_shared_object = (
+                                header.startswith(b"\x7fELF") and elf_class in {1, 2}
+                                and data_encoding in {1, 2} and len(header) >= required_header
+                                and int.from_bytes(header[16:18], byte_order) == 3
+                                and int.from_bytes(header[20:24], byte_order) == 1
+                            )
+                            if not valid_elf_shared_object:
+                                coverage["native_non_elf_candidates"] += 1
+                                continue
+                            digest = hashlib.sha256()
+                            digest.update(header)
+                            bytes_read = len(header)
+                            while chunk := stream.read(min(1024 * 1024, details.st_size - bytes_read)):
+                                digest.update(chunk)
+                                bytes_read += len(chunk)
+                            after = os.fstat(stream.fileno())
+                            if (bytes_read != details.st_size or after.st_size != details.st_size
+                                    or after.st_mtime_ns != details.st_mtime_ns):
+                                coverage["native_read_failures"] += 1
+                                continue
+                        relative_path = candidate.relative_to(root).as_posix()
+                        purl_path = "/".join(quote(part, safe="._-~") for part in relative_path.split("/"))
+                        records.append({"name": filename, "version": None,
+                                        "purl": f"pkg:generic/{purl_path}",
+                                        "file_path": relative_path,
+                                        "sha256": digest.hexdigest(),
+                                        "size_bytes": details.st_size,
+                                        "elf_class": 32 if elf_class == 1 else 64,
+                                        "machine": int.from_bytes(header[18:20], byte_order)})
+                        coverage["native_bytes_hashed"] += details.st_size
+                        coverage["native_elf_candidates"] += 1
+                    except OSError:
+                        coverage["native_read_failures"] += 1
+                if stopped:
+                    break
+        except OSError:
+            coverage["native_read_failures"] += 1
+
+        if (coverage["native_limits_reached"] or coverage["native_read_failures"]
+                or coverage["native_symlinks_skipped"] or coverage["native_oversized_files_skipped"]
+                or coverage["native_non_elf_candidates"]):
+            coverage["native_inventory_status"] = "partial"
+        return records, coverage
+
     async def _query_osv_package(
         self,
         client: httpx.AsyncClient,
@@ -573,6 +704,12 @@ class DependencyScanner:
         base_path = Path(decompiled_path)
         dependencies = await asyncio.to_thread(self._sync_find_dependencies, base_path)
         self._last_dependencies = dependencies
+        native_libraries, native_coverage = await asyncio.to_thread(
+            self._sync_find_native_libraries, base_path)
+        self._last_native_libraries = native_libraries
+        self.coverage.update(native_coverage)
+        if native_coverage["native_inventory_status"] != "completed":
+            self.coverage["static_status"] = "partial"
         offline = bool(getattr(self.router, "_settings", None) and self.router._settings.offline is True)
         self.coverage.update(advisory_source="OSV API", advisory_freshness="not_checked",
                              lookup_status=("skipped_offline" if offline else
@@ -641,5 +778,9 @@ class DependencyScanner:
             purl = f"pkg:maven/{grp}/{art}@{ver}" if grp else f"pkg:npm/{art}@{ver}"
             name = f"{grp}:{art}" if grp else art
             generator.add_component(name=name, version=ver, purl=purl, component_type="library")
+        for library in getattr(self, "_last_native_libraries", []):
+            generator.add_component(name=library["name"], version=library["version"],
+                                    purl=library["purl"], component_type="library",
+                                    hashes={"SHA-256": library["sha256"]})
         return generator
 

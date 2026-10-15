@@ -35,6 +35,8 @@ def _synthetic_generator() -> MobileSbomGenerator:
     purl = "pkg:maven/org.example/example@1.0.0"
     generator.add_component("example", "1.0.0", purl,
                             hashes={"SHA-256": "a" * 64}, licenses=["MIT"])
+    generator.add_component("libsample.so", None, "pkg:generic/lib/arm64-v8a/libsample.so",
+                            hashes={"SHA-256": "b" * 64})
     generator.add_vulnerability("CVE-2024-0001", purl, "Synthetic fixture advisory", "high", ["CWE-79"])
     return generator
 

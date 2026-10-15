@@ -275,6 +275,17 @@ def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
     assert "secret" not in json.dumps(spec)
 
 
+def test_openapi_catalog_formats_ipv6_server_origins():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://[2001:db8::1]:8443/v1/items"))
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/v1/items"]["get"]
+    assert operation["servers"] == [{"url": "https://[2001:db8::1]:8443"}]
+
+
 def test_openapi_catalog_templates_identifier_paths_and_keeps_query_signatures():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger

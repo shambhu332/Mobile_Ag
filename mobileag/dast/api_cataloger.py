@@ -6,6 +6,7 @@ identifies shadow APIs, and synthesizes standard OpenAPI 3.0 specifications.
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -154,7 +155,16 @@ class MobileApiCataloger:
             port = parsed.port
         except ValueError:
             hostname, port = None, None
-        server_url = f"{parsed.scheme}://{hostname}" if parsed.scheme and hostname else ""
+        if parsed.scheme and hostname:
+            host_literal = hostname
+            try:
+                ipaddress.IPv6Address(hostname.split("%", 1)[0])
+                host_literal = f"[{hostname}]"
+            except ValueError:
+                pass
+            server_url = f"{parsed.scheme}://{host_literal}"
+        else:
+            server_url = ""
         if port is not None:
             server_url += f":{port}"
 

@@ -369,14 +369,23 @@ def test_deeplink_fuzzer_generation_is_bounded_and_rejects_malformed_inputs():
 
 
 def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
+    import io
+    import shlex
     import subprocess
-    from types import SimpleNamespace
     from mobileag.dast.deeplink_intent_fuzzer import DeepLinkIntentFuzzer
 
     called = []
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: called.append((a, kw)) or SimpleNamespace(
-        stdout="Status: ok", stderr="", returncode=0
-    ))
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            called.append((args, kwargs))
+            self.stdout = io.BytesIO(b"Status: ok synthetic-private-data " + b"x" * 100_000)
+            self.stderr = io.BytesIO(b"")
+        def wait(self, timeout=None):
+            return 0
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     fuzzer = DeepLinkIntentFuzzer()
     assert fuzzer.execute_fuzz_case("https://example.test/path").status == "BLOCKED_SCOPE"
     assert fuzzer.execute_fuzz_case(
@@ -384,13 +393,19 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     ).status == "SUCCESS"
     args, _ = called[0]
     assert args[0][:3] == ["adb", "-s", "device-1"]
+    result = fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=lambda: None
+    )
+    assert result.status == "SUCCESS"
+    assert result.output_truncated is True
+    assert result.output_bytes_observed > 100_000
+    assert result.logcat_errors == []
 
     injection_shaped_uri = "myapp://host/path?next=x; touch /tmp/mobileag-not-run"
     assert fuzzer.execute_fuzz_case(
         injection_shaped_uri, serial="device-1", guard=lambda: None
     ).status == "SUCCESS"
-    args, _ = called[1]
-    import shlex
+    args, _ = called[2]
     remote_args = shlex.split(args[0][4])
     assert remote_args[-2:] == ["-d", injection_shaped_uri]
 
@@ -400,7 +415,7 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     assert fuzzer.execute_fuzz_case(
         "https://example.test/path", serial="device-1", guard=deny
     ).status == "BLOCKED_SCOPE"
-    assert len(called) == 2
+    assert len(called) == 3
 
 
 def test_mobile_api_cataloger():

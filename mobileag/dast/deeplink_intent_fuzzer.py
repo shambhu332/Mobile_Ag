@@ -1,13 +1,14 @@
-"""Dynamic Deep Link & Intent Mutation Fuzzer.
+"""Scoped, bounded deep-link launch probes via ADB.
 
-Executes mutation fuzzing against declared Android URI schemes and exported components
-via ADB, capturing logcat output, activity manager results, and crash tombstones.
+The helper reports activity-manager command observations only. It does not
+collect logcat, crash tombstones, or proof of vulnerability.
 """
 from __future__ import annotations
 
 import subprocess
 import re
 import shlex
+import threading
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -16,13 +17,15 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 @dataclass
 class FuzzResult:
     target_uri: str
-    status: str  # SUCCESS, CRASH, PERMISSION_DENIED, TIMEOUT
+    status: str  # command observation, not an exploitability verdict
     response_code: int = 0
     logcat_errors: List[str] = field(default_factory=list)
+    output_bytes_observed: int = 0
+    output_truncated: bool = False
 
 
 class DeepLinkIntentFuzzer:
-    """Fuzzes Android deep links and URI handlers via ADB."""
+    """Runs researcher-scoped Android deep-link launch probes via ADB."""
 
     MUTATION_PAYLOADS = [
         "https://attacker.com",
@@ -36,6 +39,7 @@ class DeepLinkIntentFuzzer:
     MAX_URI_LENGTH = 4096
     MAX_QUERY_FIELDS = 64
     MAX_MUTATIONS = 449  # base plus 64 fields times seven payloads
+    MAX_RETAINED_OUTPUT_BYTES = 4096
 
     def __init__(self, adb_path: str = "adb"):
         self.adb_path = adb_path
@@ -88,12 +92,14 @@ class DeepLinkIntentFuzzer:
         immediately before execution. This helper does not itself establish
         authorization or prove a vulnerability.
         """
-        if not serial or not serial.strip() or guard is None:
+        if not isinstance(serial, str) or not serial.strip() or not callable(guard):
             return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
-        if (not 0 < timeout <= 15 or not target_uri or len(target_uri) > self.MAX_URI_LENGTH
+        if (not isinstance(target_uri, str) or not 0 < timeout <= 15 or not target_uri
+                or len(target_uri) > self.MAX_URI_LENGTH
                 or "\x00" in target_uri):
             return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
-        if package_name is not None and not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name):
+        if package_name is not None and (not isinstance(package_name, str) or
+                not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)):
             return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
 
         remote_args = ["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", target_uri]
@@ -108,11 +114,15 @@ class DeepLinkIntentFuzzer:
         except Exception:
             return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-            output = res.stdout + res.stderr
+            returncode, stdout, stderr, output_bytes, truncated, timed_out = self._run_bounded(cmd, timeout)
+            output = stdout + stderr
 
-            if "Error:" in output or "SecurityException" in output:
-                status = "PERMISSION_DENIED" if "SecurityException" in output else "CRASH"
+            if timed_out:
+                status = "TIMEOUT"
+            elif "SecurityException" in output:
+                status = "PERMISSION_DENIED"
+            elif "Error:" in output:
+                status = "ERROR_OBSERVED"
             elif "Status: ok" in output:
                 status = "SUCCESS"
             else:
@@ -121,10 +131,60 @@ class DeepLinkIntentFuzzer:
             return FuzzResult(
                 target_uri=target_uri,
                 status=status,
-                response_code=res.returncode,
-                logcat_errors=[line for line in output.splitlines() if "Error" in line or "Exception" in line],
+                response_code=returncode,
+                # The launcher does not capture logcat; never retain raw
+                # activity-manager output, which may echo private URI data.
+                logcat_errors=[],
+                output_bytes_observed=output_bytes,
+                output_truncated=truncated,
             )
         except subprocess.TimeoutExpired:
             return FuzzResult(target_uri=target_uri, status="TIMEOUT")
         except FileNotFoundError:
             return FuzzResult(target_uri=target_uri, status="ADB_NOT_FOUND")
+
+    def _run_bounded(self, cmd: list[str], timeout: float):
+        """Drain ADB output concurrently and retain at most a small prefix."""
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        retained = [bytearray(), bytearray()]
+        observed = [[0], [0]]
+
+        def drain(stream, output: bytearray, count: list[int]) -> None:
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                count[0] += len(chunk)
+                remaining = self.MAX_RETAINED_OUTPUT_BYTES - len(output)
+                if remaining > 0:
+                    output.extend(chunk[:remaining])
+
+        threads = [
+            threading.Thread(target=drain, args=(process.stdout, retained[0], observed[0]), daemon=True),
+            threading.Thread(target=drain, args=(process.stderr, retained[1], observed[1]), daemon=True),
+        ]
+        for thread in threads:
+            thread.start()
+        timed_out = False
+        try:
+            returncode = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            returncode = process.wait()
+        for thread in threads:
+            thread.join(timeout=1)
+        total = sum(count[0] for count in observed)
+        truncated = (any(count[0] > self.MAX_RETAINED_OUTPUT_BYTES for count in observed)
+                     or any(thread.is_alive() for thread in threads))
+        return (
+            returncode,
+            retained[0].decode("utf-8", errors="replace"),
+            retained[1].decode("utf-8", errors="replace"),
+            total,
+            truncated,
+            timed_out,
+        )

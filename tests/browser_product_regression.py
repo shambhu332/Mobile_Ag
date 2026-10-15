@@ -328,7 +328,7 @@ def main():
                     with page.expect_response(lambda response: response.url.endswith('/api/scans/scan_synthetic/test-plan') and response.request.method=='PUT') as saved_plan:
                         page.get_by_role('button',name='Save manual plan',exact=True).click()
                     assert saved_plan.value.status==200
-                    assert 'Saved local manual plan revision 0' in page.locator('#test-plan-status').inner_text()
+                    wait_condition(page,'document.querySelector("#test-plan-status").textContent.includes("Saved local manual plan revision 0")')
                     saved_plan_doc=page.evaluate("async()=>await (await fetch('/api/scans/scan_synthetic/test-plan')).json()")
                     assert len(saved_plan_doc['flows'])==2 and saved_plan_doc['flows'][1]['id']=='flow2'
                     assert saved_plan_doc['test_account_aliases'][0]['alias']=='synthetic-user'

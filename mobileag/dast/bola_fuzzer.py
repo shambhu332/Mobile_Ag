@@ -35,6 +35,44 @@ class BolaFuzzer:
     MAX_QUERY_FIELDS = 100
     MAX_CANDIDATES = 100
     MAX_CANDIDATE_LENGTH = 256
+    _UUID = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    _EMAIL = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
+    _OPAQUE_ID = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
+
+    @classmethod
+    def _safe_endpoint(cls, endpoint: str) -> str:
+        """Return a report-safe route template; omit credentials and query data."""
+        if not isinstance(endpoint, str) or len(endpoint) > cls.MAX_URL_LENGTH:
+            return "[REDACTED ENDPOINT]"
+        try:
+            parsed = urllib.parse.urlsplit(endpoint)
+            hostname, port = parsed.hostname, parsed.port
+        except (TypeError, ValueError):
+            return "[REDACTED ENDPOINT]"
+        if parsed.scheme and parsed.scheme.lower() not in {"http", "https"}:
+            return "[REDACTED ENDPOINT]"
+        segments = parsed.path.split("/")
+        index = 0
+        for position, segment in enumerate(segments):
+            known_resource_segment = (position > 0 and segments[position - 1].lower() in {
+                "users", "accounts", "orders", "items", "profiles", "invoices", "documents"
+            })
+            if (known_resource_segment or segment.isdigit() or cls._UUID.fullmatch(segment) or cls._EMAIL.fullmatch(segment)
+                    or cls._OPAQUE_ID.fullmatch(segment)):
+                index += 1
+                segments[position] = f"{{id{index}}}"
+        path = "/".join(segments) or "/"
+        if parsed.scheme:
+            if not hostname:
+                return "[REDACTED ENDPOINT]"
+            host = hostname
+            if ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            origin = f"{parsed.scheme.lower()}://{host}"
+            if port is not None:
+                origin += f":{port}"
+            return origin + path
+        return path
 
     def extract_resource_candidates(self, url: str) -> List[str]:
         """Identify bounded candidate object IDs from a URL, without network access."""
@@ -100,9 +138,9 @@ class BolaFuzzer:
             reason = f"Resource not found (HTTP 404); potential object-level isolation or absent resource."
 
         return BolaTestResult(
-            endpoint=endpoint,
+            endpoint=self._safe_endpoint(endpoint),
             method=method,
-            resource_id=resource_id,
+            resource_id="[REDACTED]",
             status_code=status_code,
             is_vulnerable=is_vuln,
             evidence_reason=reason,

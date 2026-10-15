@@ -168,6 +168,20 @@ def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls()
     assert res_vuln.response_body_preview == ""
     assert len(res_vuln.response_sha256) == 64
 
+    safe_record = fuzzer.evaluate_response_discrepancy(
+        endpoint="https://alice:synthetic-pass@api.example.test/v1/users/usr_98472?access_token=synthetic-token",
+        method="GET",
+        resource_id="usr_98472",
+        status_code=200,
+        response_body="{\"email\":\"synthetic@example.test\"}",
+        user_a_marker="synthetic@example.test",
+    )
+    assert safe_record.endpoint == "https://api.example.test/v1/users/{id1}"
+    assert safe_record.resource_id == "[REDACTED]"
+    assert "synthetic-pass" not in safe_record.endpoint
+    assert "synthetic-token" not in safe_record.endpoint
+    assert "usr_98472" not in safe_record.endpoint
+
     # Negative test: 403 Forbidden
     res_safe = fuzzer.evaluate_response_discrepancy(
         endpoint="/v1/users/usr_98472",

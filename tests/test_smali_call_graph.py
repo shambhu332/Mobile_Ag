@@ -917,3 +917,40 @@ def test_smali_external_uri_content_flows_through_reader_to_webview(tmp_path):
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
     assert flows[0].metadata["source_line"] < flows[0].line_number
     assert "ContentResolver" in flows[0].description or "loadUrl" in flows[0].description
+
+
+def test_smali_external_stream_read_buffer_taint_flows_through_array_and_builder(tmp_path):
+    (tmp_path / "ExternalBuffer.smali").write_text("""
+.class public Lcom/example/ExternalBuffer;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 9
+    invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;
+    move-result-object v0
+    invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v1
+    invoke-virtual {v1, v0}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v2
+    new-instance v3, Ljava/io/InputStreamReader;
+    invoke-direct {v3, v2}, Ljava/io/InputStreamReader;-><init>(Ljava/io/InputStream;)V
+    const/4 v4, 1
+    new-array v5, v4, [C
+    invoke-virtual {v3, v5, v4, v4}, Ljava/io/InputStreamReader;->read([CII)I
+    const/4 v6, 0
+    aget-char v7, v5, v6
+    new-instance v8, Ljava/lang/StringBuilder;
+    invoke-direct {v8}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v8, v7}, Ljava/lang/StringBuilder;->append(C)Ljava/lang/StringBuilder;
+    move-result-object v8
+    invoke-virtual {v8}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v8
+    invoke-virtual {p2, v8}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"

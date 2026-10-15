@@ -42,6 +42,34 @@ def test_hermes_bytecode_analyzer():
         assert all(secret == {"name": "embedded credential", "value_redacted": True}
                    for secret in res.secrets)
         assert "abcdef0123456789abcdef" not in repr(res.secrets)
+        assert "abcdef0123456789abcdef" not in repr(res.extracted_strings)
+        assert "[REDACTED]" in repr(res.extracted_strings)
+        assert res.function_count is None
+        assert res.scan_status == "complete"
+
+
+def test_hermes_analyzer_bounds_reads_and_skips_symlink_bundles():
+    with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as outside_dir:
+        bundle = Path(tmp_dir) / "bundle.hbc"
+        payload = struct.pack("<QI", HermesBytecodeAnalyzer.HERMES_MAGIC, 84)
+        bundle.write_bytes(payload + b"x" * 32 + b"https://after-limit.example.invalid/api")
+        analyzer = HermesBytecodeAnalyzer()
+        analyzer.MAX_BUNDLE_BYTES = 24
+        result = analyzer.analyze_bundle(bundle)
+
+        external = Path(outside_dir) / "bundle.hbc"
+        external.write_bytes(payload + b"https://outside.example.invalid/api")
+        linked = Path(tmp_dir) / "linked.hbc"
+        linked.symlink_to(external)
+        linked_result = analyzer.analyze_bundle(linked)
+
+    assert result.is_hermes is True
+    assert result.scan_status == "partial"
+    assert result.scan_truncated is True
+    assert result.bytes_scanned == 24
+    assert result.api_endpoints == []
+    assert linked_result.scan_status == "invalid"
+    assert "symlink_bundle_skipped" in linked_result.scan_errors
 
 
 def test_il2cpp_auditor():

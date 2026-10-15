@@ -194,6 +194,24 @@ SMALI_SINKS = {
         "title": "Potential Untrusted Input Flow to WebView Navigation",
         "desc": "A bounded Smali flow candidate reaches WebView.loadUrl(); URI trust validation, reachable external input, effective guards, and security impact are not established."
     },
+    "Landroid/webkit/WebView;->loadData": {
+        "cwe": "CWE-79",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Data Reaches WebView HTML Loading",
+        "desc": "A bounded Smali flow candidate reaches WebView.loadData(); HTML context, sanitization, reachability, and impact require review."
+    },
+    "Landroid/webkit/WebView;->loadDataWithBaseURL": {
+        "cwe": "CWE-79",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Data Reaches WebView HTML Loading With a Base URL",
+        "desc": "A bounded Smali flow candidate reaches WebView.loadDataWithBaseURL(); HTML context, base-origin behavior, sanitization, reachability, and impact require review."
+    },
+    "Landroid/webkit/WebView;->postUrl": {
+        "cwe": "CWE-829",
+        "severity": Severity.HIGH,
+        "title": "Untrusted Input Reaches WebView POST Navigation",
+        "desc": "A bounded Smali flow candidate reaches WebView.postUrl(); destination trust, payload handling, reachability, and impact require review."
+    },
     "Landroid/webkit/WebView;->evaluateJavascript": {
         "cwe": "CWE-79",
         "severity": Severity.HIGH,

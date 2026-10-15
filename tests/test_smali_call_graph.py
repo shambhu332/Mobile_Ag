@@ -442,6 +442,46 @@ def test_internal_string_builder_is_not_unconditionally_treated_as_tainted(tmp_p
     } for finding in findings)
 
 
+@pytest.mark.parametrize("webview_sink", ["loadData", "loadDataWithBaseURL", "postUrl"])
+def test_smali_webview_content_and_post_sinks_trace_intent_input(webview_sink, tmp_path):
+    if webview_sink == "loadData":
+        get_extra = "getStringExtra(Ljava/lang/String;)Ljava/lang/String;"
+        load_call = "invoke-virtual {p1, v1, v2, v3}, Landroid/webkit/WebView;->loadData(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
+    elif webview_sink == "loadDataWithBaseURL":
+        get_extra = "getStringExtra(Ljava/lang/String;)Ljava/lang/String;"
+        load_call = "invoke-virtual {p1, v2, v1, v3, v4, v5}, Landroid/webkit/WebView;->loadDataWithBaseURL(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
+    else:
+        get_extra = "getByteArrayExtra(Ljava/lang/String;)[B"
+        load_call = "invoke-virtual {p1, v2, v1}, Landroid/webkit/WebView;->postUrl(Ljava/lang/String;[B)Z"
+
+    (tmp_path / "WebViewSink.smali").write_text(f"""
+.class public Lcom/example/WebViewSink;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/webkit/WebView;)V
+    .registers 8
+    const-string v0, "data"
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v6
+    const-string v0, "payload"
+    invoke-virtual {{v6, v0}}, Landroid/content/Intent;->{get_extra}
+    move-result-object v1
+    const-string v2, "https://example.invalid/"
+    const-string v3, "text/html"
+    const-string v4, "UTF-8"
+    const-string v5, ""
+    {load_call}
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "INTENT_EXTRA"
+    assert f"Landroid/webkit/WebView;->{webview_sink}" in flows[0].description
+
+
 @pytest.mark.parametrize("annotated,visibility,expected", [
     (True, "public", True),
     (False, "public", False),

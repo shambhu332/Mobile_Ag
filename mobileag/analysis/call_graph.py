@@ -86,8 +86,10 @@ LIFECYCLE_INTENT_CALLBACK_PARAMETERS = {
     ("onUnbind", "(Landroid/content/Intent;)Z"): (0, "Landroid/app/Service;"),
 }
 
-# Smali Source signatures (methods returning untrusted external input)
-SMALI_SOURCES = {
+# Intent accessors are tainted only when their receiver came from an external
+# boundary (Activity.getIntent or a bounded framework callback). Reading an
+# internally constructed Intent is not itself external input.
+SMALI_INTENT_DERIVED_KINDS = {
     "Landroid/content/Intent;->getStringExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getIntExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getLongExtra": "INTENT_EXTRA",
@@ -103,10 +105,15 @@ SMALI_SOURCES = {
     "Landroid/content/Intent;->getParcelableArrayListExtra": "INTENT_PARCELABLE",
     "Landroid/content/Intent;->getSerializableExtra": "INTENT_SERIALIZABLE",
     "Landroid/content/Intent;->getBundleExtra": "INTENT_BUNDLE",
+    "Landroid/content/Intent;->getScheme": "INTENT_SCHEME",
     "Landroid/content/Intent;->getExtras": "INTENT_BUNDLE",
     "Landroid/content/Intent;->getCharSequenceExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getCharSequenceArrayExtra": "INTENT_EXTRA",
     "Landroid/content/Intent;->getCharSequenceArrayListExtra": "INTENT_EXTRA",
+}
+
+# Smali Source signatures (methods returning untrusted external input)
+SMALI_SOURCES = {
     "Landroid/content/Context;->getIntent": "ACTIVITY_INTENT",
     "Landroid/app/Activity;->getIntent": "ACTIVITY_INTENT",
     "Landroid/content/ClipboardManager;->getPrimaryClip": "CLIPBOARD_DATA",
@@ -119,8 +126,8 @@ SMALI_SOURCES = {
 }
 
 # Accessors that only preserve taint from a known untrusted container/URI.
-# These are deliberately not unconditional sources: ordinary internal Bundles
-# and Uris are not automatically attacker-controlled.
+# These are deliberately not unconditional sources: ordinary internal Intents,
+# Bundles, and Uris are not automatically attacker-controlled.
 SMALI_DERIVED_SOURCES = {
     # Metadata read from an Intent is only considered untrusted when the
     # Intent receiver itself was sourced from an external/activity boundary.
@@ -201,6 +208,8 @@ SMALI_STREAM_SOURCE_ACCESSORS = {
 
 # Pure transformations preserve input taint; they are not sources on their
 # own. Keep this list exact-owner/method to avoid matching app lookalikes.
+SMALI_DERIVED_SOURCES.update(SMALI_INTENT_DERIVED_KINDS)
+
 SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/String;->concat",
     "Ljava/lang/String;->valueOf",
@@ -892,9 +901,10 @@ class SmaliCallGraphEngine:
                             pending = frozenset((
                                 "INTENT_DATA_URI", line_no, trace[2], trace[3]
                             ) for trace in receiver_traces)
-                        elif target_key == "Landroid/content/Intent;->getScheme":
+                        elif target_key in SMALI_INTENT_DERIVED_KINDS:
+                            derived_kind = SMALI_INTENT_DERIVED_KINDS[target_key]
                             pending = frozenset((
-                                "INTENT_SCHEME", line_no, trace[2], trace[3]
+                                derived_kind, line_no, trace[2], trace[3]
                             ) for trace in receiver_traces)
                         else:
                             pending = frozenset(receiver_traces)

@@ -30,7 +30,7 @@ def test_smali_call_graph_parsing_and_reachability():
 
 .method public onCreate(Landroid/os/Bundle;)V
     .registers 3
-    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
     move-result-object v0
     const-string v1, "deep_url"
     invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
@@ -758,11 +758,11 @@ def test_internal_bundle_getter_is_not_unconditionally_treated_as_external_input
 @pytest.mark.parametrize("array_flow", ["intent_extra", "tainted_store"])
 def test_smali_array_element_taint_reaches_sink(array_flow, tmp_path):
     source = (
-        "invoke-virtual {p0, v0}, Landroid/content/Intent;->getStringArrayExtra(Ljava/lang/String;)[Ljava/lang/String;\n"
+        "invoke-virtual {v5, v0}, Landroid/content/Intent;->getStringArrayExtra(Ljava/lang/String;)[Ljava/lang/String;\n"
         "move-result-object v1\n"
         "aget-object v2, v1, v0"
         if array_flow == "intent_extra" else
-        "invoke-virtual {p0, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n"
+        "invoke-virtual {v5, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n"
         "move-result-object v1\n"
         "new-array v2, v0, [Ljava/lang/String;\n"
         "aput-object v1, v2, v0\n"
@@ -773,8 +773,10 @@ def test_smali_array_element_taint_reaches_sink(array_flow, tmp_path):
     (tmp_path / "ArrayFlow.smali").write_text(f"""
 .class public Lcom/example/ArrayFlow;
 .super Landroid/app/Activity;
-.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
-    .registers 6
+.method public inspect(Landroid/webkit/WebView;)V
+    .registers 8
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v5
     const/4 v0, 0x0
     {source}
     invoke-virtual {{p1, {value_register}}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V

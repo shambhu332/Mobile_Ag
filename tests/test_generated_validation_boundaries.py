@@ -54,12 +54,15 @@ def test_smali_reused_engine_cannot_report_previous_artifact(tmp_path):
     (first / "Entry.smali").write_text('''.class public Lcom/example/Entry;
 .super Landroid/app/Activity;
 .method public onCreate()V
- .locals 3
+ .locals 4
+ invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+ move-result-object v0
  const-string v1, "key"
  invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
  move-result-object v1
  const-string v2, "https://synthetic.invalid/constant"
- invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+ sget-object v3, Lcom/example/Entry;->web:Landroid/webkit/WebView;
+ invoke-virtual {v3, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
  return-void
 .end method
 ''')

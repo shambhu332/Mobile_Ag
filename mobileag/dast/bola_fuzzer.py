@@ -31,24 +31,42 @@ class BolaFuzzer:
 
     # Patterns matching resource IDs in URL paths or queries
     ID_PATTERN = re.compile(r"/(?:users|accounts|orders|items|profiles|invoices|documents)/([a-zA-Z0-9_\-]+)", re.IGNORECASE)
+    MAX_URL_LENGTH = 8192
+    MAX_QUERY_FIELDS = 100
+    MAX_CANDIDATES = 100
+    MAX_CANDIDATE_LENGTH = 256
 
     def extract_resource_candidates(self, url: str) -> List[str]:
-        """Identify candidate object IDs within URL paths or query parameters."""
+        """Identify bounded candidate object IDs from a URL, without network access."""
+        if not isinstance(url, str) or len(url) > self.MAX_URL_LENGTH:
+            return []
         candidates = []
-        parsed = urllib.parse.urlparse(url)
+        try:
+            parsed = urllib.parse.urlparse(url)
+            # Validate authority syntax (notably malformed brackets and ports).
+            _ = parsed.hostname, parsed.port
+        except (TypeError, ValueError):
+            return []
 
         # Check path segments
         path_matches = self.ID_PATTERN.findall(parsed.path)
-        candidates.extend(path_matches)
+        candidates.extend(value for value in path_matches if len(value) <= self.MAX_CANDIDATE_LENGTH)
 
         # Check query params for id keys
         if parsed.query:
-            params = urllib.parse.parse_qs(parsed.query)
-            for k, vals in params.items():
-                if any(sub in k.lower() for sub in ["id", "account", "user", "order"]):
-                    candidates.extend(vals)
+            try:
+                params = urllib.parse.parse_qsl(
+                    parsed.query, keep_blank_values=True, max_num_fields=self.MAX_QUERY_FIELDS
+                )
+            except ValueError:
+                return []
+            for key, value in params:
+                if (len(key) <= self.MAX_CANDIDATE_LENGTH
+                        and len(value) <= self.MAX_CANDIDATE_LENGTH
+                        and any(sub in key.lower() for sub in ("id", "account", "user", "order"))):
+                    candidates.append(value)
 
-        return list(set(candidates))
+        return list(dict.fromkeys(candidates))[:self.MAX_CANDIDATES]
 
     def evaluate_response_discrepancy(
         self,

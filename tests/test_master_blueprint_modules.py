@@ -137,6 +137,22 @@ def test_bola_fuzzer_candidate_extraction_and_discrepancy():
     assert "usr_98472" in candidates
     assert "acc_1122" in candidates
 
+
+def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls():
+    fuzzer = BolaFuzzer()
+    over_limit_query = "&".join(f"account_id={i}" for i in range(101))
+    assert fuzzer.extract_resource_candidates(
+        f"https://api.example.com/v1/orders/order_1?{over_limit_query}"
+    ) == []
+    assert fuzzer.extract_resource_candidates("https://[malformed/v1/orders/order_1") == []
+    assert fuzzer.extract_resource_candidates("https://api.example.com:70000/orders/order_1") == []
+    assert fuzzer.extract_resource_candidates("x" * 8193) == []
+
+    candidates = fuzzer.extract_resource_candidates(
+        "https://api.example.com/v1/orders/order_1?account_id=acc_1122"
+    )
+    assert candidates == ["order_1", "acc_1122"]
+
     # Positive test: User B receives User A's data
     res_vuln = fuzzer.evaluate_response_discrepancy(
         endpoint="/v1/users/usr_98472",

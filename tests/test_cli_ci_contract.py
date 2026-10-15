@@ -71,5 +71,7 @@ def test_ci_pins_python_and_test_build_toolchain_constraints():
             name, version = line.split("==", 1)
             pins[name.lower().replace("_", "-")] = version
     for name in ("build", "setuptools", "wheel", "pytest", "pytest-asyncio", "jsonschema",
-                 "jsonschema-specifications", "referencing", "rpds-py", "tree-sitter", "tree-sitter-java"):
+                 "jsonschema-specifications", "openapi-spec-validator", "openapi-schema-validator",
+                 "jsonschema-path", "pathable", "lazy-object-proxy", "rfc3339-validator",
+                 "referencing", "rpds-py", "tree-sitter", "tree-sitter-java"):
         assert name in pins, f"CI lock/constraints missing exact pin for {name}"

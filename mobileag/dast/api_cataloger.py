@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from openapi_spec_validator import validate as validate_openapi_spec
+
 
 @dataclass
 class CapturedRequest:
@@ -211,7 +213,7 @@ class MobileApiCataloger:
                 if servers:
                     existing["servers"] = [{"url": server} for server in sorted(servers)]
 
-        return {
+        document = {
             "openapi": "3.0.0",
             "info": {
                 "title": self.title,
@@ -225,6 +227,11 @@ class MobileApiCataloger:
                 "unmodeledRequests": self.unmodeled_requests,
             },
         }
+        # Do not silently emit a document that fails the normative OpenAPI
+        # validator. Validation is local/offline and does not establish that
+        # the inferred inventory is complete or reflects a server contract.
+        validate_openapi_spec(document)
+        return document
 
     def save_openapi(self, output_path: str) -> None:
         """Save OpenAPI specification to disk."""

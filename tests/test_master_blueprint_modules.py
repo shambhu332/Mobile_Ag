@@ -253,6 +253,21 @@ def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
     assert "synthetic-private-marker" not in json.dumps(spec)
 
 
+def test_openapi_export_is_normatively_validated_and_rejects_invalid_documents():
+    import pytest
+    from openapi_spec_validator import validate
+    from openapi_spec_validator.validation.exceptions import OpenAPIValidationError
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger("Synthetic API", "1.0.0")
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/v1/items"))
+    document = catalog.export_openapi_json()
+    validate(document)
+
+    with pytest.raises(OpenAPIValidationError):
+        validate({"openapi": "3.0.0", "info": {"title": "missing version"}, "paths": {}})
+
+
 def test_dependency_scanner_sbom_generation():
     from mobileag.analysis.dependency_scanner import DependencyScanner
 

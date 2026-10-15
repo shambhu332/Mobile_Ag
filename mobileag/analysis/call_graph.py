@@ -133,12 +133,23 @@ SMALI_DERIVED_SOURCES = {
     "Landroid/net/Uri;->getScheme",
 }
 
-# Pure conversions/concatenation preserve input taint; they are not sources on
-# their own. Keep this list exact-owner/method to avoid matching app lookalikes.
+# Pure transformations preserve input taint; they are not sources on their
+# own. Keep this list exact-owner/method to avoid matching app lookalikes.
 SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/String;->concat",
     "Ljava/lang/String;->valueOf",
     "Ljava/lang/String;->format",
+    "Ljava/lang/String;->join",
+    "Ljava/lang/String;->substring",
+    "Ljava/lang/String;->trim",
+    "Ljava/lang/String;->strip",
+    "Ljava/lang/String;->stripLeading",
+    "Ljava/lang/String;->stripTrailing",
+    "Ljava/lang/String;->toLowerCase",
+    "Ljava/lang/String;->toUpperCase",
+    "Ljava/lang/String;->replace",
+    "Ljava/lang/String;->replaceAll",
+    "Ljava/lang/String;->replaceFirst",
     "Ljava/lang/Integer;->toString",
     "Ljava/lang/Long;->toString",
     "Ljava/lang/Float;->toString",
@@ -146,9 +157,29 @@ SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/Boolean;->toString",
     "Ljava/lang/Character;->toString",
 }
-SMALI_BUILDER_APPENDERS = {
+SMALI_BUILDER_CONSTRUCTORS = {
+    "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+    "Ljava/lang/StringBuilder;-><init>(Ljava/lang/CharSequence;)V",
+    "Ljava/lang/StringBuffer;-><init>(Ljava/lang/String;)V",
+    "Ljava/lang/StringBuffer;-><init>(Ljava/lang/CharSequence;)V",
+}
+SMALI_BUILDER_MUTATORS = {
     "Ljava/lang/StringBuilder;->append",
     "Ljava/lang/StringBuffer;->append",
+    "Ljava/lang/StringBuilder;->insert",
+    "Ljava/lang/StringBuffer;->insert",
+    "Ljava/lang/StringBuilder;->replace",
+    "Ljava/lang/StringBuffer;->replace",
+    "Ljava/lang/StringBuilder;->delete",
+    "Ljava/lang/StringBuffer;->delete",
+    "Ljava/lang/StringBuilder;->deleteCharAt",
+    "Ljava/lang/StringBuffer;->deleteCharAt",
+    "Ljava/lang/StringBuilder;->reverse",
+    "Ljava/lang/StringBuffer;->reverse",
+    "Ljava/lang/StringBuilder;->setCharAt",
+    "Ljava/lang/StringBuffer;->setCharAt",
+    "Ljava/lang/StringBuilder;->setLength",
+    "Ljava/lang/StringBuffer;->setLength",
 }
 SMALI_BUILDER_TO_STRING = {
     "Ljava/lang/StringBuilder;->toString",
@@ -738,7 +769,16 @@ class SmaliCallGraphEngine:
                     elif target_key in SMALI_BUILDER_TO_STRING and args:
                         pending = frozenset(registers.get(f"@builder:{args[0]}", ()))
 
-                    if target_key in SMALI_BUILDER_APPENDERS and args:
+                    exact_target_key = f"{target_class}->{target_name}{signature}"
+                    if exact_target_key in SMALI_BUILDER_CONSTRUCTORS and len(args) > 1:
+                        builder_key = f"@builder:{args[0]}"
+                        constructor_traces = frozenset(
+                            trace for register in args[1:] for trace in registers.get(register, ())
+                        )
+                        if constructor_traces:
+                            registers[builder_key] = constructor_traces
+
+                    if target_key in SMALI_BUILDER_MUTATORS and args:
                         builder_key = f"@builder:{args[0]}"
                         builder_traces = set(registers.get(builder_key, ()))
                         for register in args[1:]:
@@ -769,7 +809,7 @@ class SmaliCallGraphEngine:
                         called_methods.add(exact_target_key)
                         if (not source_kind and target_key not in SMALI_DERIVED_SOURCES
                                 and target_key not in SMALI_TAINT_TRANSFORMS
-                                and target_key not in SMALI_BUILDER_APPENDERS
+                                and target_key not in SMALI_BUILDER_MUTATORS
                                 and target_key not in SMALI_BUILDER_TO_STRING):
                             pending = frozenset((callee_return_taints or {}).get(exact_target_key, ()))
                             if pending:
@@ -1060,8 +1100,8 @@ class SmaliCallGraphEngine:
                              f"into register {flow['register']} used by {flow['sink']} at "
                              f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
                              "This is a bounded CFG may-flow candidate using exact-signature argument and tainted "
-                             "register-return summaries, primitive moves/arithmetic, supported String conversions, "
-                             "local StringBuilder/StringBuffer append chains, exact static-field names, and "
+                             "register-return summaries, primitive moves/arithmetic, supported String transforms, "
+                             "local StringBuilder/StringBuffer constructor/mutation/toString summaries, exact static-field names, and "
                              "imprecise array-element summaries. "
                              "dynamic dispatch, instance/heap identity, array indexes, sanitizers, branch "
                              "feasibility, component authorization, and security impact remain unresolved. "
@@ -1077,7 +1117,7 @@ class SmaliCallGraphEngine:
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_arithmetic_string_transforms_builder_chains_array_elements_static_fields_exact_signature_arguments_and_returns",
+                          "register_dataflow": "same_method_moves_arithmetic_string_transforms_builder_mutations_array_elements_static_fields_exact_signature_arguments_and_returns",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))

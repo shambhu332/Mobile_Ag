@@ -99,7 +99,7 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].status.value == "UNVERIFIED"
     assert local[0].cvss_score == 0
     assert local[0].metadata["register_dataflow"] == (
-        "same_method_moves_arithmetic_string_transforms_builder_chains_array_elements_static_fields_exact_signature_arguments_and_returns"
+        "same_method_moves_arithmetic_string_transforms_builder_mutations_array_elements_static_fields_exact_signature_arguments_and_returns"
     )
 
 
@@ -308,7 +308,10 @@ def test_smali_primitive_moves_and_arithmetic_preserve_taint(tmp_path):
     assert return_flows == {trace}
 
 
-@pytest.mark.parametrize("construction", ["string_concat", "string_value_of", "string_builder_chain"])
+@pytest.mark.parametrize("construction", [
+    "string_concat", "string_value_of", "string_substring", "string_builder_chain",
+    "builder_constructor", "builder_insert_chain",
+])
 def test_smali_string_construction_preserves_tainted_input(construction, tmp_path):
     if construction == "string_concat":
         body = """
@@ -336,7 +339,53 @@ def test_smali_string_construction_preserves_tainted_input(construction, tmp_pat
     invoke-virtual {v0, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
 """
     else:
-        body = """
+        if construction == "string_substring":
+            body = """
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v1
+    const-string v2, "url"
+    invoke-virtual {v1, v2}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v3
+    const/4 v4, 0x0
+    const/4 v5, 0x1
+    invoke-virtual {v3, v4, v5}, Ljava/lang/String;->substring(II)Ljava/lang/String;
+    move-result-object v6
+    sget-object v0, Lcom/example/Compose;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v6}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+"""
+        elif construction == "builder_constructor":
+            body = """
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v1
+    const-string v2, "url"
+    invoke-virtual {v1, v2}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v3
+    invoke-direct {v0, v3}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v4
+    sget-object v0, Lcom/example/Compose;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+"""
+        elif construction == "builder_insert_chain":
+            body = """
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v1
+    const-string v2, "url"
+    invoke-virtual {v1, v2}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v3
+    const/4 v1, 0x0
+    invoke-virtual {v0, v1, v3}, Ljava/lang/StringBuilder;->insert(ILjava/lang/String;)Ljava/lang/StringBuilder;
+    move-result-object v4
+    invoke-virtual {v4}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v5
+    sget-object v0, Lcom/example/Compose;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+"""
+        else:
+            body = """
     new-instance v0, Ljava/lang/StringBuilder;
     invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
     invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;

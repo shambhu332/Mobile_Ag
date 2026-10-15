@@ -1134,6 +1134,43 @@ def test_smali_files_new_input_stream_path_flows_to_webview(tmp_path):
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
 
 
+def test_smali_content_resolver_cursor_values_flow_only_from_tainted_cursor(tmp_path):
+    (tmp_path / "ProviderCursor.smali").write_text("""
+.class public Lcom/example/ProviderCursor;
+.super Landroid/app/Activity;
+.method public queryProvider(Landroid/webkit/WebView;)V
+    .registers 9
+    invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v0
+    const-string v1, "content://com.example.provider/items"
+    invoke-static {v1}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+    move-result-object v1
+    const/4 v2, 0
+    invoke-virtual {v0, v1, v2, v2, v2, v2}, Landroid/content/ContentResolver;->query(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;
+    move-result-object v3
+    const/4 v4, 0
+    invoke-interface {v3, v4}, Landroid/database/Cursor;->getString(I)Ljava/lang/String;
+    move-result-object v5
+    invoke-virtual {p1, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public readInternalCursor(Landroid/database/Cursor;Landroid/webkit/WebView;)V
+    .registers 4
+    const/4 v0, 0
+    invoke-interface {p1, v0}, Landroid/database/Cursor;->getString(I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {p2, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "CONTENT_RESOLVER_QUERY"
+
+
 def test_smali_tainted_file_object_flows_through_file_input_stream(tmp_path):
     (tmp_path / "ExternalFileObject.smali").write_text("""
 .class public Lcom/example/ExternalFileObject;

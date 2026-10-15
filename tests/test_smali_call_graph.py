@@ -98,7 +98,9 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].line_number == 14
     assert local[0].status.value == "UNVERIFIED"
     assert local[0].cvss_score == 0
-    assert local[0].metadata["register_dataflow"] == "same_method_moves_plus_exact_signature_parameter_arguments"
+    assert local[0].metadata["register_dataflow"] == (
+        "same_method_moves_plus_exact_signature_arguments_and_array_elements"
+    )
 
 
 def test_smali_interprocedural_argument_flow_reports_both_source_and_sink_files(tmp_path):
@@ -236,6 +238,41 @@ def test_internal_bundle_getter_is_not_unconditionally_treated_as_external_input
     assert not any(finding.metadata.get("analysis_kind") in {
         "smali_local_register_flow", "smali_interprocedural_argument_flow",
     } for finding in findings)
+
+
+@pytest.mark.parametrize("array_flow", ["intent_extra", "tainted_store"])
+def test_smali_array_element_taint_reaches_sink(array_flow, tmp_path):
+    source = (
+        "invoke-virtual {p0, v0}, Landroid/content/Intent;->getStringArrayExtra(Ljava/lang/String;)[Ljava/lang/String;\n"
+        "move-result-object v1\n"
+        "aget-object v2, v1, v0"
+        if array_flow == "intent_extra" else
+        "invoke-virtual {p0, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n"
+        "move-result-object v1\n"
+        "new-array v2, v0, [Ljava/lang/String;\n"
+        "aput-object v1, v2, v0\n"
+        "move-object v4, v2\n"
+        "aget-object v3, v4, v0"
+    )
+    value_register = "v2" if array_flow == "intent_extra" else "v3"
+    (tmp_path / "ArrayFlow.smali").write_text(f"""
+.class public Lcom/example/ArrayFlow;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 6
+    const/4 v0, 0x0
+    {source}
+    invoke-virtual {{p1, {value_register}}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    array_flows = [finding for finding in findings
+                   if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(array_flows) == 1
+    assert array_flows[0].metadata["source_kind"] == "INTENT_EXTRA"
+    assert array_flows[0].metadata["proof_state"] == "not_proven"
 
 
 @pytest.mark.parametrize(("source_method", "sink_method"), [

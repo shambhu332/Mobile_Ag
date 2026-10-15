@@ -449,7 +449,8 @@ class SmaliCallGraphEngine:
         have both successors, unconditional gotos only their target, and
         returns/throws terminate. Register writes kill prior taint; modeled
         source results flow through move-result* and move-object. Tainted actual
-        arguments may seed matching callee p-registers, but fields, arrays, returns,
+        arguments may seed matching callee p-registers, and bounded array-element
+        summaries propagate stored values through array aliases. Fields, returns,
         sanitizers, dynamic dispatch and switch payloads are not modeled. Results
         are candidates only.
         """
@@ -527,8 +528,11 @@ class SmaliCallGraphEngine:
             pending = incoming_pending
             move_result = re.match(r"move-result(?:-object|-wide)?\s+([vp]\d+)", text)
             move_alias = re.match(r"move-object(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
+            array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
+            array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             if move_result:
                 dest = move_result.group(1)
+                registers.pop(f"@array:{dest}", None)
                 if pending:
                     registers[dest] = pending
                 else:
@@ -540,12 +544,40 @@ class SmaliCallGraphEngine:
                     registers[dest] = registers[src]
                 else:
                     registers.pop(dest, None)
+                # Keep a bounded may-taint summary for array aliases separate
+                # from object-register taint (so passing an array itself to a
+                # sink does not imply its elements are tainted).
+                array_key = f"@array:{src}"
+                dest_array_key = f"@array:{dest}"
+                if array_key in registers:
+                    registers[dest_array_key] = registers[array_key]
+                else:
+                    registers.pop(dest_array_key, None)
+                pending = frozenset()
+            elif array_get:
+                dest, array_register = array_get.groups()
+                registers.pop(f"@array:{dest}", None)
+                traces = registers.get(f"@array:{array_register}", registers.get(array_register, ()))
+                if traces:
+                    registers[dest] = traces
+                else:
+                    registers.pop(dest, None)
                 pending = frozenset()
             else:
                 pending = frozenset()
                 write = write_re.match(text)
                 if write:
                     registers.pop(write.group(1), None)
+                    registers.pop(f"@array:{write.group(1)}", None)
+
+                if array_put:
+                    value_register, array_register = array_put.groups()
+                    value_traces = registers.get(value_register, ())
+                    if value_traces:
+                        array_key = f"@array:{array_register}"
+                        registers[array_key] = frozenset(
+                            set(registers.get(array_key, ())) | set(value_traces)
+                        )
 
                 invoke = invoke_re.search(text)
                 if invoke:
@@ -871,7 +903,7 @@ class SmaliCallGraphEngine:
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_plus_exact_signature_parameter_arguments",
+                          "register_dataflow": "same_method_moves_plus_exact_signature_arguments_and_array_elements",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
@@ -886,7 +918,7 @@ class SmaliCallGraphEngine:
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "fields, arrays, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
+                "fields, precise array indexes/objects, arithmetic, casts, return-value flow, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",

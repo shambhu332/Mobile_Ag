@@ -581,7 +581,7 @@ class SmaliCallGraphEngine:
             registers = dict(incoming_regs)
             pending = incoming_pending
             move_result = re.match(r"move-result(?:-object|-wide)?\s+([vp]\d+)", text)
-            move_alias = re.match(r"move-object(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
+            move_alias = re.match(r"move(?:-object|-wide)?(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             static_get = static_get_re.match(text)
@@ -623,7 +623,7 @@ class SmaliCallGraphEngine:
                 # sink does not imply its elements are tainted).
                 array_key = f"@array:{src}"
                 dest_array_key = f"@array:{dest}"
-                if array_key in registers:
+                if text.startswith("move-object") and array_key in registers:
                     registers[dest_array_key] = registers[array_key]
                 else:
                     registers.pop(dest_array_key, None)
@@ -649,11 +649,23 @@ class SmaliCallGraphEngine:
                 registers.pop("@pending_return", None)
                 if return_value:
                     return_flows.update(registers.get(return_value.group(1), ()))
+                arithmetic = re.match(
+                    r"(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr|neg|not)-[a-z0-9]+(?:/2addr|/lit\d+)?\s+.+",
+                    text,
+                )
+                arithmetic_traces: set[tuple[str, int, str, str]] = set()
+                if arithmetic:
+                    operands = re.findall(r"[vp]\d+", text)
+                    source_registers = operands if "/2addr" in text.split(None, 1)[0] else operands[1:]
+                    for source_register in source_registers:
+                        arithmetic_traces.update(registers.get(source_register, ()))
                 write = write_re.match(text)
                 if write:
                     registers.pop(write.group(1), None)
                     registers.pop(f"@array:{write.group(1)}", None)
                     registers.pop(f"@returned:{write.group(1)}", None)
+                    if arithmetic_traces:
+                        registers[write.group(1)] = frozenset(arithmetic_traces)
 
                 if array_put:
                     value_register, array_register = array_put.groups()
@@ -990,7 +1002,8 @@ class SmaliCallGraphEngine:
                              f"into register {flow['register']} used by {flow['sink']} at "
                              f"{flow['file_path']}:{flow['sink_line']} in {flow['method']} {flow_scope}. "
                              "This is a bounded CFG may-flow candidate using exact-signature argument and tainted "
-                             "register-return summaries, exact static-field names, and imprecise array-element summaries. "
+                             "register-return summaries, primitive moves/arithmetic, exact static-field names, and "
+                             "imprecise array-element summaries. "
                              "dynamic dispatch, instance/heap identity, array indexes, sanitizers, branch "
                              "feasibility, component authorization, and security impact remain unresolved. "
                              f"{source_context_note}"),
@@ -1005,7 +1018,7 @@ class SmaliCallGraphEngine:
                 metadata={"proof_state": "not_proven", "analysis_kind": analysis_kind,
                           "source_file": flow["source_file"], "source_line": flow["source_line"],
                           "source_method": flow["source_method"], "source_kind": flow["source_kind"],
-                          "register_dataflow": "same_method_moves_array_elements_static_fields_exact_signature_arguments_and_returns",
+                          "register_dataflow": "same_method_moves_primitive_arithmetic_array_elements_static_fields_exact_signature_arguments_and_returns",
                           "control_flow": "cfg_may_analysis_condition_values_not_modeled",
                           "manifest_authorization": "not_resolved"},
             ))
@@ -1020,7 +1033,7 @@ class SmaliCallGraphEngine:
             register_dataflow_warnings=self.local_register_analysis_warnings[:100],
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
-                "instance fields, precise array indexes/objects, arithmetic, casts, returned heap side effects, and polymorphic dispatch are not modeled",
+                "instance fields, precise array indexes/objects, casts, returned heap side effects, and polymorphic dispatch are not modeled",
                 "switch payload targets are not resolved",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",

@@ -99,7 +99,7 @@ def test_smali_same_method_register_flow_is_reported_separately_from_call_path(t
     assert local[0].status.value == "UNVERIFIED"
     assert local[0].cvss_score == 0
     assert local[0].metadata["register_dataflow"] == (
-        "same_method_moves_array_elements_static_fields_exact_signature_arguments_and_returns"
+        "same_method_moves_primitive_arithmetic_array_elements_static_fields_exact_signature_arguments_and_returns"
     )
 
 
@@ -281,6 +281,31 @@ def test_smali_untainted_return_value_does_not_inherit_tainted_arguments(tmp_pat
     assert not any(finding.metadata.get("analysis_kind") in {
         "smali_local_register_flow", "smali_interprocedural_register_flow",
     } for finding in findings)
+
+
+def test_smali_primitive_moves_and_arithmetic_preserve_taint(tmp_path):
+    (tmp_path / "PrimitiveFlow.smali").write_text("""
+.class public Lcom/example/PrimitiveFlow;
+.super Ljava/lang/Object;
+.method public static adjust(I)I
+    .registers 5
+    move v0, p0
+    add-int/lit8 v1, v0, 0x1
+    neg-int v2, v1
+    add-int/2addr v2, v0
+    return v2
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    engine.build_graph(tmp_path)
+    method = next(iter(engine.methods.values()))
+    trace = ("SYNTHETIC_PRIMITIVE", method.line_number, method.key, method.file_path)
+    _flows, _arguments, _field_writes, _field_reads, return_flows, _called = (
+        engine._analyze_local_register_flows(method, {"p0": frozenset({trace})})
+    )
+
+    assert return_flows == {trace}
 
 
 @pytest.mark.parametrize("annotated,visibility,expected", [

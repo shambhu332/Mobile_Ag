@@ -160,6 +160,7 @@ SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS = {
     "Ljava/io/FileInputStream;", "Ljava/io/FileReader;", "Ljava/io/RandomAccessFile;",
     "Ljava/util/Scanner;",
 }
+SMALI_PATH_OBJECT_CONSTRUCTORS = {"Ljava/io/File;"}
 SMALI_STREAM_WRAPPER_CONSTRUCTORS = {
     "Ljava/io/InputStreamReader;", "Ljava/io/BufferedReader;",
     "Ljava/io/BufferedInputStream;", "Ljava/io/DataInputStream;",
@@ -197,6 +198,7 @@ SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/String;->replaceFirst",
     "Landroid/net/Uri;->toString",
     "Ljava/nio/file/Paths;->get",
+    "Ljava/io/File;->toPath",
     "Ljava/lang/Integer;->toString",
     "Ljava/lang/Long;->toString",
     "Ljava/lang/Float;->toString",
@@ -867,6 +869,13 @@ class SmaliCallGraphEngine:
                                     "EXTERNAL_FILE_CONTENT_CANDIDATE", line_no,
                                     method.key, method.file_path,
                                 )})
+                        elif target_class in SMALI_PATH_OBJECT_CONSTRUCTORS:
+                            path_traces = frozenset(trace for register in args[1:]
+                                                    for trace in registers.get(register, ()))
+                            if path_traces:
+                                registers[args[0]] = path_traces
+                            else:
+                                registers.pop(args[0], None)
                         elif target_class in SMALI_STREAM_WRAPPER_CONSTRUCTORS:
                             wrapped_traces = frozenset(trace for register in args[1:]
                                                        for trace in registers.get(register, ()))

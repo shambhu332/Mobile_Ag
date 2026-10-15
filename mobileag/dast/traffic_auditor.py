@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field
@@ -328,26 +329,130 @@ class TrafficAuditor:
             )
         return cataloger
 
-    def find_shadow_apis(self, transactions: list[HTTPTransaction], declared_endpoints: list[str]) -> list[Finding]:
-        """Flag intercepted endpoints not present in static code declarations."""
-        findings: list[Finding] = []
-        declared_set = {urlparse(e).path for e in declared_endpoints if e}
-        seen = set()
-        for tx in transactions:
-            p = urlparse(tx.url).path
-            if p and p not in declared_set and p not in seen:
-                seen.add(p)
-                findings.append(
-                    Finding(
-                        title=f"Potential Shadow API Endpoint: {tx.method} {p}",
-                        description=f"Intercepted backend call to {p} which was not declared in the application's static attack surface.",
-                        severity=Severity.INFO,
-                        status=FindingStatus.UNVERIFIED,
-                        cwe_id="CWE-1059",
-                        affected_component=p,
-                        file_path=tx.url,
-                        metadata={"endpoint": p, "method": tx.method},
-                    )
-                )
-        return findings
+    @staticmethod
+    def _safe_api_origin(parsed) -> str | None:
+        scheme = parsed.scheme.lower()
+        if scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        try:
+            port = parsed.port
+        except ValueError:
+            return None
+        host = parsed.hostname
+        try:
+            ipaddress.IPv6Address(host.split("%", 1)[0])
+            host = f"[{host}]"
+        except ValueError:
+            pass
+        return f"{scheme}://{host}" + (f":{port}" if port is not None else "")
 
+    @staticmethod
+    def _canonical_api_path(path: str) -> str:
+        from mobileag.dast.api_cataloger import MobileApiCataloger
+
+        templated = MobileApiCataloger._path_template(path or "/")
+        segments = templated.split("/")
+        index = 0
+        for position, segment in enumerate(segments):
+            if re.fullmatch(r"\{[^{}]+\}", segment):
+                index += 1
+                segments[position] = f"{{id{index}}}"
+        return "/".join(segments) or "/"
+
+    def find_shadow_apis(
+            self, transactions: list[HTTPTransaction], declared_endpoints: list[Any]) -> list[Finding]:
+        """Return review leads for observed routes absent from supplied declarations.
+
+        Declarations may be URL/path strings (method wildcard) or objects with
+        ``method`` and ``url`` fields. This is not proof that static extraction
+        was complete; findings intentionally omit query values, userinfo, and
+        identifier-shaped path values.
+        """
+        openapi_methods = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
+        wildcard_paths: set[str] = set()
+        wildcard_methods_by_origin: set[tuple[str, str]] = set()
+        methods_across_origins: set[tuple[str, str]] = set()
+        exact_routes: set[tuple[str, str, str]] = set()
+        for item in declared_endpoints[:10000]:
+            if isinstance(item, str):
+                endpoint, declared_method = item, None
+            elif isinstance(item, dict):
+                endpoint = item.get("url")
+                declared_method = item.get("method")
+                if not isinstance(endpoint, str):
+                    continue
+                if declared_method is not None:
+                    if not isinstance(declared_method, str) or len(declared_method) > 16:
+                        continue
+                    declared_method = declared_method.upper()
+                    if declared_method not in openapi_methods:
+                        continue
+            else:
+                continue
+            if len(endpoint) > 8192:
+                continue
+            try:
+                parsed_declared = urlparse(endpoint)
+            except ValueError:
+                continue
+            if parsed_declared.scheme and parsed_declared.scheme.lower() not in {"http", "https"}:
+                continue
+            path = self._canonical_api_path(parsed_declared.path or endpoint)
+            origin = self._safe_api_origin(parsed_declared)
+            if declared_method is None and origin is None:
+                wildcard_paths.add(path)
+            elif declared_method is None:
+                wildcard_methods_by_origin.add((origin, path))
+            elif origin is None:
+                methods_across_origins.add((path, declared_method))
+            else:
+                exact_routes.add((origin, path, declared_method))
+
+        findings: list[Finding] = []
+        seen: set[tuple[str, str, str]] = set()
+        for tx in transactions[:10000]:
+            if not isinstance(tx.url, str) or len(tx.url) > 8192:
+                continue
+            try:
+                parsed = urlparse(tx.url)
+            except ValueError:
+                continue
+            if parsed.scheme and parsed.scheme.lower() not in {"http", "https"}:
+                continue
+            path = self._canonical_api_path(parsed.path)
+            origin = self._safe_api_origin(parsed)
+            raw_method = tx.method.upper() if isinstance(tx.method, str) and len(tx.method) <= 16 else ""
+            method = raw_method if raw_method in openapi_methods else "UNKNOWN"
+            key = (origin or "", path, method)
+            if key in seen:
+                continue
+            seen.add(key)
+            is_declared = (
+                path in wildcard_paths
+                or (origin is not None and (origin, path) in wildcard_methods_by_origin)
+                or (path, method) in methods_across_origins
+                or (origin is not None and (origin, path, method) in exact_routes)
+            )
+            if is_declared:
+                continue
+            safe_url = f"{origin}{path}" if origin else path
+            findings.append(Finding(
+                title=f"Potential Shadow API Endpoint: {method} {path}",
+                description=(
+                    f"An intercepted {method} route at {safe_url} was not found in the supplied "
+                    "static endpoint declarations. This is an unverified review lead; static "
+                    "extraction may be incomplete and route reachability is not established."
+                ),
+                severity=Severity.INFO,
+                status=FindingStatus.UNVERIFIED,
+                cwe_id="CWE-1059",
+                affected_component=path,
+                file_path=safe_url,
+                metadata={
+                    "endpoint": path, "method": method, "origin": origin,
+                    "evidence_state": "observed_unverified",
+                    "query_values_included": False,
+                    "userinfo_included": False,
+                },
+            ))
+        return findings

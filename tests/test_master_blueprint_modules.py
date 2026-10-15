@@ -259,6 +259,45 @@ def test_traffic_auditor_catalog_and_shadow_api():
     assert "/v1/hidden/debug" in shadow_findings[0].affected_component
 
 
+def test_shadow_api_review_normalizes_ids_and_never_exports_url_secrets():
+    import json
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+
+    secret_id = "AbCdEf0123456789GhIjKlMnOpQrStUv"
+    secret_query = "synthetic-private-token-value"
+    txs = [
+        HTTPTransaction(
+            url=f"https://alice:synthetic-password@api.example.test/v1/orders/{secret_id}?token={secret_query}",
+            method="GET"),
+        HTTPTransaction(
+            url=f"https://alice:synthetic-password@api.example.test/v1/orders/{secret_id}?token={secret_query}",
+            method="POST"),
+        HTTPTransaction(url="https://[malformed/v1/bad", method="GET"),
+        HTTPTransaction(url="ftp://api.example.test/v1/not-http", method="GET"),
+    ]
+    declared = [{"method": "GET", "url": "https://api.example.test/v1/orders/{orderId}"}]
+
+    findings = TrafficAuditor().find_shadow_apis(txs, declared)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.metadata["method"] == "POST"
+    assert finding.affected_component == "/v1/orders/{id1}"
+    serialized = json.dumps({
+        "title": finding.title, "description": finding.description,
+        "path": finding.file_path, "metadata": finding.metadata,
+    })
+    for secret in ("alice", "synthetic-password", secret_id, secret_query):
+        assert secret not in serialized
+    assert finding.status.value == "UNVERIFIED"
+
+    same_path_other_origin = HTTPTransaction(
+        url=f"https://other.example.test/v1/orders/{secret_id}", method="GET")
+    host_findings = TrafficAuditor().find_shadow_apis(
+        [same_path_other_origin], ["https://api.example.test/v1/orders/{orderId}"])
+    assert len(host_findings) == 1
+    assert host_findings[0].metadata["origin"] == "https://other.example.test"
+
+
 def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger

@@ -39,6 +39,8 @@ class MachoBinaryParser:
 
     MH_MAGIC_64 = 0xFEEDFACF
     MH_CIGAM_64 = 0xCFFAEDFE
+    MH_MAGIC_32 = 0xFEEDFACE
+    MH_CIGAM_32 = 0xCEFAEDFE
     FAT_MAGIC = 0xCAFEBABE
     FAT_MAGIC_64 = 0xCAFEBABF
 
@@ -53,6 +55,7 @@ class MachoBinaryParser:
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
     MAX_BINARY_BYTES = 15 * 1024 * 1024
     LC_SEGMENT_64 = 0x19
+    LC_SEGMENT_32 = 0x01
     DYLIB_COMMANDS = {
         0x0C, 0x0D, 0x18 | 0x80000000, 0x1F | 0x80000000,
         0x20, 0x23 | 0x80000000,
@@ -94,6 +97,9 @@ class MachoBinaryParser:
         if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
             result.is_macho = True
             result.is_64bit = True
+        elif magic_le == self.MH_MAGIC_32 or magic == self.MH_MAGIC_32:
+            result.is_macho = True
+            result.is_64bit = False
         elif magic in {self.FAT_MAGIC, self.FAT_MAGIC_64} or magic_le in {
             self.FAT_MAGIC, self.FAT_MAGIC_64,
         }:
@@ -117,6 +123,13 @@ class MachoBinaryParser:
 
         if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
             self._parse_thin_64(data, result)
+            if truncated:
+                result.parse_errors.append("Binary exceeds bounded read limit; file-backed sections may be incomplete")
+                result.parse_status = "partial"
+            elif result.parse_status == "not_attempted":
+                result.parse_status = "complete"
+        elif magic_le == self.MH_MAGIC_32 or magic == self.MH_MAGIC_32:
+            self._parse_thin_32(data, result)
             if truncated:
                 result.parse_errors.append("Binary exceeds bounded read limit; file-backed sections may be incomplete")
                 result.parse_status = "partial"
@@ -154,7 +167,7 @@ class MachoBinaryParser:
         return result
 
     def _parse_fat(self, data: bytes, result: MachoAnalysisResult) -> None:
-        """Parse bounded FAT/FAT64 slice tables and aggregate supported thin-64 slices."""
+        """Parse bounded FAT/FAT64 slice tables and aggregate supported thin slices."""
         if len(data) < 8:
             result.parse_status = "truncated"
             result.parse_errors.append("Truncated fat Mach-O header")
@@ -190,12 +203,17 @@ class MachoBinaryParser:
                 continue
             slice_data = data[slice_offset:slice_offset + slice_size]
             slice_magic = struct.unpack_from("<I", slice_data, 0)[0]
-            if slice_magic not in {self.MH_MAGIC_64, self.MH_CIGAM_64}:
+            if slice_magic not in {self.MH_MAGIC_64, self.MH_CIGAM_64,
+                                   self.MH_MAGIC_32, self.MH_CIGAM_32}:
                 statuses.append("unsupported")
-                result.parse_errors.append(f"Fat slice {index} is not a supported thin 64-bit Mach-O")
+                result.parse_errors.append(f"Fat slice {index} is not a supported thin Mach-O")
                 continue
             slice_result = MachoAnalysisResult(is_macho=True)
-            self._parse_thin_64(slice_data, slice_result)
+            if slice_magic in {self.MH_MAGIC_64, self.MH_CIGAM_64}:
+                self._parse_thin_64(slice_data, slice_result)
+            else:
+                slice_result.is_64bit = False
+                self._parse_thin_32(slice_data, slice_result)
             statuses.append(slice_result.parse_status)
             result.load_commands_count += slice_result.load_commands_count
             result.sections.extend({**section, "architecture": arch_name}
@@ -213,6 +231,99 @@ class MachoBinaryParser:
         result.parse_status = "complete" if statuses and all(status == "not_attempted" for status in statuses) else (
             "complete" if statuses and all(status == "complete" for status in statuses) else "partial"
         )
+
+    def _parse_thin_32(self, data: bytes, result: MachoAnalysisResult) -> None:
+        """Parse bounded 32-bit Mach-O load commands and section file ranges."""
+        if len(data) < 28:
+            result.parse_status = "truncated"
+            result.parse_errors.append("Truncated 32-bit Mach-O header")
+            return
+        magic_bytes = data[:4]
+        endian = "<" if magic_bytes == b"\xce\xfa\xed\xfe" else ">"
+        try:
+            _magic, cpu_type, _subtype, _filetype, ncmds, sizeofcmds, _flags = struct.unpack_from(
+                endian + "IiiIIII", data, 0
+            )
+        except struct.error:
+            result.parse_status = "truncated"
+            result.parse_errors.append("Malformed 32-bit Mach-O header")
+            return
+        result.cpu_type = {12: "ARM", 7: "X86"}.get(cpu_type, f"0x{cpu_type & 0xffffffff:08x}")
+        if not result.architectures:
+            result.architectures.append(result.cpu_type)
+        if ncmds > 65536 or sizeofcmds > self.MAX_BINARY_BYTES or 28 + sizeofcmds > len(data):
+            result.parse_status = "partial"
+            result.parse_errors.append("32-bit load-command region exceeds available bounded input")
+            return
+        command_end = 28 + sizeofcmds
+        cursor = 28
+        for _ in range(ncmds):
+            if cursor + 8 > command_end:
+                result.parse_errors.append("32-bit load-command header exceeds declared command region")
+                result.parse_status = "partial"
+                break
+            command, command_size = struct.unpack_from(endian + "II", data, cursor)
+            if command_size < 8 or cursor + command_size > command_end:
+                result.parse_errors.append("Invalid 32-bit load-command size")
+                result.parse_status = "partial"
+                break
+            if command == self.LC_SEGMENT_32:
+                self._parse_segment_32(data, cursor, command_size, endian, result)
+            if command in self.DYLIB_COMMANDS and command_size >= 24:
+                name_offset = struct.unpack_from(endian + "I", data, cursor + 8)[0]
+                name_start = cursor + name_offset
+                name_end = data.find(b"\0", name_start, cursor + command_size)
+                if 24 <= name_offset < command_size and name_end >= 0:
+                    name = data[name_start:name_end].decode("utf-8", errors="replace")
+                    if name and name not in result.imported_dylibs:
+                        result.imported_dylibs.append(name)
+            cursor += command_size
+        result.load_commands_count = ncmds
+        self._extract_section_contents(data, result)
+
+    def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
+                          endian: str, result: MachoAnalysisResult) -> None:
+        if command_size < 56:
+            result.parse_errors.append("Truncated LC_SEGMENT command")
+            result.parse_status = "partial"
+            return
+        segment_name = data[cursor + 8:cursor + 24].split(b"\0", 1)[0].decode("ascii", errors="replace")
+        section_count = struct.unpack_from(endian + "I", data, cursor + 48)[0]
+        if section_count > 4096 or 56 + section_count * 68 > command_size:
+            result.parse_errors.append("LC_SEGMENT section table exceeds command bounds")
+            result.parse_status = "partial"
+            return
+        section_cursor = cursor + 56
+        for _ in range(section_count):
+            raw = struct.unpack_from(endian + "16s16sIIIIIIIII", data, section_cursor)
+            section_name = raw[0].split(b"\0", 1)[0].decode("ascii", errors="replace")
+            owner = raw[1].split(b"\0", 1)[0].decode("ascii", errors="replace")
+            section_size, file_offset = raw[3], raw[4]
+            result.sections.append({"segment": owner or segment_name, "name": section_name,
+                                    "size": section_size, "offset": file_offset})
+            section_cursor += 68
+
+    def _extract_section_contents(self, data: bytes, result: MachoAnalysisResult) -> None:
+        swift_names = set(self.SWIFT5_SECTION_NAMES)
+        for section in result.sections:
+            if section["name"] in swift_names and section["name"] not in result.swift_sections_detected:
+                result.swift_sections_detected.append(str(section["name"]))
+            if section["name"] != "__cstring":
+                continue
+            offset, size = int(section["offset"]), int(section["size"])
+            if offset > len(data) or size > len(data) - offset:
+                result.parse_errors.append("__cstring file range exceeds bounded input")
+                result.parse_status = "partial"
+                continue
+            raw = data[offset:offset + size]
+            for value in re.findall(rb"[\x20-\x7e]{4,}", raw):
+                sample = value.decode("ascii", errors="replace")
+                if sample not in result.cstring_samples:
+                    result.cstring_samples.append(sample)
+                    if len(result.cstring_samples) >= 1000:
+                        result.parse_errors.append("C-string sample limit reached")
+                        result.parse_status = "partial"
+                        break
 
     def _parse_thin_64(self, data: bytes, result: MachoAnalysisResult) -> None:
         """Parse bounded 64-bit Mach-O load commands and section file ranges."""
@@ -240,7 +351,6 @@ class MachoBinaryParser:
 
         command_end = 32 + sizeofcmds
         cursor = 32
-        swift_names = set(self.SWIFT5_SECTION_NAMES)
         for _ in range(ncmds):
             if cursor + 8 > command_end:
                 result.parse_errors.append("Load-command header exceeds declared command region")
@@ -264,24 +374,7 @@ class MachoBinaryParser:
                             result.imported_dylibs.append(name)
             cursor += command_size
         result.load_commands_count = ncmds
-        for section in result.sections:
-            if section["name"] in swift_names and section["name"] not in result.swift_sections_detected:
-                result.swift_sections_detected.append(str(section["name"]))
-            if section["name"] == "__cstring":
-                offset, size = int(section["offset"]), int(section["size"])
-                if offset <= len(data) and size <= len(data) - offset:
-                    raw = data[offset:offset + size]
-                    for value in re.findall(rb"[\x20-\x7e]{4,}", raw):
-                        sample = value.decode("ascii", errors="replace")
-                        if sample not in result.cstring_samples:
-                            result.cstring_samples.append(sample)
-                            if len(result.cstring_samples) >= 1000:
-                                result.parse_errors.append("C-string sample limit reached")
-                                result.parse_status = "partial"
-                                break
-                else:
-                    result.parse_errors.append("__cstring file range exceeds bounded input")
-                    result.parse_status = "partial"
+        self._extract_section_contents(data, result)
 
     def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:

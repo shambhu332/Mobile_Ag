@@ -221,6 +221,43 @@ def test_macho_parser_reports_invalid_fat_slice_range(tmp_path):
     assert "Fat slice 0 has an invalid bounded file range" in result.parse_errors
 
 
+def test_macho_parser_reads_32_bit_load_commands_and_cstring_sections(tmp_path):
+    import struct
+
+    strings = b"https://legacy.example.test/api\0"
+    string_offset = 28 + 124
+    segment = struct.pack("<II16sIIIIiiII", 1, 124, b"__TEXT", 0x1000,
+                          len(strings), string_offset, len(strings), 7, 5, 1, 0)
+    section = struct.pack("<16s16sIIIIIIIII", b"__cstring", b"__TEXT", 0x1000,
+                          len(strings), string_offset, 0, 0, 0, 0, 0, 0)
+    commands = segment + section
+    header = struct.pack("<IiiIIII", 0xFEEDFACE, 12, 0, 2, 1, len(commands), 0)
+    binary = tmp_path / "Legacy32MachO"
+    binary.write_bytes(header + commands + strings)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "complete"
+    assert result.is_64bit is False
+    assert result.architectures == ["ARM"]
+    assert result.sections[0]["name"] == "__cstring"
+    assert "https://legacy.example.test/api" in result.cstring_samples
+
+
+def test_macho_parser_supports_32_bit_slice_in_fat_binary(tmp_path):
+    import struct
+
+    thin32 = struct.pack("<IiiIIII", 0xFEEDFACE, 12, 0, 2, 0, 0, 0)
+    slice_offset = 8 + 20
+    fat = struct.pack(">IIiiIII", 0xCAFEBABE, 1, 12, 0, slice_offset, len(thin32), 2)
+    binary = tmp_path / "Fat32MachO"
+    binary.write_bytes(fat + thin32)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "complete"
+    assert result.slice_count == 1
+    assert result.architectures == ["ARM"]
+
+
 def test_smart_ui_crawler():
     crawler = SmartUICrawler(test_user="researcher@example.test", test_pass="Synthetic-Only-123!")
 

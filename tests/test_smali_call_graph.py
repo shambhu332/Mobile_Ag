@@ -482,6 +482,30 @@ def test_smali_webview_content_and_post_sinks_trace_intent_input(webview_sink, t
     assert f"Landroid/webkit/WebView;->{webview_sink}" in flows[0].description
 
 
+@pytest.mark.parametrize("getter", ["getAction()Ljava/lang/String;", "getType()Ljava/lang/String;"])
+def test_smali_intent_metadata_getters_derive_taint_from_external_intent(getter, tmp_path):
+    (tmp_path / "IntentMetadata.smali").write_text(f"""
+.class public Lcom/example/IntentMetadata;
+.super Landroid/app/Activity;
+.method public inspect(Landroid/webkit/WebView;)V
+    .registers 4
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {{v0}}, Landroid/content/Intent;->{getter}
+    move-result-object v1
+    invoke-virtual {{p1, v1}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "ACTIVITY_INTENT"
+    assert flows[0].metadata["source_line"] < flows[0].line_number
+
+
 @pytest.mark.parametrize("annotated,visibility,expected", [
     (True, "public", True),
     (False, "public", False),

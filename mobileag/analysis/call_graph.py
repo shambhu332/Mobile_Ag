@@ -112,6 +112,10 @@ SMALI_SOURCES = {
 # These are deliberately not unconditional sources: ordinary internal Bundles
 # and Uris are not automatically attacker-controlled.
 SMALI_DERIVED_SOURCES = {
+    # Metadata read from an Intent is only considered untrusted when the
+    # Intent receiver itself was sourced from an external/activity boundary.
+    "Landroid/content/Intent;->getAction",
+    "Landroid/content/Intent;->getType",
     "Landroid/os/Bundle;->getString",
     "Landroid/os/Bundle;->getCharSequence",
     "Landroid/os/Bundle;->getInt",

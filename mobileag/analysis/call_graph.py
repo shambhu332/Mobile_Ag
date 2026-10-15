@@ -116,7 +116,6 @@ SMALI_SOURCES = {
     "Landroid/telephony/TelephonyManager;->getDeviceId": "DEVICE_IMEI",
     "Landroid/telephony/TelephonyManager;->getImei": "DEVICE_IMEI",
     "Landroid/location/LocationManager;->getLastKnownLocation": "GEOLOCATION",
-    "Landroid/content/Intent;->getScheme": "INTENT_SCHEME",
 }
 
 # Accessors that only preserve taint from a known untrusted container/URI.
@@ -127,6 +126,7 @@ SMALI_DERIVED_SOURCES = {
     # Intent receiver itself was sourced from an external/activity boundary.
     "Landroid/content/Intent;->getData",
     "Landroid/content/Intent;->getDataString",
+    "Landroid/content/Intent;->getScheme",
     "Landroid/content/Intent;->getAction",
     "Landroid/content/Intent;->getType",
     "Landroid/content/Intent;->getClipData",
@@ -891,6 +891,10 @@ class SmaliCallGraphEngine:
                         }:
                             pending = frozenset((
                                 "INTENT_DATA_URI", line_no, trace[2], trace[3]
+                            ) for trace in receiver_traces)
+                        elif target_key == "Landroid/content/Intent;->getScheme":
+                            pending = frozenset((
+                                "INTENT_SCHEME", line_no, trace[2], trace[3]
                             ) for trace in receiver_traces)
                         else:
                             pending = frozenset(receiver_traces)

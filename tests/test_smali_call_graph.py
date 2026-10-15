@@ -1474,3 +1474,34 @@ def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_pat
     findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
     assert not [finding for finding in findings
                 if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+
+
+def test_intent_scheme_is_derived_only_from_tainted_intent(tmp_path):
+    (tmp_path / "IntentScheme.smali").write_text('''.class public Lcom/example/IntentScheme;
+.super Landroid/app/Activity;
+.method public internal(Landroid/webkit/WebView;)V
+    .registers 5
+    new-instance v0, Landroid/content/Intent;
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+    invoke-virtual {v0}, Landroid/content/Intent;->getScheme()Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {p1, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public external(Landroid/webkit/WebView;)V
+    .registers 5
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Intent;->getScheme()Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {p1, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+''', encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 1
+    assert flows[0].metadata["source_kind"] == "INTENT_SCHEME"
+    assert "external" in flows[0].metadata["source_method"]

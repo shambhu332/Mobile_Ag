@@ -365,7 +365,7 @@ def test_call_graph_and_taint_pending_intent():
     from mobileag.analysis.taint_engine import _SINK_SPECS, _SOURCE_PATTERNS
 
     assert "Landroid/app/PendingIntent;->send" in SMALI_SINKS
-    assert "Landroid/content/Intent;->getScheme" in SMALI_SOURCES
+    assert "Landroid/content/Intent;->getScheme" in SMALI_DERIVED_SOURCES
     assert "Landroid/net/Uri;->getScheme" in SMALI_DERIVED_SOURCES
 
     sink_types = [s["type"] for s in _SINK_SPECS]

@@ -216,6 +216,12 @@ class MachoBinaryParser:
             else:
                 slice_result.is_64bit = False
                 self._parse_thin_32(slice_data, slice_result)
+            if slice_result.cpu_type != arch_name:
+                statuses.append("partial")
+                result.parse_errors.append(
+                    f"Fat slice {index} CPU type disagrees with its architecture-table entry"
+                )
+                continue
             statuses.append(slice_result.parse_status)
             result.load_commands_count += slice_result.load_commands_count
             result.sections.extend({**section, "architecture": arch_name}

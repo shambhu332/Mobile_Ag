@@ -259,6 +259,22 @@ def test_macho_parser_supports_32_bit_slice_in_fat_binary(tmp_path):
     assert result.architectures == ["ARM"]
 
 
+def test_macho_parser_rejects_fat_architecture_slice_mismatch(tmp_path):
+    import struct
+
+    x64_slice = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x01000007, 0, 2, 0, 0, 0, 0)
+    slice_offset = 8 + 20
+    fat = struct.pack(">IIiiIII", 0xCAFEBABE, 1, 0x0100000C, 0,
+                      slice_offset, len(x64_slice), 2)
+    binary = tmp_path / "MismatchedFatMachO"
+    binary.write_bytes(fat + x64_slice)
+
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.parse_status == "partial"
+    assert "Fat slice 0 CPU type disagrees with its architecture-table entry" in result.parse_errors
+    assert result.load_commands_count == 0
+
+
 def test_macho_parser_reads_bounded_64_bit_symbol_names(tmp_path):
     import struct
 

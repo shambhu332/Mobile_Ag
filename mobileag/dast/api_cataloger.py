@@ -6,9 +6,10 @@ identifies shadow APIs, and synthesizes standard OpenAPI 3.0 specifications.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from openapi_spec_validator import validate as validate_openapi_spec
 
@@ -34,6 +35,20 @@ class MobileApiCataloger:
         self.captured_requests: List[CapturedRequest] = []
         self.omitted_requests = 0
         self.unmodeled_requests = 0
+
+    @staticmethod
+    def _path_template(path: str) -> str:
+        """Replace obvious opaque path identifiers without retaining sample values."""
+        uuid_segment = re.compile(
+            r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+        segments = path.split("/")
+        identifier_index = 0
+        for index, segment in enumerate(segments):
+            if re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment):
+                identifier_index += 1
+                segments[index] = f"{{id{identifier_index}}}"
+        return "/".join(segments) or "/"
 
     @staticmethod
     def _json_schema(value: Any, depth: int = 0) -> Dict[str, Any]:
@@ -102,7 +117,7 @@ class MobileApiCataloger:
             return
         self.captured_requests.append(req)
         parsed = urlparse(req.url)
-        path = parsed.path or "/"
+        path = self._path_template(parsed.path or "/")
         method = req.method.lower()
         if method not in {"get", "put", "post", "delete", "options", "head", "patch", "trace"}:
             self.unmodeled_requests += 1
@@ -119,14 +134,17 @@ class MobileApiCataloger:
         if port is not None:
             server_url += f":{port}"
 
-        key = f"{method}:{server_url}:{path}"
+        query_names = set(req.query_params)
+        query_names.update(name for name, _ in parse_qsl(parsed.query, keep_blank_values=True))
+        query_signature = tuple(sorted(name for name in query_names if isinstance(name, str)))
+        key = f"{method}:{server_url}:{path}:{json.dumps(query_signature)}"
         if key not in self.endpoints:
             self.endpoints[key] = {
                 "method": method,
                 "path": path,
                 "host": server_url,
                 "headers": list(req.headers.keys()),
-                "query_params": list(req.query_params.keys()),
+                "query_params": list(query_signature),
                 "sample_statuses": [req.response_status],
                 "has_body": req.body is not None,
                 "request_schema": self._parse_json_schema(req.body),
@@ -137,7 +155,7 @@ class MobileApiCataloger:
             if req.response_status not in entry["sample_statuses"]:
                 entry["sample_statuses"].append(req.response_status)
             entry["headers"] = sorted(set(entry["headers"]) | set(req.headers))
-            entry["query_params"] = sorted(set(entry["query_params"]) | set(req.query_params))
+            entry["query_params"] = sorted(set(entry["query_params"]) | set(query_signature))
             entry["has_body"] = entry["has_body"] or req.body is not None
             entry["request_schema"] = self._merge_schemas(
                 entry.get("request_schema"), self._parse_json_schema(req.body))
@@ -157,6 +175,13 @@ class MobileApiCataloger:
                 paths[path_str] = {}
 
             parameters = []
+            for path_parameter in re.findall(r"\{([^{}]+)\}", path_str):
+                parameters.append({
+                    "name": path_parameter,
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"},
+                })
             for q in entry["query_params"]:
                 parameters.append({
                     "name": q,

@@ -275,6 +275,34 @@ def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
     assert "secret" not in json.dumps(spec)
 
 
+def test_openapi_catalog_templates_identifier_paths_and_keeps_query_signatures():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/orders/94821?expand=items&page=1"))
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/orders/550e8400-e29b-41d4-a716-446655440000?expand=items&page=2"))
+    # A distinct query signature is retained for deduplication, then merged into
+    # the single OpenAPI operation with the union of observed parameter names.
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/orders/31415?sort=recent"))
+
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/v1/orders/{id1}"]["get"]
+    assert {p["name"] for p in operation["parameters"] if p["in"] == "query"} == {
+        "expand", "page", "sort",
+    }
+    path_params = [p for p in operation["parameters"] if p["in"] == "path"]
+    assert path_params == [{"name": "id1", "in": "path", "required": True,
+                            "schema": {"type": "string"}}]
+    encoded = json.dumps(spec)
+    assert "94821" not in encoded
+    assert "550e8400-e29b-41d4-a716-446655440000" not in encoded
+    assert "31415" not in encoded
+
+
 def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
     import json
     from mobileag.web.app import _captured_api_catalog

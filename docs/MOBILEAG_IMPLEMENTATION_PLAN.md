@@ -353,11 +353,10 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ## Comprehensive Implementation Schedule & Status
 
-> **Audit correction (2026-10-14): this blueprint is not 100% complete.** The
+> **Audit correction (refreshed 2026-10-15): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At this
-> checkout after this revision, `python -m pytest -q` reports **885 passed**
-> (60.87 s); these are
+> checkout, `python -m pytest -q` reports **891 passed** (80.39 s); these are
 > primarily mocked/synthetic regressions and do not establish device coverage,
 > exploitability, completeness, or production readiness. The implementation
 > names below indicate bounded prototypes unless the capability is separately
@@ -374,11 +373,28 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 | iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Bounded parser.** Synthetic format tests do not establish robust parsing of all architectures, fat binaries, malformed files, or Swift metadata semantics. |
 | Frida stealth, TLS bypass, crypto harvesting | `dast/frida_stealth.py`, `unpinning_engine.py`, `crypto_harvester.py` | **Not accepted as a completed or safe feature.** Scripts are generators; no current-device validation is implied. Anti-detection/evasion and bypass behavior are outside this plan's completion criteria. Preserve explicit scope and do not treat modified-lab observations as ordinary-app proof. |
 | IPC fuzzing / PoC synthesis | `deeplink_intent_fuzzer.py`, `provider_fuzzer.py`, `generators/poc_apk_synthesizer.py` | **Prototype / not proof-grade.** Provider probes now report read/query success and SQL errors as observations, not vulnerability verdicts. Generated PoCs still need parameter validation and evidence-bound review; no gate establishes independent confirmation before generation. Dynamic use requires exact authorization and human review. |
-| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py` | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. BOLA evaluator now requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. It remains a response evaluator, not a complete dual-session replay system. OpenAPI grouping now preserves per-origin servers and omits userinfo. |
+| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. BOLA evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. It remains a response evaluator, not a complete dual-session replay system. OpenAPI grouping preserves per-origin servers and omits userinfo; normative validation and HTTPS capture remain open. |
 | RASP / resilience | `rasp_resilience_auditor.py` | **Heuristic inventory only.** The numeric score is not a validated resilience measure or MASVS conformance result. |
 | Smart UI crawler | `smart_crawler.py`, `ui_crawler.py` | **Safety correction made in this revision.** No hard-coded credentials; permission/consent prompts, form submission, and exploratory taps now stop at `WAIT` unless the caller explicitly opts into the latter actions. The existing runtime UI snapshot remains read-only. |
 | SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. After fixes in this revision, populated CycloneDX 1.5 JSON/XML and SPDX 2.3 JSON synthetic samples validated against upstream schemas fetched for this audit. This does not establish exhaustive inventory or actual privacy disclosure compliance. OpenAPI still needs normative schema validation. HAR recognized credential fields are redacted before export. |
 | Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. HAR exports now redact recognized credential fields. This does not demonstrate production-scale telemetry, complete graph data flow, OpenAPI conformance, or release readiness. |
+
+### Safety and completion boundary
+
+The blueprint's stealth/anti-detection daemon, TLS/certificate-pinning bypass,
+raw cryptographic-key/plaintext harvesting, and automatic acceptance of OS
+permission/biometric prompts are **not completion targets**. They can defeat
+security controls, expose secrets, or consent on behalf of a user. Existing
+generators/prototypes are not authorization to execute them and must not be
+described as complete. Safe dynamic work remains researcher-selected, scoped,
+transparent, and subject to operator review. No target/device activity is
+implied by this plan.
+
+The API capture additions in the 2026-10-15 checkout expose observed, redacted
+transactions as OpenAPI/HAR inventory through authenticated endpoints. The
+OpenAPI view describes observations, not a complete backend contract; it is not
+normatively schema-validated and does not add HTTPS interception or automatic
+replay/fuzzing.
 
 ### Release gates still required
 
@@ -408,7 +424,7 @@ Timeline & Execution Inventory [audited 2026-10-14; NOT COMPLETE]
 
 ## Verification & Quality Assurance Gates
 
-1. **Unit & regression suite**: On 2026-10-14, after the scoped implementation fixes in this revision, `python -m pytest -q` completed with 885 passed in 60.87 s. Environment emitted 46,755 warnings (mostly pytest-asyncio deprecations); this result is not device/live-target validation.
+1. **Unit & regression suite**: On 2026-10-15, `python -m pytest -q` completed with 891 passed in 80.39 s. Environment emitted 47,640 warnings (mostly pytest-asyncio deprecations); this result is not device/live-target validation.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM schema check used upstream CycloneDX 1.5 JSON schema (`https://raw.githubusercontent.com/CycloneDX/specification/master/schema/bom-1.5.schema.json`, SHA-256 `2d956c1d05c092695457a91f3b5c57c749793c013ec224a0935807cfc8ae4480`), CycloneDX 1.5 XSD plus its SPDX import, and SPDX 2.3 JSON schema (`https://raw.githubusercontent.com/spdx/spdx-spec/v2.3/schemas/spdx-schema.json`, SHA-256 `239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b`). Schemas were temporary audit inputs, not vendored test dependencies.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

@@ -1496,6 +1496,44 @@ async def get_api_capture_transactions(request: Request) -> dict[str, Any]:
     } for tx in txs])}
 
 
+def _captured_api_catalog(txs, title: str):
+    """Build an inventory/export model from observed transactions, not guesses."""
+    from urllib.parse import parse_qsl, urlsplit
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    catalog = MobileApiCataloger(title=title)
+    for tx in txs:
+        query = dict(parse_qsl(urlsplit(tx.url).query, keep_blank_values=True))
+        catalog.ingest_request(CapturedRequest(
+            method=tx.method, url=tx.url, headers=tx.request_headers,
+            query_params=query, body=tx.request_body,
+            response_status=tx.response_status, response_body=tx.response_body,
+        ))
+    return catalog
+
+
+@app.get("/api/dast/api-capture/openapi")
+async def get_api_capture_openapi(request: Request) -> dict[str, Any]:
+    """Export an OpenAPI inventory based solely on captured, redacted requests."""
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    catalog = _captured_api_catalog(txs, 'Observed Mobile API Traffic')
+    result = catalog.export_openapi_json()
+    require_current_session(request)
+    result['x-mobileag-evidence-state'] = 'observed_capture_inventory'
+    result['x-mobileag-proof-state'] = 'not_proven'
+    return result
+
+
+@app.get("/api/dast/api-capture/har")
+async def get_api_capture_har(request: Request) -> dict[str, Any]:
+    """Export current in-memory capture as redacted HAR 1.2."""
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    result = _captured_api_catalog(txs, 'Observed Mobile API Traffic').export_har_json()
+    require_current_session(request)
+    return result
+
+
 @app.post("/api/dast/api-capture/audit")
 async def audit_api_capture(request: Request) -> dict[str, Any]:
     require_current_session(request)

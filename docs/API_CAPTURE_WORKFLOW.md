@@ -13,8 +13,12 @@ an APK or send requests by itself.
    Start/stop and inspect it through the authenticated
    `/api/dast/api-capture/{start,stop,transactions,audit}` endpoints.
 3. Exercise only approved test flows with synthetic accounts/data, then analyze
-   the redacted captures. The proxy enforces both the persisted origin/method
-   scope and the server environment origin ceiling.
+   the redacted captures. Inspect `/api/dast/api-capture/transactions`, review
+   `/api/dast/api-capture/openapi` (an inventory based on observations, not a
+   normative schema/complete API model), optionally export the redacted
+   `/api/dast/api-capture/har`, then use `/api/dast/api-capture/audit`. The proxy
+   enforces both the persisted origin/method scope and the server environment
+   origin ceiling.
 
 This proxy does **not** intercept HTTPS CONNECT/TLS, configure a device, bypass
 certificate pinning, or automatically fuzz/replay captured routes. Use an

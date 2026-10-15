@@ -1,6 +1,7 @@
 """Test FastAPI DAST endpoints in MobileAg web application."""
 
 from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,26 @@ from mobileag.web.app import app
 @pytest.fixture
 def client():
     return TestClient(app, headers={"Authorization": "Bearer " + app.state.auth_token})
+
+
+def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    from mobileag.dast.traffic_auditor import HTTPTransaction
+
+    capture = SimpleNamespace(get_transactions=lambda: [HTTPTransaction(
+        url="https://api.example.test/v1/me", method="GET", response_status=200,
+        response_body='{"account":"synthetic"}')])
+    monkeypatch.setattr(web, "api_capture_proxy", capture)
+
+    assert TestClient(app).get("/api/dast/api-capture/openapi").status_code == 401
+    openapi = client.get("/api/dast/api-capture/openapi")
+    assert openapi.status_code == 200
+    assert openapi.json()["x-mobileag-proof-state"] == "not_proven"
+    assert "/v1/me" in openapi.json()["paths"]
+    har = client.get("/api/dast/api-capture/har")
+    assert har.status_code == 200
+    assert har.json()["log"]["entries"][0]["request"]["method"] == "GET"
 
 
 def test_dast_devices_endpoint(client):

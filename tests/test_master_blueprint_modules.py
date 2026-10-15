@@ -570,6 +570,27 @@ def test_captured_traffic_can_be_exported_as_observed_openapi_inventory():
     assert "synthetic-private-marker" not in json.dumps(spec)
 
 
+def test_traffic_catalog_adapters_do_not_preparse_unbounded_or_malformed_queries():
+    from mobileag.web.app import _captured_api_catalog
+    from mobileag.dast.traffic_auditor import HTTPTransaction, TrafficAuditor
+
+    many_fields = "&".join(f"q{i}=x" for i in range(101))
+    transactions = [
+        HTTPTransaction(url=f"https://api.example.test/v1/large?{many_fields}"),
+        HTTPTransaction(url="https://[malformed/v1/not-modeled"),
+        HTTPTransaction(url="https://api.example.test/v1/good?search=synthetic"),
+    ]
+    for catalog in (
+        TrafficAuditor().catalog_traffic(transactions),
+        _captured_api_catalog(transactions, "Synthetic bounded capture"),
+    ):
+        spec = catalog.export_openapi_json()
+        limits = spec["x-mobileag-capture-limits"]
+        assert limits["unmodeledRequests"] == 2
+        assert limits["invalidURLs"] == 1
+        assert list(spec["paths"]) == ["/v1/good"]
+
+
 def test_openapi_export_is_normatively_validated_and_rejects_invalid_documents():
     import pytest
     from openapi_spec_validator import validate

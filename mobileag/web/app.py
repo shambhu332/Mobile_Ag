@@ -1518,14 +1518,12 @@ async def get_api_capture_transactions(request: Request) -> dict[str, Any]:
 
 def _captured_api_catalog(txs, title: str):
     """Build an inventory/export model from observed transactions, not guesses."""
-    from urllib.parse import parse_qsl, urlsplit
     from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
     catalog = MobileApiCataloger(title=title)
     for tx in txs:
-        query = dict(parse_qsl(urlsplit(tx.url).query, keep_blank_values=True))
         catalog.ingest_request(CapturedRequest(
             method=tx.method, url=tx.url, headers=tx.request_headers,
-            query_params=query, body=tx.request_body,
+            body=tx.request_body,
             response_status=tx.response_status, response_body=tx.response_body,
         ))
     return catalog

@@ -326,14 +326,11 @@ class TrafficAuditor:
         from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
         cataloger = MobileApiCataloger(title=title)
         for tx in transactions:
-            parsed = urlparse(tx.url)
-            query_params = {k: v[0] for k, v in parse_qs(parsed.query).items() if v}
             cataloger.ingest_request(
                 CapturedRequest(
                     method=tx.method,
                     url=tx.url,
                     headers=dict(tx.request_headers),
-                    query_params=query_params,
                     body=tx.request_body,
                     response_status=tx.response_status,
                     response_body=tx.response_body,

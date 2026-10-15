@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "description": "Public synthetic smoke corpus for bounded same-method Smali register flow, including external-content and provider Cursor paths with hard-negative untainted selectors. Matched by CWE and sink line; not blind, independent, whole-program, or APK-recall evidence.",
+  "description": "Public synthetic smoke corpus for bounded same-method Smali register flow, including external-content and provider Cursor and exact lifecycle Intent paths with hard-negative untainted selectors. Matched by CWE and sink line; not blind, independent, whole-program, or APK-recall evidence.",
   "cases": [
     {
       "id": "intent_extra_direct_to_webview",
@@ -90,6 +90,16 @@
       "id": "hardcoded_path_is_not_tainted",
       "expected_candidates": [],
       "source": ".class public Lfixture/InternalNio;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 6\n const-string v0, \"/data/user/0/example.test/files/config\"\n const/4 v1, 0\n new-array v1, v1, [Ljava/lang/String;\n invoke-static {v0, v1}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;\n move-result-object v2\n invoke-static {v2}, Ljava/nio/file/Files;->readString(Ljava/nio/file/Path;)Ljava/lang/String;\n move-result-object v3\n invoke-virtual {p1, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "lifecycle_intent_action_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 8
+        }
+      ],
+      "source": ".class public Lfixture/LifecycleRoute;\n.super Landroid/app/Activity;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 4\n invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;\n move-result-object v0\n sget-object v1, Lfixture/LifecycleRoute;->web:Landroid/webkit/WebView;\n invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     }
   ]
 }

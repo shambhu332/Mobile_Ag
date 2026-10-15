@@ -506,6 +506,62 @@ def test_smali_intent_metadata_getters_derive_taint_from_external_intent(getter,
     assert flows[0].metadata["source_line"] < flows[0].line_number
 
 
+def test_smali_lifecycle_intent_parameters_seed_derived_accessors_only_at_callbacks(tmp_path):
+    (tmp_path / "LifecycleIntent.smali").write_text("""
+.class public Lcom/example/LifecycleIntent;
+.super Landroid/app/Activity;
+.method public onNewIntent(Landroid/content/Intent;)V
+    .registers 4
+    invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    sget-object v1, Lcom/example/LifecycleIntent;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public ordinaryHelper(Landroid/content/Intent;Landroid/webkit/WebView;)V
+    .registers 4
+    invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    invoke-virtual {p2, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    (tmp_path / "LifecycleReceiver.smali").write_text("""
+.class public Lcom/example/LifecycleReceiver;
+.super Landroid/content/BroadcastReceiver;
+.method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
+    .registers 5
+    invoke-virtual {p2}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    sget-object v1, Lcom/example/LifecycleReceiver;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    (tmp_path / "LifecycleLookalike.smali").write_text("""
+.class public Lcom/example/LifecycleLookalike;
+.super Ljava/lang/Object;
+.method public onNewIntent(Landroid/content/Intent;)V
+    .registers 4
+    invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;
+    move-result-object v0
+    sget-object v1, Lcom/example/LifecycleLookalike;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    flows = [finding for finding in findings
+             if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert len(flows) == 2
+    assert {flow.metadata["source_kind"] for flow in flows} == {"LIFECYCLE_INTENT_PARAMETER"}
+    assert engine.coverage["lifecycle_intent_parameter_seed_methods"] == 2
+
+
 def test_smali_clipdata_uri_flows_from_external_intent_to_webview_navigation(tmp_path):
     (tmp_path / "ClipDataFlow.smali").write_text("""
 .class public Lcom/example/ClipDataFlow;

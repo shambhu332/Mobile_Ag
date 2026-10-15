@@ -73,6 +73,19 @@ LIFECYCLE_METHODS = {
     "update", "delete", "openFile", "doInBackground", "onPostExecute"
 }
 
+# Exact callback signatures whose Intent argument is supplied by Android as an
+# external/event boundary. Name/signature alone does not prove component
+# registration, export state, caller privileges, or runtime reachability.
+LIFECYCLE_INTENT_CALLBACK_PARAMETERS = {
+    ("onNewIntent", "(Landroid/content/Intent;)V"): (0, "Landroid/app/Activity;"),
+    ("onReceive", "(Landroid/content/Context;Landroid/content/Intent;)V"): (1, "Landroid/content/BroadcastReceiver;"),
+    ("onStartCommand", "(Landroid/content/Intent;II)I"): (0, "Landroid/app/Service;"),
+    ("onHandleIntent", "(Landroid/content/Intent;)V"): (0, "Landroid/app/IntentService;"),
+    ("onActivityResult", "(IILandroid/content/Intent;)V"): (2, "Landroid/app/Activity;"),
+    ("onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;"): (0, "Landroid/app/Service;"),
+    ("onUnbind", "(Landroid/content/Intent;)Z"): (0, "Landroid/app/Service;"),
+}
+
 # Smali Source signatures (methods returning untrusted external input)
 SMALI_SOURCES = {
     "Landroid/content/Intent;->getStringExtra": "INTENT_EXTRA",
@@ -469,6 +482,7 @@ class SmaliCallGraphEngine:
         parameter_taint_facts = 0
         interprocedural_limited = False
         seen_flows: set[tuple[Any, ...]] = set()
+        lifecycle_intent_seed_methods: set[str] = set()
         while worklist and interprocedural_runs < self.MAX_INTERPROCEDURAL_METHOD_RUNS:
             method_key = worklist.popleft()
             queued.discard(method_key)
@@ -482,6 +496,25 @@ class SmaliCallGraphEngine:
                 register: set(traces)
                 for register, traces in parameter_taints.get(method_key, {}).items()
             }
+            lifecycle_callback = LIFECYCLE_INTENT_CALLBACK_PARAMETERS.get(
+                (method.method_name, method.signature)
+            )
+            descriptors = _parameter_descriptors(method.signature)
+            if (lifecycle_callback is not None and descriptors is not None
+                    and not method.is_static
+                    and self._inherits_from(method.class_name, lifecycle_callback[1])):
+                lifecycle_intent_index = lifecycle_callback[0]
+                formal_index = 0 if method.is_static else 1
+                for parameter_index, width in descriptors:
+                    if parameter_index == lifecycle_intent_index:
+                        source_trace = (
+                            "LIFECYCLE_INTENT_PARAMETER", method.line_number,
+                            method.key, method.file_path,
+                        )
+                        initial.setdefault(f"p{formal_index}", set()).add(source_trace)
+                        lifecycle_intent_seed_methods.add(method.key)
+                        break
+                    formal_index += width
             if method.is_public and method.is_javascript_interface:
                 descriptors = _parameter_descriptors(method.signature) or []
                 formal_index = 0 if method.is_static else 1
@@ -567,6 +600,7 @@ class SmaliCallGraphEngine:
             interprocedural_parameter_taint_facts=parameter_taint_facts,
             interprocedural_static_field_taint_facts=sum(len(v) for v in static_field_taints.values()),
             interprocedural_return_taint_facts=sum(len(v) for v in method_return_taints.values()),
+            lifecycle_intent_parameter_seed_methods=len(lifecycle_intent_seed_methods),
             interprocedural_flow_status=("partial" if interprocedural_limited
                                          else "bounded_arguments_static_fields_and_returns"),
         )
@@ -578,6 +612,17 @@ class SmaliCallGraphEngine:
 
         logger.info("Constructed Call Graph with %d methods", len(self.methods))
         return self.methods
+
+    def _inherits_from(self, class_name: str, expected_base: str) -> bool:
+        """Resolve the parsed Smali superclass chain to a known Android callback base."""
+        current = class_name
+        seen: set[str] = set()
+        while current and current not in seen:
+            if current == expected_base:
+                return True
+            seen.add(current)
+            current = self.class_hierarchy.get(current, "")
+        return False
 
     def _resolve_synthetic_and_lambda_bridges(self) -> None:
         """Resolve synthetic bridge methods (access$*) and lambdas to connect inter-procedural paths."""

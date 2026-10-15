@@ -305,6 +305,7 @@
 .console-shell #assessment-start { background: #2563eb; border-color: #2563eb; color: #fff; }
 .console-shell .form-section { border-color: #e2e6ed; border-radius: 8px; margin-top: 14px; padding: 16px 20px; }
 .console-shell .form-section legend { font-size: 14px; color: #263247; padding: 0 8px; }
+.console-shell .plan-entry legend { color: #1e3a8a; }
 .console-shell .form-section > p { color: #596579; font-size: 12px; }
 .console-shell .assessment-panel { max-width: 1100px; }
 .console-shell .assessment-panel label.assessment-check { background: #f9fafb; border: 1px solid #e8edf4; border-radius: 6px; padding: 12px; gap: 12px; }

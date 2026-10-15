@@ -954,3 +954,46 @@ def test_smali_external_stream_read_buffer_taint_flows_through_array_and_builder
              if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
     assert len(flows) == 1
     assert flows[0].metadata["source_kind"] == "EXTERNAL_FILE_CONTENT_CANDIDATE"
+
+
+def test_smali_external_content_is_not_seeded_from_untainted_uri_or_path(tmp_path):
+    (tmp_path / "InternalReads.smali").write_text("""
+.class public Lcom/example/InternalReads;
+.super Landroid/app/Activity;
+.method public readInternalUri(Landroid/webkit/WebView;)V
+    .registers 7
+    const-string v0, "content://com.example.internal/settings"
+    invoke-static {v0}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+    move-result-object v1
+    invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v2
+    invoke-virtual {v2, v1}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v3
+    new-instance v4, Ljava/io/InputStreamReader;
+    invoke-direct {v4, v3}, Ljava/io/InputStreamReader;-><init>(Ljava/io/InputStream;)V
+    new-instance v5, Ljava/io/BufferedReader;
+    invoke-direct {v5, v4}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V
+    invoke-virtual {v5}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v6
+    invoke-virtual {p1, v6}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+.method public readInternalPath(Landroid/webkit/WebView;)V
+    .registers 7
+    const-string v0, "/data/user/0/com.example.app/files/config"
+    new-instance v1, Ljava/io/FileInputStream;
+    invoke-direct {v1, v0}, Ljava/io/FileInputStream;-><init>(Ljava/lang/String;)V
+    new-instance v2, Ljava/io/InputStreamReader;
+    invoke-direct {v2, v1}, Ljava/io/InputStreamReader;-><init>(Ljava/io/InputStream;)V
+    new-instance v3, Ljava/io/BufferedReader;
+    invoke-direct {v3, v2}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V
+    invoke-virtual {v3}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v4
+    invoke-virtual {p1, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""", encoding="utf-8")
+
+    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    assert not [finding for finding in findings
+                if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]

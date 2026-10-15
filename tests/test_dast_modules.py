@@ -238,7 +238,6 @@ async def test_async_mitm_proxy_lifecycle_and_interception(monkeypatch):
     monkeypatch.setenv("MOBILEAG_PROXY_TOKEN", "synthetic-test-token")
     proxy = AsyncMITMProxy(host="127.0.0.1", port=0)
     assert proxy.is_running is False
-
     await proxy.start()
     assert proxy.is_running is True
 
@@ -258,6 +257,23 @@ async def test_async_mitm_proxy_lifecycle_and_interception(monkeypatch):
 
     await proxy.stop()
     assert proxy.is_running is False
+
+
+def test_proxy_capture_storage_is_bounded_and_reports_omissions():
+    proxy = AsyncMITMProxy(max_capture_bytes=400)
+    proxy.record_transaction(HTTPTransaction(url="http://api.test/a", request_body="a" * 200))
+    proxy.record_transaction(HTTPTransaction(url="http://api.test/b", request_body="b" * 200))
+    stats = proxy.get_capture_stats()
+    assert stats["transaction_count"] == 1
+    assert stats["stored_bytes_estimate"] <= stats["max_capture_bytes"]
+    assert proxy.get_transactions()[0].url.endswith("/b")
+
+    proxy.record_transaction(HTTPTransaction(
+        url="http://api.test/oversize", response_body="x" * (proxy.MAX_TRANSACTION_BYTES + 1)))
+    assert proxy.get_capture_stats()["omitted_transactions"] == 1
+    proxy.clear_transactions()
+    assert proxy.get_capture_stats()["stored_bytes_estimate"] == 0
+    assert proxy.get_capture_stats()["omitted_transactions"] == 0
 
 
 def test_frida_runner_unified_agent_and_session():

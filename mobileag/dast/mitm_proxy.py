@@ -17,13 +17,22 @@ from mobileag.security.privacy import redact
 
 
 class AsyncMITMProxy:
+    MAX_TRANSACTIONS = 1000
+    MAX_TRANSACTION_BYTES = 2 * 1024 * 1024
+    MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+
     def __init__(self, host='127.0.0.1', port=8082, auditor: Optional[TrafficAuditor]=None,
-                 allowed_origins=None, allowed_methods=None):
+                 allowed_origins=None, allowed_methods=None,
+                 max_capture_bytes: int = MAX_CAPTURE_BYTES):
         self.host, self.port = host, port
         self.allowed_origins = set(allowed_origins or ())
         self.allowed_methods = {str(m).upper() for m in (allowed_methods or ())}
         self.auditor = auditor or TrafficAuditor()
         self.transactions = []
+        self.max_capture_bytes = max(0, min(int(max_capture_bytes), self.MAX_CAPTURE_BYTES))
+        self._transaction_sizes: list[int] = []
+        self._capture_bytes = 0
+        self.omitted_transactions = 0
         self._server = None
         self._is_running = False
         self._clients = set()
@@ -39,14 +48,41 @@ class AsyncMITMProxy:
         tx.response_headers = redact(tx.response_headers)
         tx.request_body = redact(tx.request_body)
         tx.response_body = redact(tx.response_body)
+        values = [tx.url, tx.method, tx.request_body or '', tx.response_body or '']
+        for headers in (tx.request_headers, tx.response_headers):
+            values.extend(f'{key}:{value}' for key, value in headers.items())
+        size = 128 + sum(len(str(value).encode('utf-8', errors='replace')) for value in values)
+        if size > self.MAX_TRANSACTION_BYTES or size > self.max_capture_bytes:
+            self.omitted_transactions += 1
+            return
+        while self.transactions and (
+                len(self.transactions) >= self.MAX_TRANSACTIONS or
+                self._capture_bytes + size > self.max_capture_bytes):
+            self.transactions.pop(0)
+            self._capture_bytes -= self._transaction_sizes.pop(0)
+        if self._capture_bytes + size > self.max_capture_bytes:
+            self.omitted_transactions += 1
+            return
         self.transactions.append(tx)
-        del self.transactions[:-1000]
+        self._transaction_sizes.append(size)
+        self._capture_bytes += size
 
     def get_transactions(self):
         return list(self.transactions)
 
     def clear_transactions(self):
         self.transactions.clear()
+        self._transaction_sizes.clear()
+        self._capture_bytes = 0
+        self.omitted_transactions = 0
+
+    def get_capture_stats(self):
+        return {'transaction_count': len(self.transactions),
+                'stored_bytes_estimate': self._capture_bytes,
+                'omitted_transactions': self.omitted_transactions,
+                'max_transactions': self.MAX_TRANSACTIONS,
+                'max_transaction_bytes': self.MAX_TRANSACTION_BYTES,
+                'max_capture_bytes': self.max_capture_bytes}
 
     def audit_captured_traffic(self):
         return self.auditor.audit_transactions(self.transactions)

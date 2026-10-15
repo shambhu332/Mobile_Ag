@@ -1488,8 +1488,11 @@ async def stop_api_capture(request: Request) -> dict[str, Any]:
 async def get_api_capture_transactions(request: Request) -> dict[str, Any]:
     require_current_session(request)
     txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    capture_stats = api_capture_proxy.get_capture_stats() if api_capture_proxy else {
+        'transaction_count': 0, 'stored_bytes_estimate': 0, 'omitted_transactions': 0}
     require_current_session(request)
-    return {'count': len(txs), 'transactions': redact([tx.__dict__ if hasattr(tx, '__dict__') else {
+    return {'count': len(txs), 'capture_stats': capture_stats,
+            'transactions': redact([tx.__dict__ if hasattr(tx, '__dict__') else {
         'url': tx.url, 'method': tx.method, 'request_headers': tx.request_headers,
         'response_status': tx.response_status, 'response_headers': tx.response_headers,
         'request_body': tx.request_body, 'response_body': tx.response_body,
@@ -1518,6 +1521,8 @@ async def get_api_capture_openapi(request: Request) -> dict[str, Any]:
     txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
     catalog = _captured_api_catalog(txs, 'Observed Mobile API Traffic')
     result = catalog.export_openapi_json()
+    if api_capture_proxy:
+        result['x-mobileag-capture-limits']['omittedRequests'] += api_capture_proxy.omitted_transactions
     require_current_session(request)
     result['x-mobileag-evidence-state'] = 'observed_capture_inventory'
     result['x-mobileag-proof-state'] = 'not_proven'
@@ -1530,6 +1535,9 @@ async def get_api_capture_har(request: Request) -> dict[str, Any]:
     require_current_session(request)
     txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
     result = _captured_api_catalog(txs, 'Observed Mobile API Traffic').export_har_json()
+    result['log']['x-mobileag-capture-stats'] = (
+        api_capture_proxy.get_capture_stats() if api_capture_proxy else {
+            'transaction_count': 0, 'stored_bytes_estimate': 0, 'omitted_transactions': 0})
     require_current_session(request)
     return result
 

@@ -21,7 +21,10 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
 
     capture = SimpleNamespace(get_transactions=lambda: [HTTPTransaction(
         url="https://api.example.test/v1/me", method="GET", response_status=200,
-        response_body='{"account":"synthetic"}')])
+        response_body='{"account":"synthetic"}')],
+        get_capture_stats=lambda: {'transaction_count': 1, 'stored_bytes_estimate': 256,
+                                   'omitted_transactions': 0},
+        omitted_transactions=0)
     monkeypatch.setattr(web, "api_capture_proxy", capture)
 
     assert TestClient(app).get("/api/dast/api-capture/openapi").status_code == 401

@@ -150,6 +150,10 @@ SMALI_EXTERNAL_URI_STREAMS = {
     "Landroid/content/ContentResolver;->openAssetFileDescriptor": 1,
     "Landroid/content/ContentResolver;->openTypedAssetFileDescriptor": 1,
 }
+SMALI_EXTERNAL_PATH_READERS = {
+    "Ljava/nio/file/Files;->readString": 0,
+    "Ljava/nio/file/Files;->readAllBytes": 0,
+}
 SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS = {
     "Ljava/io/FileInputStream;", "Ljava/io/FileReader;", "Ljava/io/RandomAccessFile;",
     "Ljava/util/Scanner;",
@@ -190,6 +194,7 @@ SMALI_TAINT_TRANSFORMS = {
     "Ljava/lang/String;->replaceAll",
     "Ljava/lang/String;->replaceFirst",
     "Landroid/net/Uri;->toString",
+    "Ljava/nio/file/Paths;->get",
     "Ljava/lang/Integer;->toString",
     "Ljava/lang/Long;->toString",
     "Ljava/lang/Float;->toString",
@@ -701,6 +706,7 @@ class SmaliCallGraphEngine:
             if not move_result:
                 registers.pop("@pending_return", None)
                 registers.pop("@pending_builder", None)
+                registers.pop("@pending_external_array", None)
             if static_get:
                 dest, field_key = static_get.groups()
                 static_field_reads.add(field_key)
@@ -724,6 +730,9 @@ class SmaliCallGraphEngine:
                     registers[dest] = pending
                 else:
                     registers.pop(dest, None)
+                external_array_taints = registers.pop("@pending_external_array", frozenset())
+                if external_array_taints:
+                    registers[f"@array:{dest}"] = external_array_taints
                 if return_taints:
                     registers[f"@returned:{dest}"] = return_taints
                 if builder_taints:
@@ -837,6 +846,16 @@ class SmaliCallGraphEngine:
                                 method.key, method.file_path,
                             )})
 
+                    external_path_index = SMALI_EXTERNAL_PATH_READERS.get(target_key)
+                    if external_path_index is not None and len(args) > external_path_index:
+                        if registers.get(args[external_path_index]):
+                            pending = frozenset({(
+                                "EXTERNAL_FILE_CONTENT_CANDIDATE", line_no,
+                                method.key, method.file_path,
+                            )})
+                            if target_key.endswith("->readAllBytes"):
+                                registers["@pending_external_array"] = pending
+
                     if target_name == "<init>" and args:
                         if target_class in SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS:
                             path_traces = frozenset(trace for register in args[1:]
@@ -866,8 +885,11 @@ class SmaliCallGraphEngine:
                             # array. Keep the return tainted so subsequent
                             # scalar/string operations remain visible.
                             pending = receiver_traces
-                        elif target_name in {"readLine", "readAllBytes", "readText"}:
+                        elif target_name in {"readLine", "readText"}:
                             pending = receiver_traces
+                        elif target_name == "readAllBytes":
+                            pending = receiver_traces
+                            registers["@pending_external_array"] = receiver_traces
                     if receiver_traces and target_class in SMALI_CONTENT_LINE_READERS and target_name in {
                         "next", "nextLine", "nextInt", "nextLong", "nextFloat", "nextDouble",
                     }:

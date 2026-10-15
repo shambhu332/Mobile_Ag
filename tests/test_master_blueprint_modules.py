@@ -319,6 +319,11 @@ def test_shadow_api_review_normalizes_ids_and_never_exports_url_secrets():
     assert len(host_findings) == 1
     assert host_findings[0].metadata["origin"] == "https://other.example.test"
 
+    default_port_match = TrafficAuditor().find_shadow_apis(
+        [HTTPTransaction(url="https://api.example.test:443/v1/orders/123", method="GET")],
+        ["https://api.example.test/v1/orders/{orderId}"])
+    assert default_port_match == []
+
 
 def test_openapi_catalog_keeps_hosts_separate_and_drops_userinfo():
     import json
@@ -345,6 +350,20 @@ def test_openapi_catalog_formats_ipv6_server_origins():
     spec = catalog.export_openapi_json()
     operation = spec["paths"]["/v1/items"]["get"]
     assert operation["servers"] == [{"url": "https://[2001:db8::1]:8443"}]
+
+
+def test_openapi_catalog_normalizes_default_http_ports():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test:443/v1/items"))
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/v1/items"))
+    catalog.ingest_request(CapturedRequest("GET", "http://api.example.test:80/v1/other"))
+    spec = catalog.export_openapi_json()
+    item_servers = spec["paths"]["/v1/items"]["get"]["servers"]
+    other_servers = spec["paths"]["/v1/other"]["get"]["servers"]
+    assert item_servers == [{"url": "https://api.example.test"}]
+    assert other_servers == [{"url": "http://api.example.test"}]
 
 
 def test_openapi_catalog_templates_identifier_paths_and_keeps_query_signatures():

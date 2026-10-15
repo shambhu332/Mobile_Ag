@@ -166,7 +166,7 @@ class MobileApiCataloger:
             server_url = f"{parsed.scheme}://{host_literal}"
         else:
             server_url = ""
-        if port is not None:
+        if port is not None and port != {"http": 80, "https": 443}.get(parsed.scheme.lower()):
             server_url += f":{port}"
 
         query_names = set(req.query_params)

@@ -356,6 +356,8 @@ class TrafficAuditor:
             host = f"[{host}]"
         except ValueError:
             pass
+        if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+            port = None
         return f"{scheme}://{host}" + (f":{port}" if port is not None else "")
 
     @staticmethod

@@ -138,10 +138,14 @@ class UICrawler:
 
     def get_smart_crawler(self, test_user: str | None = None, test_pass: str | None = None,
                           allow_form_submit: bool = False,
-                          allow_exploratory_clicks: bool = False) -> Any:
-        """Instantiate a crawler; credentials and state-changing actions are opt-in."""
+                          allow_exploratory_clicks: bool = False,
+                          allow_test_credential_entry: bool = False,
+                          allow_back_navigation: bool = False) -> Any:
+        """Instantiate a crawler with separate explicit opt-ins for mutations."""
         from mobileag.dast.smart_crawler import SmartUICrawler
         return SmartUICrawler(test_user=test_user, test_pass=test_pass,
                               allow_form_submit=allow_form_submit,
-                              allow_exploratory_clicks=allow_exploratory_clicks)
+                              allow_exploratory_clicks=allow_exploratory_clicks,
+                              allow_test_credential_entry=allow_test_credential_entry,
+                              allow_back_navigation=allow_back_navigation)
 

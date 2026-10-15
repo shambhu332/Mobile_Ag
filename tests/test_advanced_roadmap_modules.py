@@ -17,6 +17,7 @@ from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
 from mobileag.analysis.macho_parser import MachoBinaryParser
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.dast.smart_crawler import SmartUICrawler
+from mobileag.dast.ui_crawler import UICrawler
 from mobileag.dast.frida_stealth import FridaStealthHarness
 
 
@@ -300,8 +301,18 @@ def test_smart_ui_crawler():
     </hierarchy>"""
 
     decision2 = crawler.decide_next_action("com.example.app.LoginActivity", login_xml)
-    assert decision2.action == "TYPE_TEXT"
-    assert decision2.input_text == "researcher@example.test"
+    assert decision2.action == "WAIT"
+    assert "explicit operator approval" in decision2.explanation
+
+    approved_credential_entry = SmartUICrawler(
+        test_user="researcher@example.test", test_pass="Synthetic-Only-123!",
+        allow_test_credential_entry=True,
+    )
+    decision2_approved = approved_credential_entry.decide_next_action(
+        "com.example.app.LoginActivity", login_xml
+    )
+    assert decision2_approved.action == "TYPE_TEXT"
+    assert decision2_approved.input_text == "researcher@example.test"
 
     # No embedded/default credentials and no submit action without an
     # operator-provided synthetic identity.
@@ -310,9 +321,32 @@ def test_smart_ui_crawler():
     assert decision3.action == "WAIT"
     assert "operator-supplied" in decision3.explanation
     populated_login = login_xml.replace('text=""', 'text="synthetic"')
-    decision4 = crawler.decide_next_action("com.example.app.LoginActivity", populated_login)
+    decision4 = approved_credential_entry.decide_next_action("com.example.app.LoginActivity", populated_login)
     assert decision4.action == "WAIT"
     assert "explicit operator approval" in decision4.explanation
+
+
+def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
+    xml = '<hierarchy rotation="0" />'
+    default_crawler = SmartUICrawler()
+    decisions = [default_crawler.decide_next_action("com.example.app.MainActivity", xml)
+                 for _ in range(4)]
+    assert decisions[-1].action == "WAIT"
+    assert "BACK navigation requires explicit operator approval" in decisions[-1].explanation
+
+    approved_crawler = SmartUICrawler(allow_back_navigation=True)
+    approved_decisions = [approved_crawler.decide_next_action("com.example.app.MainActivity", xml)
+                          for _ in range(4)]
+    assert approved_decisions[-1].action == "BACK"
+
+
+def test_ui_crawler_factory_propagates_smart_crawler_opt_ins():
+    crawler = UICrawler().get_smart_crawler(
+        test_user="synthetic@example.test", test_pass="synthetic-only",
+        allow_test_credential_entry=True, allow_back_navigation=True,
+    )
+    assert crawler.allow_test_credential_entry is True
+    assert crawler.allow_back_navigation is True
 
 
 def test_frida_stealth_harness():

@@ -36,13 +36,17 @@ class SmartUICrawler:
     """Intelligently navigates Android application UIs based on semantic element detection."""
 
     def __init__(self, test_user: Optional[str] = None, test_pass: Optional[str] = None,
-                 allow_form_submit: bool = False, allow_exploratory_clicks: bool = False):
+                 allow_form_submit: bool = False, allow_exploratory_clicks: bool = False,
+                 allow_test_credential_entry: bool = False,
+                 allow_back_navigation: bool = False):
         # Credentials are supplied only by the authorized operator. Never ship
         # reusable-looking defaults that could be entered into an unintended app.
         self.test_user = test_user
         self.test_pass = test_pass
         self.allow_form_submit = allow_form_submit
         self.allow_exploratory_clicks = allow_exploratory_clicks
+        self.allow_test_credential_entry = allow_test_credential_entry
+        self.allow_back_navigation = allow_back_navigation
         self.visited_states: Dict[str, int] = {}  # state_hash -> visit_count
 
     def parse_hierarchy_xml(self, xml_content: str) -> List[UIElement]:
@@ -144,6 +148,10 @@ class SmartUICrawler:
         # Priority 2: Fill empty username fields
         for el in elements:
             if el.semantic_role == "username" and not el.text and self.test_user:
+                if not self.allow_test_credential_entry:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Entering a researcher-supplied test identity requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -154,6 +162,10 @@ class SmartUICrawler:
         # Priority 3: Fill empty password fields
         for el in elements:
             if el.semantic_role == "password" and not el.text and self.test_pass:
+                if not self.allow_test_credential_entry:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Entering a researcher-supplied test credential requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -181,6 +193,10 @@ class SmartUICrawler:
 
         # Priority 5: If screen has been visited many times (> 3), press BACK to escape loop
         if visits >= 3:
+            if not self.allow_back_navigation:
+                return CrawlerDecision(action="WAIT", explanation=(
+                    f"Repeated screen state {state_hash} detected; BACK navigation requires explicit operator approval"
+                ))
             return CrawlerDecision(
                 action="BACK",
                 explanation=f"Screen state {state_hash} visited {visits} times; pressing BACK to escape loop.",

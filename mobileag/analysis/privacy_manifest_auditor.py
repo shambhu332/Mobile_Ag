@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import os
 import plistlib
-import re
 import stat
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
@@ -54,6 +54,10 @@ class PrivacyManifestAuditor:
     MAX_MANIFESTS = 128
     MAX_TREE_ENTRIES = 50_000
     MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+    MAX_ANDROID_SOURCE_FILES = 5_000
+    MAX_ANDROID_SOURCE_BYTES = 2 * 1024 * 1024
+    MAX_ANDROID_TOTAL_SOURCE_BYTES = 32 * 1024 * 1024
+    MAX_ANDROID_MANIFEST_CHARS = 2 * 1024 * 1024
 
     def audit_ios_privacy_manifest(self, app_dir: str | Path) -> PrivacyManifestResult:
         """Inventory bounded PrivacyInfo.xcprivacy files without claiming compliance.
@@ -199,25 +203,91 @@ class PrivacyManifestAuditor:
         """
         findings: List[Finding] = []
         path = Path(source_tree_dir)
+        coverage = {
+            "manifest_parse": "not_attempted", "manifest_truncated": False,
+            "source_tree": "invalid", "files_read": 0, "bytes_read": 0,
+            "limits_reached": [], "errors": [],
+        }
 
-        # Check declared sensitive permissions in AndroidManifest.xml
-        has_location = "ACCESS_FINE_LOCATION" in manifest_content or "ACCESS_COARSE_LOCATION" in manifest_content
-        has_contacts = "READ_CONTACTS" in manifest_content
+        # Parse actual permission elements; substring scans also matched comments,
+        # examples and unrelated permission names. APK/source evidence remains a lead.
+        permissions: Set[str] = set()
+        if isinstance(manifest_content, str) and len(manifest_content) <= self.MAX_ANDROID_MANIFEST_CHARS:
+            try:
+                root = ET.fromstring(manifest_content)
+                for element in root.iter():
+                    tag_name = element.tag.rsplit("}", 1)[-1]
+                    if tag_name not in {"uses-permission", "uses-permission-sdk-23"}:
+                        continue
+                    name = next((value for key, value in element.attrib.items()
+                                 if key.rsplit("}", 1)[-1] == "name"), None)
+                    if isinstance(name, str):
+                        permissions.add(name)
+                coverage["manifest_parse"] = "parsed"
+            except ET.ParseError:
+                coverage["manifest_parse"] = "invalid"
+                coverage["errors"].append("manifest_parse_error")
+        else:
+            coverage["manifest_parse"] = "invalid"
+            coverage["manifest_truncated"] = isinstance(manifest_content, str)
+            coverage["errors"].append("manifest_missing_or_too_large")
+        has_location = bool(permissions & {
+            "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
+        })
+        has_contacts = "android.permission.READ_CONTACTS" in permissions
 
         detected_trackers: Set[str] = set()
-
-        if path.is_dir():
-            for root, _, files in os.walk(path):
-                for f in files:
-                    if f.endswith((".java", ".kt", ".smali")):
-                        try:
-                            with open(os.path.join(root, f), "r", encoding="utf-8", errors="ignore") as src:
-                                text = src.read()
-                                for pkg, desc in self.THIRD_PARTY_TRACKING_SDKS.items():
-                                    if pkg in text:
-                                        detected_trackers.add(desc)
-                        except OSError:
-                            continue
+        if path.is_dir() and not path.is_symlink():
+            coverage["source_tree"] = "complete"
+            entries = 0
+            total_bytes = 0
+            limited = False
+            for root_dir, dirs, files in os.walk(path, followlinks=False):
+                dirs[:] = sorted(name for name in dirs if not (Path(root_dir) / name).is_symlink())
+                files.sort()
+                entries += len(dirs) + len(files)
+                if entries > self.MAX_TREE_ENTRIES:
+                    coverage["limits_reached"].append("tree_entries")
+                    limited = True
+                    break
+                for filename in files:
+                    candidate = Path(root_dir) / filename
+                    if candidate.suffix.lower() not in {".java", ".kt", ".smali"}:
+                        continue
+                    if coverage["files_read"] >= self.MAX_ANDROID_SOURCE_FILES:
+                        coverage["limits_reached"].append("source_files")
+                        limited = True
+                        break
+                    try:
+                        fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                        with os.fdopen(fd, "rb") as stream:
+                            info = os.fstat(stream.fileno())
+                            if not stat.S_ISREG(info.st_mode):
+                                coverage["errors"].append("non_regular_source_skipped")
+                                continue
+                            remaining = self.MAX_ANDROID_TOTAL_SOURCE_BYTES - total_bytes
+                            read_limit = min(self.MAX_ANDROID_SOURCE_BYTES, remaining)
+                            if read_limit <= 0:
+                                coverage["limits_reached"].append("total_source_bytes")
+                                limited = True
+                                break
+                            raw = stream.read(read_limit + 1)
+                        if len(raw) > read_limit:
+                            coverage["errors"].append("source_file_truncated")
+                            raw = raw[:read_limit]
+                        total_bytes += len(raw)
+                        coverage["bytes_read"] = total_bytes
+                        coverage["files_read"] += 1
+                        text = raw.decode("utf-8", errors="ignore")
+                        for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
+                            if package in text:
+                                detected_trackers.add(description)
+                    except OSError:
+                        coverage["errors"].append("source_read_error")
+                if limited:
+                    break
+            if limited or coverage["errors"]:
+                coverage["source_tree"] = "partial"
 
         if (has_location or has_contacts) and detected_trackers:
             findings.append(
@@ -240,6 +310,7 @@ class PrivacyManifestAuditor:
                         "trackers": sorted(detected_trackers),
                         "evidence_state": "static_candidate",
                         "compliance_verdict": "not_assessed",
+                        "coverage": coverage,
                         "limitations": [
                             "Play Console declarations are not present in the APK/source tree",
                             "package-name matches do not prove SDK execution or data sharing",

@@ -222,7 +222,7 @@ def test_android_data_safety_indicator_is_only_a_static_review_lead():
         src = os.path.join(tmp_dir, "App.java")
         with open(src, "w", encoding="utf-8") as f:
             f.write("com.google.firebase.analytics.FirebaseAnalytics")
-        manifest = '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
+        manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /></manifest>'
 
         findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir)
 
@@ -233,3 +233,51 @@ def test_android_data_safety_indicator_is_only_a_static_review_lead():
     assert finding.metadata["evidence_state"] == "static_candidate"
     assert finding.metadata["compliance_verdict"] == "not_assessed"
     assert "does not establish" in finding.description
+    assert finding.metadata["coverage"]["manifest_parse"] == "parsed"
+    assert finding.metadata["coverage"]["source_tree"] == "complete"
+
+
+def test_android_data_safety_uses_permission_elements_not_comments_or_substrings():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.java"
+        source.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <!-- <uses-permission android:name="android.permission.READ_CONTACTS"/> -->
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION_EXTRA"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir) == []
+
+
+def test_android_data_safety_source_inventory_is_bounded_and_reports_partial_coverage():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir)
+        source = base / "App.java"
+        source.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        auditor = PrivacyManifestAuditor()
+        auditor.MAX_ANDROID_SOURCE_FILES = 0
+        manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/></manifest>'
+        results = auditor.audit_android_data_safety_discrepancies(manifest, base)
+
+    assert results == []  # incomplete source coverage cannot produce an SDK match
+
+
+def test_android_data_safety_no_follow_and_source_budget_are_exposed():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir)
+        (base / "App.java").write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        (base / "Large.kt").write_text("x" * 2048, encoding="utf-8")
+        outside = base.parent / f"{base.name}-outside.java"
+        outside.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        (base / "Linked.java").symlink_to(outside)
+        auditor = PrivacyManifestAuditor()
+        auditor.MAX_ANDROID_SOURCE_BYTES = 1024
+        manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/></manifest>'
+        results = auditor.audit_android_data_safety_discrepancies(manifest, base)
+        outside.unlink()
+
+    assert len(results) == 1
+    coverage = results[0].metadata["coverage"]
+    assert coverage["files_read"] == 2
+    assert coverage["source_tree"] == "partial"
+    assert "source_file_truncated" in coverage["errors"]
+    assert "source_read_error" in coverage["errors"]

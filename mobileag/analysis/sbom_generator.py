@@ -13,6 +13,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
+
+
+def escape_purl_segment(value: str) -> str:
+    """Percent-encode an untrusted value for use as one package-URL segment."""
+    if not isinstance(value, str):
+        raise ValueError("PURL segments must be strings")
+    return quote(value, safe="._~-", encoding="utf-8", errors="strict")
 
 
 @dataclass
@@ -30,6 +38,12 @@ class SbomComponent:
 class MobileSbomGenerator:
     """Generates CycloneDX and SPDX SBOM representations."""
 
+    COMPONENT_TYPES = {
+        "application", "framework", "library", "container", "operating-system", "device",
+        "firmware", "file", "machine-learning-model", "platform", "device-driver",
+        "cryptographic-asset", "data",
+    }
+
     HASH_LENGTHS = {
         "MD5": 32, "SHA-1": 40, "SHA-256": 64, "SHA-384": 96, "SHA-512": 128,
         "SHA3-256": 64, "SHA3-384": 96, "SHA3-512": 128,
@@ -37,6 +51,8 @@ class MobileSbomGenerator:
     }
 
     def __init__(self, app_name: str = "MobileApp", app_version: str = "1.0.0"):
+        self._validate_text(app_name, "application name", 512)
+        self._validate_text(app_version, "application version", 256)
         self.app_name = app_name
         self.app_version = app_version
         self.components: List[SbomComponent] = []
@@ -52,6 +68,19 @@ class MobileSbomGenerator:
         licenses: Optional[List[str]] = None,
     ) -> None:
         """Add a software dependency or native library component."""
+        self._validate_text(name, "component name", 1024)
+        if version is not None:
+            self._validate_text(version, "component version", 256)
+        if (not isinstance(purl, str) or not purl.startswith("pkg:") or len(purl) > 2048
+                or any(ord(ch) < 0x20 or ch.isspace() for ch in purl)):
+            raise ValueError("Invalid package URL scheme or length")
+        if not isinstance(component_type, str) or component_type not in self.COMPONENT_TYPES:
+            raise ValueError(f"Unsupported CycloneDX component type: {component_type!r}")
+        if licenses is not None:
+            if not isinstance(licenses, list):
+                raise ValueError("SBOM licenses must be a list of identifiers")
+            for license_id in licenses:
+                self._validate_text(license_id, "license identifier", 256)
         normalized_hashes: Dict[str, str] = {}
         for algorithm, digest in (hashes or {}).items():
             if not isinstance(algorithm, str) or not isinstance(digest, str):
@@ -77,6 +106,12 @@ class MobileSbomGenerator:
             licenses=licenses or [],
         )
         self.components.append(comp)
+
+    @staticmethod
+    def _validate_text(value: Any, label: str, max_length: int) -> None:
+        if (not isinstance(value, str) or not value or len(value) > max_length
+                or any(ord(ch) < 0x20 and ch not in "\t\n\r" for ch in value)):
+            raise ValueError(f"Invalid or overlong SBOM {label}")
 
     def add_vulnerability(
         self,

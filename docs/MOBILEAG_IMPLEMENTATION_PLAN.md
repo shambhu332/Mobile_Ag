@@ -618,6 +618,9 @@ scheme/length, XML-safe descriptions, exact positive `CWE-n` values, and severit
 labels (mapping OSV `moderate` to CycloneDX `medium`) before JSON/XML emission.
 Malformed fields are rejected rather than partially coerced; attached advisory
 data still does not establish that a dependency is present or exploitable.
+Application/component metadata is also bounded and typed, component categories
+are allowlisted, and synthesized fallback PURL segments are percent-encoded;
+this is basic shape checking rather than full Package URL standard validation.
 
 ### Native JNI string-candidate evidence boundary
 

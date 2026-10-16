@@ -716,7 +716,7 @@ class Orchestrator:
 
         # Save CycloneDX v1.5 SBOM
         try:
-            from mobileag.analysis.sbom_generator import MobileSbomGenerator
+            from mobileag.analysis.sbom_generator import MobileSbomGenerator, escape_purl_segment
             sbom_gen = MobileSbomGenerator(
                 app_name=state.get("package_name") or "mobile_target",
                 app_version=state.get("manifest_data", {}).get("version_name") or "1.0.0",
@@ -725,7 +725,7 @@ class Orchestrator:
                 sbom_gen.add_component(
                     name=dep.get("name", "dependency"),
                     version=dep.get("version", "unknown"),
-                    purl=dep.get("purl", f"pkg:generic/{dep.get('name', 'dependency')}"),
+                    purl=dep.get("purl", f"pkg:generic/{escape_purl_segment(str(dep.get('name', 'dependency')))}"),
                 )
             sbom_path = output / f"sbom_{state['scan_id']}_cyclonedx.json"
             sbom_gen.save_cyclonedx(sbom_path)

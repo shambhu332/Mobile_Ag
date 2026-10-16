@@ -400,6 +400,18 @@ def test_sbom_normalizes_and_rejects_advisory_metadata():
         generator.add_vulnerability("OSV-2025-123", purl, cwe_ids=["CWE-79<script>"])
 
 
+def test_sbom_component_metadata_is_bounded_and_typed():
+    import pytest
+    with pytest.raises(ValueError, match="application name"):
+        MobileSbomGenerator("", "1")
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="component type"):
+        generator.add_component("native", "1", "pkg:generic/native", component_type="injected")
+    with pytest.raises(ValueError, match="package URL"):
+        generator.add_component("native", "1", "pkg:generic/bad name")
+    generator.add_component("Bank App", "1.0 beta", "pkg:apk/Bank%20App@1.0%20beta")
+
+
 def test_exploit_poc_synthesizer():
     from mobileag.reporting.finding import Finding, Severity, FindingStatus
     from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer

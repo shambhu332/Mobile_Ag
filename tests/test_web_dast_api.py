@@ -492,13 +492,21 @@ def test_get_scan_apis_counts_all_routes_as_unverified_candidates(monkeypatch, c
         {"method": "UNKNOWN", "url": "https://api.example.test/v1/items/{id}",
          "evidence_type": "embedded_url_candidate"},
     ]
-    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={"api_endpoints": endpoints}))
+    graphql_operations = [{"operation_type": "query", "operation_name": "LoadProfile",
+                           "source_file": "Api.kt", "line_number": 12,
+                           "evidence_type": "graphql_operation_string_candidate"}]
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
+        "api_endpoints": endpoints,
+        "coverage": {"api_mapping": {"graphql_operation_candidates": graphql_operations}},
+    }))
 
     response = client.get("/api/scans/synthetic-api-candidates/apis")
     assert response.status_code == 200
     assert response.json()["total"] == 2
     assert response.json()["candidate_count"] == 2
     assert response.json()["vulnerable_count"] == 0
+    assert response.json()["graphql_operation_candidate_count"] == 1
+    assert response.json()["graphql_operations"] == graphql_operations
     assert "unverified" in response.json()["assessment"]
 
 

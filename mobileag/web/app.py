@@ -581,6 +581,12 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
     scan = await get_scan_details(scan_id)
     raw_apis = scan.get("api_endpoints", [])
     apis = raw_apis if isinstance(raw_apis, list) else []
+    coverage = scan.get("coverage", {})
+    api_mapping_coverage = coverage.get("api_mapping", {}) if isinstance(coverage, dict) else {}
+    raw_graphql_operations = (api_mapping_coverage.get("graphql_operation_candidates", [])
+                              if isinstance(api_mapping_coverage, dict) else [])
+    graphql_operations = ([item for item in raw_graphql_operations if isinstance(item, dict)][:1000]
+                          if isinstance(raw_graphql_operations, list) else [])
 
     return {
         "scan_id": scan_id,
@@ -588,6 +594,8 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
         "total": len(apis),
         "vulnerable_count": 0,
         "candidate_count": len(apis),
+        "graphql_operations": graphql_operations,
+        "graphql_operation_candidate_count": len(graphql_operations),
         "assessment": "Discovered routes are unverified; no server authorization proof",
     }
 

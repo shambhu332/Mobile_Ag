@@ -308,11 +308,11 @@ evidence.
 
 ## Comprehensive Implementation Schedule & Status
 
-> **Audit correction (refreshed 2026-10-16 at `c013bb2`): this blueprint is not 100% complete.** The
+> **Audit correction (refreshed 2026-10-16 at `a6c2b29`): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
-> (57.51 s). The current checkout's full suite reports **1,232 passed**
-> (60.73 s) in the pinned Python 3.14 validation environment; `compileall`
+> (57.51 s). The current checkout's full suite reports **1,238 passed**
+> (60.69 s) in the pinned Python 3.14 validation environment; `compileall`
 > and `git diff --check` also passed. These are primarily mocked/synthetic
 > regressions and do not establish actual APK/device coverage,
 > exploitability, completeness, or production readiness. The implementation
@@ -1364,3 +1364,11 @@ negative controls, no fabricated HTTP endpoints, and malformed-input status.
 Focused GraphQL tests passed (**4 passed**); full pytest passed (**1,238
 passed**, 60.69 s); compileall and `git diff --check` passed. This remains a
 bounded lexical candidate pass, not a GraphQL parser or server schema analysis.
+
+The authenticated per-scan API inventory response now exposes the bounded static
+GraphQL operation candidates and their count alongside route candidates, so
+these lexical findings are accessible without mislabeling them as URLs. The
+route inventory regression verifies this response shape (**2 focused tests**);
+full pytest passed (**1,238 passed**, 61.30 s); compileall and
+`git diff --check` passed. The response remains an unverified inventory, not a
+server contract or authorization verdict.

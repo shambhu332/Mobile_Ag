@@ -237,6 +237,25 @@ class MobileApiCataloger:
             self.unmodeled_requests += 1
             self.omitted_requests += 1
             return
+        # Retain an owned snapshot: callers may reuse/mutate capture objects
+        # after ingestion, which would otherwise bypass the accounting bounds
+        # and alter later HAR exports.
+        try:
+            req = CapturedRequest(
+                method=req.method, url=req.url, headers=dict(req.headers),
+                query_params=dict(req.query_params), body=req.body,
+                response_status=req.response_status, response_body=req.response_body,
+                response_headers=dict(req.response_headers),
+            )
+        except (TypeError, ValueError, RuntimeError):
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        capture_size = self._estimate_capture_size(req)
+        if capture_size is None:
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
         normalized_method = req.method.upper()
         if normalized_method not in _SUPPORTED_METHODS:
             self.unmodeled_requests += 1

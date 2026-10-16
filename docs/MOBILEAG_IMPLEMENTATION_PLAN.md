@@ -190,7 +190,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
 * **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
-* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. This does not establish hosted ingestion or a complete backend contract.
+* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. Retained HAR requests are owned snapshots, so caller mutation after ingestion cannot bypass the recorded retention budget or rewrite later exports. Raw capture values remain in bounded process memory by design and are redacted on export. This does not establish hosted ingestion or a complete backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
@@ -1175,3 +1175,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    Focused catalog/OpenAPI validation passed (**17 passed**); full-suite and
    compile results follow. This is local artifact handling only, not live
    capture, backend-contract completeness, or hosted validator integration.
+
+   API capture retention now snapshots request fields after bounded validation
+   instead of storing caller-owned mutable objects. Regression coverage mutates
+   the original request and its maps after ingestion, then verifies the stored
+   HAR/model remains the bounded original. Focused capture tests passed (**19
+   passed**); full-suite and compile results follow. Raw observed values remain
+   in process memory until object disposal and still require controlled data
+   handling; the snapshot does not establish confidentiality or live capture.

@@ -64,6 +64,36 @@ def test_openapi_export_size_cap_fails_before_destination_write(tmp_path, monkey
     assert not output.exists()
 
 
+def test_api_catalog_retains_bounded_owned_request_snapshot():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    request = CapturedRequest(
+        "POST", "https://api.example.test/v1/profile", headers={"X-Test": "before"},
+        query_params={"page": "1"}, body='{"name":"before"}',
+        response_body='{"status":"before"}', response_headers={"X-Response": "before"},
+    )
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(request)
+
+    request.method = "DELETE"
+    request.url = "https://attacker.invalid/changed"
+    request.headers["X-Test"] = "after"
+    request.query_params["page"] = "changed"
+    request.body = "after"
+    request.response_body = "after"
+    request.response_headers["X-Response"] = "after"
+
+    captured = catalog.captured_requests[0]
+    assert captured.method == "POST"
+    assert captured.url == "https://api.example.test/v1/profile"
+    assert captured.headers == {"X-Test": "before"}
+    assert captured.query_params == {"page": "1"}
+    assert captured.body == '{"name":"before"}'
+    assert captured.response_body == '{"status":"before"}'
+    assert captured.response_headers == {"X-Response": "before"}
+    assert catalog.export_har_json()["log"]["entries"][0]["request"]["method"] == "POST"
+
+
 def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     result = FileProviderAuditor().audit_xml_content(
         '<paths><files-path name="reports" path="reports/../" />'

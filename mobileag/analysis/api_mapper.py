@@ -167,6 +167,61 @@ def _mask_javascript_dart_comments(source: str) -> str:
     return "".join(chars)
 
 
+def _mask_graphql_non_code(source: str) -> tuple[str, bool]:
+    """Blank GraphQL comments and string values while preserving lines and operation syntax."""
+    chars = list(source)
+    index = 0
+    malformed_string = False
+
+    def blank(start: int, end: int) -> None:
+        for position in range(start, end):
+            if chars[position] not in "\r\n":
+                chars[position] = " "
+
+    while index < len(source):
+        if source[index] == "#":
+            end = index + 1
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            blank(index, end)
+            index = end
+            continue
+        if source.startswith('"""', index):
+            start = index
+            index += 3
+            while index < len(source):
+                if source.startswith('\\"""', index):
+                    index += 4
+                elif source.startswith('"""', index):
+                    index += 3
+                    break
+                else:
+                    index += 1
+            else:
+                malformed_string = True
+            blank(start, index)
+            continue
+        if source[index] == '"':
+            start = index
+            index += 1
+            closed = False
+            while index < len(source) and source[index] not in "\r\n":
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    closed = True
+                    break
+                else:
+                    index += 1
+            if not closed:
+                malformed_string = True
+            blank(start, index)
+            continue
+        index += 1
+    return "".join(chars), malformed_string
+
+
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -348,12 +403,13 @@ class APIMapper:
         deduplicated_endpoint_count = 0
         graphql_operation_candidates: list[dict[str, object]] = []
         graphql_operations_truncated = False
+        malformed_graphql_string_files = 0
         http_diagnostics = {"unmodeled": 0, "oversized_or_unclosed": 0}
         malformed_xml_comment_files = 0
 
         inventory = SourceInventory()
         for file_path, data in inventory.read(
-                base_path, {".java", ".kt", ".smali", ".xml", ".json", ".js", ".mjs", ".dart"}):
+                base_path, {".java", ".kt", ".smali", ".xml", ".json", ".js", ".mjs", ".dart", ".graphql", ".gql"}):
             try:
                 content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
@@ -367,6 +423,9 @@ class APIMapper:
                     malformed_xml_comment_files += int(malformed_xml)
                 elif file_path.suffix.lower() in {".js", ".mjs", ".dart"}:
                     content = _mask_javascript_dart_comments(content)
+                elif file_path.suffix.lower() in {".graphql", ".gql"}:
+                    content, malformed_graphql = _mask_graphql_non_code(content)
+                    malformed_graphql_string_files += int(malformed_graphql)
 
                 # Retain operation names as a separate lexical inventory. An
                 # operation is not an HTTP endpoint or proof of a server route.
@@ -489,6 +548,7 @@ class APIMapper:
                              graphql_operation_candidate_count=len(graphql_operation_candidates),
                              graphql_operation_candidates=graphql_operation_candidates,
                              graphql_operations_truncated=graphql_operations_truncated,
+                             malformed_graphql_string_files=malformed_graphql_string_files,
                              deduplicated_endpoint_count=deduplicated_endpoint_count,
                              unmodeled_retrofit_http_annotations=http_diagnostics["unmodeled"],
                              oversized_or_unclosed_retrofit_http_annotations=http_diagnostics[
@@ -508,6 +568,10 @@ class APIMapper:
             self.coverage["static_status"] = "partial"
             self.coverage.setdefault("limitations", []).append(
                 "one or more XML source files had an unclosed comment or CDATA section")
+        if malformed_graphql_string_files:
+            self.coverage["static_status"] = "partial"
+            self.coverage.setdefault("limitations", []).append(
+                "one or more GraphQL source files had an unterminated string value")
         return endpoints, raw_findings
 
     async def map_apis(self, decompiled_path: str) -> tuple[list[dict], list[Finding]]:

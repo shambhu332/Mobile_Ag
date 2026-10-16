@@ -1355,3 +1355,12 @@ Synthetic positive, comment-negative, location, and cap regressions passed
 (**2 focused tests**); full pytest passed (**1,236 passed**, 61.42 s); compileall
 and `git diff --check` passed. This lexical inventory does not establish an
 operation's execution, server schema, or authorization behavior.
+
+GraphQL operation inventory now also reads bounded standalone `.graphql` and
+`.gql` files. Their comments and quoted values are blanked before operation
+matching while preserving line locations; unterminated strings mark static
+coverage partial. Synthetic tests cover named operations, comment/description
+negative controls, no fabricated HTTP endpoints, and malformed-input status.
+Focused GraphQL tests passed (**4 passed**); full pytest passed (**1,238
+passed**, 60.69 s); compileall and `git diff --check` passed. This remains a
+bounded lexical candidate pass, not a GraphQL parser or server schema analysis.

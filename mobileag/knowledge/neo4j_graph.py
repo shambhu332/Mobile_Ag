@@ -155,27 +155,14 @@ class AttackGraph:
             )
 
     async def find_attack_chains(self, scan_id: str) -> List[Dict[str, Any]]:
-        """Cypher query to find multi-step attack paths."""
-        if not self._connected or not self.driver:
-            return []
+        """Return only validated paths; current graph schema has no path evidence.
 
-        query = """
-        MATCH (a:App {scan_id: $scan_id})-[:HAS_COMPONENT]->(c:Component {exported: true})
-        MATCH (a)-[:HAS_VULNERABILITY]->(v:Vulnerability)
-        RETURN coalesce(c.display_name, c.name) AS component, c.component_type AS type,
-               v.title AS vulnerability, v.severity AS severity
+        The former App->Component plus App->Vulnerability co-occurrence query
+        emitted a Cartesian product and mislabeled each pair as an attack
+        chain. Keep this method for API compatibility, but fail closed until
+        explicit, evidence-backed source/sink and authorization edges exist.
         """
-        chains = []
-        async with self.driver.session() as session:
-            result = await session.run(query, scan_id=scan_id)
-            async for record in result:
-                chains.append({
-                    "component": record["component"],
-                    "type": record["type"],
-                    "vulnerability": record["vulnerability"],
-                    "severity": record["severity"]
-                })
-        return chains
+        return []
 
     async def get_attack_surface_summary(self, scan_id: str) -> Dict[str, Any]:
         """Summary stats of the attack surface."""

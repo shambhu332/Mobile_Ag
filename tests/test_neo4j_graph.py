@@ -105,3 +105,16 @@ async def test_visjs_vulnerability_node_carries_original_finding_id():
     assert len(finding_nodes) == 1
     assert finding_nodes[0]["id"] == '["scan-a","finding","finding-1"]'
     assert finding_nodes[0]["finding_id"] == "finding-1"
+
+
+@pytest.mark.asyncio
+async def test_graph_does_not_fabricate_attack_chains_from_app_level_cooccurrence():
+    graph = AttackGraph.__new__(AttackGraph)
+    graph._connected = True
+
+    class MustNotQueryDriver:
+        def session(self):
+            raise AssertionError("no validated data-flow edge model exists")
+
+    graph.driver = MustNotQueryDriver()
+    assert await graph.find_attack_chains("scan-a") == []

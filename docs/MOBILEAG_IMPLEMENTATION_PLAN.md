@@ -1430,3 +1430,11 @@ privacy-export tests passed (**28 passed**); full pytest passed (**1,247
 passed**, 61.72 s); compileall and `git diff --check` passed. This is a targeted
 redaction improvement, not a guarantee against arbitrary secrets embedded in
 unknown URL components or non-URL text.
+
+Static API route normalization now recognizes percent-encoded sensitive path
+markers (for example, `%74oken`) before redacting the following path value.
+This closes an encoding variant that previously bypassed the path-marker
+comparison. The focused API-mapper/depth regressions passed (**77 passed**);
+full pytest passed (**1,247 passed**, 61.61 s); compileall and
+`git diff --check` passed. Route normalization remains heuristic and does not
+guarantee detection of every secret-bearing path convention.

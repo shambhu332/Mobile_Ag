@@ -237,8 +237,12 @@ class APIMapper:
                 "session_id", "jwt", "reset", "verify", "password", "secret", "key",
                 "api_key", "client_secret", "secret_key", "auth",
             }
+            normalized_sensitive_segments = {
+                re.sub(r"[^a-z0-9]", "", key.casefold()) for key in sensitive_segments
+            }
             for segment in segments:
                 decoded_segment = unquote(segment)
+                normalized_segment = re.sub(r"[^a-z0-9]", "", decoded_segment.casefold())
                 if (redact_next or len(segment) > 128 or segment.isdigit()
                         or uuid.fullmatch(segment) or email.fullmatch(segment)
                         or opaque_id.fullmatch(segment) or opaque_id.fullmatch(decoded_segment)
@@ -250,7 +254,7 @@ class APIMapper:
                     redact_next = False
                     continue
                 safe_segments.append(quote(segment, safe="!$&'()*+,;=:@%{}._~-"))
-                redact_next = segment.lower() in sensitive_segments
+                redact_next = normalized_segment in normalized_sensitive_segments
             safe_path = "/".join(safe_segments) or "/"
             return f"{origin}{safe_path}"[:4096]
         except (TypeError, ValueError, UnicodeError):

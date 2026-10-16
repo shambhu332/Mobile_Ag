@@ -629,6 +629,9 @@ def test_api_mapper_safe_route_strips_userinfo_and_encodes_control_characters():
     assert "researcher" not in safe and "synthetic-password" not in safe
     assert "secret" not in safe and "frag" not in safe
     assert "\n" not in APIMapper._safe_route("/api/line\nbreak")
+    encoded_marker = APIMapper._safe_route("https://example.com/api/%74oken/synthetic-live-secret")
+    assert encoded_marker == "https://example.com/api/%74oken/{id}"
+    assert "synthetic-live-secret" not in encoded_marker
 
 
 @pytest.mark.asyncio

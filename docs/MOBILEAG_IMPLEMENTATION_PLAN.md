@@ -543,6 +543,15 @@ Each emitted lead carries the scan/ELF parse status, bytes scanned, truncation
 flag, and dynamic-symbol count in its metadata so a report consumer can see
 whether its evidence came from a complete parse or a partial prefix.
 
+Symbol-table names are de-duplicated, and the 5,000-entry limit and optional
+parser-unavailable fallback have direct regressions. Missing pyelftools yields
+partial ELF coverage while retaining only clearly labeled printable-string
+candidates; repeated symbol entries do not inflate imported-name output.
+
+Optional-parser, symbol-limit, and de-duplication tests passed (**6 passed, 7
+deselected**) and full suite (**1,070 passed**, 39.96 s; one expected synthetic
+duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.
+
 Finding-level coverage metadata passed focused native JNI tests (**4 passed,
 7 deselected**) and the full suite (**1,068 passed**, 40.16 s; one expected
 synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`

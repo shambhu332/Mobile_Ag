@@ -171,6 +171,8 @@ class NativeJniAnalyzer:
 
         # Parse dynamic symbols separately from byte-string heuristics. Imports
         # still do not prove a call site or JNI reachability.
+        seen_imports: set[str] = set()
+        seen_jni_symbols: set[str] = set()
         if ELFFile is None:
             result.elf_parse_status = "unsupported"
             result.scan_errors.append("elf_parser_unavailable")
@@ -197,11 +199,13 @@ class NativeJniAnalyzer:
                         if not name or len(name) > 256 or symbol.entry.st_info.type != "STT_FUNC":
                             continue
                         if symbol.entry.st_shndx == "SHN_UNDEF":
-                            if name in self.DANGEROUS_LIBC_SINKS:
+                            if name in self.DANGEROUS_LIBC_SINKS and name not in seen_imports:
+                                seen_imports.add(name)
                                 result.imported_dangerous_symbols.append(name)
                         elif name.startswith("Java_"):
                             demangled = self.demangle_jni_name(name)
-                            if demangled:
+                            if demangled and name not in seen_jni_symbols:
+                                seen_jni_symbols.add(name)
                                 cls_name, method_name = demangled
                                 result.exported_jni_functions.append(JniExportedFunction(
                                     mangled_name=name, java_class=cls_name,

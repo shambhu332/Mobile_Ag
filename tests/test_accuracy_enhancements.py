@@ -132,6 +132,57 @@ def test_native_jni_analyzer_reports_bounded_prefix_as_partial(tmp_path):
     assert candidate.metadata["scan_truncated"] is True
 
 
+def test_native_jni_analyzer_reports_missing_elf_parser_as_partial(tmp_path, monkeypatch):
+    import mobileag.analysis.native_jni_bridge as native_jni
+
+    library = tmp_path / "libcandidate.so"
+    library.write_bytes(b"\x7fELF\x00system\x00")
+    monkeypatch.setattr(native_jni, "ELFFile", None)
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "unsupported"
+    assert result.scan_status == "partial"
+    assert result.imported_dangerous_symbols == []
+    assert result.dangerous_symbol_string_candidates == ["system"]
+    assert "elf_parser_unavailable" in result.scan_errors
+
+
+def test_native_jni_analyzer_caps_and_deduplicates_dynamic_symbols(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import mobileag.analysis.native_jni_bridge as native_jni
+
+    class FakeSymbol:
+        name = "system"
+        entry = SimpleNamespace(
+            st_info=SimpleNamespace(type="STT_FUNC"), st_shndx="SHN_UNDEF",
+        )
+
+    class FakeDynamicSymbols:
+        def iter_symbols(self):
+            for _ in range(5001):
+                yield FakeSymbol()
+
+    class FakeElf:
+        def __init__(self, _stream):
+            pass
+
+        def get_section_by_name(self, name):
+            return FakeDynamicSymbols() if name == ".dynsym" else None
+
+    library = tmp_path / "libbounded.so"
+    library.write_bytes(b"\x7fELF\x00system\x00")
+    monkeypatch.setattr(native_jni, "ELFFile", FakeElf)
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "partial"
+    assert result.scan_status == "partial"
+    assert result.dynamic_symbols_seen == 5000
+    assert result.imported_dangerous_symbols == ["system"]
+    assert "dynamic_symbol_limit" in result.scan_errors
+
+
 def test_sanitizer_filter_path_sensitive_guards():
     mock_router = MagicMock()
     filter_engine = SanitizerFilter(router=mock_router)

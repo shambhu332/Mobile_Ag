@@ -52,6 +52,7 @@ class FileProviderAuditor:
         "external-path": "Exposes device external storage (/sdcard); permits shared storage traversal.",
         "external-files-path": "Exposes application-specific external files directory.",
         "external-cache-path": "Exposes application external cache directory.",
+        "external-media-path": "Exposes application external media directories.",
     }
 
     def audit_xml_content(self, xml_content: str, source_path: str = "res/xml/file_paths.xml") -> FileProviderAuditResult:

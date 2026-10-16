@@ -45,6 +45,18 @@ def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     assert "canonicalization" in candidate.metadata["risk_reason"]
 
 
+@pytest.mark.parametrize("path", ["", "."])
+def test_fileprovider_flags_broad_external_media_root_as_unverified_candidate(path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><external-media-path name="media" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.metadata["tag"] == "external-media-path"
+    assert candidate.status == "UNVERIFIED"
+    assert "external-media-path" in candidate.metadata["risk_reason"]
+
+
 def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
     xml_dir = tmp_path / "res" / "xml"
     xml_dir.mkdir(parents=True)

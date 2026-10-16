@@ -967,6 +967,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    run passed with no page errors or off-loopback requests; process/device and
    provider adapters were synthetic/mocked. No device or provider was used.
 
+   Legacy `Finding.frida_script` data remains parseable for old stored records
+   but is now excluded from all standard and report dictionary exports. The
+   focused serialization/privacy regressions passed (**39 passed**); this
+   preserves migration compatibility without re-publishing hook payloads.
+
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.
    It confirmed no page errors, no XSS marker execution, no external requests,

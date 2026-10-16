@@ -366,6 +366,12 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["analysis engine failed; findings and coverage are incomplete"],
                     }
+                    if name == "il2cpp":
+                        state["il2cpp_analysis"] = {
+                            "scan_status": "incomplete", "evidence_kind": "bounded_static_metadata_candidates",
+                            "runtime_status": "not_tested", "proof_status": "not_proven",
+                            "exhaustive": False, "scan_errors": ["il2cpp_analysis_engine_failed"],
+                        }
                     if name == "taint":
                         state["coverage"][name]["serialization"] = {
                             "static_status": "incomplete", "runtime_status": "not_tested",

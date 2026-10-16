@@ -199,6 +199,12 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     result=await worker._run_analysis(create_initial_state('synthetic2','unused',str(tmp_path)))
     assert result['coverage']['engines']['android_surface']=='incomplete'
     assert result['errors']
+    monkeypatch.setattr(worker._il2cpp_auditor, 'audit_package', lambda _: (_ for _ in ()).throw(RuntimeError('synthetic failure')))
+    result=await worker._run_analysis(create_initial_state('synthetic3','unused',str(tmp_path)))
+    assert result['coverage']['il2cpp']['static_status']=='incomplete'
+    assert result['il2cpp_analysis']['scan_status']=='incomplete'
+    assert result['il2cpp_analysis']['proof_status']=='not_proven'
+    assert result['il2cpp_analysis']['scan_errors']==['il2cpp_analysis_engine_failed']
 
 
 @pytest.mark.asyncio

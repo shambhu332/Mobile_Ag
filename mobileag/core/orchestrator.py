@@ -60,7 +60,7 @@ _MAX_POC_GUIDES = 500
 logger = logging.getLogger(__name__)
 
 
-def _framework_probe_coverage(kind: str, results: Any) -> dict[str, Any]:
+def _framework_probe_coverage(kind: str, results: Any, root_valid: bool) -> dict[str, Any]:
     """Summarize bounded Flutter/Hermes string probes without implying completeness."""
     items = results if isinstance(results, list) else [results]
     items = [item for item in items if item is not None]
@@ -79,6 +79,7 @@ def _framework_probe_coverage(kind: str, results: Any) -> dict[str, Any]:
     secrets = sum(len(getattr(item, "potential_secrets" if kind == "flutter" else "secrets", []) or [])
                   for item in items)
     static_status = ("partial" if not scanned or truncated or errors else
+                     "incomplete" if not items and not root_valid else
                      "analyzed_heuristically" if active else "not_applicable")
     limitations = ["bounded printable-string/metadata probe only; no semantic framework decompilation",
                    "endpoint strings are candidates; HTTP method, reachability, and runtime behavior are unknown",
@@ -88,7 +89,8 @@ def _framework_probe_coverage(kind: str, results: Any) -> dict[str, Any]:
     else:
         limitations.append("Hermes bytecode disassembly, function/control-flow parsing, and source reconstruction are not implemented")
     return {"static_status": static_status, "runtime_status": "not_tested", "proof_status": "not_proven",
-            "exhaustive": False, "analysis_kind": "bounded_printable_string_candidates",
+            "exhaustive": False, "scan_root_valid": bool(root_valid),
+            "analysis_kind": "bounded_printable_string_candidates",
             "scan_statuses": status_values, "candidate_count": endpoints + routes + assets + secrets,
             "endpoint_candidate_count": endpoints, "route_candidate_count": routes,
             "asset_candidate_count": assets, "secret_marker_candidate_count": secrets,
@@ -549,7 +551,9 @@ class Orchestrator:
                     result, self._native_jni_analyzer.package_coverage, root_valid)
                 engines[name] = state["coverage"][name]["static_status"]
             elif name == "flutter":
-                state["coverage"][name] = _framework_probe_coverage(name, result)
+                framework_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and framework_root.is_dir() and not framework_root.is_symlink()
+                state["coverage"][name] = _framework_probe_coverage(name, result, root_valid)
                 engines[name] = state["coverage"][name]["static_status"]
                 if getattr(result, "is_flutter_app", False):
                     for ep in getattr(result, "api_endpoints", []):
@@ -558,7 +562,9 @@ class Orchestrator:
                             "evidence_type": "embedded_url_candidate", "source_engine": "flutter",
                         })
             elif name == "hermes":
-                state["coverage"][name] = _framework_probe_coverage(name, result)
+                framework_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and framework_root.is_dir() and not framework_root.is_symlink()
+                state["coverage"][name] = _framework_probe_coverage(name, result, root_valid)
                 engines[name] = state["coverage"][name]["static_status"]
                 for h_res in (result or []):
                     if getattr(h_res, "is_hermes", False):

@@ -1322,3 +1322,11 @@ FileProvider, dependency, and Network Security Config statuses. The focused
 Orchestrator coverage file passed (**34 passed**); full pytest passed
 (**1,231 passed**, 60.20 s); compileall and `git diff --check` passed. These
 are controlled analyzer fixtures and do not establish real APK recall.
+
+Flutter/Hermes empty-result coverage now distinguishes a valid resource tree
+with no matching framework artifacts (`not_applicable`) from an invalid or
+missing scan root (`incomplete`). The orchestrator passes root validity into
+coverage aggregation, and synthetic regressions cover both outcomes. Focused
+coverage tests passed (**3 passed**); full pytest passed (**1,232 passed**,
+60.73 s); compileall and `git diff --check` passed. This fixes empty-result
+status reporting only; it does not add framework format detection or analysis.

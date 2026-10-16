@@ -519,9 +519,14 @@ def test_framework_probe_coverage_marks_truncated_as_partial():
     from mobileag.core.orchestrator import _framework_probe_coverage
     coverage=_framework_probe_coverage('flutter',SimpleNamespace(
         is_flutter_app=True,scan_status='complete',binary_truncated=True,api_endpoints=[],named_routes=[],
-        bundled_assets=[],potential_secrets=[],scan_errors=[]))
+        bundled_assets=[],potential_secrets=[],scan_errors=[]), root_valid=True)
     assert coverage['static_status']=='partial'
     assert coverage['candidate_output_truncated'] is True
+
+def test_empty_framework_inventory_requires_a_valid_scan_root():
+    from mobileag.core.orchestrator import _framework_probe_coverage
+    assert _framework_probe_coverage('hermes', [], root_valid=False)['static_status']=='incomplete'
+    assert _framework_probe_coverage('hermes', [], root_valid=True)['static_status']=='not_applicable'
 
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser

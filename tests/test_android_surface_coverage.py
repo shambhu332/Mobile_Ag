@@ -187,7 +187,11 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
         metadata_definitions_status='parsed', reconstructed_classes=['Fixture'],
         reconstructed_methods=[{'name': 'reviewOnly'}],
         api_endpoints=['https://api.fixture.invalid/v1/il2cpp'], scan_status='complete'))
-    monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',lambda _:[])
+    def partial_call_graph(_):
+        worker._call_graph_engine.coverage={'static_status':'partial','runtime_status':'not_tested',
+                                            'proof_status':'not_proven','exhaustive':False}
+        return []
+    monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',partial_call_graph)
     (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
     state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
     result=await worker._run_analysis(state)
@@ -196,6 +200,7 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['manifest']['static_status']=='completed'
     assert result['coverage']['manifest']['exhaustive'] is False
     assert result['coverage']['manifest']['runtime_status']=='not_tested'
+    assert result['coverage']['engines']['smali_call_graph']=='partial'
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
     assert result['il2cpp_analysis']['reconstructed_classes']==['Fixture']
     assert result['il2cpp_analysis']['reconstructed_methods']==[{'name':'reviewOnly'}]

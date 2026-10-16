@@ -723,7 +723,7 @@ class Orchestrator:
             smali_findings = self._call_graph_engine.audit_smali_directory(state["smali_path"])
             all_findings.extend(smali_findings)
             state["coverage"]["smali_call_graph"] = dict(self._call_graph_engine.coverage)
-            engines["smali_call_graph"]="completed_heuristically"
+            engines["smali_call_graph"] = state["coverage"]["smali_call_graph"].get("static_status", "unknown")
             logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
         except Exception as e:
             engines["smali_call_graph"]="incomplete"

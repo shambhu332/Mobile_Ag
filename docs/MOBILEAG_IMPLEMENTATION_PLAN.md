@@ -1295,3 +1295,11 @@ verifies the orchestrator records `static_status=incomplete` while preserving
 pytest passed (**1,231 passed**, 61.51 s); compileall and `git diff --check`
 passed. The injected exception is synthetic; no real native scan failure was
 induced.
+
+The Orchestrator engine summary now mirrors the Smali call-graph analyzer's
+reported `static_status` instead of unconditionally labeling any non-throwing
+run `completed_heuristically`. A synthetic partial-coverage integration case
+passed with `tests/test_android_surface_coverage.py` (**34 passed**); full pytest
+passed (**1,231 passed**, 61.16 s); compileall and `git diff --check` passed.
+This makes the summary agree with analyzer coverage, not a claim of complete
+call-graph or taint coverage.

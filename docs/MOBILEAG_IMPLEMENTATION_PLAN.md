@@ -190,6 +190,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
 * **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
+* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. This does not establish hosted ingestion or a complete backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
@@ -1167,3 +1168,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    private temporary file. Focused exporter/importer validation passed (**12
    passed**). This validates format and local file-write behavior only; no
    GitHub/GitLab ingestion or hosted CI integration is established.
+
+   OpenAPI file export now applies a 16 MiB serialized-output cap and uses
+   private-mode atomic replacement, so a pre-existing destination symlink is
+   not followed. Synthetic tests cover replacement, file mode, and cap failure.
+   Focused catalog/OpenAPI validation passed (**17 passed**); full-suite and
+   compile results follow. This is local artifact handling only, not live
+   capture, backend-contract completeness, or hosted validator integration.

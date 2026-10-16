@@ -34,6 +34,36 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert first_id == second_id
 
 
+def test_openapi_export_replaces_symlink_atomically_with_private_file(tmp_path):
+    import json
+    import os
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "openapi.json"
+    output.symlink_to(victim)
+
+    saved = MobileApiCataloger().save_openapi(output)
+
+    assert saved == output
+    assert victim.read_text() == "unchanged"
+    assert not output.is_symlink()
+    assert json.loads(output.read_text())["openapi"] == "3.0.0"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_openapi_export_size_cap_fails_before_destination_write(tmp_path, monkeypatch):
+    import pytest
+    import mobileag.dast.api_cataloger as api_cataloger
+
+    output = tmp_path / "openapi.json"
+    monkeypatch.setattr(api_cataloger, "_MAX_OPENAPI_BYTES", 10)
+    with pytest.raises(ValueError, match="size limit"):
+        api_cataloger.MobileApiCataloger().save_openapi(output)
+    assert not output.exists()
+
+
 def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     result = FileProviderAuditor().audit_xml_content(
         '<paths><files-path name="reports" path="reports/../" />'

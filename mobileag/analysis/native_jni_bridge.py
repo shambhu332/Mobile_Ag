@@ -249,6 +249,11 @@ class NativeJniAnalyzer:
                         "analysis_kind": "elf_dynamic_symbol_import" if is_import else "byte_string_inventory",
                         "exported_jni_symbols_co_located": [f.mangled_name for f in result.exported_jni_functions],
                         "call_reachability": "not_analyzed",
+                        "scan_status": result.scan_status,
+                        "elf_parse_status": result.elf_parse_status,
+                        "bytes_scanned": result.bytes_scanned,
+                        "scan_truncated": result.scan_truncated,
+                        "dynamic_symbols_seen": result.dynamic_symbols_seen,
                     },
                 )
             )

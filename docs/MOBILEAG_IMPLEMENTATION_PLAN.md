@@ -539,6 +539,15 @@ the latter case is distinct from an empty dynamic import set. A compiler-built
 relocatable-object regression verifies the missing-table state is not reported
 as a clean import inventory.
 
+Each emitted lead carries the scan/ELF parse status, bytes scanned, truncation
+flag, and dynamic-symbol count in its metadata so a report consumer can see
+whether its evidence came from a complete parse or a partial prefix.
+
+Finding-level coverage metadata passed focused native JNI tests (**4 passed,
+7 deselected**) and the full suite (**1,068 passed**, 40.16 s; one expected
+synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`
+passed.
+
 The scan-status regression passed the focused JNI tests (**4 passed, 2
 deselected**) and full suite (**1,063 passed**, 40.18 s; one expected synthetic
 duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.

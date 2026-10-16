@@ -406,6 +406,17 @@ expected synthetic duplicate-ZIP-member warning). `compileall` and
 `git diff --check` passed. This does not prove decompiler completeness or
 APK-wide class coverage.
 
+The isolated-worker disk-budget monitor and evidence-publication symlink check
+now share a bounded no-follow tree measurement rather than materializing
+unbounded `os.walk` directory listings. Over-budget or incomplete publication
+trees fail closed; worker-created symlinks are rejected before evidence is
+moved into the scan output. Synthetic tests cover entry caps, regular-file byte
+accounting, and linked evidence. This does not create a filesystem snapshot or
+eliminate concurrent mutation races while a worker is still running. Focused
+worker-tree/session tests passed (**5 passed**); the full suite passed
+(**1,085 passed**, 41.07 s; one expected synthetic duplicate-ZIP-member
+warning). `compileall` and `git diff --check` passed.
+
 Network Security Configuration XML is also rejected when it contains DTD/entity
 declarations, for both manifest-reference discovery and the configuration
 audit; the existing no-follow, size-bounded file reader remains in force. A

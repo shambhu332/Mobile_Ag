@@ -9,12 +9,39 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import stat
 import sys
 import tempfile
+from mobileag.analysis.bounded_sources import SourceInventory
 
 PROCESSES = {}
 CANCELLED = set()
 MAX_DISK = 512*1024*1024
+
+
+def _measure_tree(root: Path, *, max_entries: int = 30_000,
+                  reject_skipped: bool = False) -> tuple[int, int]:
+    """Return regular-file bytes/count using bounded, no-follow enumeration."""
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("Worker tree root is unavailable")
+    inventory = SourceInventory(max_entries=max_entries, max_file_bytes=1, max_total_bytes=1)
+    size = count = 0
+    for path in inventory.paths(root):
+        try:
+            details = os.stat(path, follow_symlinks=False)
+        except OSError as exc:
+            raise RuntimeError("Worker tree changed during inventory") from exc
+        if not stat.S_ISREG(details.st_mode):
+            raise RuntimeError("Worker tree contains a non-regular file")
+        size += details.st_size
+        count += 1
+    if inventory.coverage["limits_reached"]:
+        raise RuntimeError("Worker tree entry budget exceeded")
+    if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
+        raise RuntimeError("Worker tree could not be completely inventoried")
+    if reject_skipped and inventory.coverage["source_files_skipped"]:
+        raise RuntimeError("Worker returned unsupported symlink or skipped evidence")
+    return size, count
 
 
 def sandbox_command(work, artifact):
@@ -89,15 +116,9 @@ async def isolated_analysis(artifact, output, sid, settings, progress, timeout=3
             while process.returncode is None:
                 if sid in CANCELLED:
                     raise RuntimeError('Scan cancelled by operator')
-                size, count = 0, 0
-                for root, dirs, files in os.walk(work,followlinks=False):
-                    for name in files:
-                        file = Path(root)/name
-                        if not file.is_symlink():
-                            size += file.stat().st_size
-                        count += 1
-                        if size > MAX_DISK or count > 30000:
-                            raise RuntimeError('Worker output budget exceeded')
+                size, count = _measure_tree(work)
+                if size > MAX_DISK or count > 30_000:
+                    raise RuntimeError('Worker output budget exceeded')
                 await asyncio.sleep(.25)
         reader, watcher = asyncio.create_task(consume()), asyncio.create_task(watch())
         try:
@@ -119,11 +140,8 @@ async def isolated_analysis(artifact, output, sid, settings, progress, timeout=3
             raise RuntimeError('Invalid isolated worker result')
         evidence = work/sid
         if evidence.is_dir() and not evidence.is_symlink():
-            # Never follow a worker-created symlink into operator files.
-            for root, dirs, files in os.walk(evidence,followlinks=False):
-                for name in dirs+files:
-                    if (Path(root)/name).is_symlink():
-                        raise RuntimeError('Worker returned unsupported symlink evidence')
+            # Never publish incomplete output or follow a worker-created link.
+            _measure_tree(evidence, reject_skipped=True)
             destination = output/sid
             if destination.exists():
                 raise RuntimeError('Evidence destination already exists')

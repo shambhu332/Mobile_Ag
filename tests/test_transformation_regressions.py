@@ -69,6 +69,35 @@ def test_session_expiration_rotation_and_logout(client,monkeypatch,capsys):
     # Do not persist the terminal reconnect token in any evidence.
     assert 'after logout' in capsys.readouterr().out
 
+
+def test_isolated_worker_tree_measurement_enforces_bounded_no_follow_inventory(tmp_path):
+    from mobileag.web.jobs import _measure_tree
+
+    root = tmp_path / "worker"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    (nested / "result.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="entry budget"):
+        _measure_tree(root, max_entries=1)
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("synthetic", encoding="utf-8")
+    (root / "linked.txt").symlink_to(outside)
+    with pytest.raises(RuntimeError, match="symlink"):
+        _measure_tree(root, reject_skipped=True)
+
+
+def test_isolated_worker_tree_measurement_counts_regular_file_bytes(tmp_path):
+    from mobileag.web.jobs import _measure_tree
+
+    root = tmp_path / "worker"
+    root.mkdir()
+    (root / "one").write_bytes(b"123")
+    (root / "two").write_bytes(b"45")
+
+    assert _measure_tree(root) == (5, 2)
+
 def test_retention_confirm_revision_original_and_tombstone(client):
     document=scan();web.repository().save(document)
     original=web.UPLOAD_DIR/'original.apk';original.write_bytes(b'preserve')

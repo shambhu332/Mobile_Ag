@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import re
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -16,6 +18,31 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, quote, urlsplit
 
 from packageurl import PackageURL
+
+
+_MAX_SBOM_OUTPUT_BYTES = 16 * 1024 * 1024
+
+
+def _write_sbom_atomically(output_path: str | Path, payload: bytes) -> Path:
+    """Write a bounded private artifact without following a destination symlink."""
+    if len(payload) > _MAX_SBOM_OUTPUT_BYTES:
+        raise ValueError("SBOM output exceeds the report size limit")
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, out_path)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
+    return out_path
 
 
 def escape_purl_segment(value: str) -> str:
@@ -312,11 +339,11 @@ class MobileSbomGenerator:
             "packages": spdx_packages,
         }
 
-    def save_cyclonedx(self, output_path: str | Path) -> None:
-        """Write CycloneDX JSON to disk."""
+    def save_cyclonedx(self, output_path: str | Path) -> Path:
+        """Atomically write bounded CycloneDX JSON to disk."""
         data = self.generate_cyclonedx_json()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        payload = json.dumps(data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        return _write_sbom_atomically(output_path, payload)
 
     def generate_cyclonedx_xml(self) -> str:
         """Generate CycloneDX v1.5 XML formatted SBOM."""
@@ -408,15 +435,14 @@ class MobileSbomGenerator:
         ET.indent(root, space="  ")
         return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
-    def save_cyclonedx_xml(self, output_path: str | Path) -> None:
-        """Write CycloneDX XML to disk."""
+    def save_cyclonedx_xml(self, output_path: str | Path) -> Path:
+        """Atomically write bounded CycloneDX XML to disk."""
         xml_data = self.generate_cyclonedx_xml()
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(xml_data)
+        return _write_sbom_atomically(output_path, xml_data.encode("utf-8"))
 
-    def save_spdx(self, output_path: str | Path) -> None:
-        """Write SPDX JSON to disk."""
+    def save_spdx(self, output_path: str | Path) -> Path:
+        """Atomically write bounded SPDX JSON to disk."""
         data = self.generate_spdx_json()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        payload = json.dumps(data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        return _write_sbom_atomically(output_path, payload)
 

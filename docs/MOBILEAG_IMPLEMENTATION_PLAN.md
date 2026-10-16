@@ -255,6 +255,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
 * **Objective**: Generate bounded, interoperable SBOM inventory documents; schema validity and coverage limits do not establish complete dependency inventory or supply-chain assurance.
+* **Current boundary**: CycloneDX JSON/XML and SPDX JSON writers enforce a 16 MiB serialized output cap and use private-mode temporary files with atomic replacement. A destination symlink is replaced rather than followed. This is local artifact handling; it does not establish complete package inventory or supply-chain assurance.
 * **Target Files**:
   - `mobileag/analysis/sbom_generator.py` (New)
   - `mobileag/analysis/dependency_scanner.py` (Enhancement)
@@ -1197,3 +1198,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    handshake is rejected and the first activates at the cap. Focused WebSocket
    tests passed (**3 passed**); full-suite and compile results follow. This is
    local concurrency regression evidence, not production load testing.
+
+   CycloneDX JSON/XML and SPDX JSON output now share a 16 MiB cap and private
+   atomic replacement helper. Synthetic tests cover symlink replacement,
+   private file permissions, and fail-before-write behavior for all three
+   formats. Focused normative-schema and writer tests passed (**11 passed**);
+   full-suite and compile results follow. The schema fixtures remain offline
+   validation evidence for synthetic documents, not assurance of SBOM
+   completeness or third-party tool interoperability.

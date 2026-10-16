@@ -1981,6 +1981,7 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["components"] = state.get("components", [])
         scan["deep_links"] = state.get("deep_links", [])
         scan["api_endpoints"] = state.get("api_endpoints", [])
+        scan["il2cpp_analysis"] = state.get("il2cpp_analysis", {})
         scan["coverage"] = state.get("coverage", {})
         scan["framework"] = state.get("framework_info", {}).get("framework", platform)
         if req.auto_dast:

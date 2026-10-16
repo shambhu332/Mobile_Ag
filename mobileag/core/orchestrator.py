@@ -360,7 +360,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -416,6 +416,40 @@ class Orchestrator:
                         for ep in getattr(h_res, "api_endpoints", []):
                             state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
             elif name == "il2cpp":
+                state["il2cpp_analysis"] = {
+                    "scan_status": getattr(result, "scan_status", "unknown"),
+                    "is_il2cpp": bool(getattr(result, "is_il2cpp", False)),
+                    "metadata_version": getattr(result, "metadata_version", None),
+                    "metadata_tables_status": getattr(result, "metadata_tables_status", "unknown"),
+                    "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
+                    "type_definitions_count": int(getattr(result, "type_definitions_count", 0) or 0),
+                    "method_definitions_count": int(getattr(result, "method_definitions_count", 0) or 0),
+                    "reconstructed_classes": list(getattr(result, "reconstructed_classes", []))[:50],
+                    "reconstructed_fields": list(getattr(result, "reconstructed_fields", []))[:100],
+                    "reconstructed_methods": list(getattr(result, "reconstructed_methods", []))[:100],
+                    "tree_entries_scanned": int(getattr(result, "tree_entries_scanned", 0) or 0),
+                    "metadata_bytes_scanned": int(getattr(result, "metadata_bytes_scanned", 0) or 0),
+                    "metadata_truncated": bool(getattr(result, "metadata_truncated", False)),
+                    "candidate_output_truncated": bool(getattr(result, "candidate_output_truncated", False)),
+                    "scan_errors": list(getattr(result, "scan_errors", []))[:20],
+                    "evidence_kind": "bounded_static_metadata_candidates",
+                    "runtime_status": "not_tested",
+                    "proof_status": "not_proven",
+                    "exhaustive": False,
+                }
+                state["coverage"]["il2cpp"] = {
+                    "static_status": "partial" if getattr(result, "scan_status", "") != "complete"
+                    or getattr(result, "metadata_truncated", False)
+                    or getattr(result, "candidate_output_truncated", False)
+                    else "analyzed_heuristically",
+                    "runtime_status": "not_tested", "proof_status": "not_proven",
+                    "exhaustive": False,
+                    "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
+                    "candidate_count": len(getattr(result, "reconstructed_classes", []))
+                    + len(getattr(result, "reconstructed_fields", []))
+                    + len(getattr(result, "reconstructed_methods", [])),
+                    "limitations": ["bounded metadata names are review candidates, not source reconstruction or exploit proof"],
+                }
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):
                         state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})

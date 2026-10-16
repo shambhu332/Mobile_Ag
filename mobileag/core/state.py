@@ -29,6 +29,7 @@ class ScanState(TypedDict):
     sarif_path: str
     decompiled_path: str
     framework_info: dict[str, Any]
+    il2cpp_analysis: dict[str, Any]
     obfuscation_info: dict[str, Any]
 
     # ── Extracted Assets ──
@@ -78,12 +79,13 @@ def create_initial_state(
             **{name: {"static_status": "not_started", "runtime_status": "not_tested",
                       "proof_status": "not_proven", "exhaustive": False}
                for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping", "data_safety",
-                            "native", "dependencies", "taint", "nsc", "binary_protection", "react_native")}},
+                            "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "il2cpp")}},
         assessment_coverage="not_assessed",
         coverage_gaps=[],
         json_report_path="",
         sarif_path="",
         framework_info={},
+        il2cpp_analysis={},
         obfuscation_info={},
         components=[],
         deep_links=[],

@@ -9,6 +9,7 @@ from mobileag.analysis.android_surface import AndroidSurfaceAnalyzer,mask_non_co
 from mobileag.reporting.finding import FindingStatus,Severity
 from mobileag.core.state import create_initial_state
 from mobileag.core.orchestrator import Orchestrator
+from mobileag.analysis.il2cpp_auditor import Il2CppAnalysisResult
 from mobileag.reporting.report_engine import ReportEngine
 
 
@@ -175,6 +176,10 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     for target,method in [(worker._manifest_auditor,'audit'),(worker._secret_scanner,'scan'),(worker._code_reviewer,'review'),(worker._native_analyzer,'analyze'),(worker._dependency_scanner,'scan'),(worker._nsc_auditor,'audit_directory_async'),(worker._bin_protection,'audit_directory_async'),(worker._rn_scanner,'scan_directory_async')]:
         monkeypatch.setattr(target,method,AsyncMock(return_value=[]))
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
+    monkeypatch.setattr(worker._il2cpp_auditor, 'audit_package', lambda _: Il2CppAnalysisResult(
+        is_il2cpp=True, metadata_version=29, metadata_tables_status='parsed',
+        metadata_definitions_status='parsed', reconstructed_classes=['Fixture'],
+        reconstructed_methods=[{'name': 'reviewOnly'}], scan_status='complete'))
     monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',lambda _:[])
     (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
     state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
@@ -185,6 +190,11 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['manifest']['exhaustive'] is False
     assert result['coverage']['manifest']['runtime_status']=='not_tested'
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
+    assert result['il2cpp_analysis']['reconstructed_classes']==['Fixture']
+    assert result['il2cpp_analysis']['reconstructed_methods']==[{'name':'reviewOnly'}]
+    assert result['il2cpp_analysis']['proof_status']=='not_proven'
+    assert result['il2cpp_analysis']['runtime_status']=='not_tested'
+    assert result['il2cpp_analysis']['exhaustive'] is False
     monkeypatch.setattr(worker._android_surface,'analyze',AsyncMock(side_effect=RuntimeError('synthetic failure')))
     result=await worker._run_analysis(create_initial_state('synthetic2','unused',str(tmp_path)))
     assert result['coverage']['engines']['android_surface']=='incomplete'

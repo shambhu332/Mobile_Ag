@@ -957,8 +957,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    regression passed with synthetic fixtures and mocked device/model adapters.
    It confirmed no page errors, no XSS marker execution, no external requests,
    no real ADB/Frida calls, and no Frida deployment controls. The browser
-   report also recorded `masvs_kpi_present: false`; this is an existing
-   dashboard coverage gap, not claimed as fixed by this batch. Chromium
+   report's former `masvs_kpi_present: false` probe checked a nonexistent
+   optional KPI, although the MASVS coverage chart is present. The browser
+   probe now checks the actual chart and summary instead; no coverage score is
+   inferred from chart presence. Chromium
    reported expected synthetic 401/404/503 responses and CSP-blocked inline
    handler control. Browser artifacts were written under `/tmp`, not into the
    repository. No device or commercial model was contacted.

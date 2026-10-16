@@ -232,7 +232,7 @@ def main():
                     result={'keyboard_connection':{'initial_token_focus':keyboard_initial_focus,'tab_to_submit':keyboard_submit_focus,'enter_submits':not page.locator('#session-connect').evaluate('(e) => e.open')}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
                             'poc_generation_is_explicit':poc_generation_is_explicit,
                             'xss_marker_executions':page.evaluate('window.auditXssCount'),'exact_clipboard_copies':copied,
-                            'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_kpi_present':page.locator('#kpi-masvs').count()==1,
+                            'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_coverage_view_present':page.locator('#masvs-canvas').count()==1 and page.locator('#masvs-summary-score').count()==1,
                             'inline_handlers':page.evaluate('() => [...document.querySelectorAll("*")].flatMap(e=>[...e.attributes]).filter(a=>/^on/i.test(a.name)).length'),
                             'inline_scripts':page.evaluate('document.querySelectorAll("script:not([src])").length'),'implicit_device_selection':page.evaluate('dastActiveDevice')}
                     hostile='Synthetic <img id="injected-marker" src=x onerror="window.auditXssProbe()"> title'

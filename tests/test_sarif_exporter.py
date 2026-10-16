@@ -85,3 +85,16 @@ def test_sarif_export_replaces_symlink_atomically_with_private_file():
 def test_sarif_export_rejects_oversized_result_inventory():
     with pytest.raises(SarifImportError, match="inventory exceeds limits"):
         SARIFExporter.generate_sarif([{}] * 5001)
+
+
+def test_sarif_export_preflights_large_input_before_projection(monkeypatch):
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_BYTES", 1024)
+    with pytest.raises(SarifImportError, match="input exceeds"):
+        SARIFExporter.generate_sarif([{"description": "x" * 300}])
+
+
+def test_sarif_export_rejects_cyclic_input_before_projection():
+    finding = {}
+    finding["metadata"] = finding
+    with pytest.raises(SarifImportError, match="cycle"):
+        SARIFExporter.generate_sarif([finding])

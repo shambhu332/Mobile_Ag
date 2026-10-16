@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from enum import Enum
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -28,6 +29,55 @@ class SARIFExporter:
     SCHEMA_URI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
     TOOL_NAME = "MobileAg Enterprise AppSec Scanner"
     TOOL_VERSION = __version__
+    MAX_INPUT_BYTES = MAX_BYTES * 2
+    MAX_INPUT_NODES = 100_000
+    MAX_INPUT_DEPTH = 64
+
+    @classmethod
+    def _preflight_input(cls, value: Any) -> None:
+        """Bound caller-owned SARIF inputs before deep copies/redaction/schema work."""
+        remaining = cls.MAX_INPUT_BYTES
+        nodes = 0
+        active: set[int] = set()
+        stack: list[tuple[Any, int, bool]] = [(value, 0, False)]
+        while stack:
+            item, depth, exiting = stack.pop()
+            if exiting:
+                active.discard(id(item))
+                continue
+            nodes += 1
+            if nodes > cls.MAX_INPUT_NODES or depth > cls.MAX_INPUT_DEPTH:
+                raise SarifImportError("SARIF input complexity exceeds limits")
+            if isinstance(item, str):
+                # UTF-8 bytes are never cheaper than one byte per character;
+                # four bytes per codepoint is a conservative allocation bound.
+                remaining -= len(item) * 4
+            elif isinstance(item, bytes):
+                remaining -= len(item)
+            elif item is None or isinstance(item, (bool, int, float)):
+                continue
+            elif isinstance(item, Enum):
+                stack.append((item.value, depth + 1, False))
+            elif isinstance(item, dict):
+                identity = id(item)
+                if identity in active:
+                    raise SarifImportError("SARIF input contains a cycle")
+                active.add(identity)
+                stack.append((item, depth, True))
+                for key, child in item.items():
+                    stack.append((key, depth + 1, False))
+                    stack.append((child, depth + 1, False))
+            elif isinstance(item, (list, tuple, set, frozenset)):
+                identity = id(item)
+                if identity in active:
+                    raise SarifImportError("SARIF input contains a cycle")
+                active.add(identity)
+                stack.append((item, depth, True))
+                stack.extend((child, depth + 1, False) for child in item)
+            elif hasattr(item, "__dict__"):
+                stack.append((vars(item), depth + 1, False))
+            if remaining < 0:
+                raise SarifImportError("SARIF input exceeds the export input limit")
 
     @classmethod
     def severity_to_sarif_level(cls, severity: Severity | str) -> str:
@@ -51,6 +101,7 @@ class SARIFExporter:
         """Convert findings into a compliant SARIF v2.1.0 JSON report dictionary."""
         if len(findings) > MAX_RESULTS:
             raise SarifImportError("SARIF result inventory exceeds limits")
+        cls._preflight_input((findings, target_name, scan_id, artifact, coverage))
         rules_map: dict[str, dict[str, Any]] = {}
         results: list[dict[str, Any]] = []
 

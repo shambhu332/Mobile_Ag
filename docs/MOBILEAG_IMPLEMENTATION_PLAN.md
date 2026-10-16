@@ -1519,3 +1519,11 @@ input is explicitly `not_analyzed`; malformed or over-limit input is `partial`,
 not a clean result. Synthetic boundary tests passed (**21 passed** in
 `test_workflow_draft_boundaries.py`). This is bounded URL-structure triage only;
 it does not test API authorization, authentication, or rate limiting.
+
+SARIF export now performs an iterative, cycle-aware preflight over findings and
+caller-supplied artifact/coverage metadata before deep-copying, redacting, or
+schema-validating it. Input character/byte estimate, node count, and nesting
+depth are capped; cyclic or over-budget inputs fail with non-echoing errors.
+Focused SARIF exporter tests passed (**5 passed**). This protects the export
+boundary against oversized/cyclic caller data but does not validate upstream
+capture completeness or all legacy report writers.

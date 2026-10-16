@@ -1406,3 +1406,10 @@ candidate count while keeping exports bounded. Focused GraphQL tests passed
 (**6 passed**); full pytest passed (**1,244 passed**, 60.55 s); compileall and
 `git diff --check` passed. These tests validate bounded candidate handling, not
 exhaustive GraphQL parsing or server-side behavior.
+
+The shared GraphQL lexical inventory now accepts operation declarations only
+at document brace-depth zero, avoiding false operation candidates from fields
+named `query`, `mutation`, or `subscription` inside a selection set. Focused
+static/dynamic GraphQL tests passed (**11 passed**); full pytest passed
+(**1,245 passed**, 61.00 s); compileall and `git diff --check` passed. The
+scanner remains lexical and does not validate the complete GraphQL grammar.

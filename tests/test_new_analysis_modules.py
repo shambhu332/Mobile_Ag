@@ -784,6 +784,17 @@ def test_mobile_api_cataloger_marks_oversized_graphql_document_as_coverage_gap()
     assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
 
 
+def test_graphql_operation_candidates_ignore_operation_keyword_fields():
+    from mobileag.analysis.graphql_candidates import extract_graphql_operation_candidates
+
+    candidates, malformed, truncated = extract_graphql_operation_candidates(
+        "query Load { query { value } mutation { value } subscription { value } }"
+    )
+    assert candidates == [{"operation_type": "query", "operation_name": "Load"}]
+    assert malformed is False
+    assert truncated is False
+
+
 def test_mobile_api_cataloger_caps_graphql_candidates_and_counts_omissions(monkeypatch):
     import json
     from mobileag.dast import api_cataloger

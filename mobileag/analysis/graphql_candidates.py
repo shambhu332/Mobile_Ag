@@ -72,15 +72,27 @@ def extract_graphql_operation_candidates(
     candidates: list[dict[str, str | None]] = []
     truncated = False
     seen: set[tuple[str, str | None]] = set()
-    for match in GRAPHQL_OPERATION_PATTERN.finditer(masked):
-        operation_type = match.group(1).lower()
-        operation_name = match.group(2)
-        key = (operation_type, operation_name)
-        if key in seen:
-            continue
-        if len(candidates) >= max_candidates:
-            truncated = True
-            break
-        seen.add(key)
-        candidates.append({"operation_type": operation_type, "operation_name": operation_name})
+    depth = 0
+    index = 0
+    while index < len(masked):
+        # GraphQL operations are document definitions at the root level. A
+        # field named `query`, `mutation`, or `subscription` inside a selection
+        # set must not be mistaken for a second operation declaration.
+        if depth == 0:
+            match = GRAPHQL_OPERATION_PATTERN.match(masked, index)
+            if match:
+                operation_type = match.group(1).lower()
+                operation_name = match.group(2)
+                key = (operation_type, operation_name)
+                if key not in seen:
+                    if len(candidates) >= max_candidates:
+                        truncated = True
+                        break
+                    seen.add(key)
+                    candidates.append({"operation_type": operation_type, "operation_name": operation_name})
+        if masked[index] == "{":
+            depth += 1
+        elif masked[index] == "}":
+            depth = max(0, depth - 1)
+        index += 1
     return candidates, malformed, truncated

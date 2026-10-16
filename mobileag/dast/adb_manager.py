@@ -174,9 +174,14 @@ class ADBManager:
 
         return False
 
-    async def connect_device(self, host_port: str) -> dict[str, Any]:
+    async def connect_device(self, host_port: str, guard=None) -> dict[str, Any]:
         """Connect to a remote or local emulator/device via TCP (e.g. 127.0.0.1:5555)."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r'(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\]):[0-9]{1,5}', host_port) or int(host_port.rsplit(':', 1)[1]) > 65535:
+            raise ValueError('Invalid ADB connect host/port')
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(["connect", host_port], timeout=4.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         success = "connected to" in out_str.lower() or "already connected" in out_str.lower()
         return {"status": "success" if success else "failed", "output": out_str}
@@ -297,17 +302,22 @@ class ADBManager:
         code, _, _ = await self._exec_cmd(["-s", serial, "logcat", "-c"], timeout=3.0)
         return code == 0
 
-    async def capture_screenshot(self, serial: str) -> Optional[bytes]:
+    async def capture_screenshot(self, serial: str, guard=None) -> Optional[bytes]:
         """Capture device screenshot and return PNG bytes."""
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(["-s", serial, "exec-out", "screencap", "-p"], timeout=5.0)
+        self._check_mutation_guard(guard)
         if code == 0 and stdout.startswith(b"\x89PNG"):
             return stdout
         return None
 
-    async def execute_shell(self, serial: str, command: str) -> dict[str, Any]:
+    async def execute_shell(self, serial: str, command: str, guard=None) -> dict[str, Any]:
         """Execute an arbitrary adb shell command on target device."""
+        self._check_mutation_guard(guard)
         cmd_parts = ["-s", serial, "shell", str(command)]
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd_parts, timeout=10.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {
             "status": "success" if code == 0 else "failed",

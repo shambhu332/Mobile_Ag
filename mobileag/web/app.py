@@ -1389,7 +1389,7 @@ async def connect_dast_device(req: DeviceConnectRequest, request: Request) -> di
             raise HTTPException(403, "ADB connection scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.connect_device(req.host_port)
+    res = await adb_manager.connect_device(req.host_port, guard=guard)
     guard()
     return res
 
@@ -1486,7 +1486,7 @@ async def execute_adb_command(req: ExecuteAdbRequest, request: Request) -> dict[
             raise HTTPException(403, "Device-wide shell scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.execute_shell(req.serial, req.command)
+    res = await adb_manager.execute_shell(req.serial, req.command, guard=guard)
     guard()
     return res
 
@@ -1542,7 +1542,7 @@ async def capture_dast_screenshot(req: DeviceActionRequest, request: Request) ->
             raise HTTPException(403, "Screenshot scope is unavailable or revoked")
 
     guard()
-    png_bytes = await adb_manager.capture_screenshot(req.serial)
+    png_bytes = await adb_manager.capture_screenshot(req.serial, guard=guard)
     guard()
     if png_bytes:
         import base64

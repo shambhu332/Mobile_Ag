@@ -83,7 +83,7 @@ def test_dast_connect_rechecks_policy_after_connect_attempt(client, monkeypatch)
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_connect_scope(host_port):
+    async def revoke_connect_scope(host_port, guard=None):
         calls.append(host_port)
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "connect"]
@@ -101,7 +101,7 @@ def test_dast_screenshot_withholds_image_after_policy_revocation(client, monkeyp
 
     web = importlib.import_module("mobileag.web.app")
 
-    async def revoke_screenshot_scope(serial):
+    async def revoke_screenshot_scope(serial, guard=None):
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "screenshot"]
         web.repository().save_policy(policy)
@@ -384,7 +384,7 @@ def test_dast_execute_adb_rechecks_scope_after_command(client, monkeypatch):
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_shell_scope(serial, command):
+    async def revoke_shell_scope(serial, command, guard=None):
         calls.append((serial, command))
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "execute_adb"]

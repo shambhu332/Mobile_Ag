@@ -1697,3 +1697,12 @@ closed. Focused helper/workflow regressions passed (**85 passed**); full pytest
 passed (**1,312 passed**, 63.74 s), compileall and `git diff --check` passed.
 No device was contacted. This establishes mocked authorization-boundary
 behavior, not target-device execution or vulnerability proof.
+
+Direct ADB connect, arbitrary shell, and screenshot helpers now require
+synchronous scoped guards and recheck authorization around dispatch; connect
+also validates host/port syntax and range. Web routes pass their live session/
+policy guards. Missing guards and an invalid port are covered by synthetic
+no-command tests. Focused route/helper tests passed (**59 passed**); full pytest
+passed (**1,313 passed**, 64.63 s), compileall and `git diff --check` passed.
+No device or network endpoint was contacted; shell behavior and screenshot
+contents were not dynamically assessed.

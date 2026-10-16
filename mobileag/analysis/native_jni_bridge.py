@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 
 @dataclass
@@ -133,12 +134,17 @@ class NativeJniAnalyzer:
     def audit_package_libraries(self, extracted_dir: str | Path) -> List[NativeLibraryAuditResult]:
         """Audit all native libraries in extracted APK."""
         results: List[NativeLibraryAuditResult] = []
-        lib_dir = Path(extracted_dir) / "lib"
-        if not lib_dir.is_dir():
+        root = explicit_scan_root(extracted_dir)
+        if root is None or root.is_symlink() or not root.is_dir():
+            return results
+        lib_dir = root / "lib"
+        if lib_dir.is_symlink() or not lib_dir.is_dir():
             return results
 
-        for root, _, files in os.walk(lib_dir):
+        for current, dirs, files in os.walk(lib_dir, followlinks=False):
+            dirs[:] = sorted(name for name in dirs if not (Path(current) / name).is_symlink())
             for file in files:
-                if file.endswith(".so"):
-                    results.append(self.audit_library(os.path.join(root, file)))
+                candidate = Path(current) / file
+                if file.endswith(".so") and not candidate.is_symlink() and candidate.is_file():
+                    results.append(self.audit_library(candidate))
         return results

@@ -13,6 +13,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 
 @dataclass
@@ -654,8 +655,8 @@ class MachoBinaryParser:
 
     def audit_app_bundle(self, app_dir: str | Path) -> Optional[MachoAnalysisResult]:
         """Audit the main Mach-O executable in an extracted .app directory."""
-        path = Path(app_dir)
-        if not path.is_dir():
+        path = explicit_scan_root(app_dir)
+        if path is None or path.is_symlink() or not path.is_dir():
             return None
 
         # Look for the primary executable (matching .app folder name or Info.plist CFBundleExecutable)

@@ -18,6 +18,8 @@ from mobileag.analysis.network_security_config_auditor import NetworkSecurityCon
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
+from mobileag.analysis.native_jni_bridge import NativeJniAnalyzer
+from mobileag.analysis.macho_parser import MachoBinaryParser
 
 
 @pytest.mark.parametrize("missing", [None, "", "   "])
@@ -116,3 +118,7 @@ def test_framework_and_resource_auditors_reject_missing_roots(monkeypatch, missi
 
     hermes = HermesBytecodeAnalyzer()
     assert hermes.audit_package_bundles(missing) == []
+
+    monkeypatch.setattr("mobileag.analysis.native_jni_bridge.os.walk", unexpected)
+    assert NativeJniAnalyzer().audit_package_libraries(missing) == []
+    assert MachoBinaryParser().audit_app_bundle(missing) is None

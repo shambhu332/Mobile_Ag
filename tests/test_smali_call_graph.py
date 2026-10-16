@@ -1576,7 +1576,7 @@ def test_instance_field_write_marks_register_flow_coverage_partial(tmp_path):
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
-def test_fill_array_data_marks_array_content_coverage_partial(tmp_path):
+def test_fill_array_data_clears_stale_array_taint_and_marks_coverage_partial(tmp_path):
     (tmp_path / "ArrayPayload.smali").write_text('''.class public Lfixture/ArrayPayload;
 .super Landroid/app/Activity;
 .method public open()V
@@ -1606,8 +1606,8 @@ def test_fill_array_data_marks_array_content_coverage_partial(tmp_path):
     engine = SmaliCallGraphEngine()
     findings = engine.audit_smali_directory(tmp_path)
 
-    assert any(finding.metadata.get("analysis_kind") == "smali_local_register_flow"
-               for finding in findings)
+    assert not any(finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+                   for finding in findings)
     assert engine.coverage["static_status"] == "partial"
     assert any("fill-array-data payload/index effects are not modeled" in warning
                for warning in engine.coverage["register_dataflow_warnings"])

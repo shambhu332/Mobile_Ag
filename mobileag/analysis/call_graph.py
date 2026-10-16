@@ -854,6 +854,11 @@ class SmaliCallGraphEngine:
                 if instance_put:
                     warn(f"instance field write value is not modeled in {method.key} at line {line_no}")
                 if fill_array_data:
+                    # The payload is static data and replaces this array's
+                    # contents; don't retain element taint from earlier writes.
+                    # Register aliases/object identity are not modeled, so the
+                    # method still receives partial-coverage status.
+                    registers.pop(f"@array:{fill_array_data.group(1)}", None)
                     warn(f"fill-array-data payload/index effects are not modeled in {method.key} at line {line_no}")
                 if filled_new_array:
                     element_traces = frozenset(

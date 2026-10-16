@@ -1803,3 +1803,12 @@ passed (**71 passed**); the full suite passed (**1,321 passed**, 53.78 s; one
 expected duplicate-ZIP-member warning), and compilation plus `git diff --check`
 passed. Parent-root confinement and non-shared state writers remain explicitly
 unproven.
+
+The review-only exclusive artifact creation path now also opens the parent
+component-by-component without following symlinks, then uses an exclusive
+file-descriptor-relative create. Its target is not overwritten; synthetic
+regression covers a symlinked parent and existing-file refusal. Focused
+artifact-writer tests passed (**14 passed**); the full suite passed (**1,322 passed**,
+54.45 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This does not add confinement to an operator-selected
+root.

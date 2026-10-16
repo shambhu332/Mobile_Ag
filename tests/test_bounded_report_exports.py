@@ -86,3 +86,15 @@ def test_exclusive_private_artifact_is_bounded_private_and_no_overwrite(tmp_path
     assert output.read_text() == '{"fixture":true}'
     with pytest.raises(ValueError, match="output size limit"):
         create_private_artifact_exclusive(tmp_path / "large.json", "x" * 33, max_bytes=32)
+
+
+def test_exclusive_private_artifact_rejects_symlinked_parent(tmp_path):
+    from mobileag.reporting.artifact_writer import create_private_artifact_exclusive
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "link"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(OSError):
+        create_private_artifact_exclusive(parent / "guide.md", "synthetic")
+    assert not (outside / "guide.md").exists()

@@ -56,23 +56,12 @@ def preflight_bounded_structure(value, *, max_bytes: int, max_nodes: int,
             raise ValueError(f"{label} exceeds the input size limit")
 
 
-@contextmanager
-def private_artifact_stream(path: str | Path):
-    """Yield a temporary binary stream and atomically publish on clean exit.
-
-    Directory-relative operations pin the selected parent so later renames do
-    not redirect the temporary file or replacement. Parent components are
-    opened one at a time without following symlinks.
-    """
-    output = Path(path)
-    if not output.name or output.name in {".", ".."}:
-        raise ValueError("Report artifact path must name a file")
+def _open_parent_directory(parent: Path) -> int:
+    """Create and pin an absolute directory path without following links."""
     if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")) or \
-            os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd or \
-            os.rename not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+            os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd:
         raise OSError("Secure directory-relative artifact writes are unsupported")
-
-    parent = Path(os.path.abspath(output.parent))
+    parent = Path(os.path.abspath(parent))
     directory_fd = os.open(parent.anchor or "/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         for component in parent.parts[1:]:
@@ -88,7 +77,28 @@ def private_artifact_stream(path: str | Path):
                                    dir_fd=directory_fd)
             os.close(directory_fd)
             directory_fd = child_fd
+        return directory_fd
+    except BaseException:
+        os.close(directory_fd)
+        raise
 
+
+@contextmanager
+def private_artifact_stream(path: str | Path):
+    """Yield a temporary binary stream and atomically publish on clean exit.
+
+    Directory-relative operations pin the selected parent so later renames do
+    not redirect the temporary file or replacement. Parent components are
+    opened one at a time without following symlinks.
+    """
+    output = Path(path)
+    if not output.name or output.name in {".", ".."}:
+        raise ValueError("Report artifact path must name a file")
+    if os.rename not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+        raise OSError("Secure directory-relative artifact writes are unsupported")
+
+    directory_fd = _open_parent_directory(output.parent)
+    try:
         temporary_name = f".{output.name}.{secrets.token_hex(12)}.tmp"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         fd = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
@@ -131,20 +141,33 @@ def create_private_artifact_exclusive(path: str | Path, content: str | bytes,
     if not isinstance(payload, bytes) or len(payload) > max_bytes:
         raise ValueError("Report artifact exceeds the output size limit")
     output = Path(path)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(output, flags, 0o600)
+    if not output.name or output.name in {".", ".."}:
+        raise ValueError("Report artifact path must name a file")
+    if os.open not in os.supports_dir_fd or os.stat not in os.supports_dir_fd or \
+            os.unlink not in os.supports_dir_fd:
+        raise OSError("Secure directory-relative artifact writes are unsupported")
+    directory_fd = _open_parent_directory(output.parent)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    try:
+        fd = os.open(output.name, flags, 0o600, dir_fd=directory_fd)
+    except BaseException:
+        os.close(directory_fd)
+        raise
     created = os.fstat(fd)
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-    except Exception:
+        os.fsync(directory_fd)
+    except BaseException:
         try:
-            current = os.stat(output, follow_symlinks=False)
+            current = os.stat(output.name, dir_fd=directory_fd, follow_symlinks=False)
             if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
-                os.unlink(output)
+                os.unlink(output.name, dir_fd=directory_fd)
         except OSError:
             pass
         raise
+    finally:
+        os.close(directory_fd)
     return output

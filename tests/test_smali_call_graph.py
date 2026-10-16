@@ -1551,3 +1551,26 @@ def test_instance_field_read_kills_stale_taint_and_marks_partial_coverage(tmp_pa
     assert engine.coverage["static_status"] == "partial"
     assert any("instance field read value is not modeled" in warning
                for warning in engine.coverage["register_dataflow_warnings"])
+
+
+def test_instance_field_write_marks_register_flow_coverage_partial(tmp_path):
+    (tmp_path / "InstanceWrite.smali").write_text('''.class public Lfixture/InstanceWrite;
+.super Landroid/app/Activity;
+.method public save()V
+    .registers 3
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    iput-object v2, p0, Lfixture/InstanceWrite;->savedUrl:Ljava/lang/String;
+    return-void
+.end method
+''', encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+
+    assert engine.coverage["static_status"] == "partial"
+    assert any("instance field write value is not modeled" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])

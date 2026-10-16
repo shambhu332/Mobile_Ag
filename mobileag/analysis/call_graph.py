@@ -766,6 +766,7 @@ class SmaliCallGraphEngine:
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             instance_get = re.match(r"iget(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
+            instance_put = re.match(r"iput(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
             static_get = static_get_re.match(text)
             static_put = static_put_re.match(text)
             return_value = return_value_re.match(text)
@@ -848,6 +849,8 @@ class SmaliCallGraphEngine:
                 registers.pop("@pending_return", None)
                 if instance_get:
                     warn(f"instance field read value is not modeled in {method.key} at line {line_no}")
+                if instance_put:
+                    warn(f"instance field write value is not modeled in {method.key} at line {line_no}")
                 if return_value:
                     return_flows.update(registers.get(return_value.group(1), ()))
                 arithmetic = re.match(

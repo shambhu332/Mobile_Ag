@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,8 @@ from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
 
 logger = logging.getLogger(__name__)
+
+_MAX_PROFESSIONAL_REPORT_BYTES = 16 * 1024 * 1024
 
 
 class ProfessionalReportExporter:
@@ -126,7 +130,22 @@ class ProfessionalReportExporter:
         if output_path:
             p = Path(output_path)
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(report, encoding="utf-8")
+            payload = report.encode("utf-8")
+            if len(payload) > _MAX_PROFESSIONAL_REPORT_BYTES:
+                raise ValueError("Professional report exceeds the output size limit")
+            fd, temporary_path = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=p.parent)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary_path, p)
+            except Exception:
+                try:
+                    os.unlink(temporary_path)
+                except OSError:
+                    pass
+                raise
             logger.info("Professional report written to %s", p)
 
         return report

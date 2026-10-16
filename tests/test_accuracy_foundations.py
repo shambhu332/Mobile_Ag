@@ -857,3 +857,30 @@ def test_runtime_device_observation_not_equated_to_artifact_or_login_proof():
     assert row['declared_authentication_state'] == 'logged_in'
     assert row['authentication_status'] == 'not_verified'
     assert row['runtime_artifact_binding'] == 'not_verified'
+
+
+def test_professional_report_output_atomically_replaces_symlink_with_private_file(tmp_path):
+    import os
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "report.md"
+    output.symlink_to(victim)
+
+    report = ProfessionalReportExporter().generate_report([], output_path=output)
+
+    assert not output.is_symlink()
+    assert output.read_text() == report
+    assert victim.read_text() == "unchanged"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_professional_report_output_cap_fails_before_write(tmp_path, monkeypatch):
+    import mobileag.reporting.professional_report as professional_report
+
+    output = tmp_path / "oversized.md"
+    monkeypatch.setattr(professional_report, "_MAX_PROFESSIONAL_REPORT_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        professional_report.ProfessionalReportExporter().generate_report([], output_path=output)
+    assert not output.exists()

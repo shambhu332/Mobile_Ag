@@ -302,7 +302,7 @@ evidence.
 
 ### 9.3 Evidence-limited JSON, Markdown, and PDF report artifacts
 * **Objective**: Persist researcher-readable reports without converting unverified candidates into confirmed impact.
-* **Current boundary**: `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
+* **Current boundary**: `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. Other legacy export writers require separate review. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
 
 ---
 
@@ -1213,3 +1213,9 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    inventory. Focused normative SBOM tests passed (**9 passed**); full-suite
    and compile results follow. These item budgets do not establish that
    upstream scanners inventory every dependency.
+
+   The legacy `ProfessionalReportExporter` Markdown path now enforces a 16 MiB
+   output cap and uses private-mode atomic replacement rather than following a
+   pre-existing symlink. Synthetic tests cover both conditions. Focused report
+   writer tests passed (**2 passed**); full-suite and compile results follow.
+   Other legacy file writers remain subject to separate review.

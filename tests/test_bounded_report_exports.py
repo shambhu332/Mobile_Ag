@@ -59,3 +59,17 @@ def test_report_engine_bounds_findings_and_artifact_output(tmp_path, monkeypatch
     with pytest.raises(ValueError, match="output size limit"):
         ReportEngine._atomic_private_write(destination, b"oversized", max_bytes=4)
     assert destination.read_bytes() == b"previous"
+
+
+def test_exclusive_private_artifact_is_bounded_private_and_no_overwrite(tmp_path):
+    from mobileag.reporting.artifact_writer import create_private_artifact_exclusive
+
+    output = tmp_path / "new.json"
+    create_private_artifact_exclusive(output, '{"fixture":true}', max_bytes=32)
+    assert output.read_text() == '{"fixture":true}'
+    assert output.stat().st_mode & 0o077 == 0
+    with pytest.raises(FileExistsError):
+        create_private_artifact_exclusive(output, "replacement")
+    assert output.read_text() == '{"fixture":true}'
+    with pytest.raises(ValueError, match="output size limit"):
+        create_private_artifact_exclusive(tmp_path / "large.json", "x" * 33, max_bytes=32)

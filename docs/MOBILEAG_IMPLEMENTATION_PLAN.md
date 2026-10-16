@@ -1562,3 +1562,17 @@ Focused report-boundary and rendering tests passed (**39 passed**); full pytest
 passed (**1,266 passed**, 61.23 s); compileall and `git diff --check` passed.
 This is bounded local report generation, not an assurance of report completeness
 or compatibility with every external renderer.
+
+`ReportEngine` input/output bounds are implemented; review found CLI import and
+inventory commands still created caller-selected JSON files with ordinary
+umask-based permissions. Those new-file-only CLI paths remain a separate export
+hardening item. Do not interpret the report-engine limits as covering all report
+or inventory writers.
+
+CLI SARIF/MobSF import projections and AAB inventories now create output files
+exclusively with mode `0600` and enforce the shared artifact size cap. Existing
+files and symlink targets are preserved/rejected rather than overwritten; tests
+verify private permissions, collision handling, and synthetic link protection.
+Focused export/import tests passed (**29 passed**); full pytest passed (**1,267
+passed**, 62.15 s); compileall and `git diff --check` passed. AAB output is
+inventory-only and remains non-analysis evidence.

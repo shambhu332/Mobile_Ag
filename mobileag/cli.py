@@ -10,7 +10,7 @@ from rich.panel import Panel
 
 from config.settings import get_settings
 from mobileag.core.orchestrator import Orchestrator
-from mobileag.reporting.artifact_writer import write_private_artifact
+from mobileag.reporting.artifact_writer import create_private_artifact_exclusive, write_private_artifact
 from mobileag.security.privacy import redact
 
 console = Console()
@@ -289,10 +289,9 @@ def import_sarif_command(input_path: str, output_path: str):
         with Path(input_path).open("rb") as stream:
             raw = stream.read(MAX_BYTES + 1)
         result = import_sarif(raw)
-        # Exclusive create preserves existing evidence and rejects symlink targets.
-        with Path(output_path).open("x", encoding="utf-8") as stream:
-            json.dump(result, stream, indent=2, ensure_ascii=True)
-            stream.write("\n")
+        create_private_artifact_exclusive(
+            output_path, json.dumps(result, indent=2, ensure_ascii=True, allow_nan=False) + "\n",
+        )
     except (OSError, SarifImportError) as exc:
         raise click.ClickException(str(exc)) from None
     console.print(f"Imported {result['imported_candidates']} unverified candidate(s); "
@@ -315,9 +314,9 @@ def import_mobsf_json_command(input_path: str, output_path: str):
         with Path(input_path).open("rb") as stream:
             raw = stream.read(MAX_BYTES + 1)
         result = import_mobsf_json(raw)
-        with Path(output_path).open("x", encoding="utf-8") as stream:
-            json.dump(result, stream, indent=2, ensure_ascii=True)
-            stream.write("\n")
+        create_private_artifact_exclusive(
+            output_path, json.dumps(result, indent=2, ensure_ascii=True, allow_nan=False) + "\n",
+        )
     except (OSError, MobSFImportError) as exc:
         raise click.ClickException(str(exc)) from None
     console.print(f"Imported {result['imported_candidates']} unverified candidate(s); "
@@ -338,9 +337,9 @@ def inventory_aab_command(input_path: str, output_path: str):
 
     try:
         result = inventory_android_app_bundle(input_path)
-        with Path(output_path).open("x", encoding="utf-8") as stream:
-            json.dump(result, stream, indent=2, ensure_ascii=True)
-            stream.write("\n")
+        create_private_artifact_exclusive(
+            output_path, json.dumps(result, indent=2, ensure_ascii=True, allow_nan=False) + "\n",
+        )
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from None
     console.print(f"Inventoried {result['module_count']} module(s), "

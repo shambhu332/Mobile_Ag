@@ -79,3 +79,29 @@ def write_private_artifact(path: str | Path, content: str | bytes,
             pass
         raise
     return output
+
+
+def create_private_artifact_exclusive(path: str | Path, content: str | bytes,
+                                      max_bytes: int = MAX_REPORT_ARTIFACT_BYTES) -> Path:
+    """Create a new private artifact only; fail without following or replacing links."""
+    payload = content.encode("utf-8") if isinstance(content, str) else content
+    if not isinstance(payload, bytes) or len(payload) > max_bytes:
+        raise ValueError("Report artifact exceeds the output size limit")
+    output = Path(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(output, flags, 0o600)
+    created = os.fstat(fd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        try:
+            current = os.stat(output, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                os.unlink(output)
+        except OSError:
+            pass
+        raise
+    return output

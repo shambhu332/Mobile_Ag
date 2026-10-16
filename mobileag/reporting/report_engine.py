@@ -18,6 +18,7 @@ from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import preflight_bounded_structure
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,11 @@ class ReportEngine:
 
     MAX_PDF_HTML_CHARS = 16 * 1024 * 1024
     MAX_PDF_BYTES = 64 * 1024 * 1024
+    MAX_REPORT_INPUT_BYTES = 16 * 1024 * 1024
+    MAX_REPORT_INPUT_NODES = 200_000
+    MAX_REPORT_INPUT_DEPTH = 64
+    MAX_REPORT_FINDINGS = 5_000
+    MAX_JSON_MARKDOWN_BYTES = 32 * 1024 * 1024
 
     @staticmethod
     def _safe_scan_id(scan_id: object) -> str:
@@ -38,8 +44,10 @@ class ReportEngine:
         return scan_id
 
     @staticmethod
-    def _atomic_private_write(path: Path, content: bytes) -> None:
+    def _atomic_private_write(path: Path, content: bytes, max_bytes: int = 64 * 1024 * 1024) -> None:
         """Replace a report artifact without following an existing symlink."""
+        if not isinstance(content, bytes) or len(content) > max_bytes:
+            raise ValueError("Report artifact exceeds the output size limit")
         fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         try:
             with os.fdopen(fd, "wb") as stream:
@@ -82,14 +90,15 @@ class ReportEngine:
         # Save JSON
         json_path = output_dir / f"report_{scan_id}.json"
         self._atomic_private_write(
-            json_path, json.dumps(report_data, indent=2).encode("utf-8")
+            json_path, json.dumps(report_data, indent=2).encode("utf-8"),
+            self.MAX_JSON_MARKDOWN_BYTES,
         )
         logger.info("Saved JSON report to %s", json_path)
         
         # Save Markdown
         md_path = output_dir / f"report_{scan_id}.md"
         md_content = self._generate_markdown(report_data)
-        self._atomic_private_write(md_path, md_content.encode("utf-8"))
+        self._atomic_private_write(md_path, md_content.encode("utf-8"), self.MAX_JSON_MARKDOWN_BYTES)
         logger.info("Saved Markdown report to %s", md_path)
 
         pdf_path = output_dir / f"report_{scan_id}.pdf"
@@ -166,6 +175,14 @@ class ReportEngine:
 
     def _prepare_data(self, state: ScanState) -> dict:
         """Extract and format data for reporting."""
+        preflight_bounded_structure(
+            state, max_bytes=self.MAX_REPORT_INPUT_BYTES,
+            max_nodes=self.MAX_REPORT_INPUT_NODES,
+            max_depth=self.MAX_REPORT_INPUT_DEPTH,
+            label="Report input",
+        )
+        if len(state.get("filtered_findings", [])) > self.MAX_REPORT_FINDINGS:
+            raise ValueError("Report finding inventory exceeds limits")
         findings = [
             f for f in state.get("filtered_findings", [])
             if f.get("status") not in {FindingStatus.FALSE_POSITIVE.value, FindingStatus.DUPLICATE.value}

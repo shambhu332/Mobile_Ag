@@ -1553,3 +1553,12 @@ explicitly. Focused report-export tests passed (**10 passed**, including SARIF
 regressions); full pytest passed (**1,264 passed**, 61.26 s); compileall and
 `git diff --check` passed. Output-size enforcement remains in place; other legacy
 export writers still need separate review.
+
+`ReportEngine` now preflights the full scan-state structure before copying or
+rendering report data (16 MiB estimated input, 200,000 nodes, depth 64, and at
+most 5,000 findings). JSON and Markdown artifact writes also enforce a 32 MiB
+cap before atomic replacement; oversized output preserves any existing file.
+Focused report-boundary and rendering tests passed (**39 passed**); full pytest
+passed (**1,266 passed**, 61.23 s); compileall and `git diff --check` passed.
+This is bounded local report generation, not an assurance of report completeness
+or compatibility with every external renderer.

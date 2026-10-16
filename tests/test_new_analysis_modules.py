@@ -242,6 +242,25 @@ def test_flutter_analyzer_reports_bounded_binary_truncation_and_skips_symlinks()
     assert "symlink_binary_skipped" in result.scan_errors
 
 
+def test_flutter_analyzer_enforces_aggregate_binary_byte_budget():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        for abi in ("arm64-v8a", "x86_64"):
+            lib = root / "lib" / abi
+            lib.mkdir(parents=True)
+            (lib / "libapp.so").write_bytes(b"A" * 8)
+        analyzer = FlutterEngineAnalyzer()
+        analyzer.MAX_BINARY_BYTES = 100
+        analyzer.MAX_TOTAL_BINARY_BYTES = 10
+
+        result = analyzer.analyze_package_directory(root)
+
+    assert result.binary_bytes_scanned == 10
+    assert result.binary_truncated is True
+    assert result.scan_status == "partial"
+    assert "total_binary_byte_limit" in result.scan_errors
+
+
 def test_rasp_resilience_auditor():
     with tempfile.TemporaryDirectory() as tmp_dir:
         smali_content = """

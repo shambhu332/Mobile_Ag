@@ -36,6 +36,7 @@ class FlutterEngineAnalyzer:
 
     MAX_TREE_ENTRIES = 50_000
     MAX_BINARY_BYTES = 10 * 1024 * 1024
+    MAX_TOTAL_BINARY_BYTES = 32 * 1024 * 1024
     MAX_ASSETS = 10_000
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
@@ -127,16 +128,25 @@ class FlutterEngineAnalyzer:
 
     def _extract_strings_from_binary(self, binary_path: str, result: FlutterAnalysisResult, min_length: int = 4) -> None:
         """Extract ASCII strings from ELF binary and identify endpoints and secrets."""
+        remaining = self.MAX_TOTAL_BINARY_BYTES - result.binary_bytes_scanned
+        if remaining <= 0:
+            result.binary_truncated = True
+            result.scan_errors.append("total_binary_byte_limit")
+            return
+        read_limit = min(self.MAX_BINARY_BYTES, remaining)
         try:
             fd = os.open(binary_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, "rb") as f:
                 if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
                     result.scan_errors.append("non_regular_binary_skipped")
                     return
-                data = f.read(self.MAX_BINARY_BYTES + 1)
-                if len(data) > self.MAX_BINARY_BYTES:
+                data = f.read(read_limit + 1)
+                if len(data) > read_limit:
                     result.binary_truncated = True
-                    data = data[:self.MAX_BINARY_BYTES]
+                    data = data[:read_limit]
+                    result.scan_errors.append(
+                        "total_binary_byte_limit" if read_limit == remaining else "binary_file_byte_limit"
+                    )
                 result.binary_bytes_scanned += len(data)
         except OSError:
             result.scan_errors.append("binary_read_error")

@@ -752,7 +752,7 @@ class SmaliCallGraphEngine:
         write_re = re.compile(
             r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
             r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
-            r"(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)\s+([vp]\d+)(?:,|\s|$)"
+            r"(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)\s+([vp]\d+)(?:,|\s|$)"
         )
         while queue and visited_steps < 100000:
             index = queue.pop(0)
@@ -862,7 +862,7 @@ class SmaliCallGraphEngine:
                 if return_value:
                     return_flows.update(registers.get(return_value.group(1), ()))
                 arithmetic = re.match(
-                    r"(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr|neg|not)-[a-z0-9]+(?:/2addr|/lit\d+)?\s+.+",
+                    r"(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr|neg|not)-[a-z0-9]+(?:/2addr|/lit\d+)?\s+.+",
                     text,
                 )
                 arithmetic_traces: set[tuple[str, int, str, str]] = set()
@@ -1147,7 +1147,7 @@ class SmaliCallGraphEngine:
                     register_write = re.match(
                         r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
                         r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|"
-                        r"(?:neg|not)-[a-z]+|(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)"
+                        r"(?:neg|not)-[a-z]+|(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)"
                         r"\s+([vp]\d+)(?:,|\s|$)", stripped
                     )
                     if register_write:

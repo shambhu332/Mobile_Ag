@@ -150,6 +150,31 @@ def test_fileprovider_parser_does_not_retain_oversized_path_attributes():
     assert result.findings == []
 
 
+def test_fileprovider_streaming_parse_discards_candidates_if_tail_is_malformed():
+    result = FileProviderAuditor().audit_xml_content(
+        "<paths><root-path name='root' path='.'/></paths><broken>")
+
+    assert result.parse_status == "invalid"
+    assert result.error_code == "xml_parse_error"
+    assert result.entries == []
+    assert result.findings == []
+
+
+def test_fileprovider_parser_rejects_non_string_input():
+    result = FileProviderAuditor().audit_xml_content(None)
+
+    assert result.parse_status == "invalid"
+    assert result.error_code == "xml_input_type"
+
+
+def test_fileprovider_streaming_parser_caps_nested_xml_depth():
+    nested = "<x>" * FileProviderAuditor.MAX_XML_DEPTH + "</x>" * FileProviderAuditor.MAX_XML_DEPTH
+    result = FileProviderAuditor().audit_xml_content(f"<paths><files-path name='n' path='x'>{nested}</files-path></paths>")
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_depth_limit"
+
+
 @pytest.mark.parametrize("declaration", [
     '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>',
     '<!DOCTYPE paths SYSTEM "file:///tmp/researcher-controlled-nonexistent">',

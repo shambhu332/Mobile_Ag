@@ -120,6 +120,77 @@ def test_locate_config_path_from_manifest(auditor):
         assert located.name == "my_custom_network_config.xml"
 
 
+@pytest.mark.asyncio
+async def test_manifest_resource_name_cannot_escape_extraction_root(auditor, tmp_path):
+    root = tmp_path / "decoded"
+    (root / "res" / "xml").mkdir(parents=True)
+    outside_config = root / "res" / "outside.xml"
+    outside_config.write_text(
+        '<network-security-config><base-config cleartextTrafficPermitted="true" />'
+        '</network-security-config>', encoding="utf-8")
+    (root / "AndroidManifest.xml").write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+        '<application android:networkSecurityConfig="@xml/../outside" />'
+        '</manifest>', encoding="utf-8")
+
+    findings = await auditor.audit_directory_async(root)
+
+    assert findings == []
+    assert auditor.coverage["static_status"] == "partial"
+    assert "invalid_network_security_config_resource_name" in auditor.coverage["limitations"]
+
+
+@pytest.mark.asyncio
+async def test_direct_network_config_candidates_reject_symlinked_files(auditor, tmp_path):
+    root = tmp_path / "decoded"
+    xml_dir = root / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    outside = tmp_path / "outside.xml"
+    outside.write_text(
+        '<network-security-config><base-config cleartextTrafficPermitted="true" />'
+        '</network-security-config>', encoding="utf-8")
+    (xml_dir / "network_security_config.xml").symlink_to(outside)
+
+    findings = await auditor.audit_directory_async(root)
+
+    assert findings == []
+    assert auditor.coverage["static_status"] == "partial"
+    assert "network_security_config_path_outside_root_or_symlinked" in auditor.coverage["limitations"]
+
+
+def test_missing_custom_resource_does_not_fall_back_to_unreferenced_default(auditor, tmp_path):
+    root = tmp_path / "decoded"
+    xml_dir = root / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "network_security_config.xml").write_text(
+        "<network-security-config />", encoding="utf-8")
+    (root / "AndroidManifest.xml").write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+        '<application android:networkSecurityConfig="@xml/custom_tls" />'
+        '</manifest>', encoding="utf-8")
+
+    assert auditor.locate_config_path(str(root)) is None
+    assert auditor.coverage["static_status"] == "partial"
+    assert "referenced_network_security_config_not_found" in auditor.coverage["limitations"]
+
+
+def test_explicit_manifest_path_must_remain_inside_extraction_root(auditor, tmp_path):
+    root = tmp_path / "decoded"
+    xml_dir = root / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "network_security_config.xml").write_text(
+        "<network-security-config />", encoding="utf-8")
+    outside_manifest = tmp_path / "AndroidManifest.xml"
+    outside_manifest.write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+        '<application android:networkSecurityConfig="@xml/custom_tls" />'
+        '</manifest>', encoding="utf-8")
+
+    assert auditor.locate_config_path(str(root), str(outside_manifest)) is None
+    assert auditor.coverage["static_status"] == "partial"
+    assert "manifest_path_outside_root_or_symlinked" in auditor.coverage["limitations"]
+
+
 def test_network_security_config_rejects_dtd_and_entity_declarations(auditor, tmp_path):
     path = tmp_path / "network_security_config.xml"
     path.write_text(

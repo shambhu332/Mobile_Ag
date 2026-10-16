@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import asyncio
 import logging
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Any, Optional
@@ -30,6 +31,31 @@ class NetworkSecurityConfigAuditor:
     def __init__(self) -> None:
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
                          "proof_status": "not_proven", "exhaustive": False}
+
+    @staticmethod
+    def _is_safe_contained_file(candidate: Path, root: Path) -> bool:
+        """Require a regular candidate beneath root with no symlink components."""
+        try:
+            root_abs = Path(os.path.abspath(root))
+            candidate_abs = Path(os.path.abspath(candidate))
+            relative = candidate_abs.relative_to(root_abs)
+            current = root_abs
+            for part in relative.parts:
+                current = current / part
+                if current.is_symlink():
+                    return False
+            resolved_root = root_abs.resolve(strict=True)
+            resolved_candidate = candidate_abs.resolve(strict=True)
+            resolved_candidate.relative_to(resolved_root)
+            return resolved_candidate.is_file()
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+    def _mark_config_location_partial(self, reason: str) -> None:
+        limitations = self.coverage.setdefault("limitations", [])
+        if reason not in limitations:
+            limitations.append(reason)
+        self.coverage.update(static_status="partial", config_location_status="partial")
 
     @staticmethod
     def _read_bounded(path: Path, limit: int = 2*1024*1024) -> bytes:
@@ -71,6 +97,7 @@ class NetworkSecurityConfigAuditor:
                              "proof_status": "not_proven", "exhaustive": False}
             return None
         xml_name = "network_security_config"
+        has_manifest_resource_reference = False
 
         # 1. Inspect manifest for android:networkSecurityConfig attribute
         manifest_file = Path(manifest_path) if manifest_path else root_path / "AndroidManifest.xml"
@@ -82,6 +109,9 @@ class NetworkSecurityConfigAuditor:
                     break
 
         if manifest_file.exists():
+            if not self._is_safe_contained_file(manifest_file, root_path):
+                self._mark_config_location_partial("manifest_path_outside_root_or_symlinked")
+                return None
             try:
                 root_elem = self._parse_bounded_xml(manifest_file)
                 app_elem = root_elem.find("application")
@@ -89,9 +119,19 @@ class NetworkSecurityConfigAuditor:
                     attr_val = app_elem.attrib.get(f"{{{ANDROID_NS}}}networkSecurityConfig", "")
                     # Format: @xml/network_security_config or @7F120001
                     if attr_val.startswith("@xml/"):
-                        xml_name = attr_val.replace("@xml/", "").strip()
+                        referenced_name = attr_val[len("@xml/"):]
+                        if not re.fullmatch(r"[a-z0-9_]{1,128}", referenced_name):
+                            self._mark_config_location_partial("invalid_network_security_config_resource_name")
+                            return None
+                        xml_name = referenced_name
+                        has_manifest_resource_reference = True
+                    elif attr_val:
+                        self._mark_config_location_partial("unresolved_network_security_config_resource_reference")
+                        return None
             except Exception as e:
                 logger.debug(f"Could not parse manifest for networkSecurityConfig attribute: {e}")
+                self._mark_config_location_partial("manifest_network_security_config_reference_unresolved")
+                return None
 
         # 2. Check candidates in decompiled directory
         candidate_paths = [
@@ -102,15 +142,23 @@ class NetworkSecurityConfigAuditor:
 
         for candidate in candidate_paths:
             if candidate.exists():
-                return candidate
+                if self._is_safe_contained_file(candidate, root_path):
+                    return candidate
+                self._mark_config_location_partial("network_security_config_path_outside_root_or_symlinked")
+                return None
 
         # 3. Fallback: Recursive search for the xml filename or any network_security_config
         inventory = SourceInventory(max_entries=5000, max_file_bytes=2*1024*1024,
                                     max_total_bytes=16*1024*1024)
-        for found, _ in inventory.read(root_path, names={f"{xml_name}.xml", "network_security_config.xml"}):
+        candidate_names = {f"{xml_name}.xml"}
+        if not has_manifest_resource_reference:
+            candidate_names.add("network_security_config.xml")
+        for found, _ in inventory.read(root_path, names=candidate_names):
             self.coverage = dict(inventory.coverage)
             return found
         self.coverage = dict(inventory.coverage)
+        if has_manifest_resource_reference:
+            self._mark_config_location_partial("referenced_network_security_config_not_found")
 
         return None
 

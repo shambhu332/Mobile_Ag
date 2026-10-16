@@ -90,6 +90,7 @@ from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.reporting.evidence_contract import prepare_scan, prepare_observation
 from mobileag.reporting.sarif_exporter import SARIFExporter
+from mobileag.reporting.artifact_writer import preflight_bounded_structure
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,9 @@ RUNTIME_SETTINGS: dict[str, Any] = {}
 # =============================================================================
 # WebSocket Real-Time Telemetry Manager
 # =============================================================================
+MAX_TELEMETRY_EVENT_BYTES = 256 * 1024
+
+
 class ConnectionManager:
     """Manages real-time WebSocket subscriber connections for telemetry streaming."""
 
@@ -188,16 +192,41 @@ class ConnectionManager:
             logger.info("WebSocket subscriber disconnected (%d remaining)", len(self.active_connections))
 
     async def broadcast(self, message: dict[str, Any]) -> None:
+        if not self.active_connections:
+            return
+        try:
+            if not isinstance(message, dict):
+                raise ValueError("Telemetry event must be an object")
+            preflight_bounded_structure(
+                message, max_bytes=128 * 1024, max_nodes=20_000,
+                max_depth=32, label="Telemetry event",
+            )
+            safe_message = redact(message)
+            encoded = json.dumps(safe_message, ensure_ascii=True, allow_nan=False,
+                                 separators=(",", ":")).encode("utf-8")
+            if len(encoded) > MAX_TELEMETRY_EVENT_BYTES:
+                raise ValueError("Telemetry event exceeds output size limit")
+            safe_message = json.loads(encoded)
+        except (TypeError, ValueError, RecursionError):
+            scan_id = message.get("scan_id") if isinstance(message, dict) else None
+            if not isinstance(scan_id, str) or len(scan_id) > 128 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scan_id):
+                scan_id = None
+            safe_message = {
+                "type": "telemetry_omitted",
+                "reason": "invalid_or_over_budget_event",
+                "message": "Telemetry event omitted by the bounded local stream.",
+                **({"scan_id": scan_id} if scan_id else {}),
+            }
         for connection in list(self.active_connections):
             try:
                 subscribed_scan = self.subscriptions.get(connection)
-                if subscribed_scan is not None and message.get("scan_id") != subscribed_scan:
+                if subscribed_scan is not None and safe_message.get("scan_id") != subscribed_scan:
                     continue
                 if time.monotonic() >= app.state.session_deadline or not authorized(self.sessions.get(connection),app.state.auth_token):
                     await connection.close(code=1008)
                     self.disconnect(connection)
                     continue
-                await asyncio.wait_for(connection.send_json(redact(message)), timeout=2)
+                await asyncio.wait_for(connection.send_json(safe_message), timeout=2)
             except Exception:
                 self.disconnect(connection)
 

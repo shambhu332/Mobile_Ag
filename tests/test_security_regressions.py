@@ -115,6 +115,37 @@ async def test_scan_telemetry_broadcast_isolation():
 
 
 @pytest.mark.asyncio
+async def test_websocket_telemetry_omits_oversized_and_cyclic_events(monkeypatch):
+    manager = web.ConnectionManager()
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = []
+        async def send_json(self, message):
+            self.messages.append(message)
+        async def close(self, code):
+            self.closed_code = code
+
+    connection = FakeWebSocket()
+    manager.active_connections.append(connection)
+    manager.sessions[connection] = web.app.state.auth_token
+    manager.subscriptions[connection] = "scan-one"
+    monkeypatch.setattr(web, "MAX_TELEMETRY_EVENT_BYTES", 64)
+
+    await manager.broadcast({"type": "agent_progress", "scan_id": "scan-one",
+                             "message": "synthetic", "payload": "x" * 100})
+    assert connection.messages[-1]["type"] == "telemetry_omitted"
+    assert connection.messages[-1]["scan_id"] == "scan-one"
+    assert "payload" not in connection.messages[-1]
+
+    cyclic = {"type": "agent_progress", "scan_id": "scan-one"}
+    cyclic["self"] = cyclic
+    await manager.broadcast(cyclic)
+    assert connection.messages[-1]["type"] == "telemetry_omitted"
+    assert "self" not in connection.messages[-1]
+
+
+@pytest.mark.asyncio
 async def test_websocket_capacity_slot_stays_reserved_during_scan_validation(monkeypatch):
     manager = web.ConnectionManager()
     monkeypatch.setattr(web, "manager", manager)

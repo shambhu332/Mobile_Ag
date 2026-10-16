@@ -285,7 +285,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/web/app.py` (Enhancement)
   - `mobileag/web/static/telemetry.js` (Enhancement)
-* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. A pending subscriber slot remains reserved during awaited scan validation and transfers to the active set without an intervening await, preserving the 32-connection cap during concurrent setup. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
+* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. A pending subscriber slot remains reserved during awaited scan validation and transfers to the active set without an intervening await, preserving the 32-connection cap during concurrent setup. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed. Broadcast events now receive a bounded preflight (128 KiB estimated input, 20,000 nodes, depth 32) and a 256 KiB serialized-output cap before fan-out; invalid or oversized events are replaced with a fixed omission notice that preserves a syntactically valid scan ID for subscription routing. Synthetic tests cover oversized and cyclic messages while preserving per-scan isolation. This bounds each event, not aggregate throughput, queueing, or delivery guarantees.
 
 ### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
 * **Objective**: Visualize currently modeled component/finding/API-candidate associations; do not label co-occurrence as data flow or an exploit chain.
@@ -1604,3 +1604,8 @@ serialization. Synthetic persistence and guided-assessment tests passed (**68
 passed**); full pytest passed (**1,273 passed**, 61.59 s); compileall and
 `git diff --check` passed. This does not change analyst-attestation semantics or
 authorize test-plan execution.
+
+Focused telemetry regressions passed (`test_security_regressions.py`: **56
+passed**); full pytest passed (**1,274 passed**, 62.01 s); compileall and
+`git diff --check` passed. This verifies mocked message bounding and routing,
+not production network throughput or runtime event-loss behavior.

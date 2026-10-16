@@ -101,7 +101,9 @@ def test_hermes_bytecode_analyzer():
         # Create mock Hermes bundle with 0x1F480120 magic header and version 84
         magic_bytes = struct.pack("<Q", 0x1F480120)
         version_bytes = struct.pack("<I", 84)
-        payload = b"https://api.example.com/mobile/v1" + b"\x00" * 20 + b'apiKey: "abcdef0123456789abcdef"'
+        payload = (b"https://api.example.com/mobile/v1" + b"\x00" * 20
+                   + b"https://api.example.com/mobile/token/synthetic-private-token" + b"\x00"
+                   + b'apiKey: "abcdef0123456789abcdef"')
 
         with open(bundle_path, "wb") as f:
             f.write(magic_bytes + version_bytes + b"\x00" * 16 + payload)
@@ -112,6 +114,8 @@ def test_hermes_bytecode_analyzer():
         assert res.is_hermes is True
         assert res.bytecode_version == 84
         assert "https://api.example.com/mobile/v1" in res.api_endpoints
+        assert "https://api.example.com/mobile/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
         assert len(res.secrets) >= 1
         assert all(secret == {"name": "embedded credential", "value_redacted": True}
                    for secret in res.secrets)
@@ -180,6 +184,7 @@ def test_il2cpp_auditor():
         meta_file = os.path.join(meta_dir, "global-metadata.dat")
         content = _il2cpp_v29_metadata([
             "https://game-api.unity.com/v1", "AuthenticationManager",
+            "https://game-api.unity.com/v1/auth/%74oken/synthetic-private-token",
             'apiKey: "synthetic-unity-secret-123"',
         ], types=[{"name": "AuthenticationManager", "namespace": "sample",
                    "fields": ["sessionToken"],
@@ -194,8 +199,10 @@ def test_il2cpp_auditor():
         assert res.is_il2cpp is True
         assert res.metadata_version == 29
         assert res.metadata_tables_status == "parsed"
-        assert res.metadata_string_literals_count == 3
+        assert res.metadata_string_literals_count == 4
         assert "https://game-api.unity.com/v1" in res.api_endpoints
+        assert "https://game-api.unity.com/v1/auth/%74oken/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
         assert res.metadata_definitions_status == "parsed"
         assert res.reconstructed_classes == ["sample.AuthenticationManager"]
         assert res.reconstructed_methods == [{

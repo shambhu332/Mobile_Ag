@@ -202,6 +202,7 @@ def test_flutter_engine_analyzer():
 
         # Simulate libapp.so with embedded strings
         dummy_content = (b"\x00" * 100 + b"https://api.example.com/v1/auth" + b"\x00" * 50
+                         + b"https://api.example.com/v1/auth/token/synthetic-private-token" + b"\x00"
                          + b"/dashboard" + b"\x00" + b'apiKey: "synthetic-secret-value-123"')
         with open(os.path.join(lib_dir, "libapp.so"), "wb") as f:
             f.write(dummy_content)
@@ -212,6 +213,8 @@ def test_flutter_engine_analyzer():
         assert res.is_flutter_app is True
         assert res.libapp_present is True
         assert "https://api.example.com/v1/auth" in res.api_endpoints
+        assert "https://api.example.com/v1/auth/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
         assert "/dashboard" in res.named_routes
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-secret-value-123" not in repr(res.potential_secrets)

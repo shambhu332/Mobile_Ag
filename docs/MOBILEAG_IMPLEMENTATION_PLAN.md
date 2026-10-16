@@ -1438,3 +1438,13 @@ comparison. The focused API-mapper/depth regressions passed (**77 passed**);
 full pytest passed (**1,247 passed**, 61.61 s); compileall and
 `git diff --check` passed. Route normalization remains heuristic and does not
 guarantee detection of every secret-bearing path convention.
+
+The bounded route sanitizer is now shared by the static API mapper and Flutter,
+Hermes, and IL2CPP embedded-URL candidate inventories. In addition to removing
+queries/userinfo and redacting opaque values, it preserves chained sensitive
+markers (such as `/auth/token/`) until the following value is redacted; this
+prevents a marker itself from being replaced while accidentally exposing the
+credential segment after it. Synthetic framework/API regressions passed (**137
+passed**); full pytest passed (**1,247 passed**, 60.92 s); compileall and
+`git diff --check` passed. These remain printable-string/route candidates, not
+framework decompilation, endpoint reachability, or proof of credential use.

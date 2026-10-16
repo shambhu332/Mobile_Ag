@@ -14,6 +14,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
+from mobileag.analysis.api_endpoint_safety import safe_api_route
 from typing import Callable, Dict, List, Optional, Set
 
 
@@ -171,10 +172,12 @@ class Il2CppAuditor:
 
         def collect_candidate(value: str) -> None:
             for url in self.URL_PATTERN.findall(value):
-                if not url.endswith((".png", ".jpg", ".asset", ".unity")):
+                safe_url = safe_api_route(url)
+                if (safe_url != "[REDACTED URL]"
+                        and not safe_url.endswith((".png", ".jpg", ".asset", ".unity"))):
                     if len(endpoints) < self.MAX_ENDPOINTS:
-                        endpoints.add(url)
-                    elif url not in endpoints:
+                        endpoints.add(safe_url)
+                    elif safe_url not in endpoints:
                         mark_truncated("api_endpoint_limit")
             if self.SECRET_PATTERN.search(value) and not secret_marker_added[0]:
                 result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})

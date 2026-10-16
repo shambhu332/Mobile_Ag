@@ -15,6 +15,7 @@ from mobileag.security.privacy import redact
 @pytest.mark.parametrize('name', [
     'access_token', 'refresh_token', 'client_secret', 'passwd',
     'X-Api-Key', 'x-goog-api-key', 'X-Auth-Token', 'Authorization',
+    'X-Session-ID', 'X-Refresh-Token', 'X-Client-Secret', 'X-Private-Key',
 ])
 def test_opaque_credentials_redacted_in_nested_fields(name):
     value = {'captured': {name: 'syntheticOpaqueCredential', 'public': 'keep'}}
@@ -22,6 +23,18 @@ def test_opaque_credentials_redacted_in_nested_fields(name):
     assert result['captured'][name] == '[REDACTED]'
     assert result['captured']['public'] == 'keep'
     assert value['captured'][name] == 'syntheticOpaqueCredential'
+
+
+def test_namespaced_redaction_preserves_noncredential_suffix_lookalikes():
+    value = {'tokenizer': 'synthetic-public-tokenizer',
+             'secretariat': 'synthetic-public-secretariat',
+             'X-Request-Trace': 'synthetic-public-trace',
+             'X-Request-Token': 'synthetic-sensitive-token'}
+    result = redact(value)
+    assert result['tokenizer'] == 'synthetic-public-tokenizer'
+    assert result['secretariat'] == 'synthetic-public-secretariat'
+    assert result['X-Request-Trace'] == 'synthetic-public-trace'
+    assert result['X-Request-Token'] == '[REDACTED]'
 
 
 @pytest.mark.parametrize('name', ['access_token', 'refresh_token', 'api_key', 'client_secret'])

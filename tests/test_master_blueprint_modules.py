@@ -754,15 +754,17 @@ def test_har_exports_redacted_observed_response_headers():
         response_headers={
             "Content-Type": "application/json",
             "Set-Cookie": "session_id=synthetic-response-cookie; Path=/; Secure",
+            "X-Session-ID": "synthetic-namespaced-session",
             "X-Request-Trace": "synthetic-trace-id",
         },
     ))
     har = catalog.export_har_json()
     headers = har["log"]["entries"][0]["response"]["headers"]
     assert {item["name"] for item in headers} == {
-        "Content-Type", "Set-Cookie", "X-Request-Trace"
+        "Content-Type", "Set-Cookie", "X-Session-ID", "X-Request-Trace"
     }
     assert "synthetic-response-cookie" not in json.dumps(har)
+    assert "synthetic-namespaced-session" not in json.dumps(har)
     assert "synthetic-trace-id" in json.dumps(har)
 
 

@@ -13,7 +13,15 @@ _SECRET_FIELDS = {'authorization','proxy_authorization','proxy_authenticate','co
                   'x_api_key','x_goog_api_key','x_auth_token'}
 
 def _sensitive(name):
-    return str(name).lower().replace('-', '_') in _SECRET_FIELDS
+    normalized = str(name).casefold().replace('-', '_')
+    if normalized in _SECRET_FIELDS:
+        return True
+    # Recognize common namespaced credential headers/fields without treating
+    # ordinary words such as "tokenizer" or "secretariat" as credentials.
+    return normalized.endswith((
+        '_token', '_secret', '_password', '_passwd', '_pwd', '_api_key',
+        '_private_key', '_session_id', '_cookie', '_authorization',
+    ))
 
 _PATTERNS = [
     re.compile(r'\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]+|gsk_[A-Za-z0-9_-]{20,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|xai-[A-Za-z0-9_-]+)\b'),

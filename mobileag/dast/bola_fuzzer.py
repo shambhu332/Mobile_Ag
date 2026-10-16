@@ -47,6 +47,12 @@ class BolaFuzzer:
         "token", "auth", "authorization", "password", "secret", "session", "cookie",
         "bearer", "credential", "key", "apikey",
     )
+    SENSITIVE_PATH_VALUE_KEYS = {
+        "token", "accesstoken", "refreshtoken", "authtoken", "session", "sessionid",
+        "jwt", "password", "passwd", "secret", "credential", "authorization",
+        "signature", "sig", "key", "apikey", "code", "reset", "verify",
+        "verification", "oauth",
+    }
     _UUID = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     _EMAIL = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
     _OPAQUE_ID = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
@@ -65,7 +71,20 @@ class BolaFuzzer:
             return "[REDACTED ENDPOINT]"
         segments = parsed.path.split("/")
         index = 0
+        redact_sensitive_value = False
         for position, segment in enumerate(segments):
+            normalized_segment = re.sub(
+                r"[^a-z0-9]", "", urllib.parse.unquote(segment).casefold()
+            )
+            if redact_sensitive_value:
+                # Keep a chain of recognizable sensitive path keys, but redact
+                # the first following value (e.g. /oauth/token/<credential>).
+                if normalized_segment in cls.SENSITIVE_PATH_VALUE_KEYS:
+                    redact_sensitive_value = True
+                else:
+                    segments[position] = "{redacted}"
+                    redact_sensitive_value = False
+                    continue
             known_resource_segment = (position > 0 and segments[position - 1].lower() in {
                 "users", "accounts", "orders", "items", "profiles", "invoices", "documents"
             })
@@ -73,6 +92,10 @@ class BolaFuzzer:
                     or cls._OPAQUE_ID.fullmatch(segment)):
                 index += 1
                 segments[position] = f"{{id{index}}}"
+                redact_sensitive_value = False
+                continue
+            if normalized_segment in cls.SENSITIVE_PATH_VALUE_KEYS:
+                redact_sensitive_value = True
         path = "/".join(segments) or "/"
         if parsed.scheme:
             if not hostname:

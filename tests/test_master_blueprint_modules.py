@@ -323,6 +323,28 @@ def test_bola_candidate_extraction_rejects_query_id_control_and_whitespace_value
     assert candidates == ["order_1", "valid_123"]
 
 
+def test_bola_result_redacts_short_credentials_in_sensitive_path_segments():
+    import json
+
+    fuzzer = BolaFuzzer()
+    endpoint = (
+        "https://synthetic-user:synthetic-password@api.example.test/v1/auth/%74oken/short-live-secret"
+        "?access_token=query-secret#fragment-secret"
+    )
+    result = fuzzer.evaluate_response_discrepancy(
+        endpoint=endpoint, method="GET", resource_id="short-live-secret",
+        status_code=200, response_body="synthetic response",
+    )
+
+    assert result.endpoint == "https://api.example.test/v1/auth/%74oken/{redacted}"
+    serialized = json.dumps(result.__dict__)
+    for secret in (
+        "synthetic-user", "synthetic-password", "short-live-secret",
+        "query-secret", "fragment-secret",
+    ):
+        assert secret not in serialized
+
+
 def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
     import hashlib
 

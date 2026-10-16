@@ -215,8 +215,9 @@ class ContentProviderFuzzer:
     @staticmethod
     def _scope_allows(guard) -> bool:
         try:
-            guard()
-            return True
+            # Preserve exception-based guards (where returning normally means
+            # allowed), but honor explicit boolean denial from scope policies.
+            return guard() is not False
         except Exception:
             return False
 

@@ -241,6 +241,32 @@ def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_argument
     assert remote_args[:2] == ["content", "read"]
 
 
+def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
+    import subprocess
+    from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+
+    def forbidden_process(*args, **kwargs):
+        raise AssertionError("denied provider probe must not launch ADB")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden_process)
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    guard_calls = []
+
+    def deny_scope():
+        guard_calls.append(True)
+        return False
+
+    traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=deny_scope,
+    )
+    sql = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=deny_scope,
+    )
+    assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
+    assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
+    assert len(guard_calls) == len(traversal) + len(sql)
+
+
 def test_bola_fuzzer_candidate_extraction_and_discrepancy():
     fuzzer = BolaFuzzer()
     url = "https://api.example.com/v1/users/usr_98472/orders?account_id=acc_1122"

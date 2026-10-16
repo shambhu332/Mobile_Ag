@@ -11,6 +11,57 @@ from mobileag.analysis.bounded_sources import SourceInventory
 logger = logging.getLogger(__name__)
 
 
+def _mask_java_kotlin_comments(source: str) -> str:
+    """Blank Java/Kotlin comments while preserving literals and line offsets."""
+    chars = list(source)
+    length = len(source)
+
+    def blank(start: int, end: int) -> None:
+        for position in range(start, end):
+            if chars[position] not in "\r\n":
+                chars[position] = " "
+
+    index = 0
+    while index < length:
+        if source.startswith("//", index):
+            end = index + 2
+            while end < length and source[end] not in "\r\n":
+                end += 1
+            blank(index, end)
+            index = end
+            continue
+        if source.startswith("/*", index):
+            start = index
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if source.startswith("/*", index):
+                    depth += 1
+                    index += 2
+                elif source.startswith("*/", index):
+                    depth -= 1
+                    index += 2
+                else:
+                    index += 1
+            blank(start, index)
+            continue
+        if source[index] in {'"', "'"}:
+            quote = source[index]
+            delimiter = quote * 3 if quote == '"' and source.startswith('"""', index) else quote
+            index += len(delimiter)
+            while index < length:
+                if source[index] == "\\":
+                    index += 2
+                elif source.startswith(delimiter, index):
+                    index += len(delimiter)
+                    break
+                else:
+                    index += 1
+            continue
+        index += 1
+    return "".join(chars)
+
+
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -187,6 +238,8 @@ class APIMapper:
                 content = data.decode("utf-8", errors="ignore")
                 rel_path = str(file_path.relative_to(base_path))
                 stem = file_path.stem
+                if file_path.suffix.lower() in {".java", ".kt"}:
+                    content = _mask_java_kotlin_comments(content)
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
                 # parsed with a bounded quote-aware scanner to avoid repeated

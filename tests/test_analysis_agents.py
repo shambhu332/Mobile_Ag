@@ -175,6 +175,30 @@ async def test_api_mapper(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_ignores_java_kotlin_comments_but_keeps_literal_strings(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Comments.kt").write_text(
+        '// @GET("/api/v1/commented")\n'
+        '/* nested comment /* @HTTP(method = "GET", path = "/api/v1/hidden") */ still comment */\n'
+        '@GET("/api/v2/actual")\n'
+        'val route = "/api/v3/literal"\n'
+        'val url = "https://dev-api.example.com/v1/live" // https://dev-api.example.com/v1/commented\n',
+        encoding="utf-8",
+    )
+
+    endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    urls = {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v1/commented" not in urls
+    assert "/api/v1/hidden" not in urls
+    assert "/api/v2/actual" in urls
+    assert "/api/v3/literal" in urls
+    staging = [finding for finding in findings if "Staging/Dev" in finding.title]
+    assert len(staging) == 1
+    assert "commented" not in staging[0].title
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_methods(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "Methods.java").write_text(

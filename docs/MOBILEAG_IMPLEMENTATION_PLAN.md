@@ -299,6 +299,12 @@ evidence.
 
 ---
 
+### 9.4 Bounded decompiled-source context in the finding inspector
+* **Objective**: Let a researcher inspect the decompiled file associated with a static finding without leaving the scan review.
+* **Implementation**: Authenticated `GET /api/scans/{scan_id}/source` resolves only relative paths under that scan's `jadx_out/sources`, `jadx_out/resources`, or `apktool_out` roots. It only returns files with recognized text suffixes up to 1 MiB, decodes as UTF-8 with replacement for malformed byte sequences, refuses symlink components and non-regular files, and returns source as JSON. The finding inspector renders the response with `textContent`; APK-derived source is treated as hostile text, not HTML.
+* **Evidence boundary**: This is navigation convenience, not an additional analysis pass, source mapping guarantee, or proof that JADX reconstructed the original program. Unsupported/ambiguous paths and missing decompilation remain unavailable. No existing APK/output was used in its synthetic path tests.
+* **Validation**: Helper and API regressions cover path traversal, absolute/backslash paths, symlinked directories/files, binary extensions, size caps, active-scan refusal, and successful synthetic text reads. Full-suite validation is recorded in the appended chronology.
+
 ## Comprehensive Implementation Schedule & Status
 
 > **Audit correction (refreshed 2026-10-16 at `1a26ee9`): this blueprint is not 100% complete.** The
@@ -2068,3 +2074,6 @@ flag to false and reject before device work; the dashboard includes a researcher
 controlled/synthetic-data confirmation control. Mock-only regressions verify the
 missing-acknowledgement paths do not dispatch ADB work. Device behavior, scope
 policy effectiveness, and exploitability remain untested here. Focused checks passed: runtime evidence (18), deep-link-specific cases (5), DAST fuzz endpoint (1), and deep runtime entrypoints (2). Full pytest passed (1,348 passed, 65.57 s; expected duplicate-ZIP-member warning and pytest-asyncio deprecations). `compileall` and `git diff --check` passed with the project test venv. No device was contacted.
+
+
+Loupe-inspired safe source navigation was added as an authenticated, bounded file read. The finding inspector can request only recognized text beneath per-scan JADX/APKTool output; descriptor-relative no-follow opens reject symlink traversal, and APK-derived contents are inserted into the UI as text. This is navigation only, not decompiler completeness or source-to-original mapping evidence. Helper/API synthetic regressions passed (**9 source-browser helper cases and 2 source API cases**, included in the test suite); full pytest passed (**1,359 passed**, 64.78 s; expected duplicate-ZIP warning, pytest-asyncio deprecations and existing async resource warnings). `node --check` on the modified findings UI, `compileall`, and `git diff --check` passed. No device or existing APK/output was used for this feature validation. See `docs/LOUPE_REUSE_ANALYSIS.md` for repository provenance, capability mapping, risks and the incomplete integration backlog.

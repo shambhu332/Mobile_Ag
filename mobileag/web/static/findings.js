@@ -129,6 +129,31 @@
       window.lucide?.createIcons();
     }
 
+    async function openFullSourceContext(finding) {
+      const status = document.getElementById('ast-source-status');
+      const view = document.getElementById('ast-source-full');
+      if (!status || !view || !currentScan?.scan_id || !finding?.file_path) return;
+      status.textContent = 'Loading bounded decompiler source…';
+      view.textContent = '';
+      view.classList.remove('hidden');
+      try {
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source?path=${encodeURIComponent(finding.file_path)}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Source is unavailable for this path.');
+        // Decompiled input is untrusted. Render it only as text, never as HTML.
+        view.textContent = result.content;
+        status.textContent = `${result.path} · ${result.line_count} lines · ${result.size_bytes} bytes · bounded read`;
+        if (Number.isInteger(finding.line_number) && finding.line_number > 0) {
+          const lines = result.content.split('\n');
+          status.textContent += ` · finding line ${finding.line_number}${finding.line_number <= lines.length ? '' : ' (outside returned file)'}`;
+        }
+      } catch (error) {
+        view.classList.add('hidden');
+        status.textContent = String(error?.message || 'Source is unavailable.').slice(0, 240);
+      }
+    }
+
     function renderMarkdownSimple(md) {
       if (!md) return '';
       let html = escapeHtml(md);
@@ -268,6 +293,11 @@
           <div class="bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-amber-300 overflow-x-auto whitespace-pre-wrap">
             <pre><code>${escapeHtml(f.code_snippet || 'No snippet available')}</code></pre>
           </div>
+          <div class="flex items-center gap-2">
+            <button ${bindAction('click', () => openFullSourceContext(f))} ${f.file_path ? '' : 'disabled'} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 text-[10px] font-mono border border-slate-700">Open bounded decompiled file</button>
+            <span id="ast-source-status" role="status" class="text-[10px] text-slate-400 font-mono"></span>
+          </div>
+          <pre id="ast-source-full" class="hidden max-h-[60vh] overflow-auto whitespace-pre-wrap break-words bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-sky-100"></pre>
         </div>
 
         <!-- Pane 6: Remediation Guidance -->

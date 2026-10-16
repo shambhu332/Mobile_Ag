@@ -70,6 +70,41 @@ def test_dast_devices_endpoint(client):
     assert isinstance(data["devices"], list)
 
 
+def test_scan_source_endpoint_reads_only_completed_decompiler_text(client, monkeypatch, tmp_path):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
+        "scan_id": "scan_synthetic", "status": "completed",
+    }))
+    source = tmp_path / "scan_synthetic" / "jadx_out" / "sources" / "com" / "demo" / "Entry.java"
+    source.parent.mkdir(parents=True)
+    source.write_text("class Entry { String canary = \"synthetic\"; }\n", encoding="utf-8")
+
+    assert TestClient(web.app).get(
+        "/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"}
+    ).status_code == 401
+
+    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"})
+
+    assert response.status_code == 200
+    assert response.json()["path"] == "jadx_out/sources/com/demo/Entry.java"
+    assert "synthetic" in response.json()["content"]
+    assert client.get("/api/scans/scan_synthetic/source", params={"path": "../../etc/hosts"}).status_code == 400
+
+
+def test_scan_source_endpoint_rejects_active_scans(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
+        "scan_id": "scan_synthetic", "status": "running",
+    }))
+    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"})
+    assert response.status_code == 409
+
+
 def test_dast_connect_endpoint(client):
     response = client.post("/api/dast/connect", json={"host_port": "127.0.0.1:5555"})
     assert response.status_code == 200

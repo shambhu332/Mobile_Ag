@@ -514,6 +514,25 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     return redact(prepare_scan(scan))
 
 
+@app.get("/api/scans/{scan_id}/source")
+async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max_length=2048)) -> dict[str, Any]:
+    """Open bounded decompiler text for an already-completed APK scan.
+
+    This is a read-only local review convenience, not an arbitrary file API.
+    The helper accepts only text beneath this scan's known decompiler roots.
+    """
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    if scan.get("status") not in {"completed", "partial"}:
+        raise HTTPException(409, "Source is available only after a completed or partial scan")
+    from mobileag.web.source_browser import SourceReadError, read_scan_source
+    try:
+        return await asyncio.to_thread(read_scan_source, OUTPUT_DIR, scan_id, path)
+    except SourceReadError as exc:
+        status = 413 if "1 MiB" in str(exc) else 404 if "unavailable" in str(exc) else 400
+        raise HTTPException(status, str(exc)) from None
+
+
 @app.get("/api/scans/{scan_id}/comparison/{baseline_scan_id}")
 async def compare_scan_to_baseline(scan_id: str, baseline_scan_id: str) -> dict[str, Any]:
     """Read-only comparison; never marks findings fixed or changes scan history."""

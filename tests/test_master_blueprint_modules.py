@@ -1264,6 +1264,22 @@ def test_token_session_auditor_transactions_and_logout_reuse():
     assert "super_secret_query_tok_123" not in serialized
 
 
+def test_token_session_auditor_recognizes_credential_query_key_aliases():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    keys = ("refresh-token", "id_token", "X-Amz-Security-Token", "client_secret",
+            "accessToken", "api-key")
+    requests = [CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{key}=synthetic-secret")
+                for key in keys]
+    requests.append(CapturedRequest(method="GET", url="https://api.example.invalid/path?tokenizer=not-a-token"))
+    findings = MobileTokenSessionAuditor().audit_transactions(requests)
+    leaks = [finding for finding in findings if finding.cwe_id == "CWE-598"]
+    assert len(leaks) == len(keys)
+    assert all("synthetic-secret" not in finding.description for finding in leaks)
+    assert all("?" not in finding.affected_component for finding in leaks)
+
+
 def test_token_session_auditor_does_not_call_unauthorized_responses_successful_reuse():
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest

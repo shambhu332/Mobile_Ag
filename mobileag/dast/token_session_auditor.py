@@ -59,6 +59,7 @@ class MobileTokenSessionAuditor:
         "jwt",
         "bearer",
     }
+    TOKEN_QUERY_SUFFIXES = ("token", "secret", "apikey", "password", "signature")
 
     MAX_TOKEN_CHARS = 64 * 1024
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
@@ -111,6 +112,14 @@ class MobileTokenSessionAuditor:
     def _valid_numeric_claim(value: Any) -> bool:
         if type(value) not in (int, float):
             return False
+
+    @classmethod
+    def _is_sensitive_query_key(cls, name: str) -> bool:
+        """Recognize common credential-key aliases without reading their values."""
+        normalized = re.sub(r"[^a-z0-9]", "", name.casefold())
+        exact = {re.sub(r"[^a-z0-9]", "", key) for key in cls.TOKEN_QUERY_PARAMS}
+        exact.update({"authorization", "clientsecret", "signature", "sig", "codeverifier"})
+        return normalized in exact or normalized.endswith(cls.TOKEN_QUERY_SUFFIXES)
         try:
             return math.isfinite(value) and abs(value) <= 253402300799
         except (OverflowError, TypeError, ValueError):
@@ -440,7 +449,7 @@ class MobileTokenSessionAuditor:
             except ValueError:
                 query_tuples = []
             for q_name, q_val in query_tuples:
-                if q_name.lower() in self.TOKEN_QUERY_PARAMS and len(q_val) > 8:
+                if self._is_sensitive_query_key(q_name):
                     findings.append(Finding(
                         title="Sensitive Authentication Token in URL Query Parameter",
                         description="A token-like query parameter is present in the captured URL, which can expose credentials to access logs, referrer headers, or WebView history. The value is omitted from evidence.",

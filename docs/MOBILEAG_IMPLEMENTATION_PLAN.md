@@ -550,6 +550,13 @@ and is not automatically run over captured transactions. The JWS signing input
 and HMAC procedure follow [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515.html)
 and [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html).
 
+Query-token review now normalizes parameter-name separators/casing and detects
+common aliases/suffixed names such as `refresh-token`, `id_token`,
+`client_secret`, and `X-Amz-Security-Token`; it flags the key even when the
+value is short, never copies the value into evidence, and deliberately avoids
+substring matches such as `tokenizer`. This remains name-based heuristic
+coverage and cannot discover arbitrary credential parameter names.
+
 ### BOLA candidate extraction boundary
 
 Offline BOLA resource-ID extraction now excludes query fields whose normalized

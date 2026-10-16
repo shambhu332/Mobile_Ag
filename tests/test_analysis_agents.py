@@ -175,6 +175,36 @@ async def test_api_mapper(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_methods(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Methods.java").write_text(
+        'interface Methods {\n'
+        '  @HEAD("/api/v1/health") Call<Void> health();\n'
+        '  @OPTIONS("/api/v1/resource") Call<Void> options();\n'
+        '  @HTTP(path = "/api/v2/orders", method = "PATCH", hasBody = true)\n'
+        '  Call<Void> update();\n'
+        '  @HTTP(\n'
+        '    method = "HEAD",\n'
+        '    path = "/api/v2/status"\n'
+        '  ) Call<Void> status();\n'
+        '  @HTTP(method = "DYNAMIC", path = "/api/v2/ignored") Call<Void> ignored();\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    extracted = {(endpoint["method"], endpoint["url"], endpoint["line_number"])
+                 for endpoint in endpoints}
+    assert extracted == {
+        ("HEAD", "/api/v1/health", 2),
+        ("OPTIONS", "/api/v1/resource", 3),
+        ("PATCH", "/api/v2/orders", 4),
+        ("HEAD", "/api/v2/status", 6),
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("missing_path", [None, "", "   "])
 async def test_api_mapper_does_not_scan_current_directory_for_missing_path(mock_router, monkeypatch, missing_path):
     mapper = APIMapper(mock_router)

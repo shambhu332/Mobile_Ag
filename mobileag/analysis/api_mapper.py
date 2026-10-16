@@ -17,7 +17,16 @@ class APIMapper:
     def __init__(self, router: LLMRouter):
         """Initialize the API mapper with an LLM router."""
         self.router = router
-        self.retrofit_pattern = re.compile(r'@(GET|POST|PUT|DELETE|PATCH)\(\s*"([^"]+)"\s*\)')
+        self.retrofit_pattern = re.compile(
+            r'@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\(\s*"([^"]+)"\s*\)'
+        )
+        # Retrofit's general @HTTP form can place its named arguments in
+        # either order. Only literal, standard method tokens and paths are
+        # accepted; this records declarations, not effective network calls.
+        self.retrofit_http_pattern = re.compile(
+            r'@HTTP\s*\((?=[^)]*?\bmethod\s*=\s*"([A-Z]+)")'
+            r'(?=[^)]*?\bpath\s*=\s*"([^"]+)")[^)]*\)', re.DOTALL
+        )
         self.url_pattern = re.compile(
             r'https?://(?:\[[0-9A-Fa-f:.]+\]|[a-zA-Z0-9.-]+)'
             r'(?::\d+)?(?:/[a-zA-Z0-9._/?%&=+-]*)?'
@@ -105,36 +114,41 @@ class APIMapper:
                 rel_path = str(file_path.relative_to(base_path))
                 stem = file_path.stem
                 
-                # Extract Retrofit annotations
-                for match, line_number in self._matches_with_line_numbers(self.retrofit_pattern, content):
-                    if len(endpoints) >= 5000:
-                        inventory.record_limit('endpoint_count')
-                        break
-                    method, path = match.groups()
-                    safe_path = self._safe_route(path)
-                    endpoints.append({
-                        "method": method,
-                        "url": safe_path,
-                        "class_name": stem,
-                        "source_file": rel_path,
-                        "line_number": line_number,
-                        # Header occurrences elsewhere in this class are not a
-                        # reliable endpoint-specific authorization signal.
-                        "requires_auth": None
-                    })
-                    seen_endpoint_urls.add(safe_path)
+                # Extract literal Retrofit verb/path declarations. @HTTP is
+                # handled separately because its named values may be reversed.
+                for pattern in (self.retrofit_pattern, self.retrofit_http_pattern):
+                    for match, line_number in self._matches_with_line_numbers(pattern, content):
+                        if len(endpoints) >= 5000:
+                            inventory.record_limit('endpoint_count')
+                            break
+                        method, path = match.groups()
+                        if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE",
+                                           "OPTIONS", "TRACE", "CONNECT"}:
+                            continue
+                        safe_path = self._safe_route(path)
+                        endpoints.append({
+                            "method": method,
+                            "url": safe_path,
+                            "class_name": stem,
+                            "source_file": rel_path,
+                            "line_number": line_number,
+                            # Header occurrences elsewhere in this class are not a
+                            # reliable endpoint-specific authorization signal.
+                            "requires_auth": None
+                        })
+                        seen_endpoint_urls.add(safe_path)
 
-                    if "admin" in path.lower() or "privilege" in path.lower():
-                        if len(raw_findings) < 500:
-                            raw_findings.append({
-                            "type": "sensitive_route_name",
-                            "path": safe_path,
-                            "component": stem,
-                            "file_path": rel_path,
-                            "line_number": line_number
-                            })
-                        else:
-                            inventory.record_limit('finding_count')
+                        if "admin" in path.lower() or "privilege" in path.lower():
+                            if len(raw_findings) < 500:
+                                raw_findings.append({
+                                    "type": "sensitive_route_name",
+                                    "path": safe_path,
+                                    "component": stem,
+                                    "file_path": rel_path,
+                                    "line_number": line_number
+                                })
+                            else:
+                                inventory.record_limit('finding_count')
 
                 # Extract route-shaped literals from binary/resource/decompiled
                 # sources, without pretending a literal is a callable endpoint.

@@ -117,6 +117,13 @@ async def test_foreground_escape_and_consent_stop(setup):
     with pytest.raises(PermissionError):parse_snapshot('<hierarchy><node package="android" text="Allow"/></hierarchy>',PACKAGE)
     with pytest.raises(ValueError):parse_snapshot('<bad',PACKAGE)
 
+
+def test_snapshot_parser_rejects_dtd_and_internal_entities():
+    payload = ('<!DOCTYPE hierarchy [<!ENTITY label "synthetic">]>'
+               f'<hierarchy><node package="{PACKAGE}" text="&label;"/></hierarchy>')
+    with pytest.raises(ValueError, match="DTD/entity"):
+        parse_snapshot(payload, PACKAGE)
+
 @pytest.mark.asyncio
 async def test_position_healing_requires_same_unique_screen_locator(setup):
     svc,driver,token=setup;doc=await svc.create(request(max_steps=1),token)

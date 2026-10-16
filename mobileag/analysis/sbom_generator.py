@@ -87,12 +87,32 @@ class MobileSbomGenerator:
         cwe_ids: Optional[List[str]] = None,
     ) -> None:
         """Attach an OSV/CVE security advisory to an inventoried component."""
+        severity_aliases = {"moderate": "medium"}
+        if (not isinstance(vuln_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", vuln_id)
+                or not isinstance(purl, str) or not purl.startswith("pkg:")
+                or len(purl) > 2048 or any(ord(ch) < 0x20 or ch.isspace() for ch in purl)):
+            raise ValueError("Invalid SBOM vulnerability identifier or package URL")
+        if not isinstance(description, str) or len(description) > 4096 or any(
+            ord(ch) < 0x20 and ch not in "\t\n\r" for ch in description
+        ):
+            raise ValueError("Invalid or overlong SBOM vulnerability description")
+        if not isinstance(severity, str):
+            raise ValueError("SBOM vulnerability severity must be a string")
+        normalized_severity = severity_aliases.get(severity.strip().lower(), severity.strip().lower())
+        if normalized_severity not in {"critical", "high", "medium", "low", "info", "none", "unknown"}:
+            raise ValueError("Unsupported CycloneDX vulnerability severity")
+        normalized_cwes = []
+        for cwe in cwe_ids or []:
+            match = re.fullmatch(r"(?i)CWE-([1-9][0-9]*)", cwe) if isinstance(cwe, str) else None
+            if not match:
+                raise ValueError("CWE values must use the exact CWE-<positive integer> form")
+            normalized_cwes.append(f"CWE-{int(match.group(1))}")
         self.vulnerabilities.append({
             "id": vuln_id,
             "purl": purl,
             "description": description,
-            "severity": severity,
-            "cwe_ids": cwe_ids or [],
+            "severity": normalized_severity,
+            "cwe_ids": normalized_cwes,
         })
 
     def _component_refs(self) -> list[str]:
@@ -162,9 +182,7 @@ class MobileSbomGenerator:
                 }
                 if v.get("cwe_ids"):
                     v_entry["cwes"] = [
-                        int(re.sub(r"[^\d]", "", cwe))
-                        for cwe in v["cwe_ids"]
-                        if re.sub(r"[^\d]", "", cwe)
+                        int(cwe[4:]) for cwe in v["cwe_ids"]
                     ]
                 cyclonedx_vulns.append(v_entry)
             res["vulnerabilities"] = cyclonedx_vulns
@@ -296,9 +314,7 @@ class MobileSbomGenerator:
                 if v.get("cwe_ids"):
                     cwes_elem = ET.SubElement(v_elem, "cwes")
                     for cwe in v["cwe_ids"]:
-                        digits = re.sub(r"[^\d]", "", cwe)
-                        if digits:
-                            ET.SubElement(cwes_elem, "cwe").text = digits
+                        ET.SubElement(cwes_elem, "cwe").text = cwe[4:]
                 if v.get("description"):
                     desc_elem = ET.SubElement(v_elem, "description")
                     desc_elem.text = v["description"]

@@ -385,6 +385,21 @@ def test_sbom_rejects_malformed_hash_metadata():
     ]
 
 
+def test_sbom_normalizes_and_rejects_advisory_metadata():
+    import pytest
+    generator = MobileSbomGenerator()
+    purl = "pkg:generic/native"
+    generator.add_component("native", "1", purl)
+    generator.add_vulnerability("OSV-2025-123", purl, "Synthetic advisory", "MODERATE", ["cwe-79"])
+    item = generator.generate_cyclonedx_json()["vulnerabilities"][0]
+    assert item["ratings"][0]["severity"] == "medium"
+    assert item["cwes"] == [79]
+    with pytest.raises(ValueError, match="severity"):
+        generator.add_vulnerability("OSV-2025-123", purl, severity="severe")
+    with pytest.raises(ValueError, match="CWE"):
+        generator.add_vulnerability("OSV-2025-123", purl, cwe_ids=["CWE-79<script>"])
+
+
 def test_exploit_poc_synthesizer():
     from mobileag.reporting.finding import Finding, Severity, FindingStatus
     from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer

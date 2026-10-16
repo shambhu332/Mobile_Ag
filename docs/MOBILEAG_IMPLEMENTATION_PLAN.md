@@ -613,6 +613,12 @@ duplicate aliases fail closed instead of yielding syntactically plausible but
 invalid hash metadata. This validates supplied digest shape, not artifact
 integrity or provenance.
 
+CycloneDX advisory metadata now validates bounded identifiers, basic PURL
+scheme/length, XML-safe descriptions, exact positive `CWE-n` values, and severity
+labels (mapping OSV `moderate` to CycloneDX `medium`) before JSON/XML emission.
+Malformed fields are rejected rather than partially coerced; attached advisory
+data still does not establish that a dependency is present or exploitable.
+
 ### Native JNI string-candidate evidence boundary
 
 The JNI helper parses a bounded `.dynsym` table (up to 5,000 records) when

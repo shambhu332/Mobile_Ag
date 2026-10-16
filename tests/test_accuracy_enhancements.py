@@ -53,6 +53,21 @@ def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):
 
     assert result.imported_dangerous_symbols == []
     assert result.findings == []
+    assert result.scan_status == "invalid"
+    assert result.scan_errors == ["library_read_error"]
+
+
+def test_native_jni_analyzer_reports_bounded_prefix_as_partial(tmp_path):
+    library = tmp_path / "liblarge.so"
+    library.write_bytes(b"\x7fELF" + b"\x00" * (5 * 1024 * 1024) + b"system\x00")
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.scan_status == "partial"
+    assert result.scan_truncated is True
+    assert result.bytes_scanned == 5 * 1024 * 1024
+    assert "library_byte_limit" in result.scan_errors
+    assert result.imported_dangerous_symbols == []
 
 
 def test_sanitizer_filter_path_sensitive_guards():

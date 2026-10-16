@@ -31,6 +31,10 @@ class JniExportedFunction:
 class NativeLibraryAuditResult:
     library_name: str
     architecture: str
+    scan_status: str = "not_analyzed"
+    bytes_scanned: int = 0
+    scan_truncated: bool = False
+    scan_errors: List[str] = field(default_factory=list)
     exported_jni_functions: List[JniExportedFunction] = field(default_factory=list)
     imported_dangerous_symbols: List[str] = field(default_factory=list)
     findings: List[Finding] = field(default_factory=list)
@@ -76,15 +80,29 @@ class NativeJniAnalyzer:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, "rb") as f:
                 if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                    result.scan_status = "invalid"
+                    result.scan_errors.append("non_regular_library")
                     return result
+                file_size = os.fstat(f.fileno()).st_size
                 data = f.read(5 * 1024 * 1024 + 1)
+                result.scan_truncated = file_size > 5 * 1024 * 1024 or len(data) > 5 * 1024 * 1024
                 if len(data) > 5 * 1024 * 1024:
                     data = data[:5 * 1024 * 1024]
         except OSError:
+            result.scan_status = "invalid"
+            result.scan_errors.append("library_read_error")
             return result
+        result.bytes_scanned = len(data)
+        if result.scan_truncated:
+            result.scan_status = "partial"
+            result.scan_errors.append("library_byte_limit")
+        else:
+            result.scan_status = "analyzed_heuristically"
 
         # Basic ELF Magic verification (0x7F, 'E', 'L', 'F')
         if not data.startswith(b"\x7fELF"):
+            result.scan_status = "invalid"
+            result.scan_errors.append("invalid_elf_header")
             return result
 
         # Extract printable strings

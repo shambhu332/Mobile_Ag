@@ -29,6 +29,7 @@ class Il2CppAnalysisResult:
     reconstructed_classes: List[str] = field(default_factory=list)
     class_name_candidates: List[str] = field(default_factory=list)
     reconstructed_methods: List[Dict[str, object]] = field(default_factory=list)
+    reconstructed_fields: List[Dict[str, str]] = field(default_factory=list)
     type_definitions_count: int = 0
     method_definitions_count: int = 0
     api_endpoints: List[str] = field(default_factory=list)
@@ -60,6 +61,10 @@ class Il2CppAuditor:
     MAX_TYPE_DEFINITION_RECORDS = 50_000
     MAX_METHOD_DEFINITION_RECORDS = 100_000
     MAX_RECONSTRUCTED_METHODS = 5_000
+    MAX_FIELD_DEFINITION_RECORDS = 100_000
+    MAX_PARAMETER_DEFINITION_RECORDS = 200_000
+    MAX_RECONSTRUCTED_FIELDS = 10_000
+    MAX_PARAMETERS_PER_METHOD = 128
     MAX_METADATA_NAME_CHARS = 1024
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
@@ -286,7 +291,7 @@ class Il2CppAuditor:
         self, metadata_path: Path, result: Il2CppAnalysisResult,
         expected_identity: tuple[int, ...],
     ) -> str:
-        """Read bounded v29 type/method records into names-only review output.
+        """Read bounded v29 type/member records into names-only review output.
 
         This does not resolve member/return/parameter types, fields, generic
         constructs, code registrations, or native method implementations.
@@ -311,18 +316,25 @@ class Il2CppAuditor:
                 return "invalid"
             string_offset, string_size = struct.unpack_from("<II", header, 24)
             method_offset, method_size = struct.unpack_from("<II", header, 48)
+            parameter_offset, parameter_size = struct.unpack_from("<II", header, 88)
+            field_offset, field_size = struct.unpack_from("<II", header, 96)
             type_offset, type_size = struct.unpack_from("<II", header, 160)
             if (string_offset < self.V29_HEADER_MIN_BYTES
                     or string_size > self.MAX_METADATA_STRING_POOL_BYTES
                     or method_offset < self.V29_HEADER_MIN_BYTES or method_size % 36 != 0
+                    or parameter_offset < self.V29_HEADER_MIN_BYTES or parameter_size % 12 != 0
+                    or field_offset < self.V29_HEADER_MIN_BYTES or field_size % 12 != 0
                     or type_offset < self.V29_HEADER_MIN_BYTES or type_size % 88 != 0
                     or string_offset + string_size > details.st_size
                     or method_offset + method_size > details.st_size
+                    or parameter_offset + parameter_size > details.st_size
+                    or field_offset + field_size > details.st_size
                     or type_offset + type_size > details.st_size):
                 return "invalid"
             nonempty_ranges = sorted(
                 (start, start + size) for start, size in (
                     (string_offset, string_size), (method_offset, method_size),
+                    (parameter_offset, parameter_size), (field_offset, field_size),
                     (type_offset, type_size),
                 ) if size
             )
@@ -332,13 +344,23 @@ class Il2CppAuditor:
             if len(string_pool) != string_size:
                 return "partial"
             method_total = method_size // 36
+            parameter_total = parameter_size // 12
+            field_total = field_size // 12
             type_total = type_size // 88
             method_count = min(method_total, self.MAX_METHOD_DEFINITION_RECORDS)
+            parameter_count = min(parameter_total, self.MAX_PARAMETER_DEFINITION_RECORDS)
+            field_count = min(field_total, self.MAX_FIELD_DEFINITION_RECORDS)
             type_count = min(type_total, self.MAX_TYPE_DEFINITION_RECORDS)
-            partial = method_count != method_total or type_count != type_total
+            partial = (method_count != method_total or parameter_count != parameter_total
+                       or field_count != field_total or type_count != type_total)
             methods_data = os.pread(fd, method_count * 36, method_offset)
+            parameters_data = os.pread(fd, parameter_count * 12, parameter_offset)
+            fields_data = os.pread(fd, field_count * 12, field_offset)
             types_data = os.pread(fd, type_count * 88, type_offset)
-            if len(methods_data) != method_count * 36 or len(types_data) != type_count * 88:
+            if (len(methods_data) != method_count * 36
+                    or len(parameters_data) != parameter_count * 12
+                    or len(fields_data) != field_count * 12
+                    or len(types_data) != type_count * 88):
                 return "partial"
 
             def read_name(index: int) -> str | None:
@@ -360,6 +382,7 @@ class Il2CppAuditor:
                 fields = struct.unpack_from("<16I8H2I", types_data, type_index * 88)
                 name = read_name(fields[0])
                 namespace = read_name(fields[1]) if fields[1] else ""
+                field_start, fields_in_type = fields[8], fields[18]
                 method_start, methods_in_type = fields[9], fields[16]
                 if name is None or namespace is None:
                     partial = True
@@ -368,6 +391,22 @@ class Il2CppAuditor:
                 self._append_capped_name(result.reconstructed_classes, qualified_name,
                                          self.MAX_TYPE_DEFINITION_RECORDS)
                 result.type_definitions_count += 1
+                if field_start + fields_in_type > field_count:
+                    partial = True
+                else:
+                    for field_index in range(field_start, field_start + fields_in_type):
+                        field_record = struct.unpack_from("<3I", fields_data, field_index * 12)
+                        field_name = read_name(field_record[0])
+                        if field_name is None:
+                            partial = True
+                            continue
+                        if len(result.reconstructed_fields) < self.MAX_RECONSTRUCTED_FIELDS:
+                            result.reconstructed_fields.append({
+                                "declaring_type": qualified_name,
+                                "field_name": field_name,
+                            })
+                        else:
+                            partial = True
                 if method_start + methods_in_type > method_count:
                     partial = True
                     continue
@@ -380,12 +419,32 @@ class Il2CppAuditor:
                     if method_name is None:
                         partial = True
                         continue
+                    parameter_start = method_fields[4]
+                    parameters_in_method = method_fields[10]
+                    parameter_names: List[str] = []
+                    if parameter_start + parameters_in_method > parameter_count:
+                        partial = True
+                    else:
+                        for parameter_index in range(
+                                parameter_start,
+                                parameter_start + min(parameters_in_method, self.MAX_PARAMETERS_PER_METHOD)):
+                            parameter_record = struct.unpack_from(
+                                "<3I", parameters_data, parameter_index * 12,
+                            )
+                            parameter_name = read_name(parameter_record[0])
+                            if parameter_name is None:
+                                partial = True
+                                continue
+                            parameter_names.append(parameter_name)
+                        if parameters_in_method > self.MAX_PARAMETERS_PER_METHOD:
+                            partial = True
                     result.method_definitions_count += 1
                     if len(result.reconstructed_methods) < self.MAX_RECONSTRUCTED_METHODS:
                         result.reconstructed_methods.append({
                             "declaring_type": qualified_name,
                             "method_name": method_name,
-                            "parameter_count": method_fields[10],
+                            "parameter_count": parameters_in_method,
+                            "parameter_names": parameter_names,
                         })
                     else:
                         partial = True

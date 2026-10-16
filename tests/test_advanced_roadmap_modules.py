@@ -45,34 +45,52 @@ def _il2cpp_v29_metadata(literals, types=None):
         return string_indices[value]
 
     methods = bytearray()
+    parameters = bytearray()
+    field_records = bytearray()
     type_records = bytearray()
     for type_index, type_info in enumerate(types or []):
         name_index = add_name(type_info["name"])
         namespace_index = add_name(type_info.get("namespace", ""))
         method_start = len(methods) // 36
         method_list = type_info.get("methods", [])
+        field_start = len(field_records) // 12
+        type_fields = type_info.get("fields", [])
+        for field_name in type_fields:
+            field_records.extend(struct.pack("<3I", add_name(field_name), 0, 0))
         for method in method_list:
+            parameter_start = len(parameters) // 12
+            method_parameters = method.get("parameters", [])
+            if not method_parameters and method.get("parameter_count", 0):
+                method_parameters = [f"arg{index}" for index in range(method["parameter_count"])]
+            for parameter_name in method_parameters:
+                parameters.extend(struct.pack("<3I", add_name(parameter_name), 0, 0))
             methods.extend(struct.pack(
-                "<7I4H", add_name(method["name"]), type_index, 0, 0, 0, 0, 0,
-                0, 0, 0, method.get("parameter_count", 0),
+                "<7I4H", add_name(method["name"]), type_index, 0, 0,
+                parameter_start, 0, 0, 0, 0, 0,
+                len(method_parameters),
             ))
         fields = [0] * 16 + [0] * 8 + [0, 0]
-        fields[0], fields[1], fields[9], fields[16] = (
-            name_index, namespace_index, method_start, len(method_list),
+        fields[0], fields[1], fields[8], fields[9], fields[16], fields[18] = (
+            name_index, namespace_index, field_start, method_start,
+            len(method_list), len(type_fields),
         )
         type_records.extend(struct.pack("<16I8H2I", *fields))
 
     string_offset = data_offset + len(literal_data)
     method_offset = string_offset + len(string_pool)
-    type_offset = method_offset + len(methods)
+    parameter_offset = method_offset + len(methods)
+    field_offset = parameter_offset + len(parameters)
+    type_offset = field_offset + len(field_records)
     header = bytearray(header_size)
     struct.pack_into("<6I", header, 0, Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29,
                      table_offset, table_size, data_offset, len(literal_data))
     struct.pack_into("<II", header, 24, string_offset, len(string_pool))
     struct.pack_into("<II", header, 48, method_offset, len(methods))
+    struct.pack_into("<II", header, 88, parameter_offset, len(parameters))
+    struct.pack_into("<II", header, 96, field_offset, len(field_records))
     struct.pack_into("<II", header, 160, type_offset, len(type_records))
     return (bytes(header) + bytes(records) + literal_data + bytes(string_pool)
-            + bytes(methods) + bytes(type_records))
+            + bytes(methods) + bytes(parameters) + bytes(field_records) + bytes(type_records))
 
 
 def test_hermes_bytecode_analyzer():
@@ -163,7 +181,8 @@ def test_il2cpp_auditor():
             "https://game-api.unity.com/v1", "AuthenticationManager",
             'apiKey: "synthetic-unity-secret-123"',
         ], types=[{"name": "AuthenticationManager", "namespace": "sample",
-                   "methods": [{"name": "authenticate", "parameter_count": 2}]}])
+                   "fields": ["sessionToken"],
+                   "methods": [{"name": "authenticate", "parameters": ["account", "token"]}]}])
 
         with open(meta_file, "wb") as f:
             f.write(content)
@@ -181,6 +200,10 @@ def test_il2cpp_auditor():
         assert res.reconstructed_methods == [{
             "declaring_type": "sample.AuthenticationManager",
             "method_name": "authenticate", "parameter_count": 2,
+            "parameter_names": ["account", "token"],
+        }]
+        assert res.reconstructed_fields == [{
+            "declaring_type": "sample.AuthenticationManager", "field_name": "sessionToken",
         }]
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-unity-secret-123" not in repr(res.potential_secrets)
@@ -248,6 +271,26 @@ def test_il2cpp_v29_type_table_reports_bad_method_ranges(tmp_path):
     assert result.metadata_definitions_status == "partial"
     assert result.reconstructed_classes == ["sample.Vault"]
     assert result.reconstructed_methods == []
+    assert "type_method_tables_partial" in result.scan_errors
+
+
+def test_il2cpp_v29_parameter_table_range_is_checked(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(
+        [], types=[{"name": "Profile", "methods": [
+            {"name": "load", "parameters": ["userId"]},
+        ]}],
+    ))
+    method_offset = struct.unpack_from("<I", data, 48)[0]
+    struct.pack_into("<I", data, method_offset + 16, 100)  # parameterStart exceeds table
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_definitions_status == "partial"
+    assert result.reconstructed_methods[0]["method_name"] == "load"
+    assert result.reconstructed_methods[0]["parameter_names"] == []
     assert "type_method_tables_partial" in result.scan_errors
 
 

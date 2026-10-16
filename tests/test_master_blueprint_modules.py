@@ -490,6 +490,15 @@ def test_bola_candidate_query_keys_use_identifier_tokens_not_substrings():
     assert candidates == ["item_123", "order_456"]
 
 
+def test_bola_candidate_query_keys_support_compact_identifier_names():
+    candidates = BolaFuzzer().extract_resource_candidates(
+        "https://api.example.test/v1/resources?userid=user_123&accountid=acct_456"
+        "&grid=blue&orderidentifier=order_789"
+    )
+
+    assert candidates == ["user_123", "acct_456"]
+
+
 def test_bola_result_redacts_short_credentials_in_sensitive_path_segments():
     import json
 

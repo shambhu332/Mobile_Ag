@@ -49,6 +49,9 @@ class BolaFuzzer:
         "bearer", "credential", "key", "apikey",
     )
     ID_QUERY_KEY_PARTS = {"id", "account", "user", "order", "item", "profile", "invoice", "document"}
+    ID_QUERY_COMPOUND_KEYS = {
+        "userid", "accountid", "orderid", "itemid", "profileid", "invoiceid", "documentid",
+    }
     SENSITIVE_PATH_VALUE_KEYS = {
         "token", "accesstoken", "refreshtoken", "authtoken", "session", "sessionid",
         "jwt", "password", "passwd", "secret", "credential", "authorization",
@@ -149,9 +152,11 @@ class BolaFuzzer:
                 key_parts = set(re.findall(r"[a-z0-9]+", normalized_key))
                 if key_parts.intersection(self.SENSITIVE_QUERY_KEY_PARTS):
                     continue
+                compact_key = normalized_key.replace("_", "")
                 if (len(key) <= self.MAX_CANDIDATE_LENGTH
                         and self._safe_resource_id(value)
-                        and key_parts.intersection(self.ID_QUERY_KEY_PARTS)):
+                        and (key_parts.intersection(self.ID_QUERY_KEY_PARTS)
+                             or compact_key in self.ID_QUERY_COMPOUND_KEYS)):
                     candidates.append(value)
 
         return list(dict.fromkeys(candidates))[:self.MAX_CANDIDATES]

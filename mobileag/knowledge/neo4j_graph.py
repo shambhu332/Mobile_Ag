@@ -13,11 +13,14 @@ except ImportError:
 
 from mobileag.knowledge.schemas import (
     AppNode, ComponentNode, VulnerabilityNode, APIEndpointNode,
-    HAS_COMPONENT, HAS_VULNERABILITY, CALLS_API
+    HAS_COMPONENT, HAS_VULNERABILITY, CALLS_API, HAS_API_CANDIDATE
 )
 from mobileag.reporting.finding import Finding
 
 logger = logging.getLogger(__name__)
+
+_GRAPH_FINDING_STATUSES = {"UNVERIFIED", "CONFIRMED", "FALSE_POSITIVE", "DUPLICATE"}
+_GRAPH_PROOF_STATUSES = {"not_proven", "analyst_recorded", "not_assessed"}
 
 
 def _scoped_key(scan_id: str, kind: str, value: str) -> str:
@@ -117,10 +120,17 @@ class AttackGraph:
         MATCH (a:App {scan_id: $scan_id})
         MERGE (v:Vulnerability {finding_id: $node_key})
         SET v.display_finding_id = $display_finding_id, v.title = $title, v.cwe = $cwe,
-            v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence
+            v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence,
+            v.status = $status, v.proof_status = $proof_status
         MERGE (a)-[:HAS_VULNERABILITY]->(v)
         """
         async with self.driver.session() as session:
+            status = (finding.status.value if hasattr(finding.status, "value")
+                      else str(finding.status))
+            proof_status = finding.metadata.get("proof_status") or finding.metadata.get("proof_state")
+            if proof_status not in {"not_proven", "analyst_recorded", "not_assessed"}:
+                proof_status = ("not_proven" if status == "UNVERIFIED" else
+                                "analyst_recorded" if status == "CONFIRMED" else "not_assessed")
             await session.run(
                 query,
                 scan_id=scan_id,
@@ -130,19 +140,22 @@ class AttackGraph:
                 cwe=finding.cwe_id,
                 severity=finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity),
                 cvss=finding.cvss_score,
-                confidence=finding.confidence
+                confidence=finding.confidence,
+                status=status,
+                proof_status=proof_status,
             )
 
     async def add_api_endpoint(self, scan_id: str, endpoint_data: APIEndpointNode) -> None:
-        """Creates an API node and links to App."""
+        """Stores a static endpoint candidate; this does not prove a network call."""
         if not self._connected or not self.driver:
             return
             
-        query = """
-        MATCH (a:App {scan_id: $scan_id})
-        MERGE (e:APIEndpoint {url: $node_key})
-        SET e.display_url = $display_url, e.method = $method, e.requires_auth = $requires_auth
-        MERGE (a)-[:CALLS_API]->(e)
+        query = f"""
+        MATCH (a:App {{scan_id: $scan_id}})
+        MERGE (e:APIEndpoint {{url: $node_key}})
+        SET e.display_url = $display_url, e.method = $method, e.requires_auth = $requires_auth,
+            e.evidence_type = $evidence_type, e.proof_status = $proof_status
+        MERGE (a)-[:{HAS_API_CANDIDATE}]->(e)
         """
         async with self.driver.session() as session:
             await session.run(
@@ -151,42 +164,31 @@ class AttackGraph:
                 node_key=_scoped_key(scan_id, "api", endpoint_data.url),
                 display_url=endpoint_data.url,
                 method=endpoint_data.method,
-                requires_auth=endpoint_data.requires_auth
+                requires_auth=endpoint_data.requires_auth,
+                evidence_type=endpoint_data.evidence_type,
+                proof_status=endpoint_data.proof_status,
             )
 
     async def find_attack_chains(self, scan_id: str) -> List[Dict[str, Any]]:
-        """Cypher query to find multi-step attack paths."""
-        if not self._connected or not self.driver:
-            return []
+        """Return only validated paths; current graph schema has no path evidence.
 
-        query = """
-        MATCH (a:App {scan_id: $scan_id})-[:HAS_COMPONENT]->(c:Component {exported: true})
-        MATCH (a)-[:HAS_VULNERABILITY]->(v:Vulnerability)
-        RETURN coalesce(c.display_name, c.name) AS component, c.component_type AS type,
-               v.title AS vulnerability, v.severity AS severity
+        The former App->Component plus App->Vulnerability co-occurrence query
+        emitted a Cartesian product and mislabeled each pair as an attack
+        chain. Keep this method for API compatibility, but fail closed until
+        explicit, evidence-backed source/sink and authorization edges exist.
         """
-        chains = []
-        async with self.driver.session() as session:
-            result = await session.run(query, scan_id=scan_id)
-            async for record in result:
-                chains.append({
-                    "component": record["component"],
-                    "type": record["type"],
-                    "vulnerability": record["vulnerability"],
-                    "severity": record["severity"]
-                })
-        return chains
+        return []
 
     async def get_attack_surface_summary(self, scan_id: str) -> Dict[str, Any]:
         """Summary stats of the attack surface."""
         if not self._connected or not self.driver:
             return {"status": "neo4j not available"}
 
-        query = """
-        MATCH (a:App {scan_id: $scan_id})
+        query = f"""
+        MATCH (a:App {{scan_id: $scan_id}})
         OPTIONAL MATCH (a)-[:HAS_COMPONENT]->(c:Component)
         OPTIONAL MATCH (a)-[:HAS_VULNERABILITY]->(v:Vulnerability)
-        OPTIONAL MATCH (a)-[:CALLS_API]->(e:APIEndpoint)
+        OPTIONAL MATCH (a)-[:{CALLS_API}|{HAS_API_CANDIDATE}]->(e:APIEndpoint)
         RETURN 
             COUNT(DISTINCT c) AS components_count,
             COUNT(DISTINCT v) AS vulns_count,
@@ -248,6 +250,30 @@ class AttackGraph:
                     primary_label = labels[0] if labels else "Component"
 
                     if target:
+                        endpoint_evidence = target.get("evidence_type")
+                        allowed_endpoint_evidence = {
+                            "static_endpoint_candidate", "route_literal", "embedded_url_candidate"
+                        }
+                        endpoint_evidence = (endpoint_evidence if
+                                             primary_label == "APIEndpoint" and
+                                             endpoint_evidence in allowed_endpoint_evidence
+                                             else "legacy_endpoint_candidate")
+                        endpoint_method = target.get("method")
+                        if (primary_label == "APIEndpoint" and
+                                (endpoint_evidence == "legacy_endpoint_candidate" or
+                                 endpoint_method not in {"GET", "POST", "PUT", "DELETE", "PATCH", "UNKNOWN"})):
+                            endpoint_method = "UNKNOWN"
+                        endpoint_proof = target.get("proof_status")
+                        if primary_label == "APIEndpoint" and endpoint_proof != "not_proven":
+                            endpoint_proof = "not_proven"
+                        finding_status = target.get("status")
+                        if (primary_label == "Vulnerability" and
+                                (not isinstance(finding_status, str) or finding_status not in _GRAPH_FINDING_STATUSES)):
+                            finding_status = "unknown"
+                        finding_proof = target.get("proof_status")
+                        if (primary_label == "Vulnerability" and
+                                (not isinstance(finding_proof, str) or finding_proof not in _GRAPH_PROOF_STATUSES)):
+                            finding_proof = "unknown"
                         target_id = (target.get("finding_id") or target.get("name")
                                      or target.get("url") or str(id(target)))
                         if target_id not in seen_nodes:
@@ -261,14 +287,28 @@ class AttackGraph:
                                 "group": primary_label.lower(),
                                 "shape": "square" if primary_label == "Vulnerability" else "dot",
                                 "size": 24 if primary_label == "Vulnerability" else 20,
-                                "color": color_map.get(primary_label, "#94A3B8")
+                                "color": color_map.get(primary_label, "#94A3B8"),
+                                "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
+                                              if primary_label == "Vulnerability" else None,
+                                "status": finding_status if primary_label == "Vulnerability" else None,
+                                "proof_status": finding_proof if primary_label == "Vulnerability"
+                                else endpoint_proof
+                                if primary_label in {"Vulnerability", "APIEndpoint"} else None,
+                                "title": ((f"Status: {finding_status} | proof: {finding_proof}")
+                                          if primary_label == "Vulnerability" else
+                                          (f"Endpoint candidate | method: {endpoint_method} | evidence: "
+                                           f"{endpoint_evidence} | proof: {endpoint_proof}")
+                                          if primary_label == "APIEndpoint" else None),
+                                "method": endpoint_method if primary_label == "APIEndpoint" else None,
+                                "evidence_type": endpoint_evidence if primary_label == "APIEndpoint" else None,
                             })
 
                         if a and rel_type:
                             edges.append({
                                 "from": a.get("scan_id"),
                                 "to": target_id,
-                                "label": rel_type.replace("HAS_", "").replace("CALLS_", "").lower()
+                                "label": ("endpoint_candidate" if primary_label == "APIEndpoint"
+                                          else rel_type.replace("HAS_", "").replace("CALLS_", "").lower())
                             })
 
             return {"nodes": nodes, "edges": edges} if nodes else None

@@ -1,15 +1,18 @@
-"""Bounded Smali call-path and local register-flow review heuristics.
+"""Bounded Smali call-path and taint may-flow review heuristics.
 
 Parses decompiled DEX / Smali representations to build:
 1. Class Hierarchy and Inheritance Trees (Class -> Superclass & Interfaces)
-2. Whole-Program Inter-Procedural Call Graph (Method -> Invoked Methods)
+2. APK-inventory-scoped call graph (Method -> resolved invoked Methods)
 3. Android Component Lifecycle Entrypoints (onCreate, onReceive, onStartCommand)
 4. Bounded source-API-containing-method to sink-API call-path inventory.
-5. Same-method ``move-result*`` / ``move-object`` register flow candidates.
+5. Same-method register flow and bounded interprocedural argument, static-field,
+   and return-value taint candidates.
 
-Cross-method register/argument flow, branch feasibility, dynamic dispatch and
-effective manifest authorization are not resolved. Lifecycle names alone are
-not externally reachable entrypoint proof.
+This is not whole-program or lifecycle-complete proof: unresolved virtual/interface
+dispatch, branch feasibility, heap/object identity, unsupported instructions,
+platform/library summaries, and effective manifest authorization limit results.
+Budget exhaustion is surfaced as partial coverage. Lifecycle names alone are not
+externally reachable entrypoint proof.
 """
 
 from __future__ import annotations
@@ -452,6 +455,9 @@ class SmaliCallGraphEngine:
         self.local_register_flows: list[dict[str, Any]] = []
         self.local_register_methods_skipped: list[str] = []
         self.local_register_analysis_warnings: list[str] = []
+        self.local_register_analysis_warning_count = 0
+        self.local_register_analysis_warnings_truncated = False
+        self.MAX_REGISTER_ANALYSIS_WARNINGS = 100
         self.MAX_INTERPROCEDURAL_METHOD_RUNS = 100_000
         self.MAX_INTERPROCEDURAL_TAINT_FACTS = 100_000
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
@@ -465,6 +471,8 @@ class SmaliCallGraphEngine:
         self.local_register_flows.clear()
         self.local_register_methods_skipped.clear()
         self.local_register_analysis_warnings.clear()
+        self.local_register_analysis_warning_count = 0
+        self.local_register_analysis_warnings_truncated = False
         base_path = explicit_scan_root(base_dir)
         if base_path is None or base_path.is_symlink() or not base_path.exists():
             logger.warning("Smali directory does not exist: %s", base_dir)
@@ -761,8 +769,15 @@ class SmaliCallGraphEngine:
         successors: list[list[int]] = [[] for _ in instructions]
 
         def warn(message: str) -> None:
-            if message not in self.local_register_analysis_warnings:
+            # Count every diagnostic event, including repeated messages. Keep
+            # the human-readable sample bounded independently from the count.
+            self.local_register_analysis_warning_count += 1
+            if message in self.local_register_analysis_warnings:
+                return
+            if len(self.local_register_analysis_warnings) < self.MAX_REGISTER_ANALYSIS_WARNINGS:
                 self.local_register_analysis_warnings.append(message)
+            else:
+                self.local_register_analysis_warnings_truncated = True
 
         def clear_register_tracking(register: str) -> None:
             registers.pop(register, None)
@@ -1529,7 +1544,10 @@ class SmaliCallGraphEngine:
             local_register_flow_candidates=len(seen_local),
             local_register_methods_skipped=len(self.local_register_methods_skipped),
             skipped_method_keys=self.local_register_methods_skipped[:100],
-            register_dataflow_warnings=self.local_register_analysis_warnings[:100],
+            register_dataflow_warnings=self.local_register_analysis_warnings,
+            register_dataflow_warning_count=self.local_register_analysis_warning_count,
+            register_dataflow_warnings_truncated=self.local_register_analysis_warnings_truncated,
+            register_dataflow_warning_limit=self.MAX_REGISTER_ANALYSIS_WARNINGS,
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
                 "instance fields, precise array indexes/objects, casts, returned heap side effects, builder identity across fields/calls, and polymorphic dispatch are not modeled",

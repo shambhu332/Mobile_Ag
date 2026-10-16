@@ -126,15 +126,21 @@ class LLMBroker:
             or type(summary['api_cases_executed']) is not int or not 0<=summary['api_cases_executed']<=10
             or type(summary['dast_screens_observed']) is not int or not 0<=summary['dast_screens_observed']<=60):
             raise ValueError('Invalid aggregate metadata')
+        def check_guard():
+            if not callable(guard):
+                raise PermissionError('LLM review scope guard is required')
+            allowed=guard()
+            if allowed is False:
+                raise PermissionError('LLM review scope was denied or revoked')
         def checked_guard():
-            try:guard()
+            try:check_guard()
             except Exception as error:raise _GuardFailure(error) from None
-        guard();self.busy=True;attempts=[]
+        check_guard();self.busy=True;attempts=[]
         try:
             # At most one primary request and one explicitly approved secondary.
             # Never retry the throttled provider, loop providers or switch on text.
             for index,provider in enumerate(filter(None,[name,secondary])):
-                guard()
+                check_guard()
                 config=configured(provider)  # Recheck approvals/credentials at use.
                 if not config['enabled']:raise PermissionError('Provider approval/configuration revoked')
                 attempt={'provider':provider,'model':config['model']}
@@ -144,12 +150,12 @@ class LLMBroker:
                     attempt.update(outcome='rate_limited' if error.status==429 else 'http_error',http_status=error.status)
                     attempts.append(attempt)
                     if error.status==429 and index==0 and secondary:
-                        guard();continue
+                        check_guard();continue
                     raise LLMReviewError('Provider rate limited; no further provider attempt' if error.status==429 else 'Provider HTTP error; fallback only applies to HTTP 429',attempts) from None
                 except _GuardFailure as error:raise error.cause
                 except PermissionError:raise
                 except Exception:
-                    guard()
+                    check_guard()
                     attempt.update(outcome='failed');attempts.append(attempt)
                     raise LLMReviewError('Provider timed out, failed or returned invalid text; no rate-limit fallback',attempts) from None
                 attempt.update(outcome='completed',http_status=200);attempts.append(attempt)

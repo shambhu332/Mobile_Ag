@@ -36,7 +36,6 @@ from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.secret_scanner import SecretScanner
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.filters.pipeline import FilterPipeline
-from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
 from mobileag.reporting.finding import Finding, FindingStatus
 from mobileag.reporting.sarif_exporter import SARIFExporter
@@ -109,7 +108,6 @@ class Orchestrator:
         )
 
         # Generators
-        self._frida_generator = FridaGenerator(self._router)
         self._poc_generator = PoCGenerator(self._router)
 
     async def scan(
@@ -360,12 +358,18 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["analysis engine failed; findings and coverage are incomplete"],
                     }
+                    if name == "il2cpp":
+                        state["il2cpp_analysis"] = {
+                            "scan_status": "incomplete", "evidence_kind": "bounded_static_metadata_candidates",
+                            "runtime_status": "not_tested", "proof_status": "not_proven",
+                            "exhaustive": False, "scan_errors": ["il2cpp_analysis_engine_failed"],
+                        }
                     if name == "taint":
                         state["coverage"][name]["serialization"] = {
                             "static_status": "incomplete", "runtime_status": "not_tested",
@@ -409,16 +413,59 @@ class Orchestrator:
             elif name == "flutter":
                 if getattr(result, "is_flutter_app", False):
                     for ep in getattr(result, "api_endpoints", []):
-                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                        state.setdefault("api_endpoints", []).append({
+                            "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                            "evidence_type": "embedded_url_candidate", "source_engine": "flutter",
+                        })
             elif name == "hermes":
                 for h_res in (result or []):
                     if getattr(h_res, "is_hermes", False):
                         for ep in getattr(h_res, "api_endpoints", []):
-                            state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                            state.setdefault("api_endpoints", []).append({
+                                "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                                "evidence_type": "embedded_url_candidate", "source_engine": "hermes",
+                            })
             elif name == "il2cpp":
+                state["il2cpp_analysis"] = {
+                    "scan_status": getattr(result, "scan_status", "unknown"),
+                    "is_il2cpp": bool(getattr(result, "is_il2cpp", False)),
+                    "metadata_version": getattr(result, "metadata_version", None),
+                    "metadata_tables_status": getattr(result, "metadata_tables_status", "unknown"),
+                    "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
+                    "type_definitions_count": int(getattr(result, "type_definitions_count", 0) or 0),
+                    "method_definitions_count": int(getattr(result, "method_definitions_count", 0) or 0),
+                    "reconstructed_classes": list(getattr(result, "reconstructed_classes", []))[:50],
+                    "reconstructed_fields": list(getattr(result, "reconstructed_fields", []))[:100],
+                    "reconstructed_methods": list(getattr(result, "reconstructed_methods", []))[:100],
+                    "tree_entries_scanned": int(getattr(result, "tree_entries_scanned", 0) or 0),
+                    "metadata_bytes_scanned": int(getattr(result, "metadata_bytes_scanned", 0) or 0),
+                    "metadata_truncated": bool(getattr(result, "metadata_truncated", False)),
+                    "candidate_output_truncated": bool(getattr(result, "candidate_output_truncated", False)),
+                    "scan_errors": list(getattr(result, "scan_errors", []))[:20],
+                    "evidence_kind": "bounded_static_metadata_candidates",
+                    "runtime_status": "not_tested",
+                    "proof_status": "not_proven",
+                    "exhaustive": False,
+                }
+                state["coverage"]["il2cpp"] = {
+                    "static_status": "partial" if getattr(result, "scan_status", "") != "complete"
+                    or getattr(result, "metadata_truncated", False)
+                    or getattr(result, "candidate_output_truncated", False)
+                    else "analyzed_heuristically",
+                    "runtime_status": "not_tested", "proof_status": "not_proven",
+                    "exhaustive": False,
+                    "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
+                    "candidate_count": len(getattr(result, "reconstructed_classes", []))
+                    + len(getattr(result, "reconstructed_fields", []))
+                    + len(getattr(result, "reconstructed_methods", [])),
+                    "limitations": ["bounded metadata names are review candidates, not source reconstruction or exploit proof"],
+                }
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):
-                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                        state.setdefault("api_endpoints", []).append({
+                            "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                            "evidence_type": "embedded_url_candidate", "source_engine": "il2cpp",
+                        })
             elif name == "fileprovider":
                 for fp_res in (result or []):
                     all_findings.extend(fp_res.findings)
@@ -589,9 +636,9 @@ class Orchestrator:
         return state
 
     async def _run_generation(self, state: ScanState) -> ScanState:
-        """Stage 4: Generate Frida scripts and PoC guides."""
+        """Stage 4: Generate bounded, review-only PoC guides."""
         state["current_phase"] = "generation"
-        logger.info("[Stage 4] Generation — Frida scripts + PoC guides...")
+        logger.info("[Stage 4] Generation — review-only PoC guides...")
 
         review_candidates = [Finding(**f) for f in state["filtered_findings"]]
         app_info = {
@@ -600,16 +647,8 @@ class Orchestrator:
             "scan_id": state["scan_id"],
         }
 
-        # Generate Frida scripts
-        try:
-            frida_results = await self._frida_generator.generate_batch(
-                review_candidates, app_info
-            )
-            state["generated_frida_scripts"] = frida_results
-            logger.info("[Stage 4] Generated %d Frida scripts", len(frida_results))
-        except Exception as exc:
-            logger.error("[Stage 4] Frida generation error: %s", exc)
-            state["errors"].append(f"Frida generation error: {exc}")
+        # Preserve the legacy state key as empty for old readers; no hooks are generated.
+        state["generated_frida_scripts"] = []
 
         # Generate PoC guides
         try:
@@ -625,17 +664,9 @@ class Orchestrator:
         return state
 
     async def _save_outputs(self, state: ScanState) -> None:
-        """Save generated Frida scripts and PoC guides to disk."""
+        """Save review-only PoC guides and reports to disk."""
         output = Path(state["output_dir"])
         await ReportEngine().generate_reports(state)
-
-        # Save Frida scripts
-        frida_dir = output / "frida_scripts"
-        frida_dir.mkdir(exist_ok=True)
-        for item in state.get("generated_frida_scripts", []):
-            fp = frida_dir / Path(item["filename"]).name
-            fp.write_text(redact(item["script"]))
-            logger.info("Saved Frida script: %s", fp)
 
         # Save PoC guides
         poc_dir = output / "poc_guides"
@@ -667,7 +698,7 @@ class Orchestrator:
 
         # Save CycloneDX v1.5 SBOM
         try:
-            from mobileag.analysis.sbom_generator import MobileSbomGenerator
+            from mobileag.analysis.sbom_generator import MobileSbomGenerator, escape_purl_segment
             sbom_gen = MobileSbomGenerator(
                 app_name=state.get("package_name") or "mobile_target",
                 app_version=state.get("manifest_data", {}).get("version_name") or "1.0.0",
@@ -676,7 +707,7 @@ class Orchestrator:
                 sbom_gen.add_component(
                     name=dep.get("name", "dependency"),
                     version=dep.get("version", "unknown"),
-                    purl=dep.get("purl", f"pkg:generic/{dep.get('name', 'dependency')}"),
+                    purl=dep.get("purl", f"pkg:generic/{escape_purl_segment(str(dep.get('name', 'dependency')))}"),
                 )
             sbom_path = output / f"sbom_{state['scan_id']}_cyclonedx.json"
             sbom_gen.save_cyclonedx(sbom_path)

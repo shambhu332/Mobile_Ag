@@ -164,10 +164,85 @@ async def test_api_mapper(mock_router):
         assert len(endpoints) == 1
         assert endpoints[0]["url"] == "/api/v1/admin/users"
         assert endpoints[0]["requires_auth"] is None
+        assert endpoints[0]["source_file"] == "ApiClient.java"
+        assert endpoints[0]["line_number"] == 2
         assert len(findings) == 1
         assert findings[0].cwe_id == "CWE-Unknown"
         assert findings[0].severity == Severity.INFO
         assert findings[0].cvss_score == 0.0
+        assert findings[0].file_path == "ApiClient.java"
+        assert findings[0].line_number == 2
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_ignores_java_kotlin_comments_but_keeps_literal_strings(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Comments.kt").write_text(
+        '// @GET("/api/v1/commented")\n'
+        '/* nested comment /* @HTTP(method = "GET", path = "/api/v1/hidden") */ still comment */\n'
+        '@GET("/api/v2/actual")\n'
+        'val route = "/api/v3/literal"\n'
+        'val url = "https://dev-api.example.com/v1/live" // https://dev-api.example.com/v1/commented\n',
+        encoding="utf-8",
+    )
+
+    endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    urls = {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v1/commented" not in urls
+    assert "/api/v1/hidden" not in urls
+    assert "/api/v2/actual" in urls
+    assert "/api/v3/literal" in urls
+    staging = [finding for finding in findings if "Staging/Dev" in finding.title]
+    assert len(staging) == 1
+    assert "commented" not in staging[0].title
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_methods(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Methods.java").write_text(
+        'interface Methods {\n'
+        '  @HEAD("/api/v1/health") Call<Void> health();\n'
+        '  @OPTIONS("/api/v1/resource") Call<Void> options();\n'
+        '  @HTTP(path = "/api/v2/orders", method = "PATCH", hasBody = true)\n'
+        '  Call<Void> update();\n'
+        '  @HTTP(\n'
+        '    method = "HEAD",\n'
+        '    path = "/api/v2/status"\n'
+        '  ) Call<Void> status();\n'
+        '  @HTTP(method = "DYNAMIC", path = "/api/v2/ignored") Call<Void> ignored();\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    extracted = {(endpoint["method"], endpoint["url"], endpoint["line_number"])
+                 for endpoint in endpoints}
+    assert extracted == {
+        ("HEAD", "/api/v1/health", 2),
+        ("OPTIONS", "/api/v1/resource", 3),
+        ("PATCH", "/api/v2/orders", 4),
+        ("HEAD", "/api/v2/status", 6),
+        ("UNKNOWN", "/api/v2/ignored", 10),
+    }
+    assert next(endpoint for endpoint in endpoints if endpoint["url"] == "/api/v2/ignored")[
+        "evidence_type"] == "route_literal"
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["unmodeled_retrofit_http_annotations"] == 1
+
+
+def test_api_mapper_bounds_malformed_retrofit_http_annotation_scanning(mock_router, tmp_path):
+    (tmp_path / "Malformed.java").write_text("@HTTP(" * 10_000, encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert endpoints == []
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limits_reached"] is True
+    assert mapper.coverage["oversized_or_unclosed_retrofit_http_annotations"] > 0
 
 
 @pytest.mark.asyncio
@@ -201,6 +276,42 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
     staging = [finding for finding in findings if "Staging/Dev" in finding.title]
     assert len(staging) == 1
     assert "dev-api.example.com" in staging[0].title
+    assert staging[0].file_path == "Urls.java"
+    assert staging[0].line_number == 2
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_recognizes_case_insensitive_json_escaped_url_scheme(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Urls.json").write_text(
+        r'{"endpoint":"HTTPS:\/\/dev-api.example.com/v1/profile"}' + "\n",
+        encoding="utf-8",
+    )
+
+    _endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    candidate = next(finding for finding in findings if "Staging/Dev" in finding.title)
+    assert candidate.title.endswith("https://dev-api.example.com/v1/profile")
+    assert candidate.file_path == "Urls.json"
+    assert candidate.line_number == 1
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_recognizes_bracketed_ipv6_cleartext_url(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Ipv6Url.java").write_text(
+        'String endpoint = "http://[2001:db8::10]:8080/api/v1/profile";\n',
+        encoding="utf-8",
+    )
+
+    _endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    candidates = [finding for finding in findings if "Cleartext" in finding.title]
+    assert len(candidates) == 1
+    assert "http://[2001:db8::10]:8080/api/v1/profile" in candidates[0].title
+    assert candidates[0].file_path == "Ipv6Url.java"
+    assert candidates[0].line_number == 1
+    assert candidates[0].status.value == "UNVERIFIED"
 
 
 @pytest.mark.asyncio
@@ -215,8 +326,102 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
     ep = next(e for e in endpoints if e["url"] == "/api/v2/profile")
     assert ep["method"] == "UNKNOWN"
     assert ep["evidence_type"] == "route_literal"
+    assert ep["source_file"] == "Api.smali"
+    assert ep["line_number"] == 2
     assert ep["requires_auth"] is None
     assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_scans_js_dart_template_routes_not_comments(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "routes.js").write_text(
+        '// "/api/v1/commented"\n'
+        'const route = `/api/v1/users/${userId}`;\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "routes.dart").write_text(
+        '// "/api/v2/commented"\n'
+        "final route = '/api/v2/orders/$orderId';\n",
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    routes = {(endpoint["url"], endpoint["method"], endpoint["source_file"])
+              for endpoint in endpoints}
+    assert ("/api/v1/users/{id}", "UNKNOWN", "routes.js") in routes
+    assert ("/api/v2/orders/{id}", "UNKNOWN", "routes.dart") in routes
+    assert not any("commented" in route[0] for route in routes)
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_masks_xml_comments_but_scans_cdata_and_active_urls(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "strings.xml").write_text(
+        '<resources>\n'
+        '  <!-- "https://dev-api.example.com/v1/commented" "/api/v1/hidden" -->\n'
+        '  <string name="endpoint">"https://dev-api.example.com/v1/active"</string>\n'
+        '  <string name="route"><![CDATA["/api/v2/cdata"]]></string>\n'
+        '</resources>\n',
+        encoding="utf-8",
+    )
+
+    endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    assert "/api/v1/hidden" not in {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v2/cdata" in {endpoint["url"] for endpoint in endpoints}
+    staging = [finding for finding in findings if "Staging/Dev" in finding.title]
+    assert len(staging) == 1
+    assert staging[0].line_number == 3
+
+
+def test_api_mapper_reports_unclosed_xml_comment_as_partial(tmp_path, mock_router):
+    (tmp_path / "broken.xml").write_text('<!-- "/api/v1/hidden"', encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, findings = mapper._sync_map_apis(tmp_path)
+
+    assert endpoints == []
+    assert findings == []
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["malformed_xml_comment_files"] == 1
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_ignores_smali_comments_but_keeps_string_constants(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Routes.smali").write_text(
+        '# const-string v0, "/api/v1/commented"\n'
+        'const-string v1, "/api/v1/actual" # note: "/api/v1/inline-comment"\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    routes = {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v1/actual" in routes
+    assert "/api/v1/commented" not in routes
+    assert "/api/v1/inline-comment" not in routes
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_finds_java_kotlin_route_literals_without_method_claims(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Routes.kt").write_text(
+        'private const val PROFILE_ROUTE = "/api/v4/profile/{userId}"\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    route = next(endpoint for endpoint in endpoints if endpoint["url"] == "/api/v4/profile/{userId}")
+    assert route["method"] == "UNKNOWN"
+    assert route["evidence_type"] == "route_literal"
+    assert route["source_file"] == "Routes.kt"
+    assert route["line_number"] == 1
+    assert route["requires_auth"] is None
     assert mapper.coverage["proof_status"] == "not_proven"
 
 
@@ -245,6 +450,16 @@ async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
     assert any("dev-api.example.com" in finding.title for finding in findings)
 
 
+def test_api_mapper_redacts_short_and_percent_encoded_mixed_path_ids():
+    safe_short = APIMapper._safe_route("/api/v1/users/AbC123xy")
+    safe_encoded = APIMapper._safe_route("/api/v1/users/Ab%31Cd%32Ef")
+
+    assert safe_short == "/api/v1/users/{id}"
+    assert safe_encoded == "/api/v1/users/{id}"
+    assert "AbC123xy" not in safe_short
+    assert "Ab%31Cd%32Ef" not in safe_encoded
+
+
 def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_router, tmp_path):
     class Match:
         def __init__(self, index):
@@ -253,6 +468,12 @@ def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_r
         def group(self, number):
             assert number == 1
             return f"/api/v1/resource/item-{self.index:05}-slug"
+
+        def start(self):
+            return self.index
+
+        def end(self):
+            return self.index
 
     class LazyMatches:
         def __init__(self):

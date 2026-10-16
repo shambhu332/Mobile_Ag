@@ -3,7 +3,10 @@
 Traces untrusted input data flows (Intent extras, Deep Links, Content Resolvers)
 through parsed Java local flows when the optional Tree-sitter extra is installed,
 plus lexical Java/Kotlin fallback and limited same-file method summaries. Full
-inter-procedural Android call/control-flow analysis is not implemented. Candidate flows are checked
+full inter-procedural Android call/control-flow analysis is not implemented. Smali
+analysis is handled separately by `SmaliCallGraphEngine`, which performs bounded
+argument/static-field/return may-flow; neither path proves dynamic dispatch,
+control-flow feasibility, or lifecycle reachability. Candidate flows are checked
 until reaching critical sinks:
 1. WebView navigation and JavaScript evaluation -> CWE-829 / CWE-79 review candidates
 2. WebView HTML loading -> CWE-79 review candidates

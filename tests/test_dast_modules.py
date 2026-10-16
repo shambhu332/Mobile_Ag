@@ -124,6 +124,41 @@ async def test_storage_auditor_shared_preferences():
 
 
 @pytest.mark.asyncio
+async def test_storage_auditor_honors_scope_denial_before_shell(monkeypatch):
+    mock_adb = ADBManager()
+    calls = []
+
+    async def forbidden_exec(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("denied storage audit must not invoke shell")
+
+    mock_adb._exec_cmd = forbidden_exec
+    auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=lambda: False)
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_storage_auditor_revocation_prevents_unprivileged_fallback():
+    mock_adb = ADBManager()
+    calls = []
+
+    async def denied_su(*args, **kwargs):
+        calls.append(args[0])
+        return 1, b"", b""
+
+    mock_adb._exec_cmd = denied_su
+    approvals = iter((True, False))
+    auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor._run_su_cmd(
+            "synthetic-device", "ls -1 /synthetic", guard=lambda: next(approvals),
+        )
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_storage_auditor_sqlite_databases():
     mock_adb = ADBManager()
     auditor = StorageAuditor(adb=mock_adb)
@@ -192,6 +227,58 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
     assert findings[0].cwe_id == "CWE-926"
     assert findings[0].cvss_score == 0
     assert "sec123" not in str(findings[0].to_dict())
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_honors_boolean_scope_denial_before_adb(monkeypatch):
+    import json
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    called = []
+
+    async def forbidden_exec(*args, **kwargs):
+        called.append(True)
+        raise AssertionError("denied provider diagnostic must not invoke ADB")
+
+    auditor = ProviderAuditor(adb=ADBManager())
+    auditor.adb._exec_cmd = forbidden_exec
+    with pytest.raises(PermissionError):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri, guard=lambda: False,
+        )
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_honors_scope_revocation_after_adb(monkeypatch):
+    import json
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    calls = []
+
+    async def mock_exec(*args, **kwargs):
+        calls.append(True)
+        return 0, b"Row: synthetic controlled fixture", b""
+
+    auditor = ProviderAuditor(adb=ADBManager())
+    auditor.adb._exec_cmd = mock_exec
+    approvals = iter((True, False))
+    with pytest.raises(PermissionError):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri,
+            guard=lambda: next(approvals),
+        )
+    assert calls == [True]
 
 
 def test_traffic_auditor_owasp_api_top10():
@@ -278,18 +365,14 @@ def test_proxy_capture_storage_is_bounded_and_reports_omissions():
 
 def test_frida_runner_unified_agent_and_session():
     runner = FridaRunner()
-    unified_script = runner.generate_all_in_one_agent_script()
-    assert "TrustManager" in unified_script
-    assert "File.exists" in unified_script
-    assert "javax.crypto.Cipher" in unified_script
-    assert "Unified Enterprise Runtime" in unified_script
+    assert not hasattr(runner, "generate_all_in_one_agent_script")
 
     # Test attach_and_instrument_session fallback behavior
     result = runner.attach_and_instrument_session(
         package_name="com.test.app",
         script_code="console.log('test');",
     )
-    assert isinstance(result, dict)
+    assert isinstance(result, dict) and result["status"] == "disabled"
     assert "package_name" in result
     assert result["package_name"] == "com.test.app"
 

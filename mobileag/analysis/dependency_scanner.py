@@ -770,10 +770,11 @@ class DependencyScanner:
 
     def generate_sbom(self, app_name: str = "MobileApp", app_version: str = "1.0.0") -> Any:
         """Construct a standardized MobileSbomGenerator instance populated from inventoried dependencies."""
-        from mobileag.analysis.sbom_generator import MobileSbomGenerator
+        from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url
         generator = MobileSbomGenerator(app_name=app_name, app_version=app_version)
         for grp, art, ver, _ in getattr(self, "_last_dependencies", []):
-            purl = f"pkg:maven/{grp}/{art}@{ver}" if grp else f"pkg:npm/{art}@{ver}"
+            purl = (build_package_url("maven", namespace=grp, name=art, version=ver)
+                    if grp else build_package_url("npm", name=art, version=ver))
             name = f"{grp}:{art}" if grp else art
             generator.add_component(name=name, version=ver, purl=purl, component_type="library")
         for library in getattr(self, "_last_native_libraries", []):

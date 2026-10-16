@@ -337,6 +337,25 @@ def test_rasp_resilience_auditor():
         assert res.coverage["source_files_analyzed"] == 1
 
 
+def test_rasp_resilience_auditor_ignores_bare_su_substrings(tmp_path):
+    smali = tmp_path / "Ordinary.smali"
+    smali.write_text(
+        ".class public Lfixture/Ordinary;\n"
+        ".super Ljava/lang/Object;\n"
+        ".method public result()V\n"
+        "    const-string v0, \"subscription result\"\n"
+        ".end method\n",
+        encoding="utf-8",
+    )
+
+    result = RaspResilienceAuditor().audit_package(tmp_path)
+
+    assert "su" not in result.vectors["root_detection"].detected_indicators
+    assert result.vectors["root_detection"].detected_indicators == [
+        "No root-related indicator strings found in scanned Smali"
+    ]
+
+
 def test_rasp_resilience_inventory_bounds_oversized_smali(tmp_path):
     oversized = tmp_path / "Huge.smali"
     oversized.write_bytes(b".class public Lfixture/Huge;\n" + b"x" * (2 * 1024 * 1024))
@@ -374,6 +393,64 @@ def test_mobile_sbom_generator():
     assert len(spdx["packages"]) == 2
 
 
+def test_sbom_rejects_malformed_hash_metadata():
+    import pytest
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="Invalid or unsupported SBOM digest"):
+        generator.add_component("native", "1", "pkg:generic/native", hashes={"SHA-256": "abc"})
+    generator.add_component("native", "1", "pkg:generic/native", hashes={"sha256": "A" * 64})
+    assert generator.generate_cyclonedx_json()["components"][0]["hashes"] == [
+        {"alg": "SHA-256", "content": "a" * 64}
+    ]
+
+
+def test_sbom_normalizes_and_rejects_advisory_metadata():
+    import pytest
+    generator = MobileSbomGenerator()
+    purl = "pkg:generic/native"
+    generator.add_component("native", "1", purl)
+    generator.add_vulnerability("OSV-2025-123", purl, "Synthetic advisory", "MODERATE", ["cwe-79"])
+    item = generator.generate_cyclonedx_json()["vulnerabilities"][0]
+    assert item["ratings"][0]["severity"] == "medium"
+    assert item["cwes"] == [79]
+    with pytest.raises(ValueError, match="severity"):
+        generator.add_vulnerability("OSV-2025-123", purl, severity="severe")
+    with pytest.raises(ValueError, match="CWE"):
+        generator.add_vulnerability("OSV-2025-123", purl, cwe_ids=["CWE-79<script>"])
+
+
+def test_sbom_component_metadata_is_bounded_and_typed():
+    import pytest
+    with pytest.raises(ValueError, match="application name"):
+        MobileSbomGenerator("", "1")
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="component type"):
+        generator.add_component("native", "1", "pkg:generic/native", component_type="injected")
+    with pytest.raises(ValueError, match="package URL"):
+        generator.add_component("native", "1", "pkg:generic/bad name")
+    generator.add_component("Bank App", "1.0 beta", "pkg:generic/Bank%20App@1.0%20beta")
+
+
+def test_sbom_purls_are_reference_parsed_canonical_and_unambiguous():
+    import pytest
+    from mobileag.analysis.sbom_generator import build_package_url, normalize_package_url
+
+    built = build_package_url("maven", namespace="org.example", name="demo app", version="1.0 beta")
+    assert built == "pkg:maven/org.example/demo%20app@1.0%20beta"
+    assert normalize_package_url("pkg:generic/lib/arm64-v8a/libsample.so") == \
+        "pkg:generic/lib/arm64-v8a/libsample.so"
+    for malformed in (
+        "pkg:", "https://example.invalid/pkg", "pkg:generic/@1", "pkg:generic/name%ZZ",
+        "pkg:generic/name?arch=arm64&arch=x86_64", "pkg:generic/name?bad qualifier=value",
+    ):
+        with pytest.raises(ValueError, match="package URL|Package URL"):
+            normalize_package_url(malformed)
+
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="duplicate qualifier"):
+        generator.add_component("bad", "1", "pkg:generic/name?arch=arm64&arch=x86_64")
+
+
 def test_exploit_poc_synthesizer():
     from mobileag.reporting.finding import Finding, Severity, FindingStatus
     from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
@@ -393,11 +470,113 @@ def test_exploit_poc_synthesizer():
     synthesizer = ExploitPocSynthesizer()
     poc = synthesizer.synthesize(finding, target_package="com.target.app")
 
+    # A detection alone is not sufficient authority to emit executable guidance.
+    assert poc is None
+
+
+def test_poc_requires_artifact_bound_analyst_attestation():
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+
+    record = {
+        "artifact_sha256": "a" * 64, "package_name": "com.target.app",
+        "app_version": "1.0", "os_build": "Android synthetic test build",
+        "attacker_context": "ordinary_app", "entry_point": "synthetic exported activity",
+        "attacker_control": "researcher controlled input", "sensitive_sink": "synthetic canary",
+        "security_boundary": "synthetic app boundary", "observed_impact": "canary observed",
+        "reproduction_steps": ["launch test app", "observe canary"],
+        "positive_control": "positive fixture", "negative_control": "negative fixture",
+        "evidence_refs": ["fixture:positive"], "unprivileged_attacker_confirmed": True,
+        "unmodified_authorization_confirmed": True, "synthetic_data_confirmed": True,
+        "scope_confirmed": True,
+    }
+    finding = Finding(
+        id="INTENT_REDIRECTION_SYNTHETIC", title="Synthetic intent issue", description="test",
+        severity=Severity.HIGH, status=FindingStatus.CONFIRMED, cwe_id="CWE-926",
+        validation_evidence={"basis": "analyst_attested", "independently_verified": False,
+                             "active": True, "record": record},
+    )
+    poc = ExploitPocSynthesizer().synthesize(finding, "com.target.app")
     assert poc is not None
-    assert poc.vulnerability_type == "Intent Redirection"
-    assert "adb shell am start" in poc.adb_command
-    assert "class ExploitActivity" in poc.kotlin_exploit_code
-    assert "com.target.app" in poc.kotlin_exploit_code
+    assert "analyst" not in poc.explanation.lower()  # output is not itself confirmation
+    assert ExploitPocSynthesizer().synthesize(finding, "com.other.app") is None
+    assert ExploitPocSynthesizer().synthesize(finding, None) is None
+    assert ExploitPocSynthesizer().synthesize(finding, "x" * 256) is None
+    injected = finding.model_copy(update={"metadata": {"component_name": 'com.target.app.Proxy";id'}})
+    assert ExploitPocSynthesizer().synthesize(injected, "com.target.app") is None
+    # Kotlin string interpolation syntax must not pass through component validation.
+    interpolation = finding.model_copy(update={"metadata": {"component_name": "com.target.app/Proxy$Payload"}})
+    assert ExploitPocSynthesizer().synthesize(interpolation, "com.target.app") is None
+    injection_cases = [
+        ("component_name", 'com.target.app/Proxy";id'),
+        ("authority", 'com.target.app.provider";id'),
+        ("task_affinity", "com.target.app\n// injected"),
+        ("uri_scheme", 'myapp://host/path";id'),
+    ]
+    for key, value in injection_cases:
+        hostile = finding.model_copy(update={"metadata": {key: value}})
+        assert ExploitPocSynthesizer().synthesize(hostile, "com.target.app") is None
+    hostile_target = finding.model_copy(update={"affected_component": 'com.target.app.Login";id'})
+    assert ExploitPocSynthesizer().synthesize(hostile_target, "com.target.app") is None
+    hostile_id = finding.model_copy(update={"id": 'INTENT_REDIRECTION\n";id'})
+    assert ExploitPocSynthesizer().synthesize(hostile_id, "com.target.app") is None
+
+
+def test_generated_poc_templates_are_synthetic_canary_only_and_review_only():
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+
+    package = "com.target.app"
+    record = {
+        "artifact_sha256": "a" * 64, "package_name": package,
+        "app_version": "1.0", "os_build": "Android synthetic test build",
+        "attacker_context": "ordinary_app", "entry_point": "synthetic fixture",
+        "attacker_control": "researcher controlled input", "sensitive_sink": "synthetic canary",
+        "security_boundary": "synthetic app boundary", "observed_impact": "canary observed",
+        "reproduction_steps": ["run owned fixture", "observe canary"],
+        "positive_control": "positive fixture", "negative_control": "negative fixture",
+        "evidence_refs": ["fixture:positive"], "unprivileged_attacker_confirmed": True,
+        "unmodified_authorization_confirmed": True, "synthetic_data_confirmed": True,
+        "scope_confirmed": True,
+    }
+    evidence = {"basis": "analyst_attested", "independently_verified": False,
+                "active": True, "record": record}
+    cases = [
+        ("INTENT_REDIRECTION_SYNTHETIC", "CWE-926", "intent", {"component_name": f"{package}.Proxy"}),
+        ("DEEP_LINK_SYNTHETIC", "CWE-601", "deep link", {}),
+        ("PENDING_INTENT_SYNTHETIC", "CWE-927", "pending intent", {}),
+        ("FILEPROVIDER_SYNTHETIC", "CWE-22", "file provider", {"authority": f"{package}.files"}),
+        ("TASK_AFFINITY_SYNTHETIC", "CWE-1021", "task affinity", {"task_affinity": f"{package}.task"}),
+        ("CONTENT_PROVIDER_SQLI_SYNTHETIC", "CWE-89", "content provider", {"authority": f"{package}.provider"}),
+    ]
+    synth = ExploitPocSynthesizer()
+    generated = {}
+    for fid, cwe, title, metadata in cases:
+        finding = Finding(id=fid, title=title, description="synthetic test", severity=Severity.HIGH,
+                          status=FindingStatus.CONFIRMED, cwe_id=cwe, metadata=metadata,
+                          validation_evidence=evidence)
+        generated[fid] = synth.synthesize(finding, package)
+        assert generated[fid] is not None
+        assert not generated[fid].adb_command.lstrip().startswith("adb ")
+
+    intent = generated["INTENT_REDIRECTION_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in intent
+    assert "admin_override" not in intent and "PrivateActivity" not in intent
+    deep_link = generated["DEEP_LINK_SYNTHETIC"]
+    assert "mobileag.invalid" in deep_link.explanation
+    pending = generated["PENDING_INTENT_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in pending
+    assert ".send(" not in pending and "GRANT_ALL" not in pending
+    file_provider = generated["FILEPROVIDER_SYNTHETIC"].kotlin_exploit_code
+    assert "mobileag-fixtures/canary.txt" in file_provider
+    assert "ByteArray(64)" in file_provider and "readText()" not in file_provider
+    assert "app.db" not in file_provider and "Stolen Database Content" not in file_provider
+    task = generated["TASK_AFFINITY_SYNTHETIC"]
+    assert "steal credentials" not in task.kotlin_exploit_code.lower()
+    assert "No overlay" in task.explanation
+    provider = generated["CONTENT_PROVIDER_SQLI_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in provider
+    assert "Leaked Row" not in provider and "SELECT *" not in provider
 
 
 def test_deeplink_fuzzer_mutations():
@@ -474,6 +653,11 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
 
     assert fuzzer.execute_fuzz_case(
         "https://example.test/path", serial="device-1", guard=deny
+    ).status == "BLOCKED_SCOPE"
+    assert len(called) == 3
+
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=lambda: False
     ).status == "BLOCKED_SCOPE"
     assert len(called) == 3
 

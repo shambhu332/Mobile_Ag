@@ -11,6 +11,7 @@ import plistlib
 import struct
 import tempfile
 from pathlib import Path
+import pytest
 
 from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
 from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
@@ -22,23 +23,75 @@ from mobileag.dast.frida_stealth import FridaStealthHarness
 from mobileag.reporting.finding import FindingStatus, Severity
 
 
-def _il2cpp_v29_metadata(literals, trailing=b""):
+def _il2cpp_v29_metadata(literals, types=None):
     """Build a small structurally valid v29 literal-table fixture (not a real APK)."""
     encoded = [value.encode("utf-8") for value in literals]
     header_size = Il2CppAuditor.V29_HEADER_MIN_BYTES
     table_offset = header_size
     table_size = len(encoded) * 8
     data_offset = table_offset + table_size
-    data = b"".join(encoded)
+    literal_data = b"".join(encoded)
     records = bytearray()
     cursor = 0
     for literal in encoded:
         records.extend(struct.pack("<II", len(literal), cursor))
         cursor += len(literal)
+    string_pool = bytearray(b"\x00")
+    string_indices = {"": 0}
+
+    def add_name(value):
+        if value not in string_indices:
+            string_indices[value] = len(string_pool)
+            string_pool.extend(value.encode("utf-8") + b"\x00")
+        return string_indices[value]
+
+    methods = bytearray()
+    parameters = bytearray()
+    field_records = bytearray()
+    type_records = bytearray()
+    for type_index, type_info in enumerate(types or []):
+        name_index = add_name(type_info["name"])
+        namespace_index = add_name(type_info.get("namespace", ""))
+        method_start = len(methods) // 36
+        method_list = type_info.get("methods", [])
+        field_start = len(field_records) // 12
+        type_fields = type_info.get("fields", [])
+        for field_name in type_fields:
+            field_records.extend(struct.pack("<3I", add_name(field_name), 0, 0))
+        for method in method_list:
+            parameter_start = len(parameters) // 12
+            method_parameters = method.get("parameters", [])
+            if not method_parameters and method.get("parameter_count", 0):
+                method_parameters = [f"arg{index}" for index in range(method["parameter_count"])]
+            for parameter_name in method_parameters:
+                parameters.extend(struct.pack("<3I", add_name(parameter_name), 0, 0))
+            methods.extend(struct.pack(
+                "<7I4H", add_name(method["name"]), type_index, 0, 0,
+                parameter_start, 0, 0, 0, 0, 0,
+                len(method_parameters),
+            ))
+        fields = [0] * 16 + [0] * 8 + [0, 0]
+        fields[0], fields[1], fields[8], fields[9], fields[16], fields[18] = (
+            name_index, namespace_index, field_start, method_start,
+            len(method_list), len(type_fields),
+        )
+        type_records.extend(struct.pack("<16I8H2I", *fields))
+
+    string_offset = data_offset + len(literal_data)
+    method_offset = string_offset + len(string_pool)
+    parameter_offset = method_offset + len(methods)
+    field_offset = parameter_offset + len(parameters)
+    type_offset = field_offset + len(field_records)
     header = bytearray(header_size)
     struct.pack_into("<6I", header, 0, Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29,
-                     table_offset, table_size, data_offset, len(data))
-    return bytes(header) + bytes(records) + data + trailing
+                     table_offset, table_size, data_offset, len(literal_data))
+    struct.pack_into("<II", header, 24, string_offset, len(string_pool))
+    struct.pack_into("<II", header, 48, method_offset, len(methods))
+    struct.pack_into("<II", header, 88, parameter_offset, len(parameters))
+    struct.pack_into("<II", header, 96, field_offset, len(field_records))
+    struct.pack_into("<II", header, 160, type_offset, len(type_records))
+    return (bytes(header) + bytes(records) + literal_data + bytes(string_pool)
+            + bytes(methods) + bytes(parameters) + bytes(field_records) + bytes(type_records))
 
 
 def test_hermes_bytecode_analyzer():
@@ -128,7 +181,9 @@ def test_il2cpp_auditor():
         content = _il2cpp_v29_metadata([
             "https://game-api.unity.com/v1", "AuthenticationManager",
             'apiKey: "synthetic-unity-secret-123"',
-        ])
+        ], types=[{"name": "AuthenticationManager", "namespace": "sample",
+                   "fields": ["sessionToken"],
+                   "methods": [{"name": "authenticate", "parameters": ["account", "token"]}]}])
 
         with open(meta_file, "wb") as f:
             f.write(content)
@@ -141,7 +196,16 @@ def test_il2cpp_auditor():
         assert res.metadata_tables_status == "parsed"
         assert res.metadata_string_literals_count == 3
         assert "https://game-api.unity.com/v1" in res.api_endpoints
-        assert "AuthenticationManager" in res.reconstructed_classes
+        assert res.metadata_definitions_status == "parsed"
+        assert res.reconstructed_classes == ["sample.AuthenticationManager"]
+        assert res.reconstructed_methods == [{
+            "declaring_type": "sample.AuthenticationManager",
+            "method_name": "authenticate", "parameter_count": 2,
+            "parameter_names": ["account", "token"],
+        }]
+        assert res.reconstructed_fields == [{
+            "declaring_type": "sample.AuthenticationManager", "field_name": "sessionToken",
+        }]
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-unity-secret-123" not in repr(res.potential_secrets)
         assert res.scan_status == "complete"
@@ -169,7 +233,7 @@ def test_il2cpp_auditor_reports_string_and_candidate_caps():
 
     assert result.scan_status == "partial"
     assert result.candidate_output_truncated is True
-    assert len(result.api_endpoints) == len(result.reconstructed_classes) == 1
+    assert len(result.api_endpoints) == len(result.class_name_candidates) == 1
     assert {"api_endpoint_limit", "class_candidate_limit"} <= set(result.scan_errors)
     assert bounded.scan_status == "partial"
     assert bounded.string_literals_count == 1
@@ -190,6 +254,62 @@ def test_il2cpp_v29_literal_table_rejects_out_of_bounds_sections(tmp_path):
     assert result.metadata_string_literals_count == 0
     assert "string_literal_table_invalid" in result.scan_errors
     assert result.scan_status == "partial"
+
+
+def test_il2cpp_unsupported_metadata_version_marks_lexical_fallback_partial(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(["AuthenticationManager"]))
+    struct.pack_into("<I", data, 4, 24)
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_version == 24
+    assert result.metadata_tables_status == "unsupported_version"
+    assert result.metadata_definitions_status == "unsupported_version"
+    assert result.class_name_candidates == ["AuthenticationManager"]
+    assert "unsupported_metadata_version" in result.scan_errors
+    assert result.scan_status == "partial"
+
+
+def test_il2cpp_v29_type_table_reports_bad_method_ranges(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(
+        [], types=[{"name": "Vault", "namespace": "sample",
+                    "methods": [{"name": "load", "parameter_count": 1}]}],
+    ))
+    type_offset = struct.unpack_from("<I", data, 160)[0]
+    struct.pack_into("<H", data, type_offset + 64, 9)  # method_count exceeds table
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_definitions_status == "partial"
+    assert result.reconstructed_classes == ["sample.Vault"]
+    assert result.reconstructed_methods == []
+    assert "type_method_tables_partial" in result.scan_errors
+
+
+def test_il2cpp_v29_parameter_table_range_is_checked(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(
+        [], types=[{"name": "Profile", "methods": [
+            {"name": "load", "parameters": ["userId"]},
+        ]}],
+    ))
+    method_offset = struct.unpack_from("<I", data, 48)[0]
+    struct.pack_into("<I", data, method_offset + 16, 100)  # parameterStart exceeds table
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_definitions_status == "partial"
+    assert result.reconstructed_methods[0]["method_name"] == "load"
+    assert result.reconstructed_methods[0]["parameter_names"] == []
+    assert "type_method_tables_partial" in result.scan_errors
 
 
 def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
@@ -588,6 +708,41 @@ def test_smart_ui_crawler():
     assert "explicit operator approval" in decision4.explanation
 
 
+def test_smart_ui_crawler_omits_raw_labels_from_decision_explanations():
+    private_label = "synthetic-user@example.invalid"
+    permission = SmartUICrawler()
+    decision = permission.decide_next_action(
+        "com.example.app.MainActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        f'text="Allow {private_label}" resource-id="permission_allow_button" '
+        'clickable="true" bounds="[0,0][10,10]" /></hierarchy>',
+    )
+    assert decision.action == "WAIT"
+    assert private_label not in decision.explanation
+    assert private_label not in str(permission.visited_states)
+
+    exploratory = SmartUICrawler(allow_exploratory_clicks=True)
+    private_button_text = "Private Account Recovery 847291"
+    decision = exploratory.decide_next_action(
+        "com.example.app.MainActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        f'text="{private_button_text}" clickable="true" bounds="[0,0][10,10]" '
+        '/></hierarchy>',
+    )
+    assert decision.action == "CLICK"
+    assert private_button_text not in decision.explanation
+
+    submit = SmartUICrawler(allow_form_submit=True)
+    decision = submit.decide_next_action(
+        "com.example.app.LoginActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        'text="Confirm synthetic-user@example.invalid" resource-id="submit" '
+        'clickable="true" bounds="[0,0][10,10]" /></hierarchy>',
+    )
+    assert decision.action == "CLICK"
+    assert "synthetic-user@example.invalid" not in decision.explanation
+
+
 def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
     xml = '<hierarchy rotation="0" />'
     default_crawler = SmartUICrawler()
@@ -600,6 +755,21 @@ def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
     approved_decisions = [approved_crawler.decide_next_action("com.example.app.MainActivity", xml)
                           for _ in range(4)]
     assert approved_decisions[-1].action == "BACK"
+
+
+def test_smart_ui_crawler_stops_when_visited_state_budget_is_exhausted():
+    crawler = SmartUICrawler(allow_exploratory_clicks=True)
+    crawler.MAX_TRACKED_STATES = 1
+    first = '<hierarchy><node class="android.widget.Button" clickable="true" bounds="[0,0][1,1]" /></hierarchy>'
+    assert crawler.decide_next_action("com.example.app.FirstActivity", first).action == "CLICK"
+
+    second = '<hierarchy><node class="android.widget.Button" clickable="true" bounds="[0,0][2,2]" /></hierarchy>'
+    decision = crawler.decide_next_action("com.example.app.SecondActivity", second)
+
+    assert decision.action == "WAIT"
+    assert "tracking limit reached" in decision.explanation
+    assert crawler.state_tracking_truncated is True
+    assert len(crawler.visited_states) == 1
 
 
 def test_smart_ui_crawler_fails_closed_on_large_or_truncated_hierarchies():
@@ -634,16 +804,10 @@ def test_ui_crawler_factory_propagates_smart_crawler_opt_ins():
 
 def test_frida_stealth_harness():
     harness = FridaStealthHarness()
-    config = harness.generate_random_config()
-
-    assert config.daemon_name.startswith("android_sys_")
-    assert 32000 <= config.listen_port <= 59000
-    assert config.socket_path.startswith("/data/local/tmp/.sock_")
-
-    preamble = harness.get_stealth_preamble_script()
-    assert "pthread_create" in preamble
-    assert "release-keys" in preamble
-    assert "java.io.File" in preamble
+    with pytest.raises(NotImplementedError, match="Stealthy daemon deployment is disabled"):
+        harness.generate_random_config()
+    with pytest.raises(NotImplementedError, match="Anti-detection hook generation is disabled"):
+        harness.get_stealth_preamble_script()
 
 
 def test_privacy_manifest_auditor():

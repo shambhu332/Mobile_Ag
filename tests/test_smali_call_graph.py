@@ -961,6 +961,30 @@ def test_smali_malformed_switch_payload_marks_coverage_partial(tmp_path):
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_over_limit_switch_payload_marks_coverage_partial(tmp_path):
+    cases = "\n".join(f"        {index} -> :case_0" for index in range(10_001))
+    (tmp_path / "OverLimitSwitch.smali").write_text(f"""
+.class public Lcom/example/OverLimitSwitch;
+.super Ljava/lang/Object;
+.method public route(I)V
+    .registers 2
+    sparse-switch p1, :switch_data
+    return-void
+    :case_0
+    return-void
+    :switch_data
+    .sparse-switch
+{cases}
+    .end sparse-switch
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("malformed or over-limit switch payload" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_unmodeled_invoke_form_marks_register_flow_partial(tmp_path):
     (tmp_path / "CustomInvoke.smali").write_text("""
 .class public Lcom/example/CustomInvoke;
@@ -1002,6 +1026,25 @@ def test_smali_unknown_register_destination_form_marks_coverage_partial(tmp_path
     assert engine.coverage["static_status"] == "partial"
     assert any("unmodeled register-write form" in warning
                for warning in engine.coverage["register_dataflow_warnings"])
+
+
+def test_smali_register_diagnostics_are_bounded_and_report_truncation(tmp_path):
+    writes = "\n".join("    unsupported-op v0, v1" for _ in range(150))
+    (tmp_path / "ManyUnknownWrites.smali").write_text(f"""
+.class public Lcom/example/ManyUnknownWrites;
+.super Ljava/lang/Object;
+.method public transform()V
+    .registers 3
+{writes}
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert engine.coverage["register_dataflow_warning_count"] == 150
+    assert engine.coverage["register_dataflow_warnings_truncated"] is True
+    assert len(engine.coverage["register_dataflow_warnings"]) == 100
 
 
 def test_smali_unknown_register_write_does_not_keep_stale_source_taint(tmp_path):

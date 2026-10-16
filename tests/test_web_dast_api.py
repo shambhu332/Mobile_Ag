@@ -21,6 +21,8 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
 
     capture = SimpleNamespace(get_transactions=lambda: [HTTPTransaction(
         url="https://api.example.test/v1/me", method="GET", response_status=200,
+        response_headers={"Content-Type": "application/json",
+                          "Set-Cookie": "session_id=synthetic-export-cookie; Path=/"},
         response_body='{"account":"synthetic"}')],
         get_capture_stats=lambda: {'transaction_count': 1, 'stored_bytes_estimate': 256,
                                    'omitted_transactions': 0},
@@ -34,7 +36,29 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
     assert "/v1/me" in openapi.json()["paths"]
     har = client.get("/api/dast/api-capture/har")
     assert har.status_code == 200
-    assert har.json()["log"]["entries"][0]["request"]["method"] == "GET"
+    entry = har.json()["log"]["entries"][0]
+    assert entry["request"]["method"] == "GET"
+    assert {header["name"] for header in entry["response"]["headers"]} == {
+        "Content-Type", "Set-Cookie"
+    }
+    assert "synthetic-export-cookie" not in har.text
+
+
+def test_empty_scan_sbom_exports_use_a_valid_generic_application_purl(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    scan = {"scan_id": "synthetic-purl", "app_name": "org.example.demo", "version": "2.1.0",
+            "package_name": "org.example.demo", "dependencies": []}
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value=scan))
+
+    cyclonedx = client.get("/api/scans/synthetic-purl/cyclonedx")
+    assert cyclonedx.status_code == 200
+    component = cyclonedx.json()["components"][0]
+    assert component["type"] == "application"
+    assert component["purl"] == "pkg:generic/org.example.demo@2.1.0"
+    spdx = client.get("/api/scans/synthetic-purl/spdx")
+    assert spdx.status_code == 200
+    assert spdx.json()["packages"][0]["externalRefs"][0]["referenceLocator"] == component["purl"]
 
 
 def test_dast_devices_endpoint(client):
@@ -51,6 +75,42 @@ def test_dast_connect_endpoint(client):
     assert response.status_code == 200
     data = response.json()
     assert "status" in data
+
+
+def test_dast_connect_rechecks_policy_after_connect_attempt(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_connect_scope(host_port):
+        calls.append(host_port)
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "connect"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic ADB connect response"}
+
+    monkeypatch.setattr(web.adb_manager, "connect_device", revoke_connect_scope)
+    response = client.post("/api/dast/connect", json={"host_port": "127.0.0.1:5555"})
+    assert calls == ["127.0.0.1:5555"]
+    assert response.status_code == 403
+
+
+def test_dast_screenshot_withholds_image_after_policy_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+
+    async def revoke_screenshot_scope(serial):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "screenshot"]
+        web.repository().save_policy(policy)
+        return b"\x89PNG\r\n\x1a\nsynthetic-image"
+
+    monkeypatch.setattr(web.adb_manager, "capture_screenshot", revoke_screenshot_scope)
+    response = client.post("/api/dast/screenshot", json={"serial": "emulator-5554"})
+    assert response.status_code == 403
+    assert "image_b64" not in response.text
 
 
 def test_dast_root_endpoint(client):
@@ -74,6 +134,50 @@ def test_dast_logcat_endpoint(client):
 def test_dast_logcat_requires_explicit_package(client):
     response = client.get("/api/dast/logcat?serial=emulator-5554&lines=50")
     assert response.status_code in (403, 422)  # middleware scope may reject first
+
+
+def test_dast_logcat_withholds_result_after_scope_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    web.adb_manager.get_process_pids = AsyncMock(return_value=[4242])
+
+    async def revoke_during_log_read(*, serial, lines, pid):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "logcat"]
+        web.repository().save_policy(policy)
+        return ["synthetic log line"]
+
+    web.adb_manager.get_logcat_dump = AsyncMock(side_effect=revoke_during_log_read)
+    response = client.get(
+        "/api/dast/logcat?serial=emulator-5554&package_name=org.example&lines=10",
+    )
+    assert web.adb_manager.get_logcat_dump.await_count == 1
+    assert response.status_code == 403
+    assert "synthetic log line" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_device_wide_logcat_clear_is_retired(client, monkeypatch):
+    import importlib
+    from starlette.requests import Request
+    from fastapi import HTTPException
+
+    web = importlib.import_module("mobileag.web.app")
+    clear = AsyncMock(return_value=True)
+    monkeypatch.setattr(web.adb_manager, "clear_logcat", clear)
+    request = Request({
+        "type": "http", "headers": [],
+        "state": {"authenticated_token": web.app.state.auth_token},
+    })
+    with pytest.raises(HTTPException) as raised:
+        await web.clear_dast_logcat(web.DeviceActionRequest(serial="emulator-5554"), request)
+    assert raised.value.status_code == 410
+
+    response = client.post("/api/dast/logcat/clear", json={"serial": "emulator-5554"})
+    assert response.status_code == 403  # Retired action is also absent from scope choices.
+    clear.assert_not_awaited()
+    assert "data-onclick=\"static59\"" not in client.get("/").text
 
 
 def test_dast_fuzz_trigger_endpoint(client):
@@ -243,7 +347,11 @@ def test_dast_traffic_audit_marks_shadow_review_not_requested_when_missing(clien
     assert body["live_requests_sent"] == 0
 
 
-def test_dast_frida_unified_endpoint(client):
+def test_dast_frida_unified_endpoint(client, monkeypatch):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    attach = AsyncMock(side_effect=AssertionError("Safe profile must not execute Frida"))
+    monkeypatch.setattr(web.frida_runner, "execute_script_payload", attach)
     response = client.post(
         "/api/dast/frida",
         json={
@@ -252,10 +360,8 @@ def test_dast_frida_unified_endpoint(client):
             "script_type": "unified",
         },
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "unavailable"
-    assert "Unified Enterprise Runtime" in data["script"]
+    assert response.status_code == 403
+    attach.assert_not_awaited()
 
 
 def test_dast_execute_adb_endpoint(client):
@@ -270,6 +376,102 @@ def test_dast_execute_adb_endpoint(client):
     data = response.json()
     assert "status" in data
     assert "output" in data
+
+
+def test_dast_execute_adb_rechecks_scope_after_command(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_shell_scope(serial, command):
+        calls.append((serial, command))
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "execute_adb"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic shell output", "exit_code": 0}
+
+    monkeypatch.setattr(web.adb_manager, "execute_shell", revoke_shell_scope)
+    response = client.post("/api/dast/execute_adb", json={
+        "serial": "emulator-5554", "command": "echo synthetic",
+    })
+    assert calls == [("emulator-5554", "echo synthetic")]
+    assert response.status_code == 403
+
+
+def test_dast_execute_adb_command_length_is_bounded(client):
+    response = client.post("/api/dast/execute_adb", json={
+        "serial": "emulator-5554", "command": "x" * 4097,
+    })
+    assert response.status_code == 422
+
+
+def test_dast_install_rechecks_scope_after_archive_validation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    artifact = web.UPLOAD_DIR / "synthetic-install.apk"
+    artifact.write_bytes(b"synthetic APK fixture")
+
+    def revoke_install_scope(path):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "install"]
+        web.repository().save_policy(policy)
+        return "android"
+
+    monkeypatch.setattr(web, "validate_archive", revoke_install_scope)
+    installer = AsyncMock(return_value={"status": "success"})
+    monkeypatch.setattr(web.adb_manager, "install_apk", installer)
+    response = client.post("/api/dast/install", json={
+        "serial": "emulator-5554", "apk_path": str(artifact),
+        "grant_permissions": False,
+    })
+    assert response.status_code == 403
+    installer.assert_not_awaited()
+
+
+def test_dast_root_stops_before_verification_after_scope_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    commands = []
+
+    async def revoke_after_root_command(args, **kwargs):
+        commands.append(args)
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "root"]
+        web.repository().save_policy(policy)
+        return 0, b"synthetic root command result", b""
+
+    monkeypatch.setattr(web.adb_manager, "_exec_cmd", revoke_after_root_command)
+    check_root = AsyncMock(return_value=False)
+    monkeypatch.setattr(web.adb_manager, "_check_root", check_root)
+    response = client.post("/api/dast/root", json={"serial": "emulator-5554"})
+    assert response.status_code == 403
+    assert commands == [["-s", "emulator-5554", "root"]]
+    check_root.assert_not_awaited()
+
+
+def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_launch_scope(serial, component):
+        calls.append((serial, component))
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "launch"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic Activity Manager response"}
+
+    monkeypatch.setattr(web.adb_manager, "launch_activity", revoke_launch_scope)
+    response = client.post("/api/dast/launch", json={
+        "serial": "emulator-5554",
+        "component": "org.example/.MainActivity",
+    })
+    assert calls == [("emulator-5554", "org.example/.MainActivity")]
+    assert response.status_code == 403
 
 
 def test_copilot_requires_real_scan(client):

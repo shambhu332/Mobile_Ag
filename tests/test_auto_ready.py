@@ -115,7 +115,7 @@ def test_frida_status_denies_before_commands(client, monkeypatch, condition):
         monkeypatch.setenv('MOBILEAG_ALLOWED_DEVICES','-s')
         web.repository().save_policy({'devices':['-s'],'packages':[], 'origins':[], 'methods':[], 'actions':['frida_status']})
     if condition == 'action-not-approved':
-        policy = web.repository().get_policy(); policy['actions'] = ['frida']
+        policy = web.repository().get_policy(); policy['actions'] = []
         web.repository().save_policy(policy)
     if condition == 'unauthenticated': client = TestClient(web.app)
     assert client.get('/api/dast/frida/status', params={'serial':serial}).status_code in {401,403,422}
@@ -141,11 +141,11 @@ def test_frida_status_failure_sanitized(client, monkeypatch):
 
 
 @pytest.mark.parametrize('preset', ['crypto','root_bypass','unpinning'])
-def test_preset_preview_never_executes(client, monkeypatch, preset):
-    attach=AsyncMock(side_effect=AssertionError('Preview must never attach'))
+def test_frida_preset_preview_is_disabled(client, monkeypatch, preset):
+    attach=AsyncMock(side_effect=AssertionError('Disabled preview must not attach'))
     monkeypatch.setattr(web.frida_runner,'execute_script_payload',attach)
     response=client.get('/api/frida/presets/'+preset)
-    assert response.status_code==200 and response.json()['executed'] is False and response.json()['script']
+    assert response.status_code==410 and 'script' not in response.json()
     attach.assert_not_awaited(); web.adb_manager._exec_cmd.assert_not_awaited()
     assert client.get('/api/frida/presets/arbitrary').status_code==422
     assert TestClient(web.app).get('/api/frida/presets/'+preset).status_code==401

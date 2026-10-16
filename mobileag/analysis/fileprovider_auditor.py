@@ -49,9 +49,12 @@ class FileProviderAuditor:
     # Tags considered high risk if mapped to root or broad paths
     DANGEROUS_TAGS = {
         "root-path": "Exposes root filesystem (/); high risk of arbitrary file access across private app sandbox.",
+        "files-path": "Maps the app's internal files directory; review whether the full private files area should be shareable.",
+        "cache-path": "Maps the app's internal cache directory; review whether the full cache area should be shareable.",
         "external-path": "Exposes device external storage (/sdcard); permits shared storage traversal.",
         "external-files-path": "Exposes application-specific external files directory.",
         "external-cache-path": "Exposes application external cache directory.",
+        "external-media-path": "Exposes application external media directories.",
     }
 
     def audit_xml_content(self, xml_content: str, source_path: str = "res/xml/file_paths.xml") -> FileProviderAuditResult:
@@ -91,8 +94,17 @@ class FileProviderAuditor:
 
             is_dangerous = False
             risk_reason = ""
+            # A literal parent segment may broaden the configured directory
+            # after filesystem normalization. This remains a review candidate:
+            # this parser cannot establish canonicalization, URI grants, or
+            # caller reachability.
+            has_parent_segment = ".." in path_val.split("/")
+            path_is_root = all(part in {"", "."} for part in path_val.split("/"))
 
-            if tag == "root-path" and path_val in {".", "", "/"}:
+            if has_parent_segment:
+                is_dangerous = True
+                risk_reason = "path contains a '..' segment; review the normalized configured root and provider canonicalization"
+            elif tag == "root-path" and path_is_root:
                 is_dangerous = True
                 risk_reason = "root-path exposes root filesystem (/)"
             elif tag == "root-path":
@@ -100,13 +112,14 @@ class FileProviderAuditor:
                 # entire filesystem. Record it for review without claiming
                 # broad exposure solely from the tag name.
                 risk_reason = "root-path maps a restricted root-relative subdirectory; review grants and resolved files"
-            elif tag == "external-path" and (path_val in {".", "", "/"}):
+            elif tag == "external-path" and path_is_root:
                 is_dangerous = True
                 risk_reason = "external-path configured with root or current directory (.) exposing all external storage"
-            elif path_val in {".", ""}:
+            elif path_is_root:
                 if tag in self.DANGEROUS_TAGS:
                     is_dangerous = True
-                    risk_reason = f"{tag} maps to entire parent directory root with empty or '.' path"
+                    risk_reason = (self.DANGEROUS_TAGS[tag] if tag in {"files-path", "cache-path"}
+                                   else f"{tag} maps to entire parent directory root with empty or '.' path")
 
             entry = FileProviderPathEntry(
                 tag=tag,
@@ -122,14 +135,21 @@ class FileProviderAuditor:
                     id="FILEPROVIDER-" + hashlib.sha256(
                         "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
                     ).hexdigest()[:12].upper(),
-                    title=f"Insecure FileProvider Path Configuration ({tag})",
+                    title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
+                           else f"Review Broad FileProvider Path Configuration ({tag})"
+                           if tag in {"files-path", "cache-path"} and path_is_root
+                           else f"Insecure FileProvider Path Configuration ({tag})"),
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
                         f"(name='{name}', path='{path_val}'). {entry.risk_reason}. "
-                        "When combined with grantUriPermissions=\"true\", this can allow unauthorized third-party apps "
-                        "to read or write sensitive private application sandbox files."
+                        "This XML candidate alone does not establish exposure. A recipient can access a file only if "
+                        "the effective provider implementation can construct/serve its URI and the app issues an "
+                        "applicable read or write URI grant (or exposes equivalent access); actual file scope and "
+                        "caller reachability require separate review."
                     ),
-                    severity="HIGH" if tag == "root-path" else "MEDIUM",
+                    severity=("INFO" if has_parent_segment or
+                              (tag in {"files-path", "cache-path"} and path_is_root)
+                              else "HIGH" if tag == "root-path" else "MEDIUM"),
                     file_path=source_path,
                     line_number=1,
                     code_snippet=f"<{child.tag} name=\"{name}\" path=\"{path_val}\" />",

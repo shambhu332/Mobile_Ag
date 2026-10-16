@@ -40,7 +40,9 @@ class RaspResilienceAuditor:
     """Inventory candidate resilience-related strings without scoring effectiveness."""
 
     ROOT_INDICATORS = [
-        "su", "/system/bin/su", "/system/xbin/su", "/sbin/su", "daemonsu",
+        # A bare `su` substring matches ordinary Smali directives such as
+        # `.super`; retain only context-bearing command/path indicators.
+        "/system/bin/su", "/system/xbin/su", "/sbin/su", "daemonsu",
         "magisk", "zygisk", "Superuser", "eu.chainfire.supersu", "busybox",
         "test-keys", "which su", "/data/local/su"
     ]

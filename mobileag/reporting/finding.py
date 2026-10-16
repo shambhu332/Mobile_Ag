@@ -68,7 +68,8 @@ class Finding(BaseModel):
     # ── Generated Outputs ──
     frida_script: Optional[str] = Field(
         default=None,
-        description="Generated Frida hook script (JS) for manual execution",
+        exclude=True,
+        description="Legacy field accepted for migration but never exported",
     )
     poc_guide: Optional[str] = Field(
         default=None,
@@ -138,7 +139,6 @@ class Finding(BaseModel):
             "description": self.description,
             "code": self.code_snippet,
             "remediation": self.remediation,
-            "frida_script": self.frida_script,
             "poc_guide": self.poc_guide,
             "status": self.status.value,
             "validation_evidence": self.validation_evidence,

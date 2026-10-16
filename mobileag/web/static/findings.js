@@ -152,79 +152,11 @@
       return `### Suggested manual review (not executed): ${escapeHtml(String(f.title ?? ""))}\n\n#### Prerequisites\n- Connected Android device or emulator with ADB authorized\n- Target application (\`${pkg}\`) installed\n\n#### Steps to Reproduce\n1. Inspect target component declarations:\n   \`adb shell dumpsys package ${pkg} | grep -A 8 "${comp.split('.').pop()}"\`\n2. Issue tailored invocation probe:\n   \`adb shell am start -n ${pkg}/${comp}\`\n3. Observe execution flow and verify sink invocation in Logcat.\n\n#### Record actual results\nRecord authorization denials, observed behavior and negative controls. A successful shell invocation is not proof of ordinary-app exploitation.\n\n#### Impact\nNot established. Validate the attacker-controlled input, crossed boundary, prerequisites and reproducibility before confirming this candidate.`;
     }
 
-    function getOrGenerateAdbCommand(f) {
-      if (f.adb_command) return f.adb_command;
-      const pkg = document.getElementById('top-package-name')?.textContent || 'com.target.mobile.app';
-      const comp = f.affected_component || 'MainActivity';
-      if (comp.includes('Activity') || comp.includes('activity')) {
-        return `am start -n ${pkg}/${comp}`;
-      } else if (comp.includes('Service') || comp.includes('service')) {
-        return `am startservice -n ${pkg}/${comp}`;
-      } else if (comp.includes('Receiver') || comp.includes('receiver')) {
-        return `am broadcast -n ${pkg}/${comp}`;
-      }
-      return `dumpsys package ${pkg} | grep -i "${comp.split('.').pop()}"`;
-    }
-
-    function getOrGenerateFridaScript(f) {
-      if (f.frida_script) return f.frida_script;
-      const comp = f.affected_component || 'com.target.mobile.app.MainActivity';
-      return `// Frida Hook for ${f.cwe_id || 'Vulnerability Verification'}\nJava.perform(function () {\n    try {\n        var Target = Java.use("${comp}");\n        console.log("[+] Successfully hooked: ${comp}");\n        // Intercept lifecycle methods or security gates\n    } catch (e) {\n        console.log("[-] Class hook deferred: " + e);\n    }\n});`;
-    }
-
     function getOrGenerateProofEvidence(f) {
       if(f.validation_evidence)return 'Structured analyst attestation (not independently verified):\n'+JSON.stringify(f.validation_evidence,null,2);
       return f.validation_notes
         ? 'Analyst-provided notes (not independently verified):\n' + f.validation_notes
         : 'No runtime validation evidence recorded. Static findings and generated guides are unverified review candidates.';
-    }
-
-    async function executeAdbFromPoc(command) {
-      const terminal = document.getElementById('poc-adb-terminal');
-      if (!terminal) return;
-      const dev = dastActiveDevice;
-      if (!dev) {
-        terminal.innerHTML += `\n<span class="text-amber-400">[!] No explicitly selected authorized device. Connect a device/emulator via Device Diagnostics first.</span>`;
-        return;
-      }
-      if (!window.confirm('Run this diagnostic command on ' + dev + '?\n' + command + '\nSample-derived commands are untrusted.')) return;
-      terminal.innerHTML += `\n<span class="text-sky-400">$ adb -s ${escapeHtml(String(dev))} shell ${escapeHtml(command)}</span>\n<span class="text-slate-400">Executing on ${escapeHtml(String(dev))}...</span>`;
-      terminal.scrollTop = terminal.scrollHeight;
-      try {
-        const res = await fetch('/api/dast/execute_adb', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dev, command: command })
-        });
-        const data = await res.json();
-        terminal.innerHTML += `\n<span class="text-emerald-400">[+] Output:</span>\n${escapeHtml(data.output || '(No standard output)')}\n`;
-        terminal.scrollTop = terminal.scrollHeight;
-        showToast('ADB command finished; inspect evidence before confirming any finding.', 'success');
-      } catch (err) {
-        terminal.innerHTML += `\n<span class="text-red-400">[-] Execution failed: ${escapeHtml(err.message)}</span>\n`;
-        terminal.scrollTop = terminal.scrollHeight;
-      }
-    }
-
-    async function deployFridaFromPoc(scriptType) {
-      const dev = dastActiveDevice;
-      if (!dev) {
-        showToast('Connect a device first via Device Diagnostics', 'error');
-        return;
-      }
-      const pkg = document.getElementById('top-package-name')?.textContent || 'com.target.mobile.app';
-      showToast(`Injecting Frida hook into ${pkg}...`, 'info');
-      try {
-        const res = await fetch('/api/dast/frida', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dev, package_name: pkg, script_type: scriptType || 'unpinning' })
-        });
-        const data = await res.json();
-        showToast(`Frida: ${escapeHtml(String(data.status ?? ""))} — ${data.result?.message || 'Inspect result'}`, data.status === 'executed' ? 'success' : 'error');
-      } catch (err) {
-        showToast(`Frida deployment error: ${err}`, 'error');
-      }
     }
 
     function askCopilotAboutFinding(findingId) {
@@ -253,8 +185,6 @@
       }`;
 
       const pocGuide = getOrGeneratePocGuide(f);
-      const adbCmd = getOrGenerateAdbCommand(f);
-      const fridaScript = getOrGenerateFridaScript(f);
       const proofEvidence = getOrGenerateProofEvidence(f);
 
       // Populate Djini.ai Exploit PoC Studio
@@ -283,12 +213,6 @@
         <div class="flex items-center gap-1 border-b border-borderSubtle pb-1 overflow-x-auto text-[11px] font-mono">
           <button id="subtab-btn-poc" data-onclick="static85" class="poc-subtab-btn px-2.5 py-1 rounded bg-sky-950 text-sky-400 border border-sky-800 flex items-center gap-1">
             <i data-lucide="zap" class="w-3 h-3 text-amber-400"></i> Step-by-Step PoC
-          </button>
-          <button id="subtab-btn-adb" data-onclick="static86" class="poc-subtab-btn px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1">
-            <i data-lucide="terminal" class="w-3 h-3 text-emerald-400"></i> 1-Click ADB
-          </button>
-          <button id="subtab-btn-frida" data-onclick="static87" class="poc-subtab-btn px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1">
-            <i data-lucide="code" class="w-3 h-3 text-purple-400"></i> Frida Hook
           </button>
           <button id="subtab-btn-proof" data-onclick="static88" class="poc-subtab-btn px-2.5 py-1 rounded text-slate-400 hover:text-white flex items-center gap-1">
             <i data-lucide="check-circle-2" class="w-3 h-3 text-cyan-400"></i> Proof Evidence
@@ -319,59 +243,7 @@
           </div>
         </div>
 
-        <!-- Pane 2: 1-Click ADB Verification -->
-        <div id="poc-pane-adb" class="poc-tab-pane hidden space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono uppercase text-slate-400 font-semibold flex items-center gap-1">
-              <i data-lucide="terminal" class="w-3 h-3 text-emerald-400"></i> Verification CLI Command
-            </span>
-            <div class="flex items-center gap-2">
-              <button ${bindAction('click', () => copySnippet('adb shell ' + adbCmd))} class="px-2 py-0.5 rounded bg-slate-800 text-sky-400 hover:text-sky-300 text-[10px] font-mono flex items-center gap-1">
-                <i data-lucide="copy" class="w-3 h-3"></i> Copy adb
-              </button>
-              <button ${bindAction('click', () => executeAdbFromPoc(adbCmd))} class="px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-mono font-semibold flex items-center gap-1 shadow-sm transition">
-                <i data-lucide="play" class="w-3 h-3"></i> ▶ Run on Device
-              </button>
-            </div>
-          </div>
-          <div class="bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
-            <code>adb shell ${escapeHtml(adbCmd)}</code>
-          </div>
-          <div>
-            <div class="flex items-center justify-between mb-1 text-[10px] font-mono text-slate-400">
-              <span>Interactive Device Terminal Output:</span>
-              <button data-onclick="static91" class="text-slate-500 hover:text-slate-300 text-[10px]">Clear</button>
-            </div>
-            <div id="poc-adb-terminal" class="bg-black border border-borderSubtle rounded-lg p-3 font-mono text-[10px] text-slate-300 h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed shadow-inner">
-              <span class="text-slate-500">// Device execution output will appear here when you click 'Run on Device'...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Pane 3: Frida Hook Script -->
-        <div id="poc-pane-frida" class="poc-tab-pane hidden space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono uppercase text-slate-400 font-semibold flex items-center gap-1">
-              <i data-lucide="code" class="w-3 h-3 text-purple-400"></i> Dynamic Instrumentation Hook
-            </span>
-            <div class="flex items-center gap-2">
-              <button ${bindAction('click', () => copySnippet(fridaScript))} class="px-2 py-0.5 rounded bg-slate-800 text-purple-300 hover:text-purple-200 text-[10px] font-mono flex items-center gap-1">
-                <i data-lucide="copy" class="w-3 h-3"></i> Copy Script
-              </button>
-              <button data-onclick="static92" class="px-2.5 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-mono font-semibold flex items-center gap-1 shadow-sm transition">
-                <i data-lucide="play" class="w-3 h-3"></i> ▶ Check preset initialization
-              </button>
-            </div>
-          </div>
-          <div class="bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap">
-            <pre><code>${escapeHtml(fridaScript)}</code></pre>
-          </div>
-          <div class="text-[10px] font-mono text-slate-400 bg-card p-2 rounded-lg border border-borderSubtle">
-            <span class="text-sky-400 font-semibold">CLI Command:</span> <code>frida -U -f ${escapeHtml(document.getElementById('top-package-name')?.textContent || 'com.target.mobile.app')} -l hook.js</code>
-          </div>
-        </div>
-
-        <!-- Pane 4: Proof Evidence -->
+        <!-- Pane 2: Proof Evidence -->
         <div id="poc-pane-proof" class="poc-tab-pane hidden space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-mono uppercase text-slate-400 font-semibold flex items-center gap-1">

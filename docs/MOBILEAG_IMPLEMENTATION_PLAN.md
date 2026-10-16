@@ -1,56 +1,52 @@
 # MobileAg Master Technical Architecture & Implementation Blueprint
 
 ## Purpose and Scope
-This document provides an exhaustive, step-by-step technical implementation roadmap for expanding the **MobileAg** mobile security testing and assessment platform. It bridges the capabilities of commercial market leaders (**NowSecure**, **Oversecured**, **Appknox**, **Data Theorem**, **Guardsquare**, **Ostorlab**, and **Approov**) into MobileAg’s local-first, evidence-bound architecture.
+This document records an audited implementation plan for the **MobileAg** local-first mobile security assessment platform. It does not claim feature parity with commercial products, exhaustive coverage, or production readiness. Scope and completion claims are bounded by the evidence recorded below.
 
-Every section details:
-- **Architectural Design & Purpose**
-- **Exact File Locations & Target Modules**
-- **Technical Algorithms & Data Flow**
-- **Integration Points with MobileAg Core**
+Depending on the section, this plan records implementation areas, evidence status,
+coverage limits, and outstanding safety or external-validation gates.
 
 ---
 
 ```
 MobileAg Master Blueprint Architecture
 ├── 1. Advanced Static Analysis & Taint Tracking
-│   ├── Inter-Procedural & Cross-File Call Graph Engine
-│   ├── Component Lifecycle-Aware Flow Tracing
+│   ├── Bounded Inter-Procedural Smali Call Graph and Taint Candidates
+│   ├── Bounded Android Callback/Intent Flow Candidates
 │   └── Android IPC Vulnerability Auditing (PendingIntent, FileProvider, Task Hijacking)
 ├── 2. Multi-Framework & Non-Dalvik Binary Analysis
-│   ├── Flutter Dart Snapshot Symbol & String Extractor
-│   ├── React Native Hermes (.hbc) Bytecode Decompiler
-│   ├── Unity IL2CPP Reconstructor (Metadata + libil2cpp.so)
-│   └── iOS Mach-O & Swift Metadata Analyzer
+│   ├── Flutter Snapshot String Candidates (Not a Dart Decompiler)
+│   ├── React Native Hermes (.hbc) String Candidates (Not a Decompiler)
+│   ├── Bounded Unity IL2CPP Metadata Candidates
+│   └── Bounded iOS Mach-O & Swift Metadata Candidates
 ├── 3. Advanced Dynamic Instrumentation & Frida Harness
-│   ├── Universal Stealth & Port-Randomized Frida Daemon
-│   ├── Multi-Layer TLS/SSL Unpinning (Java, Native BoringSSL, Flutter)
-│   ├── In-Memory Crypto & Key Lifecycle Harvester
-│   └── Runtime Memory Forensics & Cleartext Cache Auditor
+│   ├── Transparent, Explicitly Scoped Runtime Observation
+│   ├── TLS Configuration Review (No Pinning Bypass)
+│   ├── Cryptographic API Metadata Review (No Key/Plaintext Capture)
+│   └── Non-Destructive Memory/Storage Exposure Review (No Secret Collection)
 ├── 4. Automated IPC Fuzzing & Exploit PoC Synthesis
 │   ├── Dynamic Deep Link & Custom Scheme Mutation Fuzzer
 │   ├── ContentProvider Traversal & Injection Fuzzer
-│   └── Compilable Exploit PoC Generator (Oversecured/OVAA Parity)
+│   └── Review-Only PoC Output (Never Execution Authorization)
 ├── 5. Mobile Backend API & Token Security Engine
 │   ├── Automated API Cataloger & OpenAPI 3.0 / HAR Exporter
-│   ├── Automated BOLA / IDOR Dual-Session Replay Fuzzer
+│   ├── Offline Dual-Session Observation Evaluator (Replay Not Implemented)
 │   └── Mobile Token & Session Lifecycle Auditor
-├── 6. Binary Hardening & RASP Resilience Scoring
-│   ├── 6-Vector MASVS-RESILIENCE Scoring Engine
-│   ├── Obfuscation Ratio & Control Flow Flattening Calculator
-│   └── Anti-Tampering, Anti-Debugging & Root Evasion Evaluator
-├── 7. Autonomous Dynamic UI Exploration (Smart Crawler)
-│   ├── Semantic UI Form Filling (Credentials, Search, Forms)
-│   ├── OS Permission & Biometric Prompt Bypass
+├── 6. Binary Hardening & RASP/Resilience Candidate Inventory
+│   ├── Bounded RASP/Resilience Candidate Inventory (No Aggregate Score)
+│   └── Static Anti-Tampering/Debugging Indicator Review
+├── 7. Researcher-Guided UI Observation (Smart Crawler)
+│   ├── Researcher-Guided Synthetic Form Handling
+│   ├── Consent-Aware Permission/Prompt Handling (No Bypass)
 │   └── UI State Hashing & Loop Prevention
 ├── 8. Mobile SBOM, Supply Chain & Privacy Manifests
-│   ├── Standardized CycloneDX v1.5 & SPDX 2.3 Generators
-│   ├── Real-Time OSV Advisory Enrichment (Offline / Authorized Online)
+│   ├── CycloneDX v1.5 & SPDX 2.3 Inventory Generators
+│   ├── Opt-In OSV Advisory Lookup (Offline by Default; Unverified)
 │   └── Apple Privacy Manifest (PrivacyInfo.xcprivacy) & Google Play Data Safety Auditor
-└── 9. Dashboard, Telemetry & Reporting Engine
+└── 9. Dashboard, Bounded Telemetry & Reporting
     ├── WebSocket/SSE Real-Time Telemetry Stream
     ├── Interactive Attack Surface Graph Visualization (Vis.js / Neo4j)
-    └── Enterprise Exporting (SARIF 2.1.0, Executive PDF, Professional Markdown)
+    └── SARIF 2.1.0, PDF and Markdown Exports
 ```
 
 ---
@@ -66,7 +62,7 @@ MobileAg Master Blueprint Architecture
   - `mobileag/analysis/taint_engine.py` (Enhancement)
 * **Technical Implementation**:
   1. **Global Symbol Registry**: During initial decompilation, parse all class declarations and record their Fully Qualified Class Name (FQCN), superclasses, implemented interfaces, method signatures, and field declarations into an in-memory SQLite/KV store.
-  2. **Inter-Procedural Call Linking**: When method `ClassA.entry()` calls `helper.process(input)`, resolve `helper`’s declared type via the Symbol Registry. Propagate the taint status of parameter `input` to the formal parameter of `ClassB.process()`.
+2. **Bounded Inter-Procedural Call Linking**: When supported Smali invoke instructions resolve a method declared in the APK, propagate taint to mapped formal parameter registers, including receiver/wide-argument slots; bounded summaries also carry supported static-field and return-value taint. This is a may-flow candidate, not arbitrary Java/Kotlin/Smali cross-language resolution or full interprocedural control-flow analysis.
   3. **Android Lifecycle Roots**: A bounded subset of exact callback signatures (`onNewIntent`, `onReceive`, `onStartCommand`, `onHandleIntent`, `onActivityResult`, `onBind`, `onUnbind`) now seeds incoming `Intent` parameters only when the parsed superclass chain reaches the expected Android base. This is not a complete lifecycle CFG, manifest-reachability, or component-registration analysis; other callbacks and callback variants remain unsupported.
   4. **Source-to-Sink Mapping**: Maintain strict evidence bounds:
      - *Smali source-to-sink model*: `Activity.getIntent()`/`Context.getIntent()`, bounded exact-signature lifecycle `Intent` callback parameters, `ContentResolver.query()`, and public Smali method parameters annotated with `@JavascriptInterface` are modeled as source candidates (the latter still needs bridge registration, enabled JavaScript, frame-origin and loaded-content review). Intent extra getters (`getStringExtra`, typed extras, `getExtras`/`getBundleExtra`) and `Intent.getData()`/`getDataString()`/`getScheme()`/`getAction()`/`getType()`/`getClipData()`, Bundle/Uri/Cursor accessors, and `ClipData` item/URI accessors derive taint only from an already-tainted receiver; `Uri.toString()` preserves that taint. A locally constructed or otherwise untainted Intent does not seed these accessors. This describes the bounded Smali register-flow model, not equivalent precision in Java AST/lexical analysis. External-content candidates flow from an already-tainted URI passed to selected `ContentResolver` open methods, or an already-tainted path passed through bounded `File`/`Path` conversions to selected stream constructors or NIO `Files` readers, through bounded read APIs. This does not prove path accessibility, URI reachability/grants, or attacker control of returned bytes.
@@ -135,47 +131,19 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ---
 
-## 3. Dynamic Instrumentation & Runtime Frida Harness
+## 3. Transparent Dynamic Instrumentation & Runtime Validation
 
-### 3.1 Universal Stealth Instrumentation Daemon
-* **Objective**: Run dynamic Frida tests reliably without triggering commercial anti-Frida or anti-debugging defenses.
-* **Target Files**:
-  - `mobileag/dast/frida_stealth.py` (New)
-  - `mobileag/dast/frida_runner.py` (Enhancement)
-  - `mobileag/dast/adb_manager.py` (Enhancement)
-* **Technical Implementation**:
-  1. **Binary Renaming & Socket Randomization**:
-     - Automatically push a randomized-name binary (e.g., `mag_daemon_8492`) via ADB.
-     - Bind to an ephemeral Unix domain socket or non-standard port instead of default TCP `27042`.
-  2. **Thread & Memory Camouflage**:
-     - Inject an early initialization hook that patches `pthread_create` to rename `gum-js-loop` threads.
-     - Intercept `/proc/self/maps` and `/proc/self/status` reads to mask Frida-related memory mappings (`frida-agent.so`).
+### 3.1 Authorized, visible instrumentation
+* **Objective**: Support reproducible runtime observations only on an explicitly authorized package/build and researcher-selected device.
+* **Safe scope**: Require an explicit device serial, package validation, just-in-time scope guard, operator approval, and preserved tool/build provenance. Report instrumentation state and failures honestly; do not conceal the agent, evade anti-debugging/anti-analysis controls, rename artifacts to avoid detection, or camouflage threads, sockets, or process memory.
 
-### 3.2 Universal Multi-Engine TLS/SSL Unpinning
-* **Objective**: Enable full proxy interception across Java, native C++, and Flutter network stacks.
-* **Target Files**:
-  - `mobileag/dast/unpinning_engine.py` (New)
-  - `mobileag/generators/templates/frida/unpinning.js` (Enhancement)
-* **Technical Implementation**:
-  1. **Java Layer**:
-     - Hook `javax.net.ssl.TrustManagerFactory.getTrustManagers()`.
-     - Hook `okhttp3.CertificatePinner.check()`.
-     - Bypass `NetworkSecurityConfigProvider`.
-  2. **Native C/C++ Layer**:
-     - Hook OpenSSL/BoringSSL verification callbacks (`SSL_CTX_set_custom_verify`, `SSL_set_verify`).
-  3. **Flutter Engine**:
-     - Scan memory for `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so` and patch the return value to bypass pinning.
+### 3.2 TLS configuration review (no pinning bypass)
+* **Objective**: Identify configured trust and certificate-pinning behavior without disabling it.
+* **Safe scope**: Review Android Network Security Config and application/framework configuration statically. Network capture is allowed only for a researcher-controlled test build that explicitly trusts the lab CA. Do not hook or patch certificate-verification callbacks, change trust decisions, scan/patch Flutter binaries, or claim complete traffic visibility when pinning prevents capture. Missing traffic is an evidence gap, not a reason to bypass the control.
 
-### 3.3 In-Memory Cryptography & Key Harvester
-* **Objective**: Extract live encryption keys, initialization vectors, and plaintext payloads at runtime.
-* **Target Files**:
-  - `mobileag/dast/crypto_harvester.py` (New)
-* **Technical Implementation**:
-  1. Hook `javax.crypto.Cipher.init(int opmode, Key key, AlgorithmParameterSpec params)`:
-     - Log algorithm name, mode (flagging `ECB`), and key size.
-     - Capture raw key bytes from `SecretKeySpec.getEncoded()`.
-  2. Hook `javax.crypto.Cipher.doFinal(byte[] input)` to capture unencrypted plaintext data before it is encrypted or after it is decrypted.
-  3. Hook `net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase` to harvest local database encryption passwords.
+### 3.3 Cryptographic API metadata review (no key/plaintext harvesting)
+* **Objective**: Record bounded cryptographic-use metadata for an authorized synthetic test case.
+* **Safe scope**: If separately approved, record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Prefer static API/configuration analysis; require output redaction and retention limits for any runtime metadata. This does not establish key entropy, data confidentiality, or cryptographic correctness.
 
 ---
 
@@ -208,44 +176,36 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Path Traversal: `content://<authority>/../../../../data/data/<package>/databases/app.db`
      - Projection/Selection SQLi: `content://<authority>/users --projection "* FROM users WHERE 1=1 --"`
   3. Verify whether file descriptors or database rows are leaked without required permissions.
+* **Observation handling**: Explicit `SecurityException` / `Permission Denial` output takes precedence over SQL-parser wording; a denied query is not classified as an observed SQL error or a vulnerability.
 
-### 4.3 Automated Exploit PoC Generator (Oversecured / OVAA Parity)
-* **Objective**: Generate standalone, compilable exploit code proving the real-world impact of discovered vulnerabilities.
+### 4.3 Review-Only PoC Output (Not Execution Authorization)
+* **Objective**: Provide bounded review material for eligible, analyst-attested findings without claiming independent proof or authorizing execution.
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Technical Implementation**:
-  1. For every confirmed high-severity IPC flaw, synthesize a complete Android exploit module:
-     - Standalone Kotlin/Java activity source code.
-     - `AndroidManifest.xml` targeting the vulnerable component.
-     - Exact `Intent` construction with extras, flags, and URI parameters.
-  2. Output both a standalone `.kt` script and a ready-to-run ADB exploit command line.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
 
 ---
 
 ## 5. Mobile Backend API & Token Security Engine
 
-### 5.1 Dynamic API Cataloger & OpenAPI 3.0 Exporter
-* **Objective**: Map the entire attack surface of backend APIs utilized by the mobile application.
+### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
+* **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
 * **Technical Implementation**:
-  1. Capture all HTTP/HTTPS transactions routed through `mobileag/dast/mitm_proxy.py`.
+  1. Retain only bounded traffic actually observed by supported capture paths. HTTPS interception is not implemented; use only an explicitly configured researcher-controlled test build where appropriate.
   2. Deduplicate requests by method, host, path template, and query parameter signatures.
   3. Infer request/response JSON schemas and auto-generate an **OpenAPI 3.0 specification (`openapi.json`)**.
   4. Flag "Shadow APIs" (undocumented endpoints seen in traffic that are not declared in mobile code).
 
-### 5.2 Automated BOLA / IDOR Dual-Session Replay Fuzzer
-* **Objective**: Automatically detect Broken Object Level Authorization across mobile APIs.
+### 5.2 Offline BOLA / IDOR Dual-Session Observation Evaluator
+* **Objective**: Compare researcher-supplied observations for a synthetic canary; automated request replay and server-side authorization verification are not implemented.
 * **Target Files**:
   - `mobileag/dast/bola_fuzzer.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
-* **Technical Implementation**:
-  1. Accept two authorized test session tokens from the Test Plan (`Session_A` and `Session_B`).
-  2. Identify API endpoints containing resource identifiers (e.g., `/api/v2/orders/94821` or `?account_id=104`).
-  3. Replay requests for User A's resources using User B's authentication tokens.
-  4. If the server returns HTTP 200 with User A's private data, generate a verified BOLA/IDOR finding with full HTTP request/response evidence.
+* **Boundary**: Offline extraction returns identifier candidates only. The evaluator compares already-supplied account-A/account-B responses and requires a synthetic canary in both successful controls before labeling an observation as a candidate. It never accepts or replays session tokens, stores raw response bodies, or emits a verified BOLA verdict. Any live replay requires separate target authorization, researcher-controlled accounts/data, scope review, and independent evidence.
 
 ### 5.3 Mobile Token & Session Lifecycle Auditor
 * **Objective**: Audit mobile authentication tokens, JWT lifecycle claims, cleartext transmission, and session revocation.
@@ -253,7 +213,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   - `mobileag/dast/token_session_auditor.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
 * **Technical Implementation**:
-  1. Parse JWT header and payload claims to flag insecure algorithm `none` (CWE-347) and weak symmetric keys (CWE-327).
+  1. Parse bounded JWT header and payload indicators, including an observed `alg=none`; reject duplicate JSON object members rather than choosing an ambiguous claim/header value. Do not infer server acceptance or estimate key entropy/strength from token bytes.
   2. Inspect expiration claims (`exp`, `iat`) to detect missing expiration, expired tokens in use, or excessive lifetimes (CWE-613).
   3. Flag cleartext HTTP transmission of authorization tokens (CWE-319) and tokens passed in URL query strings (CWE-598).
   4. Detect session token reuse after logout or de-authentication requests (CWE-613).
@@ -262,28 +222,18 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ---
 
-## 6. Binary Hardening & RASP Resilience Scoring
+## 6. Binary Hardening & RASP/Resilience Candidate Inventory
 
-### 6.1 6-Vector MASVS-RESILIENCE Scoring Engine
-* **Objective**: Benchmark binary resilience against reverse engineering and tampering (Guardsquare/Promon parity).
+### 6.1 Bounded Static Resilience Indicator Review (No Aggregate Score)
+* **Objective**: Inventory bounded Smali names/strings as manual-review leads. No MASVS conformance, protection effectiveness, or product-parity score is produced.
 * **Target Files**:
   - `mobileag/analysis/rasp_resilience_auditor.py` (New)
   - `mobileag/analysis/binary_protection_auditor.py` (Enhancement)
-* **Technical Implementation**:
-  Compute an aggregate **Resilience Score (0–100%)** based on six automated checks:
-
-| Vector | Technical Metric | Evaluation Standard |
-| :--- | :--- | :--- |
-| **Identifier Obfuscation** | Ratio of short/scrambled identifiers (`a.b.c()`) vs. human-readable names. | MASVS-RESILIENCE-1 |
-| **Control Flow Complexity** | Cyclomatic complexity and presence of switch-based state dispatchers. | MASVS-RESILIENCE-2 |
-| **String Pool Entropy** | Shannon entropy calculation across string pools to detect string encryption. | MASVS-RESILIENCE-3 |
-| **Anti-Root / Jailbreak** | Presence of heuristic checks for `su`, Magisk, Zygisk, and root packages. | MASVS-RESILIENCE-4 |
-| **Anti-Debugging** | Enforcement of `debuggable="false"` and native `ptrace(PTRACE_TRACEME)` calls. | MASVS-RESILIENCE-5 |
-| **Tamper Resistance** | Verification of APK signature check calls (`PackageManager.GET_SIGNATURES`). | MASVS-RESILIENCE-6 |
+* **Current boundary**: The analyzer inventories bounded Smali strings/names and reports coverage; it withholds aggregate/per-vector scores and control-flow conclusions. The ambiguous bare `su` substring is excluded because it matches ordinary directives such as `.super`; candidate indicators do not prove that controls are reachable, effective, or resistant to an attacker.
 
 ---
 
-## 7. Autonomous Dynamic UI Exploration (Smart Crawler)
+## 7. Researcher-Guided UI Observation (Smart Crawler)
 
 ### 7.1 Semantic UI Form Filling & Navigation
 * **Objective**: Replace dumb random monkey clicks with intelligent UI exploration that can navigate authentication forms and permission prompts.
@@ -296,15 +246,15 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Inputs matching `user|email|phone` or `pass|pin|secret` may be filled only with researcher-supplied synthetic values and an explicit `allow_test_credential_entry` opt-in; otherwise return `WAIT`.
      - Permission/consent buttons matching `allow|grant|accept` are recognized but must return `WAIT` for operator review; never auto-consent or tap them.
   3. **State Hashing & Loop Prevention**:
-     - Compute a truncated SHA-256 state key over the activity and sorted resource IDs (or short visible labels for elements without IDs); raw labels are not persisted by the state counter.
-     - Track visited state counts. Repeated-state `BACK` navigation, exploratory taps, and form submission are separate opt-ins; defaults return `WAIT`.
+     - Compute a truncated SHA-256 state key over the activity and sorted resource IDs (or short visible labels for elements without IDs); raw labels are not persisted by the state counter or copied into action explanations.
+     - Track visited state counts with a finite per-crawler state budget; when exhausted, stop and return `WAIT`. Repeated-state `BACK` navigation, exploratory taps, and form submission are separate opt-ins; defaults return `WAIT`.
 
 ---
 
-## 8. Mobile SBOM, Supply Chain & Privacy Compliance
+## 8. Mobile SBOM, Supply Chain Inventory & Privacy Declaration Review
 
 ### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
-* **Objective**: Generate enterprise-grade Software Bill of Materials for mobile applications.
+* **Objective**: Generate bounded, interoperable SBOM inventory documents; schema validity and coverage limits do not establish complete dependency inventory or supply-chain assurance.
 * **Target Files**:
   - `mobileag/analysis/sbom_generator.py` (New)
   - `mobileag/analysis/dependency_scanner.py` (Enhancement)
@@ -315,7 +265,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   4. Query the Open Source Vulnerabilities (OSV) database to attach known CVEs to inventoried components.
 
 ### 8.2 Privacy Manifest & Google Play Data Safety Auditor
-* **Objective**: Verify compliance with Apple Privacy Manifests and Google Play Data Safety declarations.
+* **Objective**: Compare bounded static declaration evidence with selected manifest/source indicators for manual privacy review; do not claim legal or platform-policy compliance.
 * **Target Files**:
   - `mobileag/analysis/privacy_manifest_auditor.py` (New)
 * **Technical Implementation**:
@@ -329,25 +279,25 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ## 9. Dashboard, Telemetry & Enterprise Reporting
 
-### 9.1 Real-Time WebSocket Telemetry Streaming
-* **Objective**: Provide live visual feedback of dynamic testing progress on the web dashboard.
+### 9.1 Session-Scoped WebSocket Telemetry
+* **Objective**: Deliver authenticated scan-scoped telemetry already emitted by supported workflows; this is not a complete event bus for every tool.
 * **Target Files**:
   - `mobileag/web/app.py` (Enhancement)
   - `mobileag/web/static/telemetry.js` (Enhancement)
-* **Technical Implementation**:
-  1. Implement a FastAPI WebSocket route (`/ws/scans/{scan_id}/telemetry`).
-  2. Stream real-time events: tool execution status, Frida hook detections, captured HTTP requests, and crawler screenshots.
+* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
 
 ### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
-* **Objective**: Visualize relationships between components, permissions, deep links, and APIs.
+* **Objective**: Visualize currently modeled component/finding/API-candidate associations; do not label co-occurrence as data flow or an exploit chain.
 * **Target Files**:
   - `mobileag/knowledge/neo4j_graph.py` (Enhancement)
   - `mobileag/web/static/interface.js` (Enhancement)
-* **Technical Implementation**:
-  1. Render an interactive network graph of the mobile application:
-     - Nodes: Activities, Services, ContentProviders, Receivers, API Endpoints, Local Databases.
-     - Edges: Intents, URI Grants, Network Calls, Data Flows.
-  2. Highlight vulnerable paths in red with click-to-expand evidence panels.
+* **Current boundary**: Graph nodes and edges reflect available stored associations. Explicit Intent, URI-grant, network-call, source/sink, and validated vulnerable-path edges are not implemented. Click-through finding evidence is available for modeled findings; no path should be colored or described as vulnerable without independent path evidence.
+
+Graph exports now allowlist legacy vulnerability lifecycle/proof labels before
+placing them in Vis.js node tooltip text; missing or unexpected values render as
+`unknown`. A synthetic regression exercises markup-like and non-string legacy
+values. This is output hardening, not live Neo4j isolation or graph-completeness
+evidence.
 
 ---
 
@@ -368,17 +318,17 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 | Blueprint area | Checkout evidence | Status / remaining work |
 |---|---|---|
-| Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Smali source/sink recognition matches exact owner + method names; WebView sinks include `loadUrl`, `loadData`, `loadDataWithBaseURL`, and `postUrl`. Local may-flow propagates taint through supported exact-signature invocation arguments into static/instance callee parameter registers (including wide parameter slots), with source/sink file and line evidence. Intent extra/data/metadata accessors (`getStringExtra()`/typed extras/`getExtras()`, `getData()`/`getDataString()`/`getScheme()`/`getAction()`/`getType()`/`getClipData()`), Bundle/Uri getters, Cursor value getters (`getString`, `getBlob`, and primitive value accessors), and bounded ClipData item/URI getters derive taint only when their receiver already carries taint, avoiding unconditional source treatment for arbitrary internal objects; `Uri.toString()` preserves the taint. External-content candidates now require a tainted URI passed to selected `ContentResolver` open methods or a tainted path passed through a bounded `File(String)`/`File.toPath()` conversion to selected file-stream constructors / `Files.readString` / `Files.readAllBytes` / `Files.newInputStream` / `Files.newBufferedReader` (with `Paths.get` preserving taint); taint propagates through a bounded set of stream/reader constructors and scalar/array `read`, `readLine`, `readAllBytes`, and selected Scanner methods. Synthetic regressions exercise URI → ContentResolver → reader → `readLine` and a char-array `read` → array load → StringBuilder → WebView sink. This models a candidate read from a selected path/URI input, not proof that the path resolves to content accessible to the app, that a URI is reachable or granted, that returned bytes are attacker-controlled, or that the source is authentic; platform API availability is also unresolved. Bounded array-element taint tracks `filled-new-array` elements and `aput`/`aget` through register aliases, but does not distinguish indexes or prove array/object identity. `fill-array-data` clears the destination register's tracked element-taint summary because its static payload replaces contents, but alias/object identity effects remain unresolved and register-flow coverage is marked partial. Primitive register moves, supported numeric conversions, and supported arithmetic operators (including `rsub-int/lit8`) preserve taint as a conservative may-flow; wide writes clear both destination words, and wide moves merge taint from either source word; untainted arithmetic and constant writes including `const-method-type`/`const-method-handle` clear stale register taint. Supported String transformations plus bounded StringBuilder/StringBuffer constructor, mutator, and toString operations preserve taint through local object-register aliases; builder identity across fields and calls is unresolved. Exact static-field reads/writes and bounded method-return summaries propagate tainted register values between exact methods, but not callee heap side effects; instance-field reads clear overwritten register taint and mark coverage partial to avoid stale-value false positives, and instance-field writes also mark partial coverage because field-value propagation and heap identity remain unmodeled. A limited set of exact Android callback signatures (`onNewIntent`, `onReceive`, `onStartCommand`, `onHandleIntent`, `onActivityResult`, `onBind`, and `onUnbind`) seeds the incoming `Intent` parameter for derived accessors only when the parsed superclass chain reaches the expected Android callback base; synthetic negative controls now verify a same-named callback on a non-Android class and a normal helper `Intent` parameter are not treated as lifecycle roots. This does not prove component registration, export state, caller privileges, or runtime reachability. Public `@JavascriptInterface` annotated method parameters are seeded as untrusted-source candidates, but annotation presence does not establish WebView bridge registration, enabled JavaScript, target API behavior, frame origin, loaded content, or reachability. This is not full interprocedural taint: instance fields and heap side effects, virtual dispatch/overrides, unsupported invoke forms such as `invoke-custom`/`invoke-polymorphic` (which mark coverage partial but do not propagate return taint), unrecognized destination-shaped register writes (which clear stale destination taint, mark coverage partial, and do not assume operand propagation), tainted arguments passed to calls without a local implementation or modeled summary mark coverage partial (their return/heap effects are not propagated), sanitizers, exception semantics, platform reachability and authorization are unresolved; budgets and skipped methods are exposed. The synthetic local-register evaluator now also covers a provider Cursor flow, NIO path reads, and hard-negative untainted URI/path controls; it still measures only public individual CWE/sink-line cases (including duplicate CWEs and conditional branches), not blind or independent accuracy, cross-file accuracy, APK recall, or field false-positive rates. Packed/sparse switch payload target resolution has synthetic positive coverage, but malformed/over-limit switch payloads and broad unsupported-syntax accounting remain open; independent corpora remain open. |
-| IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. FileProvider XML scanning now uses bounded no-symlink inventory reads (5,000 entries, 2 MiB/file, 32 MiB total), filters to `res/xml*`, avoids duplicate recursive/direct matches, exposes coverage, reports parse/size/root-shape errors, and rejects DTD/entity declarations before XML parsing. Intent-redirection lexical scans now use the same file/entry/total bounds, skip symlinks, expose partial coverage, and reject forward-in-time extraction matches; method scope and component reachability remain unresolved, so findings are review candidates only. PendingIntent Java/Kotlin scans now use bounded no-symlink reads with coverage surfaced in the scan and receive the parsed target SDK. Missing mutability on target API 31+ is reported as an INFO compatibility lead (expected Android 12+ creation failure if executed), not a CWE-927 exploit claim; unknown/older targets retain a bounded mutability review candidate. Token distribution, receiver capability, and runtime path still require review. Task-affinity inventory now resolves an alias to exactly one parsed activity using canonicalized component names; it inherits affinity and launch mode from that target per Android's alias semantics and emits an INFO lead only for an exported alias with a literal non-default effective affinity. Missing/ambiguous targets withhold effective alias values and findings. This is not a StrandHogg exploit verdict or a blanket `singleTask` recommendation. Deep-link mutation generation now bounds input/query count, percent-encodes payloads while preserving other parameters, and the ADB launcher quotes each remote-shell argument; execution still requires an explicit serial and just-in-time scope guard. Launcher stdout/stderr are drained with a 4 KiB retained prefix per stream and are not persisted in results; observed byte count/truncation is exposed. The helper does not collect logcat/crash tombstones or establish exploitability, and generic activity-manager errors are not labeled crashes. Provider fuzz probes now require an explicit serial and per-command scope guard, validate authority/package/projection input, issue read-only SQL probe cases against both selection and projection fields, and quote remote shell arguments; they drain stdout/stderr concurrently while retaining at most 4 KiB per stream, expose observed byte counts/truncation, and omit raw provider output from result records. Neither these probes nor the other candidate analyzers establish runtime exploitability; FileProvider binary resources are not decoded. |
-| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter binary reads now have both per-file and 32 MiB aggregate byte budgets; printable-string iteration is capped at 100,000 per binary and distinct endpoint/route/secret-marker output is capped, with explicit truncation errors. Flutter binary and asset discovery, and IL2CPP library discovery, use the bounded no-symlink `SourceInventory` instead of unbounded `os.walk` directory materialization; Flutter applies one shared tree-entry cap across library and asset inventory and rejects symlinked parent paths. Truncation, scan status, byte counts, and errors are exposed. Flutter still scans only bounded printable strings, not Dart snapshot structures. Hermes bundle reads now use one bounded no-follow read, cap printable-string iteration and retained strings/endpoints, redact credential-like values in returned samples, and mark the scan partial with explicit errors when input or candidate output is truncated; `function_count` remains unknown rather than a misleading zero. The Hermes pass is still printable-string extraction, not a structured Hermes string-table parser or bytecode decompiler. IL2CPP now validates the version-29 global-metadata header ranges and bounded string-literal records (8-byte records, bounded literal sizes/count/UTF-8 reads), and extracts URL/secret-marker/class-name candidates from those parsed literals without retaining raw literal values. Unsupported metadata versions retain a bounded printable-string fallback; malformed v29 tables yield partial coverage. Tree and metadata reads, literal/candidate iteration, and endpoint/class outputs are bounded, and symlink paths are skipped. Class-like names remain lexical candidates; type and method definition tables are not reconstructed, and no independent corpus establishes format coverage. Credential-like matches emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction, Hermes control-flow decompilation, or IL2CPP type/method table reconstruction is implemented. |
+| Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Smali source/sink recognition matches exact owner + method names; WebView sinks include `loadUrl`, `loadData`, `loadDataWithBaseURL`, and `postUrl`. Local may-flow propagates taint through supported exact-signature invocation arguments into static/instance callee parameter registers (including wide parameter slots), with source/sink file and line evidence. Intent extra/data/metadata accessors (`getStringExtra()`/typed extras/`getExtras()`, `getData()`/`getDataString()`/`getScheme()`/`getAction()`/`getType()`/`getClipData()`), Bundle/Uri getters, Cursor value getters (`getString`, `getBlob`, and primitive value accessors), and bounded ClipData item/URI getters derive taint only when their receiver already carries taint, avoiding unconditional source treatment for arbitrary internal objects; `Uri.toString()` preserves the taint. External-content candidates now require a tainted URI passed to selected `ContentResolver` open methods or a tainted path passed through a bounded `File(String)`/`File.toPath()` conversion to selected file-stream constructors / `Files.readString` / `Files.readAllBytes` / `Files.newInputStream` / `Files.newBufferedReader` (with `Paths.get` preserving taint); taint propagates through a bounded set of stream/reader constructors and scalar/array `read`, `readLine`, `readAllBytes`, and selected Scanner methods. Synthetic regressions exercise URI → ContentResolver → reader → `readLine` and a char-array `read` → array load → StringBuilder → WebView sink. This models a candidate read from a selected path/URI input, not proof that the path resolves to content accessible to the app, that a URI is reachable or granted, that returned bytes are attacker-controlled, or that the source is authentic; platform API availability is also unresolved. Bounded array-element taint tracks `filled-new-array` elements and `aput`/`aget` through register aliases, but does not distinguish indexes or prove array/object identity. `fill-array-data` clears the destination register's tracked element-taint summary because its static payload replaces contents, but alias/object identity effects remain unresolved and register-flow coverage is marked partial. Primitive register moves, supported numeric conversions, and supported arithmetic operators (including `rsub-int/lit8`) preserve taint as a conservative may-flow; wide writes clear both destination words, and wide moves merge taint from either source word; untainted arithmetic and constant writes including `const-method-type`/`const-method-handle` clear stale register taint. Supported String transformations plus bounded StringBuilder/StringBuffer constructor, mutator, and toString operations preserve taint through local object-register aliases; builder identity across fields and calls is unresolved. Exact static-field reads/writes and bounded method-return summaries propagate tainted register values between exact methods, but not callee heap side effects; instance-field reads clear overwritten register taint and mark coverage partial to avoid stale-value false positives, and instance-field writes also mark partial coverage because field-value propagation and heap identity remain unmodeled. A limited set of exact Android callback signatures (`onNewIntent`, `onReceive`, `onStartCommand`, `onHandleIntent`, `onActivityResult`, `onBind`, and `onUnbind`) seeds the incoming `Intent` parameter for derived accessors only when the parsed superclass chain reaches the expected Android callback base; synthetic negative controls now verify a same-named callback on a non-Android class and a normal helper `Intent` parameter are not treated as lifecycle roots. This does not prove component registration, export state, caller privileges, or runtime reachability. Public `@JavascriptInterface` annotated method parameters are seeded as untrusted-source candidates, but annotation presence does not establish WebView bridge registration, enabled JavaScript, target API behavior, frame origin, loaded content, or reachability. This is not full interprocedural taint: instance fields and heap side effects, virtual dispatch/overrides, unsupported invoke forms such as `invoke-custom`/`invoke-polymorphic` (which mark coverage partial but do not propagate return taint), unrecognized destination-shaped register writes (which clear stale destination taint, mark coverage partial, and do not assume operand propagation), tainted arguments passed to calls without a local implementation or modeled summary mark coverage partial (their return/heap effects are not propagated), sanitizers, exception semantics, platform reachability and authorization are unresolved; budgets and skipped methods are exposed. The synthetic local-register evaluator now also covers a provider Cursor flow, NIO path reads, and hard-negative untainted URI/path controls; it still measures only public individual CWE/sink-line cases (including duplicate CWEs and conditional branches), not blind or independent accuracy, cross-file accuracy, APK recall, or field false-positive rates. Packed/sparse switch payload target resolution has synthetic positive coverage; malformed and over-limit payloads now have regressions confirming partial coverage is reported rather than silently accepted. Register-flow diagnostics retain at most 100 warning samples and expose total observed warning events plus whether samples were truncated; this improves visibility but is not comprehensive Smali opcode/syntax coverage. Independent corpora remain open. |
+| IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. FileProvider XML scanning now uses bounded no-symlink inventory reads (5,000 entries, 2 MiB/file, 32 MiB total), filters to `res/xml*`, avoids duplicate recursive/direct matches, exposes coverage, reports parse/size/root-shape errors, and rejects DTD/entity declarations before XML parsing. Broad `external-media-path` roots (`.` or empty) are included as unverified configuration review candidates. Empty/`.` `files-path` and `cache-path` roots (including equivalent slash/dot spellings) are also recorded as INFO candidates because they map entire app-internal directories; no grant or external access is inferred. A literal `..` path segment now emits an INFO, unverified FileProvider configuration review candidate; it does not establish canonicalized root escape, a URI grant, or caller access. FileProvider analyzer descriptions require separate evidence of a served URI, effective grant, and caller reachability rather than implying unauthorized access from XML alone. Intent-redirection lexical scans now use the same file/entry/total bounds, skip symlinks, expose partial coverage, and reject forward-in-time extraction matches; method scope and component reachability remain unresolved, so findings are review candidates only. PendingIntent Java/Kotlin scans now use bounded no-symlink reads with coverage surfaced in the scan and receive the parsed target SDK. Missing mutability on target API 31+ is reported as an INFO compatibility lead (expected Android 12+ creation failure if executed), not a CWE-927 exploit claim; unknown/older targets retain a bounded mutability review candidate. Token distribution, receiver capability, and runtime path still require review. Task-affinity inventory now resolves an alias to exactly one parsed activity using canonicalized component names; it inherits affinity and launch mode from that target per Android's alias semantics and emits an INFO lead only for an exported alias with a literal non-default effective affinity. Missing/ambiguous targets withhold effective alias values and findings. This is not a StrandHogg exploit verdict or a blanket `singleTask` recommendation. Deep-link mutation generation now bounds input/query count, percent-encodes payloads while preserving other parameters, and the ADB launcher quotes each remote-shell argument; execution still requires an explicit serial and just-in-time scope guard. Launcher stdout/stderr are drained with a 4 KiB retained prefix per stream and are not persisted in results; observed byte count/truncation is exposed. The helper does not collect logcat/crash tombstones or establish exploitability, and generic activity-manager errors are not labeled crashes. Provider fuzz probes now require an explicit serial and per-command scope guard; an explicit boolean `False` or guard exception blocks the command (normal return values including `None` retain exception-based guard compatibility). The separate approved-fixture `ProviderAuditor` also honors boolean denial before and after its shell query, so post-action revocation withholds findings. They validate authority/package/projection input, issue read-only SQL probe cases against both selection and projection fields, and quote remote shell arguments; they drain stdout/stderr concurrently while retaining at most 4 KiB per stream, expose observed byte counts/truncation, and omit raw provider output from result records. Neither these probes nor the other candidate analyzers establish runtime exploitability; FileProvider binary resources are not decoded. |
+| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter binary reads now have both per-file and 32 MiB aggregate byte budgets; printable-string iteration is capped at 100,000 per binary and distinct endpoint/route/secret-marker output is capped, with explicit truncation errors. Flutter binary and asset discovery, and IL2CPP library discovery, use the bounded no-symlink `SourceInventory` instead of unbounded `os.walk` directory materialization; Flutter applies one shared tree-entry cap across library and asset inventory and rejects symlinked parent paths. Truncation, scan status, byte counts, and errors are exposed. Flutter still scans only bounded printable strings, not Dart snapshot structures. URLs from Flutter, Hermes, and IL2CPP are propagated as UNKNOWN-method embedded-string candidates; the orchestrator does not infer an HTTP method or callability from a URL string. Hermes bundle reads now use one bounded no-follow read, cap printable-string iteration and retained strings/endpoints, redact credential-like values in returned samples, and mark the scan partial with explicit errors when input or candidate output is truncated; `function_count` remains unknown rather than a misleading zero. The Hermes pass is still printable-string extraction, not a structured Hermes string-table parser or bytecode decompiler. IL2CPP now validates the version-29 global-metadata header ranges and bounded string-literal records (8-byte records, bounded literal sizes/count/UTF-8 reads), and extracts URL/secret-marker/class-name candidates from those parsed literals without retaining raw literal values. Unsupported metadata versions retain a bounded printable-string fallback and explicitly report `scan_status=partial` with `unsupported_metadata_version`; this does not decode those versions or establish coverage beyond lexical candidates. Malformed v29 tables yield partial coverage. Tree and metadata reads, literal/candidate iteration, and endpoint/class outputs are bounded, and symlink paths are skipped. A bounded v29 type/member-table pass now resolves class namespaces/names, field names, method names, and parameter names/counts into review-only records. It does not resolve field/return/parameter types, generic constructs, native method bodies, or emit a complete `dump.cs`; names are metadata candidates, not source reconstruction. The orchestrator now retains bounded structured IL2CPP metadata summaries in scan state and API responses, with explicit static-candidate, non-exhaustive, runtime-not-tested, and not-proven labels; analysis errors are reflected as incomplete coverage. Other versions and format variants remain unsupported or unverified, and no independent corpus establishes format coverage. Credential-like matches emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction or Hermes control-flow decompilation is implemented; the IL2CPP parser does not produce a complete C# symbol dump or method/type signatures. |
 | iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Partial structural parser and bounded Swift name/field inventory.** The bounded thin 32/64-bit passes validate header/load-command and `LC_SEGMENT`/`LC_SEGMENT_64` section bounds, inventory dylib load commands and bounded `LC_SYMTAB` names, recognize Swift section names from actual section records, and extract capped printable strings only from parsed `__cstring` file ranges. A bounded `__swift5_types` pass resolves direct relative entries for class/struct/enum context descriptors and emits valid UTF-8 nominal type-name candidates. A bounded `__swift5_protos` pass now resolves direct protocol descriptor entries and emits protocol-name candidates; relative-indirectable entries remain partial and are not dereferenced. When direct field metadata is present, the parser validates the `__swift5_fieldmd` section/record bounds and returns UTF-8 field-name candidates grouped by type; it does not resolve field types or reconstruct declarations. Malformed ranges and unresolved names produce partial status. This is not full metadata/type/field/protocol reconstruction; protocol conformances from `__swift5_proto`, requirement signatures, and associated-type semantics remain unparsed. Parse status/errors and section/import/symbol/Swift type/field/protocol inventories are exposed with the iOS analysis summary; legacy whole-file Swift section-name, URL, and framework strings remain lexical candidates distinct from parsed section/import evidence. Fat/FAT64 architecture tables now receive bounded slice-count/range and table-vs-slice CPU agreement validation. Mach-O input is opened as a no-follow regular file and a truncated read forces partial status for thin and fat files; lexical URL enumeration and returned endpoint candidates are capped with explicit partial status. Complete `__TEXT`/cstring coverage above the 15 MiB input cap and robust independent malformed-corpus validation remain incomplete. Synthetic fixtures prove only these specific cases, not universal Mach-O compatibility.
-| Frida stealth, TLS bypass, crypto harvesting | `dast/frida_stealth.py`, `unpinning_engine.py`, `crypto_harvester.py` | **Not accepted as a completed or safe feature.** Scripts are generators; no current-device validation is implied. Anti-detection/evasion and bypass behavior are outside this plan's completion criteria. Preserve explicit scope and do not treat modified-lab observations as ordinary-app proof. |
-| IPC fuzzing / PoC synthesis | `deeplink_intent_fuzzer.py`, `provider_fuzzer.py`, `generators/poc_apk_synthesizer.py` | **Prototype / not proof-grade.** Provider probes now report read/query success and SQL errors as observations, not vulnerability verdicts. Generated PoCs still need parameter validation and evidence-bound review; no gate establishes independent confirmation before generation. The dashboard now defers the generated-PoC request until the researcher explicitly opens that finding’s PoC tab; the read-only loopback navigator allows only the matching bounded GET route. Dynamic use requires exact authorization and human review. |
-| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. The offline `/api/dast/traffic/audit` endpoint optionally compares supplied captured transactions with typed static endpoint declarations; it sends no requests and reports `not_requested` when declarations are absent. Traffic-audit findings normalize identifier-shaped paths and omit URL userinfo/query values rather than copying captured URLs into evidence. Shadow-API review normalizes numeric/UUID/email/token-shaped route IDs, supports method-specific declarations and canonical origin matching (including omission of default HTTP/HTTPS ports), and omits userinfo, query values, and raw ID-shaped path values; declarations supplied as path-only strings are origin/method wildcards. Static `APIMapper` route output strips URL userinfo, drops query/fragment values, percent-encodes path controls, and templates obvious numeric, UUID, email, and opaque mixed path IDs; Empty/missing API-mapping roots return `not_analyzed` rather than resolving `Path("")` to the process working directory. Retrofit, route-literal, and URL matches are iterated lazily, endpoint de-duplication uses normalized redacted routes, and reaching the finding cap marks coverage partial. This best-effort redaction does not guarantee removal of arbitrary secrets. These remain unverified leads because static endpoint extraction may be incomplete. BOLA candidate extraction is offline-only and bounds URLs to 8,192 characters, query metadata to 100 fields, and candidate values to 256 characters; malformed authorities and over-limit query sets fail closed. TrafficAuditor caps sensitive-query parsing at 256 fields and emits an explicit incomplete-coverage lead rather than treating an over-limit URL as a clean CWE-598 review. The evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. Result records omit raw resource IDs, credentials, and endpoint query/fragment data, template recognized identifier path segments, and retain only a digest rather than the response body; response hashing and canary comparison are capped at 1 MiB of text and explicitly mark truncated/invalid input. An offline dual-session observation comparator now requires the same supplied canary in successful A and B responses, but does not verify account identity, request equivalence, ownership, or server authorization. It remains an evaluator, not a replay system; no network requests are performed. JWT parsing is bounded and claim findings are explicitly unverified; output omits raw tokens and arbitrary header/claim values, retains only algorithm/lifecycle/claim-name indicators, and sanitizes endpoint URLs. An opt-in offline verifier now supports HS256/HS384/HS512 only with an explicitly supplied local key and constant-time comparison; asymmetric algorithms, key discovery, server acceptance, and key entropy/strength beyond JWA's minimum byte length are not assessed. The verifier is not automatically applied to captured traffic. Logout/reuse is only a same-token, status-sequence observation, not proof a protected resource was authorized. OpenAPI grouping preserves canonical per-origin servers, omits userinfo/default ports, and brackets IPv6 literals for valid server URLs. Captured route paths replace numeric, canonical UUID, email-shaped, and token-shaped opaque segments (at least 24 mixed alphanumeric/underscore/hyphen characters) with required string path parameters; this heuristic may parametrize long route slugs and does not cover shorter or differently encoded IDs. JSON shape inference omits value-like object keys (UUIDs, long tokens/IDs, numeric IDs, and email-shaped keys) and marks that redaction; property values are never exported. Query-key signatures are deduplicated separately and merged as observed parameters, without exporting observed path/query values in the OpenAPI document. Generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. Malformed authorities/ports, overlong URLs, and unsupported schemes are excluded from OpenAPI endpoint modeling and counted under `invalidURLs`/`unmodeledRequests`; query metadata is parsed centrally and capped at 100 fields with 256-character names; traffic-catalog adapters do not expand query strings before the cap, and over-limit captures are counted as unmodeled instead of producing partial query signatures. Cataloger HAR retention is separately capped at 10,000 transactions, 2 MiB per transaction, and 16 MiB estimated aggregate; over-budget transactions are omitted while bounded endpoint modeling continues when inputs permit, and the capture estimates/omission counts are exposed. JSON shape inference also rejects bodies over a 1 Mi-character cap before decoding. Bounded HAR export still redacts captured values. HTTPS capture and dual-session replay remain open. |
+| Frida stealth, TLS bypass, crypto harvesting | `dast/frida_stealth.py`, `unpinning_engine.py`, `crypto_harvester.py`, `generators/frida_generator.py` | **Retired in the safe profile.** Hook/template generators and their ready-to-run payloads are removed; compatibility entry points refuse generation. The scan orchestrator no longer generates or writes Frida scripts. Crypto fixture parsing retains only bounded operation/algorithm labels and discards key, IV, plaintext, and payload fields. This does not implement authorized visible runtime instrumentation; that remains a separately reviewed external/device gate. |
+| IPC / dynamic verification / PoC synthesis | `deeplink_intent_fuzzer.py`, `provider_fuzzer.py`, `verification_loop.py`, `generators/poc_apk_synthesizer.py` | **Prototype / not proof-grade.** Provider probes report read/query success and SQL errors as observations, not vulnerability verdicts. PoC generation requires a CONFIRMED lifecycle state plus active structured analyst-attested evidence bound to the exact target package; this is not independent verification. Unverified, malformed, inactive, cross-package, and unsupported interpolated component/authority/affinity/URI/finding-ID values fail closed. Generated commands/source remain review artifacts with `execution_authorized=false`; no generated PoC is executed. The former free-form `adb shell` path has been replaced by one deep-link-only dispatch observation requiring a CWE-601 candidate, explicit serial, just-in-time exact package/serial guard returning `True`, operator approval, synthetic-data confirmation, and bounded custom-scheme URI/timeout. The output is only an Activity Manager dispatch observation (`verified=false`); it cannot change finding status or establish impact. Other probe types remain disabled. Target package type/length and Kotlin-interpolated component syntax now fail closed; independent confirmation and proof-grade generation remain open. The dashboard defers generation until the researcher opens that finding’s PoC tab; the read-only loopback navigator allows only the matching bounded GET route. |
+| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. The offline `/api/dast/traffic/audit` endpoint optionally compares supplied captured transactions with typed static endpoint declarations; it sends no requests and reports `not_requested` when declarations are absent. Traffic-audit findings normalize identifier-shaped paths and omit URL userinfo/query values rather than copying captured URLs into evidence. Shadow-API review normalizes numeric/UUID/email/token-shaped route IDs, supports method-specific declarations and canonical origin matching (including omission of default HTTP/HTTPS ports), and omits userinfo, query values, and raw ID-shaped path values; declarations supplied as path-only strings are origin/method wildcards. Static `APIMapper` blanks Java/Kotlin comments, Smali `#` comments, XML comments (preserving CDATA), and JS/Dart line/block comments while retaining string literals and line offsets; JS/Dart route-template interpolations are normalized to `{id}`, and unclosed XML comments/CDATA mark coverage partial, then extracts Retrofit verb/path declarations (including HEAD/OPTIONS and literal Retrofit `@HTTP` method/path pairs), route-literal endpoint candidates across Java/Kotlin as well as resource/bundle sources, and URL review leads with relative source-file and 1-based line evidence; route-only candidates retain `method=UNKNOWN`, and unknown/custom Retrofit method tokens are never guessed (their literal path may still appear as a route-only candidate); the general `@HTTP` annotation parser is quote-aware and capped at 4 KiB, with unsupported or oversized declarations reflected in partial-coverage diagnostics. Route output strips URL userinfo, drops query/fragment values, percent-encodes path controls, and templates obvious numeric, UUID, email, and opaque mixed path IDs; Empty/missing API-mapping roots return `not_analyzed` rather than resolving `Path("")` to the process working directory. Retrofit, route-literal, and URL matches are iterated lazily, endpoint de-duplication uses normalized redacted routes, and reaching the finding cap marks coverage partial. This best-effort redaction does not guarantee removal of arbitrary secrets. These remain unverified leads because static endpoint extraction may be incomplete. BOLA candidate extraction is offline-only and bounds URLs to 8,192 characters, query metadata to 100 fields, and candidate values to 256 characters; malformed authorities and over-limit query sets fail closed. TrafficAuditor caps sensitive-query parsing at 256 fields and emits an explicit incomplete-coverage lead rather than treating an over-limit URL as a clean CWE-598 review. The evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. Result records omit raw resource IDs, credentials, and endpoint query/fragment data, template recognized identifier path segments, and retain only a digest rather than the response body; response hashing and canary comparison are capped at 1 MiB of text and explicitly mark truncated/invalid input. An offline dual-session observation comparator now requires the same supplied canary in successful A and B responses, but does not verify account identity, request equivalence, ownership, or server authorization. It remains an evaluator, not a replay system; no network requests are performed. JWT parsing is bounded and claim findings are explicitly unverified; `exp`/`iat` are exposed only for exact int/float values that are finite and within the supported epoch range (booleans, NaN/infinities, and out-of-range numbers are omitted while claim presence remains distinct). Per-transaction request headers are capped at 100 entries; malformed, over-limit, oversized Authorization values, or duplicate case-insensitive Authorization fields mark coverage partial, and raw header values are not copied into coverage. The auditor inspects at most the first bounded authorization value when duplicates exist, so the status remains partial rather than implying all credentials were reviewed. Output omits raw tokens and arbitrary header/claim values, retains only algorithm/lifecycle/claim-name indicators, and sanitizes endpoint URLs. An opt-in offline verifier now supports HS256/HS384/HS512 only with an explicitly supplied local key and constant-time comparison; asymmetric algorithms, key discovery, server acceptance, and key entropy/strength beyond JWA's minimum byte length are not assessed. The verifier is not automatically applied to captured traffic. Logout/reuse is only a same-token, status-sequence observation, not proof a protected resource was authorized. OpenAPI grouping preserves canonical per-origin servers, omits userinfo/default ports, and brackets IPv6 literals for valid server URLs. Static URL review recognizes bracketed IPv6 authorities, case-insensitive schemes, and escaped slash separators in serialized source strings, emitting only unverified literal-use candidates; it does not test network reachability or effective cleartext policy. Captured route paths replace numeric, canonical UUID, and email-shaped segments, long mixed alphanumeric token-shaped segments, and shorter (8-23 character) mixed-case alphanumeric segments with required string path parameters; percent-encoded ASCII is decoded only for this redaction decision. This privacy-first heuristic may parametrize route slugs, while short lowercase IDs, malformed encodings, or other encodings may remain unmodeled. JSON shape inference omits value-like object keys (UUIDs, long tokens/IDs, numeric IDs, and email-shaped keys) and marks that redaction; property values are never exported. Query-key signatures are deduplicated separately and merged as observed parameters, without exporting observed path/query values in the OpenAPI document. Generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. Malformed authorities/ports, overlong URLs, and unsupported schemes are excluded from OpenAPI endpoint modeling and counted under `invalidURLs`/`unmodeledRequests`; query metadata is parsed centrally and capped at 100 fields with 256-character names; traffic-catalog adapters do not expand query strings before the cap, and over-limit captures are counted as unmodeled instead of producing partial query signatures. Cataloger HAR retention is separately capped at 10,000 transactions, 2 MiB per transaction, and 16 MiB estimated aggregate; over-budget transactions are omitted while bounded endpoint modeling continues when inputs permit, and the capture estimates/omission counts are exposed. JSON shape inference also rejects bodies over a 1 Mi-character cap before decoding. Bounded HAR export still redacts captured values. HTTPS capture and dual-session replay remain open. |
 | RASP / resilience | `rasp_resilience_auditor.py` | **Bounded Smali string/name inventory only.** The API inventories all discovered canonical `smali` / `smali_classesN` roots under a shared entry/file/byte budget and exposes root-discovery and analysis coverage; ambiguous roots, multiple extraction bases, symlinks, or truncated discovery fail closed. Aggregate and per-vector scores/pass states are withheld (`null`); control-flow assessment is explicitly unknown rather than inferred from obfuscation, and string entropy is not treated as proof of encryption. Candidate strings do not establish reachable/effective defenses. No MASVS conformance or runtime resistance is demonstrated. |
 | Smart UI crawler | `smart_crawler.py`, `ui_crawler.py` | **Safety correction made in this revision.** No hard-coded credentials. Permission/consent prompts always stop at `WAIT`; researcher-supplied test credential entry, form submission, exploratory taps, and repeated-state `BACK` navigation each require explicit opt-in. Runtime UI observation now requires an explicit serial, validated package name, and just-in-time scope guard; the background DAST workflow propagates that guard. Legacy tap/text helpers are inert and issue no ADB commands; the observer only returns planned-action review data. Both crawler hierarchy parsers cap input at 2 Mi characters and reject more than 5,000 nodes; DTD/entity declarations are rejected, and over-limit/malformed input produces no partial action candidates. The separate Android automation snapshot parser caps encoded input at 1 MiB and now also rejects DTD/entity declarations before parsing. These are bounded parser behaviors, not assurances of safe or accurate UI interpretation. |
 | SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Dependency scans inventory bounded ELF `ET_DYN` `.so` candidates by path, SHA-256, class and machine; native release versions and vulnerability advisories are not inferred. Native-library tree discovery uses the shared bounded no-symlink inventory, so directory entries are capped before traversal results are sorted/materialized. iOS privacy-manifest candidates and Android Java/Kotlin/Smali source paths also use bounded no-symlink `SourceInventory` traversal; Android source reads retain per-file and aggregate byte caps, and coverage reports entry/file/read limits and skipped symlinks. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy manifests are parsed across the app/framework tree, report parse/shape errors and per-manifest declarations, and avoid coercing malformed tracking values to true. Android Data Safety review is included in the orchestrator, reads the extracted manifest through a bounded no-follow regular-file read, rejects DTD/entity declarations, and parses actual permission XML elements (rather than substring matches). Its manifest/source coverage is retained in scan coverage even when no finding is emitted. A bounded main-executable symbol-to-app-manifest cross-check emits only informational, unverified candidates; embedded frameworks and Objective-C dispatch remain outside this pass. These are static indicators only: they do not prove API reachability, manifest completeness, SDK execution/data sharing, or any Play Console declaration or privacy compliance. HAR recognized credential fields are redacted before export. |
-| Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. Graph writes now namespace component, finding, and endpoint uniqueness keys by scan and type while preserving display labels, preventing new writes from merging equal entities across scans under the existing global constraints. Finding CWE access now uses the model's actual `cwe_id` field. Synthetic tests verify distinct keys and display values with a mocked Neo4j session, not live database isolation. Existing graph records are not migrated; rebuild/cleanup is needed before assuming historical separation. HAR exports now redact recognized credential fields. Synthetic browser navigation verifies all eleven dashboard sections, explicit PoC retrieval, and axe checks at desktop/mobile viewports; test-plan legend contrast was corrected. This scoped browser check is not a complete WCAG claim. The graph still does not demonstrate complete data flow, explicit URI-grant/network/data-flow edges, or validated vulnerable paths; production-scale telemetry, OpenAPI conformance, and release readiness also remain unestablished. |
+| Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. Graph writes now namespace component, finding, and endpoint uniqueness keys by scan and type while preserving display labels, preventing new writes from merging equal entities across scans under the existing global constraints. Finding CWE access now uses the model's actual `cwe_id` field. Synthetic tests verify distinct keys and display values with a mocked Neo4j session, not live database isolation. Existing graph records are not migrated; rebuild/cleanup is needed before assuming historical separation. HAR exports redact recognized credential fields in request/response headers, URL, query, and bodies; namespaced fields ending in credential suffixes such as `_session_id`, `_refresh_token`, and `_client_secret` are redacted while lookalikes such as `tokenizer` remain visible. Synthetic regressions cover both response-header export and hard negatives; arbitrary secrets in fields not recognized by the heuristic remain a privacy limitation. Captured response headers are retained through the in-memory capture-to-HAR path and included after redaction; synthetic regressions verify both retained benign metadata and omitted Set-Cookie values. This does not preserve every raw capture field or establish production export behavior. Synthetic browser navigation verifies all eleven dashboard sections, explicit PoC retrieval, and axe checks at desktop/mobile viewports; test-plan legend contrast was corrected. This scoped browser check is not a complete WCAG claim. Neo4j vulnerability nodes now carry the original finding ID separately from their scan-scoped storage key, and graph clicks resolve through that identity to the finding evidence panel; a synthetic browser regression covers this cross-ID path. Neo4j and embedded graph vulnerability nodes now retain an allowlisted finding lifecycle status and proof label, surfaced in hover metadata; missing legacy node labels remain unknown until records are rewritten. New API inventory edges use `HAS_API_CANDIDATE` rather than `CALLS_API`; both new and legacy endpoint edges export as `endpoint_candidate`. Legacy endpoint records without a recognized evidence type fail closed to `method=UNKNOWN`, `evidence_type=legacy_endpoint_candidate`, and `proof_status=not_proven`; URL strings are not rendered as verified calls. Historical Neo4j relationship types are read as candidates, not migrated. The graph still does not demonstrate complete data flow, explicit URI-grant/network/data-flow edges, or validated vulnerable paths. The legacy attack-chain helper now returns no paths rather than treating app-level component/finding co-occurrence as a chain; production-scale telemetry, OpenAPI conformance, and release readiness also remain unestablished. |
 
 Framework-detection missing-input behavior is also fail-explicit: an empty,
 missing, or non-directory decompilation root returns `Unknown` with the shared
@@ -544,6 +494,24 @@ and is not automatically run over captured transactions. The JWS signing input
 and HMAC procedure follow [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515.html)
 and [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html).
 
+Query-token review now normalizes parameter-name separators/casing and detects
+common aliases/suffixed names such as `refresh-token`, `id_token`,
+`client_secret`, `secret_key`, `cookie`, and `X-Amz-Security-Token`; it flags the key even when the
+value is short, never copies the value into evidence, and deliberately avoids
+substring matches such as `tokenizer`. This remains name-based heuristic
+coverage and cannot discover arbitrary credential parameter names.
+The same token audit emits an unverified CWE-522 review lead when captured
+HTTP(S) URLs contain userinfo syntax; the username/password values are omitted
+from finding text and the sanitized location. This pattern does not prove that
+the credentials were valid or accepted.
+Transaction-level token findings also have a 20,000-result ceiling; the auditor
+reports received/analyzed/omitted transactions and marks the output partial
+when transaction or finding limits truncate processing, query parsing exceeds
+its field cap, or malformed/oversized URLs are unmodeled. The token audit API
+exposes this coverage rather than silently presenting a bounded result as
+complete.
+Recognized credential-like query keys remain CWE-598 review candidates, but a CWE-319 cleartext transport lead requires a non-empty credential-like query value, URL userinfo, or an Authorization credential observed over HTTP. Blank token-shaped query parameters do not by themselves imply credential transmission; findings remain unverified and do not establish server acceptance.
+
 ### BOLA candidate extraction boundary
 
 Offline BOLA resource-ID extraction now excludes query fields whose normalized
@@ -599,6 +567,22 @@ library, and 1 GiB total hashed data. Symlinks, non-ELF `.so` candidates,
 oversized inputs, and I/O failures make native inventory status partial or
 invalid rather than a clean complete result. This is not exhaustive supply-chain
 inventory and does not establish that a library is loaded or used at runtime.
+
+SBOM component hashes are normalized to supported CycloneDX digest identifiers
+and validated for hexadecimal syntax and algorithm-specific digest length before
+emission. Unsupported algorithms, malformed/truncated digests, and ambiguous
+duplicate aliases fail closed instead of yielding syntactically plausible but
+invalid hash metadata. This validates supplied digest shape, not artifact
+integrity or provenance.
+
+CycloneDX advisory metadata now validates bounded identifiers, basic PURL
+scheme/length, XML-safe descriptions, exact positive `CWE-n` values, and severity
+labels (mapping OSV `moderate` to CycloneDX `medium`) before JSON/XML emission.
+Malformed fields are rejected rather than partially coerced; attached advisory
+data still does not establish that a dependency is present or exploitable.
+Application/component metadata is also bounded and typed, component categories
+are allowlisted, and synthesized fallback PURL segments are percent-encoded;
+this is basic shape checking rather than full Package URL standard validation.
 
 ### Native JNI string-candidate evidence boundary
 
@@ -689,7 +673,7 @@ defense effectiveness.
 ```
 Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
 ├── Phase 1: Static Engine & Frameworks [PARTIAL; bounded analyzers exist]
-├── Phase 2: Dynamic Engine & Frida [GENERATORS EXIST; runtime validation NOT DONE]
+├── Phase 2: Dynamic Engine & Frida [SAFE PROFILE DISABLES HOOK EXECUTION; authorized runtime validation NOT DONE]
 ├── Phase 3: IPC Fuzzing & API [PROTOTYPES EXIST; confirmed exploitation NOT DONE]
 ├── Phase 4: RASP, SBOM & Automation [PARTIAL; measurement/format validation open]
 └── Phase 5: Dashboard & Reporting [PARTIAL; tests pass, production gates open]
@@ -736,3 +720,378 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.
 
+   On 2026-10-16, commit `5c26f4e` carried captured response headers through
+   the bounded API-capture catalog into HAR output, with redaction and capture
+   size accounting; synthetic tests cover benign-header retention and
+   `Set-Cookie` value omission. Commit `7fd1d41` extended the authenticated
+   capture-export route regression to verify the same redaction boundary.
+   Focused tests passed (3 catalog tests; 1 route test), and the pinned Python
+   3.14 full suite passed (**1,136 passed**, 94.94 s after `5c26f4e`; **1,136
+   passed**, 117.04 s after `7fd1d41`). `git diff --check` passed before each
+   commit. The suite emitted existing pytest-asyncio deprecation warnings and
+   async resource warnings. This validates synthetic export behavior only;
+   neither live capture nor target/device testing was performed.
+
+   IL2CPP coverage-state regression: unsupported metadata versions continue to
+   use the bounded printable-string fallback but now explicitly report
+   `scan_status=partial` and `unsupported_metadata_version`. Focused IL2CPP
+   regressions passed (**7 passed**, 37 deselected); the pinned Python 3.14
+   full suite passed (**1,137 passed**, 153.49 s). `git diff --check` is run
+   before commit. This verifies only synthetic unsupported-version status
+   signaling; metadata decoding for other versions remains unimplemented.
+
+   JWT time-claim validation was restored after review found its finite/range
+   check unreachable. The auditor now omits boolean, non-finite, and
+   out-of-range `exp`/`iat` values while preserving a separate `has_exp_claim`
+   indicator. Focused token-auditor regressions passed (**3 passed**, 68
+   deselected); the pinned Python 3.14 full suite passed (**1,138 passed**,
+   118.75 s). Findings remain unverified and no server acceptance is inferred.
+
+   Token audit request-header parsing now reads at most 100 header entries per
+   transaction. Duplicate case-insensitive Authorization names, malformed
+   entries, and over-limit maps are represented as partial coverage; tests
+   confirm omitted/ambiguous values are not copied into coverage. Focused
+   coverage tests passed (**4 passed**, 68 deselected); the pinned Python 3.14
+   full suite passed (**1,139 passed**, 116.07 s). This is synthetic parser
+   behavior only, not traffic capture or server-side token verification.
+
+   Oversized Authorization header values now also mark header coverage partial
+   before the value is discarded. The regression uses a synthetic value above
+   the configured 64 KiB token bound and asserts it is absent from coverage;
+   the focused header test passed (1), and the full suite passed (**1,139
+   passed**, 103.96 s). This checks the local bounded parser only.
+
+
+   Cleartext token findings now require a non-empty sensitive query value (or
+   another credential source such as Authorization/userinfo); an empty or
+   whitespace-only token-shaped query parameter retains its CWE-598 candidate
+   but does not imply credential transmission. Focused regressions passed
+   (**3 passed**, 70 deselected), and the full suite passed (**1,140 passed**,
+   91.07 s). Results remain unverified traffic indicators.
+
+   Privacy redaction now recognizes namespaced credential-field suffixes such
+   as `_session_id`, `_refresh_token`, `_client_secret`, and `_private_key`,
+   while hard negatives retain `tokenizer`, `secretariat`, and request-trace
+   metadata. HAR regression confirms a namespaced session response header is
+   redacted. Focused privacy/export tests passed (**15 passed**, 85 deselected);
+   the full suite passed (**1,145 passed**, 89.14 s). This remains
+   best-effort field-name redaction and does not detect arbitrary secrets in
+   arbitrary fields.
+
+   Provider fuzzer scope checks now honor an explicit `False` return as denial;
+   regression mocks verify traversal and selection/projection probes do not
+   launch ADB when denied. Existing exception-based guards and `None` returns
+   remain compatible. Focused provider tests passed (**4 passed**, 70
+   deselected); the full suite passed (**1,146 passed**, 78.35 s). No device
+   commands were run in this validation.
+
+   The approved-fixture `ProviderAuditor` now honors boolean scope denial
+   before launching ADB and rechecks after the command, withholding findings
+   when scope is revoked. Focused provider tests passed (**3 passed**, 13
+   deselected) plus the existing arbitrary-authority denial regression (**1
+   passed**, 18 deselected); the full suite passed (**1,148 passed**, 68.47 s).
+   These are synthetic shell mocks; no device command was run.
+
+   `StorageAuditor` now honors explicit boolean scope denial at each shell
+   boundary. A denial before execution prevents ADB; a denial after `su`
+   prevents the direct-shell fallback. Focused storage tests passed (**5
+   passed**, 13 deselected), and the full suite passed (**1,150 passed**,
+   70.18 s). All device access was mocked; no rooted or physical device was
+   used. Existing deprecation/resource warnings remain.
+
+   The memory-forensics path now transfers and persists only six fixed
+   category labels, never matching memory strings or `/proc/<pid>/environ`
+   values. Explicit `False` or exception-based scope denial is enforced before
+   and after process lookup and the root-shell scan; invalid serial/PID/output
+   bounds are rejected, and unrecognized command output is discarded. Any
+   resulting marker is INFO/UNVERIFIED with `ordinary_app_access` explicitly
+   not established. Focused memory regressions passed (**4 passed**, 78
+   deselected); the full suite passed (**1,152 passed**, 72.20 s), and
+   `compileall` plus `git diff --check` passed. All ADB behavior was mocked;
+   the `su`/`strings`/AWK pipeline, Android utility compatibility, memory-scan
+   resource cost, and live-device behavior remain unvalidated. Legacy callers
+   that omit a guard remain supported, so callers must still supply an
+   explicit scope guard for authorized device use. Existing pytest-asyncio
+   deprecation and async-resource warnings remain.
+
+   `DeepLinkFuzzer` now treats an explicit `False` scope-guard result as a
+   denial at every existing pre/post ADB checkpoint; exceptions continue to
+   fail closed, while guard omission remains compatible for legacy callers.
+   Synthetic tests prove denial prevents baseline collection or link launch
+   after baseline capture. Focused runtime/deep-link regressions passed (**7
+   passed**, 85 deselected); the full suite passed (**1,154 passed**, 72.29
+   s), with `compileall` and `git diff --check` passing. All ADB behavior was
+   mocked; no device was used, and this does not prove deep-link exploitability
+   or Android runtime behavior. Existing pytest-asyncio and async-resource
+   warnings remain.
+
+   `UICrawler` now fails closed on an explicit boolean scope denial before or
+   between UIAutomator dump/read operations, and it skips cleanup once the
+   guard denies further commands. Synthetic regressions verify pre-command
+   denial and revocation after the uniquely named dump command; revocation may
+   leave that temporary file on-device because cleanup is intentionally not
+   attempted out of scope. Focused UI/runtime regressions passed (**9 passed**,
+   86 deselected); the full suite passed (**1,157 passed**, 72.39 s), with
+   `compileall` and `git diff --check` passing. All ADB actions were mocked;
+   no Android device or UI behavior was tested. Existing pytest-asyncio and
+   async-resource warnings remain.
+
+   `IntentFuzzer.exercise_component` now treats an explicit `False` guard
+   result as denial, matching its existing exception-denial behavior. Synthetic
+   tests verify denial before baseline capture and after baseline capture but
+   before the component launch. Focused intent-scope regressions passed (**3
+   passed**, 18 deselected); the full suite passed (**1,159 passed**, 70.52 s),
+   and compilation plus `git diff --check` passed. ADB was mocked; no Android
+   device was used, and this validates only scope-boundary behavior, not IPC
+   impact or runtime exploitability. Existing test-environment warnings remain.
+
+   `DeepLinkIntentFuzzer.execute_fuzz_case` now reports `BLOCKED_SCOPE` when
+   its required guard explicitly returns `False`; the subprocess mock confirms
+   no ADB process starts on this denial path. The existing exception-denial
+   behavior remains. Its focused regression passed (**1 passed**, 24
+   deselected); the full suite passed (**1,159 passed**, 74.85 s), with
+   `compileall` and `git diff --check` passing. This is mock-only scope-gate
+   evidence, not device execution or proof of a deep-link vulnerability.
+
+   The outbound `LLMBroker` now treats an explicit `False` scope-guard result
+   as a denial before contacting a provider, between requests, and after a
+   response before any approved fallback. Synthetic tests verify that initial
+   denial sends no request and post-response revocation prevents the secondary
+   request. Focused LLM fallback tests passed (**34 passed**); the full suite
+   passed (**1,161 passed**, 79.01 s), with `compileall` and `git diff --check`
+   passing. Provider transports were mocked; no credentials or real network
+   requests were used. Existing pytest-asyncio and async-resource warnings
+   remain.
+
+   `/api/dast/launch` now rechecks the authenticated session, configured
+   device allowlist, and exact launch action/package policy immediately before
+   and after dispatch, in addition to the central middleware gate. A synthetic
+   route regression revokes the launch action during the mocked dispatch and
+   confirms the response is denied. Focused route/session regressions passed
+   (**3 passed**, 34 deselected); the full suite passed (**1,162 passed**,
+   73.14 s), with `compileall` and `git diff --check` passing. Dispatch was
+   mocked; no device was used. A revocation during dispatch cannot undo a
+   command already sent, but the result is not accepted after the scope check
+   fails. Existing test-environment warnings remain.
+
+   `/api/dast/execute_adb` now rechecks the authenticated session, configured
+   device allowlist, and explicit `execute_adb` policy at dispatch and after
+   command completion; command input is limited to 1–4,096 characters. Mocked
+   tests verify a revoked device-wide shell action suppresses the response and
+   an over-limit request is rejected. Focused route tests passed (**3 passed**,
+   22 deselected); the full suite passed (**1,164 passed**, 75.93 s), with
+   `compileall` and `git diff --check` passing. No command was run on a device.
+   The policy intentionally remains device-wide and the endpoint accepts
+   arbitrary command semantics; enabling it is not ordinary-app authority and
+   must be explicitly scoped/approved. It is unsuitable for unattended or
+   destructive testing.
+
+   `/api/dast/logcat` now rechecks authenticated session, configured device,
+   and exact package/action policy before PID lookup and around each
+   PID-filtered log read. A synthetic test revokes logcat permission during a
+   mocked read and verifies the route returns 403 without returning the log
+   line. Focused logcat route tests passed (**3 passed**, 23 deselected); the
+   full suite passed (**1,165 passed**, 71.52 s), with `compileall` and
+   `git diff --check` passing. Logcat and PID access were mocked; no device was
+   used. Existing warnings remain.
+
+   `/api/dast/install` now rechecks the authenticated session, configured
+   device allowlist, and explicit install action immediately before and after
+   archive validation and installation. A synthetic uploaded fixture revokes
+   install scope during validation and confirms no installer call occurs.
+   Permission grants remain opt-in and default to false. Focused install-route
+   regression passed (**1 passed**, 26 deselected); the full suite passed
+   (**1,166 passed**, 70.28 s), with `compileall` and `git diff --check`
+   passing. Archive validation and installation were mocked; no APK was
+   installed on a device. Existing test-environment warnings remain.
+
+   The `/api/dast/root` route now rechecks authenticated session, configured
+   device allowlist, and explicit `root` action policy around the root request
+   and its follow-up identity observation. A mock revokes policy after the
+   `adb root` command and verifies the follow-up `id` probe is not issued. Root
+   remains a device-level privilege transition, not ordinary-app evidence or
+   exploit proof. Focused root-route tests passed (**2 passed**) plus the
+   existing out-of-scope-device denial (**1 passed**); the full suite passed
+   (**1,167 passed**, 69.35 s), with `compileall` and `git diff --check`
+   passing. No root command ran on a device.
+
+   `/api/dast/connect` now rechecks the authenticated session, exact configured
+   host:port allowlist, and explicit `connect` action both before and after
+   `adb connect`. A synthetic route test revokes the action during the mocked
+   connection and confirms the result is denied. Focused connect-route tests
+   passed (**2 passed**, 27 deselected); the full suite passed (**1,168
+   passed**, 55.38 s), with `compileall` and `git diff --check` passing. No
+   device connection was attempted. Existing test-environment warnings remain.
+
+   Destructive device-wide logcat clearing is now retired: the dashboard
+   control and policy choice were removed, and the API handler returns 410
+   without invoking `clear_logcat` (the middleware also rejects the retired
+   action). Synthetic tests cover the handler, endpoint denial, and UI control
+   removal. Focused logcat/retirement tests passed (**4 passed**, 26
+   deselected); the full suite passed (**1,169 passed**, 55.74 s), with
+   `compileall` and `git diff --check` passing. No device log buffer was
+   touched. This preserves evidence; the old endpoint is intentionally
+   incompatible and its helper remains unused for legacy callers only.
+
+   Screenshot capture now rechecks authenticated session, configured device,
+   and explicit `screenshot` action immediately before and after acquisition.
+   A mocked regression revokes scope during capture and confirms no image is
+   returned. Focused screenshot-route test passed (**1 passed**, 30 deselected);
+   the full suite passed (**1,170 passed**, 56.44 s), with `compileall` and
+   `git diff --check` passing. Capture was mocked; no device screen was read.
+   Existing test-environment warnings remain.
+
+   Frida runtime execution, daemon startup, elevated `FridaRunner` process
+   probing, and preset script delivery are disabled. The policy no longer authorizes a
+   `frida` execution action; legacy execution endpoints reject requests, and
+   the dashboard retains only read-only Frida process observation under its
+   separately scoped `frida_status` action. Hook, TLS-bypass, root-bypass, and
+   crypto/key-harvesting controls and generated-script delivery were removed
+   from the UI. Focused synthetic regressions passed (**23 passed**, 178
+   deselected); `git diff --check` passed. No device was used and no Frida
+   process was attached. Script-generator code remains in the source tree but
+   is not delivered or executed through the application; its safety and
+   completeness are not claimed. This intentionally retires those actions,
+   rather than treating security-bypass tooling as completed functionality.
+
+   A follow-up source-level hardening removed dormant Frida bypass, root-evasion,
+   stealth-daemon, and crypto/key/plaintext-harvesting payloads, including the
+   LLM/template generator and four ready-to-run templates. The orchestrator
+   now omits script generation and file publication; compatibility generator
+   methods fail closed. Crypto event parsing keeps only bounded operation and
+   algorithm labels and rejects payload-preview events. The Copilot quick
+   action and stale scan-modal bypass fields were removed; static TLS review
+   remains the supported path. Focused regression tests passed (**297 passed**),
+   including refusal to generate scripts and removal of
+   sensitive event fields. Full pytest passed (**1,169 passed**, 65.47 s),
+   with `compileall` and `git diff --check` passing. The isolated Playwright
+   run passed with no page errors or off-loopback requests; process/device and
+   provider adapters were synthetic/mocked. No device or provider was used.
+
+   Legacy `Finding.frida_script` data remains parseable for old stored records
+   but is now excluded from all standard and report dictionary exports. The
+   focused serialization/privacy regressions passed (**39 passed**); this
+   preserves migration compatibility without re-publishing hook payloads.
+
+   A follow-up Playwright run loaded local axe-core **4.10.3** and checked all
+   ten workspace sections at desktop and 320 px mobile widths against WCAG
+   2.0 A/AA and WCAG 2.1 AA rules; no violations were reported. The first run
+   hit a timing-sensitive immediate visibility assertion after graph-click
+   navigation; the harness now waits for the view's visible state, and the
+   repeat run passed. The report explicitly distinguishes `a11y_status=passed`
+   from `not_run` (rather than rendering an empty object as if it were tested).
+   This is a bounded automated check, not a complete WCAG conformance claim.
+
+   SBOM PURL handling now uses pinned `packageurl-python==0.17.6` rather than
+   accepting any string prefixed with `pkg:`. Component and advisory references
+   are parsed, validated, and canonicalized; malformed percent escapes,
+   duplicate qualifier names, invalid coordinates, and non-`pkg` schemes are
+   rejected. Maven/npm PURLs are built from structured coordinates, while app
+   fallback identities use `generic` instead of confusing Android app records
+   with package-manager `apk` packages. This follows the upstream
+   [PURL core specification](https://github.com/package-url/purl-spec) and its
+   [Python parser](https://github.com/package-url/packageurl-python); it does
+   not prove that package coordinates or vulnerability matches are authentic.
+   Focused SBOM/API tests passed (**149 passed across the focused runs**); full
+   pytest passed (**1,171 passed**, 66.22 s), with compilation and
+   `git diff --check` passing. The full suite is synthetic/mocked and not an
+   inventory recall claim. `pip check` also reports unrelated conflicts in
+   optional preinstalled tools in the shared environment, so that auxiliary
+   environment check is not clean.
+
+   HAR export now stores only supported HTTP methods; unsupported methods are
+   counted as unmodeled/omitted before request bodies or headers enter the
+   retained capture list. Content-Type header values are restricted to a small
+   explicit media-type allowlist, with parameters and unknown values replaced
+   by `application/octet-stream` in both request/response headers and HAR MIME
+   fields. Synthetic regressions verify that boundary/secret-like values and
+   unsupported methods are not serialized. Focused HAR/catalog regressions
+   passed (**22 passed**); the full suite passed (**1,173 passed**, 68.25 s),
+   with compile and diff checks passing. This hardens bounded exports only; it
+   does not prove arbitrary-secret redaction or real capture coverage.
+
+   PoC synthesis input handling was tightened: target packages must be strings
+   within the Android package-name length bound, and interpolated component
+   names reject Kotlin `$` template syntax rather than allowing it into generated
+   source. Synthetic regressions cover non-string/oversized package values and
+   interpolation-shaped component names. Focused PoC tests passed (**3 passed**);
+   full pytest passed (**1,173 passed**, 67.23 s), and compile/diff checks passed.
+   This closes only the reviewed identifier-interpolation cases: analyst
+   attestation is not independent verification, generated PoCs remain
+   review-only, and the generator is still not proof-grade.
+
+   A follow-up regression expansion exercises malformed component, authority,
+   task-affinity, URI, affected-component, and finding-ID values, including
+   quote/newline and Kotlin-interpolation shapes. Focused PoC regressions passed
+   (**3 passed**); full pytest passed (**1,173 passed**, 67.23 s), with compile
+   and diff checks passing. This confirms the tested validation paths only; it
+   does not substitute for context-aware escaping or independent verification.
+
+   PoC templates were then bounded to synthetic-canary review material: no ADB
+   launch/read/query command is generated; FileProvider reads at most 64 bytes
+   from a fixture canary and prints only a boolean; provider output is a canary
+   boolean rather than rows; PendingIntent dispatch is omitted; task-affinity
+   source contains no overlay or credential collection; and the default deep
+   link uses the reserved `.invalid` host. A synthetic regression checks all
+   six categories and rejects raw-content/privileged-action strings. Focused
+   PoC tests passed (**3 passed**); full pytest passed (**1,174 passed**, 65.64
+   s), with compile and diff checks passing. Generated Kotlin is not built or
+   executed by these tests, custom URI metadata remains review data, and this
+   safety hardening does not establish vulnerable behavior or proof-grade
+   coverage.
+
+   Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
+   regression passed with synthetic fixtures and mocked device/model adapters.
+   It confirmed no page errors, no XSS marker execution, no external requests,
+   no real ADB/Frida calls, and no Frida deployment controls. The browser
+   report's former `masvs_kpi_present: false` probe checked a nonexistent
+   optional KPI, although the MASVS coverage chart is present. The browser
+   probe now checks the actual chart and summary instead; no coverage score is
+   inferred from chart presence. Chromium
+   reported expected synthetic 401/404/503 responses and CSP-blocked inline
+   handler control. Browser artifacts were written under `/tmp`, not into the
+   repository. No device or commercial model was contacted.
+
+   JWT header/payload decoding now rejects duplicate JSON object member names,
+   preventing the offline parser from silently selecting one of conflicting
+   `alg`/claim values. Synthetic regressions cover duplicate header and payload
+   members; the HMAC helper now classifies such an ambiguous compact token as
+   invalid input. Focused token tests passed (**4 passed**); full pytest passed
+   (**1,174 passed**, 67.10 s), with compile and diff checks passing. This does
+   not verify token acceptance, server policy, token provenance, or live
+   session behavior.
+
+   RASP indicator review removed the bare `su` substring, which matched common
+   Smali such as `.super` and generated false root-detection leads. A synthetic
+   negative control covers `.super`, `result`, and `subscription` text while
+   preserving context-bearing root path matches. Focused RASP/root-boundary
+   tests passed (**6 passed**); full pytest passed (**1,175 passed**, 66.64 s),
+   with compile and diff checks passing. This improves one lexical heuristic;
+   the inventory remains incomplete and does not establish effective root
+   detection or absence of root checks.
+
+   Smart UI crawler decisions no longer copy hierarchy text/content descriptions
+   into permission, submit, or exploratory-click explanations; the loop counter
+   continues to retain only truncated state digests. Synthetic negative controls
+   place a synthetic email and account-recovery label in UI text and confirm
+   they are absent from returned explanations/state keys. Focused crawler tests
+   passed (**5 passed**); full pytest passed (**1,176 passed**, 64.82 s), with
+   compile and diff checks passing. Parsed hierarchy objects remain transiently
+   available to classifier logic, and no device-side crawler run was performed.
+
+   The UI crawler now caps each instance at 10,000 distinct state hashes and
+   returns `WAIT` without another action when the cap is reached. A regression
+   uses a one-state test budget to verify the state map remains capped and the
+   truncation is observable. Focused crawler tests passed (**6 passed**); full
+   pytest passed (**1,177 passed**, 63.19 s), with compile and diff checks
+   passing. This guards state-tracking memory only; it does not limit total
+   session duration or demonstrate behavior on a real device.
+
+   ContentProvider SQL probe classification now gives explicit permission
+   denial precedence over coincident SQLite/syntax-error wording, since a
+   denied call cannot establish that the query reached provider SQL handling.
+   A mocked regression covers mixed `SecurityException` plus SQL-error output
+   and confirms no raw output is retained. Focused provider tests passed
+   (**5 passed**); full pytest passed (**1,178 passed**, 64.34 s), with compile
+   and diff checks passing. This remains observation classification only; it
+   does not prove provider authorization, data sensitivity, or SQL injection.

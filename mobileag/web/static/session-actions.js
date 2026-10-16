@@ -77,8 +77,6 @@
     actionCallbacks.set('static6', function(event) { switchView('agents'); });
     actionCallbacks.set('static7', function(event) { switchView('settings'); });
     actionCallbacks.set('static8', function(event) { selectDastDevice(this.value); });
-    actionCallbacks.set('static9', function(event) { deployFridaScriptQuick('root_bypass'); });
-    actionCallbacks.set('static10', function(event) { deployFridaScriptQuick('unpinning'); });
     actionCallbacks.set('static11', function(event) { openNewScanModal(); });
     actionCallbacks.set('static12', function(event) { toggleExportMenu(); });
     actionCallbacks.set('static13', function(event) { exportReportJSON(); });
@@ -117,17 +115,8 @@
     actionCallbacks.set('static46', function(event) { crawlDastUI(); });
     actionCallbacks.set('static47', function(event) { runDastFuzzSuite(); });
     actionCallbacks.set('static48', function(event) { checkFridaServerStatus(); });
-    actionCallbacks.set('static49', function(event) { deployFridaScript('unpinning'); });
-    actionCallbacks.set('static50', function(event) { previewFridaScript('unpinning'); });
-    actionCallbacks.set('static51', function(event) { deployFridaScript('crypto'); });
-    actionCallbacks.set('static52', function(event) { previewFridaScript('crypto'); });
-    actionCallbacks.set('static53', function(event) { deployFridaScript('root_bypass'); });
-    actionCallbacks.set('static54', function(event) { previewFridaScript('root_bypass'); });
-    actionCallbacks.set('static55', function(event) { copyFridaScript(); });
-    actionCallbacks.set('static56', function(event) { document.getElementById('frida-script-preview-panel').classList.add('hidden'); });
     actionCallbacks.set('static57', function(event) { filterDastTerminalLogs(); });
     actionCallbacks.set('static58', function(event) { fetchDastLogcat(); });
-    actionCallbacks.set('static59', function(event) { clearDastLogcat(); });
     actionCallbacks.set('static60', function(event) { captureDastScreenshot(); });
     actionCallbacks.set('static61', function(event) { loadSelectedTaintSample(); });
     actionCallbacks.set('static62', function(event) { runTaintAnalysis(); });
@@ -141,7 +130,6 @@
     actionCallbacks.set('static70', function(event) { toggleCopilotDrawer(); });
     actionCallbacks.set('static71', function(event) { askCopilotActivePoc(); });
     actionCallbacks.set('static72', function(event) { askCopilotActiveAdb(); });
-    actionCallbacks.set('static73', function(event) { askCopilotActiveFrida(); });
     actionCallbacks.set('static74', function(event) { askCopilotActiveFix(); });
     actionCallbacks.set('static75', function(event) { askCopilotBountyReport(); });
     actionCallbacks.set('static76', function(event) { if(event.key==='Enter') sendCopilotChat(); });
@@ -154,13 +142,9 @@
     actionCallbacks.set('static83', function(event) { closeNewScanModal(); });
     actionCallbacks.set('static84', function(event) { submitNewScan(); });
     actionCallbacks.set('static85', function(event) { switchFindingSubTab('poc'); });
-    actionCallbacks.set('static86', function(event) { switchFindingSubTab('adb'); });
-    actionCallbacks.set('static87', function(event) { switchFindingSubTab('frida'); });
     actionCallbacks.set('static88', function(event) { switchFindingSubTab('proof'); });
     actionCallbacks.set('static89', function(event) { switchFindingSubTab('ast'); });
     actionCallbacks.set('static90', function(event) { switchFindingSubTab('fix'); });
-    actionCallbacks.set('static91', function(event) { document.getElementById('poc-adb-terminal').innerHTML=''; });
-    actionCallbacks.set('static92', function(event) { deployFridaFromPoc('unified'); });
     actionCallbacks.set('static93', function(event) { connectDastDevice(); });
     actionCallbacks.set('static94', function(event) { switchApiSubTab('owasp'); });
     actionCallbacks.set('static95', function(event) { switchApiSubTab('request'); });

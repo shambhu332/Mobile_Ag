@@ -3,7 +3,7 @@
 - DeepLinkFuzzer (bounded redirect, file, and JavaScript-scheme review markers)
 - TaintEngine (inter-procedural static source-to-sink dataflow tracking)
 - UICrawler (UI hierarchy parsing, dialog handling, form filling)
-- MemoryForensicsAuditor (process memory scraping, CWE-316 detection)
+- MemoryForensicsAuditor (category-only memory indicators, CWE-316 review leads)
 - Associated FastAPI endpoints
 """
 
@@ -271,32 +271,15 @@ class HtmlScreen {
 
 
 # =============================================================================
-# 1. FridaRunner Tests
+# 1. FridaRunner safe-profile tests
 # =============================================================================
-def test_frida_runner_script_generation():
+def test_frida_runner_exposes_no_hook_generators():
     runner = FridaRunner()
-    unpin_script = runner.generate_unpinning_script()
-    crypto_script = runner.generate_crypto_monitor_script()
-    root_script = runner.generate_root_bypass_script()
-
-    assert "TrustManager" in unpin_script
-    assert "CertificatePinner" in unpin_script
-    assert "javax.crypto.Cipher" in crypto_script
-    assert "File.exists" in root_script
-
-
-def test_frida_runner_crypto_telemetry_parsing():
-    runner = FridaRunner()
-    logs = [
-        "[CRYPTO_AUDIT] Algorithm: AES/ECB/PKCS5Padding | Mode: ENCRYPT_MODE | Key: AES (RAW)",
-        "[CRYPTO_AUDIT] Algorithm: AES/CBC/PKCS5Padding | Mode: ENCRYPT_MODE | IV: 00 00 00 00 00 00 00 00",
-        "Normal log line from activity",
-    ]
-    findings = runner.parse_crypto_telemetry(logs, package_name="com.test.app")
-    assert len(findings) == 2
-    cwes = {f.cwe_id for f in findings}
-    assert "CWE-327" in cwes  # Insecure ECB mode
-    assert "CWE-329" in cwes  # Static IV
+    assert not any(hasattr(runner, name) for name in (
+        "generate_unpinning_script", "generate_crypto_monitor_script",
+        "generate_root_bypass_script", "generate_all_in_one_agent_script",
+        "generate_stealth_unpinning_script", "generate_stealth_daemon_launcher",
+    ))
 
 
 @pytest.mark.asyncio
@@ -306,10 +289,11 @@ async def test_frida_runner_execution():
 
     runner = FridaRunner(adb=mock_adb)
     is_running = await runner.is_frida_server_running("emulator-5554")
-    assert is_running is True
+    assert is_running is None  # Unknown; the helper does not issue root-shell probes.
 
     res = await runner.execute_script_payload("emulator-5554", "com.test.app", "console.log('test');")
-    assert res["status"] == "unavailable"  # ADB file writes are not instrumentation.
+    assert res["status"] == "disabled" and res["executed"] is False
+    mock_adb._exec_cmd.assert_not_awaited()
 
 
 # =============================================================================
@@ -1196,14 +1180,16 @@ async def test_ui_crawler_crawl_flow():
 # =============================================================================
 @pytest.mark.asyncio
 async def test_memory_forensics_secret_detection():
+    from mobileag.reporting.finding import Severity
+
     mock_adb = ADBManager()
 
-    async def mock_exec(cmd, timeout=3.0):
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
         cmd_str = " ".join(cmd)
         if "pidof" in cmd_str:
             return (0, b"4567\n", b"")
-        if "strings" in cmd_str:
-            return (0, b"header\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.sec123\npassword=\"SuperSecretPass!\"\n", b"")
+        if "strings" in cmd_str and "awk" in cmd_str:
+            return (0, b"JWT Bearer Token\nPlaintext Password Parameter\n", b"")
         return (0, b"", b"")
 
     mock_adb._exec_cmd = mock_exec
@@ -1214,6 +1200,55 @@ async def test_memory_forensics_secret_detection():
     assert len(findings) >= 2
     cwes = {f.cwe_id for f in findings}
     assert "CWE-316" in cwes
+    serialized = str([finding.to_dict() for finding in findings])
+    assert "SuperSecretPass!" not in serialized
+    assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in serialized
+    assert all(f.severity == Severity.INFO and f.confidence == 0.4 for f in findings)
+    assert all(f.metadata["raw_value_collected"] is False for f in findings)
+
+
+@pytest.mark.asyncio
+async def test_memory_forensics_rejects_raw_output_and_never_reads_environment():
+    mock_adb = ADBManager()
+    commands = []
+
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
+        commands.append(" ".join(cmd))
+        # Simulate unexpected raw output; only fixed labels are accepted.
+        return (0, b"JWT Bearer Token\nBearer synthetic-raw-value\n", b"")
+
+    mock_adb._exec_cmd = mock_exec
+    auditor = MemoryForensicsAuditor(adb=mock_adb)
+    indicators = await auditor.extract_memory_indicators("synthetic-device", 1234)
+    assert indicators == ["JWT Bearer Token"]
+    assert len(commands) == 1
+    assert "awk" in commands[0]
+    assert "/proc/1234/mem" in commands[0]
+    assert "/proc/1234/environ" not in commands[0]
+    assert "cat " not in commands[0]
+
+
+@pytest.mark.asyncio
+async def test_memory_forensics_scope_denial_and_revocation_block_shell_commands():
+    mock_adb = ADBManager()
+    calls = []
+
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
+        calls.append(" ".join(cmd))
+        return (1, b"", b"")
+
+    mock_adb._exec_cmd = mock_exec
+    auditor = MemoryForensicsAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor.get_process_pid("synthetic-device", "com.test.app", guard=lambda: False)
+    assert calls == []
+
+    approvals = iter((True, False))
+    with pytest.raises(PermissionError):
+        await auditor.get_process_pid(
+            "synthetic-device", "com.test.app", guard=lambda: next(approvals),
+        )
+    assert len(calls) == 1
 
 
 # =============================================================================
@@ -1282,20 +1317,13 @@ def test_web_crawl_endpoint(client):
 
 def test_web_frida_endpoint(client):
     with patch("mobileag.web.app.frida_runner.execute_script_payload") as mock_frida:
-        mock_frida.return_value = {
-            "status": "executed",
-            "frida_server_running": True,
-            "script_path": "/data/local/tmp/test.js",
-        }
         response = client.post("/api/dast/frida", json={
             "serial": "emulator-5554",
             "package_name": "com.test.app",
             "script_type": "crypto",
         })
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "executed"
-        assert "javax.crypto.Cipher" in data["script"]
+        assert response.status_code == 403
+        mock_frida.assert_not_called()
 
 
 def test_web_taint_endpoint(client):

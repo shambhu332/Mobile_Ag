@@ -114,8 +114,6 @@
       }
       const autoDast = document.getElementById('modal-opt-auto-dast')?.checked ?? false;
       const autoTaint = document.getElementById('modal-opt-taint')?.checked ?? true;
-      const bypassRoot = document.getElementById('modal-opt-bypass-root')?.checked ?? false;
-      const bypassSsl = document.getElementById('modal-opt-bypass-ssl')?.checked ?? false;
 
       closeNewScanModal();
       showToast('Starting configured scoped analysis...', 'info');
@@ -128,8 +126,6 @@
             apk_path: apkPath,
             auto_dast: autoDast,
             auto_taint: autoTaint,
-            bypass_root: bypassRoot,
-            bypass_ssl: bypassSsl,
             serial: dastActiveDevice
           })
         });

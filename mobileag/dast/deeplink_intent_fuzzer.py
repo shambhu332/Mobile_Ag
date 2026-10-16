@@ -110,7 +110,8 @@ class DeepLinkIntentFuzzer:
         cmd = [self.adb_path, "-s", serial.strip(), "shell", shlex.join(remote_args)]
 
         try:
-            guard()
+            if guard() is False:
+                return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
         except Exception:
             return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
         try:

@@ -10,7 +10,7 @@ import ipaddress
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from openapi_spec_validator import validate as validate_openapi_spec
 
@@ -29,10 +29,37 @@ _MAX_CAPTURE_REQUESTS = 10000
 _MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAPTURE_BYTES = 16 * 1024 * 1024
 _MAX_ENDPOINTS = 10000
+_SUPPORTED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
+_SAFE_MIME_TYPES = {
+    "application/json", "application/xml", "application/x-www-form-urlencoded",
+    "application/octet-stream", "multipart/form-data", "text/plain", "text/html", "text/xml",
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+}
 
 
 def _looks_like_dynamic_json_key(value: str) -> bool:
     return any(pattern.fullmatch(value) for pattern in _DYNAMIC_JSON_KEY_PATTERNS)
+
+
+def _safe_content_type(headers: Dict[str, str]) -> str:
+    """Return a validated media type only; discard untrusted parameters/values."""
+    for name, value in headers.items():
+        if (isinstance(name, str) and name.lower() == "content-type"
+                and isinstance(value, str) and value.lower() in _SAFE_MIME_TYPES):
+            return value.lower()
+    return "application/octet-stream"
+
+
+def _redacted_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """Redact sensitive headers and constrain the otherwise-untrusted MIME value."""
+    from mobileag.security.privacy import redact
+
+    result = redact(headers)
+    safe_mime = _safe_content_type(headers)
+    for name in list(result):
+        if name.lower() == "content-type":
+            result[name] = safe_mime
+    return result
 
 
 @dataclass
@@ -44,6 +71,7 @@ class CapturedRequest:
     body: Optional[str] = None
     response_status: int = 200
     response_body: Optional[str] = None
+    response_headers: Dict[str, str] = field(default_factory=dict)
 
 
 class MobileApiCataloger:
@@ -65,16 +93,22 @@ class MobileApiCataloger:
         uuid_segment = re.compile(
             r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         )
-        # Redact token-shaped opaque IDs in exported route templates. This
-        # deliberately errs on the side of parametrizing long mixed strings;
-        # shorter or non-token-shaped identifiers remain unsupported.
-        opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
+        # Redact long token-shaped IDs and shorter, high-entropy-looking
+        # mixed-case alphanumeric IDs; decode percent-encoded ASCII only for
+        # this privacy decision, never to construct the exported route.
+        opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
+        short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
         email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
         segments = path.split("/")
         identifier_index = 0
         for index, segment in enumerate(segments):
+            decoded_segment = unquote(segment)
             if (re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment)
-                    or opaque_token_segment.fullmatch(segment) or email_segment.fullmatch(segment)):
+                    or opaque_token_segment.fullmatch(segment)
+                    or opaque_token_segment.fullmatch(decoded_segment)
+                    or short_mixed_case_id.fullmatch(segment)
+                    or short_mixed_case_id.fullmatch(decoded_segment)
+                    or email_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"
         return "/".join(segments) or "/"
@@ -151,16 +185,19 @@ class MobileApiCataloger:
         if (not isinstance(req, CapturedRequest) or not isinstance(req.method, str)
                 or len(req.method) > 16
                 or not isinstance(req.url, str) or not isinstance(req.headers, dict)
+                or not isinstance(req.response_headers, dict)
                 or not isinstance(req.query_params, dict)
                 or type(req.response_status) is not int
                 or not 100 <= req.response_status <= 599
                 or (req.body is not None and not isinstance(req.body, str))
                 or (req.response_body is not None and not isinstance(req.response_body, str))):
             return None
-        if len(req.headers) > _MAX_QUERY_FIELDS or len(req.query_params) > _MAX_QUERY_FIELDS:
+        if (len(req.headers) > _MAX_QUERY_FIELDS
+                or len(req.response_headers) > _MAX_QUERY_FIELDS
+                or len(req.query_params) > _MAX_QUERY_FIELDS):
             return None
         size = 128 + 4 * (len(req.method) + len(req.url))
-        for mapping in (req.headers, req.query_params):
+        for mapping in (req.headers, req.response_headers, req.query_params):
             for key, value in mapping.items():
                 if (not isinstance(key, str) or not isinstance(value, str)
                         or len(key) > _MAX_QUERY_NAME_LENGTH):
@@ -187,6 +224,11 @@ class MobileApiCataloger:
             return
         capture_size = self._estimate_capture_size(req)
         if capture_size is None:
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        normalized_method = req.method.upper()
+        if normalized_method not in _SUPPORTED_METHODS:
             self.unmodeled_requests += 1
             self.omitted_requests += 1
             return
@@ -229,10 +271,7 @@ class MobileApiCataloger:
             return
 
         path = self._path_template(parsed.path or "/")
-        method = req.method.lower() if isinstance(req.method, str) and len(req.method) <= 16 else ""
-        if method not in {"get", "put", "post", "delete", "options", "head", "patch", "trace"}:
-            self.unmodeled_requests += 1
-            return
+        method = normalized_method.lower()
         # Keep a normalized origin so same-path APIs on different hosts are
         # not silently collapsed. urlparse().netloc may contain userinfo; do
         # not export it.
@@ -393,8 +432,10 @@ class MobileApiCataloger:
 
         entries = []
         for req in self.captured_requests:
-            safe_headers = redact(req.headers)
+            safe_headers = _redacted_headers(req.headers)
             req_headers = [{"name": k, "value": str(v)} for k, v in safe_headers.items()]
+            safe_response_headers = _redacted_headers(req.response_headers)
+            response_headers = [{"name": k, "value": str(v)} for k, v in safe_response_headers.items()]
             safe_query = redact(req.query_params)
             query_strings = [{"name": k, "value": str(v)} for k, v in safe_query.items()]
             safe_body = redact(req.body) if req.body is not None else None
@@ -402,15 +443,14 @@ class MobileApiCataloger:
 
             post_data = None
             if safe_body is not None:
-                content_type = req.headers.get("Content-Type", req.headers.get("content-type", "application/octet-stream"))
                 post_data = {
-                    "mimeType": content_type,
+                    "mimeType": _safe_content_type(safe_headers),
                     "text": safe_body,
                 }
 
             res_content: Dict[str, Any] = {
                 "size": len(safe_response_body.encode("utf-8")) if safe_response_body else 0,
-                "mimeType": "application/json",
+                "mimeType": _safe_content_type(safe_response_headers),
             }
             if safe_response_body is not None:
                 res_content["text"] = safe_response_body
@@ -433,7 +473,7 @@ class MobileApiCataloger:
                     "statusText": "OK" if req.response_status < 400 else "Error",
                     "httpVersion": "HTTP/1.1",
                     "cookies": [],
-                    "headers": [],
+                    "headers": response_headers,
                     "content": res_content,
                     "redirectURL": "",
                     "headersSize": -1,

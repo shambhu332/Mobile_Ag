@@ -23,6 +23,7 @@ import json
 import math
 import re
 from datetime import datetime, timezone
+from itertools import islice
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
@@ -59,10 +60,17 @@ class MobileTokenSessionAuditor:
         "jwt",
         "bearer",
     }
+    TOKEN_QUERY_SUFFIXES = (
+        "token", "secret", "secretkey", "privatekey", "apikey", "password",
+        "passwd", "pwd", "cookie", "session", "signature",
+    )
 
     MAX_TOKEN_CHARS = 64 * 1024
+    MAX_AUTHORIZATION_HEADER_CHARS = MAX_TOKEN_CHARS + 16
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
     MAX_TRANSACTIONS = 10_000
+    MAX_HEADERS_PER_TRANSACTION = 100
+    MAX_FINDINGS = 20_000
     MAX_TRACKED_LOGOUT_TOKENS = 1_000
     MAX_VERIFICATION_KEY_BYTES = 4 * 1024
 
@@ -116,6 +124,16 @@ class MobileTokenSessionAuditor:
         except (OverflowError, TypeError, ValueError):
             return False
 
+    @classmethod
+    def _is_sensitive_query_key(cls, name: str) -> bool:
+        """Recognize common credential-key aliases without reading their values."""
+        normalized = re.sub(r"[^a-z0-9]", "", name.casefold())
+        exact = {re.sub(r"[^a-z0-9]", "", key) for key in cls.TOKEN_QUERY_PARAMS}
+        exact.update({"authorization", "clientsecret", "signature", "sig", "codeverifier",
+                      "cookie", "session", "password", "passwd", "pwd", "secretkey",
+                      "privatekey", "xapikey", "xgoogapikey"})
+        return normalized in exact or normalized.endswith(cls.TOKEN_QUERY_SUFFIXES)
+
     def decode_jwt(self, token: str) -> Optional[Dict[str, Any]]:
         """Safely parse JWT header and payload without cryptographic verification."""
         if not isinstance(token, str) or len(token) > self.MAX_TOKEN_CHARS:
@@ -136,7 +154,16 @@ class MobileTokenSessionAuditor:
             padded = part_b64 + "=" * (-len(part_b64) % 4)
             try:
                 raw_bytes = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
-                value = json.loads(raw_bytes.decode("utf-8"))
+
+                def reject_duplicate_members(pairs):
+                    result = {}
+                    for name, value in pairs:
+                        if name in result:
+                            raise ValueError("duplicate JSON object member")
+                        result[name] = value
+                    return result
+
+                value = json.loads(raw_bytes.decode("utf-8"), object_pairs_hook=reject_duplicate_members)
                 return value if isinstance(value, dict) else None
             except (ValueError, UnicodeError, binascii.Error, RecursionError):
                 return None
@@ -390,26 +417,71 @@ class MobileTokenSessionAuditor:
         """Audit intercepted HTTP transactions for session and token vulnerabilities."""
         findings: List[Finding] = []
         logged_out_tokens: Dict[str, int] = {}
+        if not isinstance(transactions, (list, tuple)):
+            self.last_coverage = {"status": "invalid_input", "transactions_received": None,
+                                  "transactions_analyzed": 0, "transactions_omitted": 0,
+                                  "query_parse_incomplete_transactions": 0,
+                                  "url_inputs_unmodeled": 0,
+                                  "header_input_incomplete_transactions": 0,
+                                  "duplicate_authorization_header_transactions": 0,
+                                  "finding_count": 0,
+                                  "finding_cap_reached": False, "transaction_limit": self.MAX_TRANSACTIONS,
+                                  "max_headers_per_transaction": self.MAX_HEADERS_PER_TRANSACTION,
+                                  "finding_limit": self.MAX_FINDINGS}
+            return findings
+        total_transactions = len(transactions)
+        transactions_analyzed = 0
+        finding_cap_reached = False
+        query_parse_incomplete = 0
+        url_inputs_unmodeled = 0
+        header_input_incomplete = 0
+        duplicate_authorization_headers = 0
 
         for idx, tx in enumerate(transactions[:self.MAX_TRANSACTIONS]):
+            transactions_analyzed += 1
             url = getattr(tx, "url", "")
             if not isinstance(url, str) or len(url) > 8192:
+                url_inputs_unmodeled += 1
                 url = ""
             safe_url = self._safe_context_url(url)
             headers = getattr(tx, "request_headers", {}) or getattr(tx, "headers", {}) or {}
+            header_incomplete = False
             if not isinstance(headers, dict):
                 headers = {}
+                header_incomplete = True
+            header_items = list(islice(headers.items(), self.MAX_HEADERS_PER_TRANSACTION + 1))
+            header_too_many = len(header_items) > self.MAX_HEADERS_PER_TRANSACTION
+            if header_too_many:
+                header_items = header_items[:self.MAX_HEADERS_PER_TRANSACTION]
+                header_incomplete = True
+            auth_headers = []
+            malformed_header = False
+            for key, value in header_items:
+                if not isinstance(key, str) or len(key) > 256 or not isinstance(value, str):
+                    malformed_header = True
+                    continue
+                if key.casefold() == "authorization":
+                    auth_headers.append(value)
+            if malformed_header:
+                header_incomplete = True
+            if len(auth_headers) > 1:
+                duplicate_authorization_headers += 1
+                header_incomplete = True
             status_code = getattr(tx, "response_status", 200)
             if type(status_code) is not int or not 100 <= status_code <= 599:
                 status_code = None
 
             # Find token in headers
-            auth_header = next((value for key, value in headers.items()
-                                if isinstance(key, str) and key.lower() == "authorization"), "")
+            # Duplicate case-insensitive Authorization entries are ambiguous;
+            # inspect the first bounded value but expose the coverage gap.
+            auth_header = auth_headers[0] if auth_headers else ""
             if not isinstance(auth_header, str):
                 auth_header = ""
-            if len(auth_header) > self.MAX_TOKEN_CHARS + 16:
+            if len(auth_header) > self.MAX_AUTHORIZATION_HEADER_CHARS:
                 auth_header = ""
+                header_incomplete = True
+            if header_incomplete:
+                header_input_incomplete += 1
             token = ""
             auth_scheme, separator, auth_value = auth_header.partition(" ")
             if separator and auth_scheme.lower() == "bearer":
@@ -417,30 +489,38 @@ class MobileTokenSessionAuditor:
             elif auth_header:
                 token = auth_header.strip()
 
-            # 1. Cleartext HTTP transmission check
-            if url.lower().startswith("http://") and token:
-                findings.append(Finding(
-                    title="Authentication Credential Transmitted Over Cleartext HTTP",
-                    description="An Authorization credential was sent over an unencrypted HTTP channel, exposing it to network interception.",
-                    severity=Severity.HIGH,
-                    cwe_id="CWE-319",
-                    affected_component=safe_url,
-                    detection_method="MobileTokenSessionAuditor (Network Security)",
-                    status=FindingStatus.UNVERIFIED,
-                    remediation="Enforce HTTPS via Network Security Config and reject plain HTTP transmission.",
-                ))
-
-            # 2. Check query parameter tokens
+            # Parse URL credentials before classifying cleartext transport so
+            # query-carried credentials are not missed when no auth header exists.
+            query_credential_value_present = False
             try:
                 parsed = urlsplit(url)
             except ValueError:
+                url_inputs_unmodeled += 1
                 parsed = urlsplit("")
+            url_userinfo_present = parsed.username is not None or parsed.password is not None
+            if parsed.scheme.lower() in {"http", "https"} and url_userinfo_present:
+                findings.append(Finding(
+                    title="Credential-Like Data Embedded in URL Userinfo",
+                    description="The captured HTTP(S) URL contains username/password userinfo syntax. The values are omitted; the capture does not establish that the server used or accepted them.",
+                    severity=Severity.MEDIUM,
+                    cwe_id="CWE-522",
+                    affected_component=safe_url,
+                    detection_method="MobileTokenSessionAuditor (URL Hygiene)",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Avoid placing credentials in URL userinfo; use a supported Authorization header and ensure captures redact URL authority credentials.",
+                ))
             try:
                 query_tuples = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=256)
             except ValueError:
                 query_tuples = []
+                query_parse_incomplete += 1
             for q_name, q_val in query_tuples:
-                if q_name.lower() in self.TOKEN_QUERY_PARAMS and len(q_val) > 8:
+                if self._is_sensitive_query_key(q_name):
+                    if q_val.strip():
+                        query_credential_value_present = True
+                    if len(findings) >= self.MAX_FINDINGS:
+                        finding_cap_reached = True
+                        break
                     findings.append(Finding(
                         title="Sensitive Authentication Token in URL Query Parameter",
                         description="A token-like query parameter is present in the captured URL, which can expose credentials to access logs, referrer headers, or WebView history. The value is omitted from evidence.",
@@ -451,12 +531,37 @@ class MobileTokenSessionAuditor:
                         status=FindingStatus.UNVERIFIED,
                         remediation="Pass authentication and session tokens in the HTTP Authorization header instead of the URL query string.",
                     ))
-                    if not token:
-                        token = q_val
+                    if not token and q_val.strip():
+                        token = q_val.strip()
+            if finding_cap_reached:
+                break
+
+            # A non-empty sensitive query value may be a credential sent over
+            # cleartext; a blank token-shaped parameter alone is not evidence
+            # that a credential value was transmitted.
+            if parsed.scheme.lower() == "http" and (token or query_credential_value_present or url_userinfo_present):
+                if len(findings) >= self.MAX_FINDINGS:
+                    finding_cap_reached = True
+                    break
+                findings.append(Finding(
+                    title="Authentication Credential Transmitted Over Cleartext HTTP",
+                    description="An authorization credential or recognized credential-like URL field was observed over unencrypted HTTP. Its value is omitted; server use/acceptance is unverified.",
+                    severity=Severity.HIGH,
+                    cwe_id="CWE-319",
+                    affected_component=safe_url,
+                    detection_method="MobileTokenSessionAuditor (Network Security)",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Use HTTPS for authentication and do not place credentials in URLs.",
+                ))
 
             # Audit JWT claims if token is found
             if token:
-                findings.extend(self.audit_token(token, context_url=safe_url))
+                token_findings = self.audit_token(token, context_url=safe_url)
+                room = self.MAX_FINDINGS - len(findings)
+                findings.extend(token_findings[:room])
+                if len(token_findings) > room or len(findings) >= self.MAX_FINDINGS:
+                    finding_cap_reached = True
+                    break
 
             # 3. Track logout / session revocation
             path_lower = parsed.path.lower()
@@ -482,5 +587,28 @@ class MobileTokenSessionAuditor:
                         remediation="Ensure the backend invalidates session tokens in the server-side cache upon user logout.",
                         metadata={"logout_index": logout_idx, "reuse_index": idx},
                     ))
+
+            if len(findings) >= self.MAX_FINDINGS:
+                finding_cap_reached = True
+                break
+
+        omitted = max(0, total_transactions - transactions_analyzed)
+        incomplete = bool(omitted or finding_cap_reached or query_parse_incomplete
+                          or url_inputs_unmodeled or header_input_incomplete)
+        self.last_coverage = {
+            "status": "partial" if incomplete else "complete_for_supplied_input",
+            "transactions_received": total_transactions,
+            "transactions_analyzed": transactions_analyzed,
+            "transactions_omitted": omitted,
+            "query_parse_incomplete_transactions": query_parse_incomplete,
+            "url_inputs_unmodeled": url_inputs_unmodeled,
+            "header_input_incomplete_transactions": header_input_incomplete,
+            "duplicate_authorization_header_transactions": duplicate_authorization_headers,
+            "transaction_limit": self.MAX_TRANSACTIONS,
+            "max_headers_per_transaction": self.MAX_HEADERS_PER_TRANSACTION,
+            "finding_count": len(findings),
+            "finding_limit": self.MAX_FINDINGS,
+            "finding_cap_reached": finding_cap_reached,
+        }
 
         return findings

@@ -13,6 +13,64 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qsl, quote, urlsplit
+
+from packageurl import PackageURL
+
+
+def escape_purl_segment(value: str) -> str:
+    """Percent-encode an untrusted value for use as one package-URL segment."""
+    if not isinstance(value, str):
+        raise ValueError("PURL segments must be strings")
+    return quote(value, safe="._~-", encoding="utf-8", errors="strict")
+
+
+def normalize_package_url(value: str) -> str:
+    """Validate and canonicalize a PURL using the package-url reference parser."""
+    if (not isinstance(value, str) or len(value) > 2048
+            or any(ch.isspace() or ord(ch) < 0x20 for ch in value)
+            or re.search(r"%(?![0-9a-fA-F]{2})", value)):
+        raise ValueError("Invalid package URL syntax or length")
+    try:
+        parts = urlsplit(value)
+        if parts.scheme.lower() != "pkg":
+            raise ValueError("Package URL must use the pkg scheme")
+        qualifier_pairs = parse_qsl(parts.query, keep_blank_values=True, strict_parsing=True,
+                                    max_num_fields=100)
+        qualifier_names = [name.lower() for name, _ in qualifier_pairs]
+        if len(qualifier_names) != len(set(qualifier_names)):
+            raise ValueError("Package URL contains duplicate qualifier names")
+        parsed = PackageURL.from_string(value)
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Package URL"):
+            raise
+        raise ValueError("Invalid package URL syntax") from exc
+    if parsed is None:
+        raise ValueError("Invalid package URL syntax")
+    errors = [item.message for item in parsed.validate()
+              if getattr(item.severity, "value", item.severity) == "error"]
+    if errors:
+        raise ValueError("Invalid package URL: " + "; ".join(errors[:4]))
+    canonical = parsed.to_string()
+    if len(canonical) > 2048:
+        raise ValueError("Invalid package URL syntax or length")
+    return canonical
+
+
+def build_package_url(purl_type: str, name: str, version: Optional[str] = None,
+                      namespace: Optional[str] = None) -> str:
+    """Build a canonical PURL from coordinates without joining untrusted path text."""
+    try:
+        parsed = PackageURL(type=purl_type, namespace=namespace, name=name, version=version)
+        errors = [item.message for item in parsed.validate()
+                  if getattr(item.severity, "value", item.severity) == "error"]
+        if errors:
+            raise ValueError("Invalid package coordinates: " + "; ".join(errors[:4]))
+        return normalize_package_url(parsed.to_string())
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Invalid package coordinates"):
+            raise
+        raise ValueError("Invalid package coordinates") from exc
 
 
 @dataclass
@@ -30,7 +88,21 @@ class SbomComponent:
 class MobileSbomGenerator:
     """Generates CycloneDX and SPDX SBOM representations."""
 
+    COMPONENT_TYPES = {
+        "application", "framework", "library", "container", "operating-system", "device",
+        "firmware", "file", "machine-learning-model", "platform", "device-driver",
+        "cryptographic-asset", "data",
+    }
+
+    HASH_LENGTHS = {
+        "MD5": 32, "SHA-1": 40, "SHA-256": 64, "SHA-384": 96, "SHA-512": 128,
+        "SHA3-256": 64, "SHA3-384": 96, "SHA3-512": 128,
+        "BLAKE2B-256": 64, "BLAKE2B-384": 96, "BLAKE2B-512": 128, "BLAKE3": 64,
+    }
+
     def __init__(self, app_name: str = "MobileApp", app_version: str = "1.0.0"):
+        self._validate_text(app_name, "application name", 512)
+        self._validate_text(app_version, "application version", 256)
         self.app_name = app_name
         self.app_version = app_version
         self.components: List[SbomComponent] = []
@@ -46,15 +118,48 @@ class MobileSbomGenerator:
         licenses: Optional[List[str]] = None,
     ) -> None:
         """Add a software dependency or native library component."""
+        self._validate_text(name, "component name", 1024)
+        if version is not None:
+            self._validate_text(version, "component version", 256)
+        purl = normalize_package_url(purl)
+        if not isinstance(component_type, str) or component_type not in self.COMPONENT_TYPES:
+            raise ValueError(f"Unsupported CycloneDX component type: {component_type!r}")
+        if licenses is not None:
+            if not isinstance(licenses, list):
+                raise ValueError("SBOM licenses must be a list of identifiers")
+            for license_id in licenses:
+                self._validate_text(license_id, "license identifier", 256)
+        normalized_hashes: Dict[str, str] = {}
+        for algorithm, digest in (hashes or {}).items():
+            if not isinstance(algorithm, str) or not isinstance(digest, str):
+                raise ValueError("SBOM hash algorithms and digests must be strings")
+            canonical = re.sub(r"[-_]", "", algorithm).upper()
+            canonical = {"SHA1": "SHA-1", "SHA256": "SHA-256", "SHA384": "SHA-384",
+                         "SHA512": "SHA-512", "SHA3256": "SHA3-256", "SHA3384": "SHA3-384",
+                         "SHA3512": "SHA3-512", "BLAKE2B256": "BLAKE2B-256",
+                         "BLAKE2B384": "BLAKE2B-384", "BLAKE2B512": "BLAKE2B-512"}.get(canonical, canonical)
+            expected_length = self.HASH_LENGTHS.get(canonical)
+            if (expected_length is None or len(digest) != expected_length
+                    or not re.fullmatch(r"[0-9a-fA-F]+", digest)):
+                raise ValueError(f"Invalid or unsupported SBOM digest for {algorithm!r}")
+            if canonical in normalized_hashes:
+                raise ValueError(f"Duplicate SBOM hash algorithm: {canonical}")
+            normalized_hashes[canonical] = digest.lower()
         comp = SbomComponent(
             name=name,
             version=version,
             purl=purl,
             component_type=component_type,
-            hashes=hashes or {},
+            hashes=normalized_hashes,
             licenses=licenses or [],
         )
         self.components.append(comp)
+
+    @staticmethod
+    def _validate_text(value: Any, label: str, max_length: int) -> None:
+        if (not isinstance(value, str) or not value or len(value) > max_length
+                or any(ord(ch) < 0x20 and ch not in "\t\n\r" for ch in value)):
+            raise ValueError(f"Invalid or overlong SBOM {label}")
 
     def add_vulnerability(
         self,
@@ -65,12 +170,31 @@ class MobileSbomGenerator:
         cwe_ids: Optional[List[str]] = None,
     ) -> None:
         """Attach an OSV/CVE security advisory to an inventoried component."""
+        severity_aliases = {"moderate": "medium"}
+        if (not isinstance(vuln_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", vuln_id)):
+            raise ValueError("Invalid SBOM vulnerability identifier or package URL")
+        purl = normalize_package_url(purl)
+        if not isinstance(description, str) or len(description) > 4096 or any(
+            ord(ch) < 0x20 and ch not in "\t\n\r" for ch in description
+        ):
+            raise ValueError("Invalid or overlong SBOM vulnerability description")
+        if not isinstance(severity, str):
+            raise ValueError("SBOM vulnerability severity must be a string")
+        normalized_severity = severity_aliases.get(severity.strip().lower(), severity.strip().lower())
+        if normalized_severity not in {"critical", "high", "medium", "low", "info", "none", "unknown"}:
+            raise ValueError("Unsupported CycloneDX vulnerability severity")
+        normalized_cwes = []
+        for cwe in cwe_ids or []:
+            match = re.fullmatch(r"(?i)CWE-([1-9][0-9]*)", cwe) if isinstance(cwe, str) else None
+            if not match:
+                raise ValueError("CWE values must use the exact CWE-<positive integer> form")
+            normalized_cwes.append(f"CWE-{int(match.group(1))}")
         self.vulnerabilities.append({
             "id": vuln_id,
             "purl": purl,
             "description": description,
-            "severity": severity,
-            "cwe_ids": cwe_ids or [],
+            "severity": normalized_severity,
+            "cwe_ids": normalized_cwes,
         })
 
     def _component_refs(self) -> list[str]:
@@ -98,7 +222,7 @@ class MobileSbomGenerator:
             if c.version is None:
                 comp_entry.pop("version")
             if c.hashes:
-                comp_entry["hashes"] = [{"alg": k.upper(), "content": v} for k, v in c.hashes.items()]
+                comp_entry["hashes"] = [{"alg": k, "content": v} for k, v in c.hashes.items()]
             if c.licenses:
                 comp_entry["licenses"] = [{"license": {"id": lic}} for lic in c.licenses]
             cyclonedx_components.append(comp_entry)
@@ -140,9 +264,7 @@ class MobileSbomGenerator:
                 }
                 if v.get("cwe_ids"):
                     v_entry["cwes"] = [
-                        int(re.sub(r"[^\d]", "", cwe))
-                        for cwe in v["cwe_ids"]
-                        if re.sub(r"[^\d]", "", cwe)
+                        int(cwe[4:]) for cwe in v["cwe_ids"]
                     ]
                 cyclonedx_vulns.append(v_entry)
             res["vulnerabilities"] = cyclonedx_vulns
@@ -243,7 +365,7 @@ class MobileSbomGenerator:
             if c.hashes:
                 hashes_elem = ET.SubElement(comp_elem, "hashes")
                 for alg, h_val in c.hashes.items():
-                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg.upper()})
+                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg})
                     h_elem.text = h_val
 
             if c.licenses:
@@ -274,9 +396,7 @@ class MobileSbomGenerator:
                 if v.get("cwe_ids"):
                     cwes_elem = ET.SubElement(v_elem, "cwes")
                     for cwe in v["cwe_ids"]:
-                        digits = re.sub(r"[^\d]", "", cwe)
-                        if digits:
-                            ET.SubElement(cwes_elem, "cwe").text = digits
+                        ET.SubElement(cwes_elem, "cwe").text = cwe[4:]
                 if v.get("description"):
                     desc_elem = ET.SubElement(v_elem, "description")
                     desc_elem.text = v["description"]

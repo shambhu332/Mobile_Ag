@@ -15,6 +15,7 @@ from mobileag.security.privacy import redact
 @pytest.mark.parametrize('name', [
     'access_token', 'refresh_token', 'client_secret', 'passwd',
     'X-Api-Key', 'x-goog-api-key', 'X-Auth-Token', 'Authorization',
+    'X-Session-ID', 'X-Refresh-Token', 'X-Client-Secret', 'X-Private-Key',
 ])
 def test_opaque_credentials_redacted_in_nested_fields(name):
     value = {'captured': {name: 'syntheticOpaqueCredential', 'public': 'keep'}}
@@ -24,6 +25,18 @@ def test_opaque_credentials_redacted_in_nested_fields(name):
     assert value['captured'][name] == 'syntheticOpaqueCredential'
 
 
+def test_namespaced_redaction_preserves_noncredential_suffix_lookalikes():
+    value = {'tokenizer': 'synthetic-public-tokenizer',
+             'secretariat': 'synthetic-public-secretariat',
+             'X-Request-Trace': 'synthetic-public-trace',
+             'X-Request-Token': 'synthetic-sensitive-token'}
+    result = redact(value)
+    assert result['tokenizer'] == 'synthetic-public-tokenizer'
+    assert result['secretariat'] == 'synthetic-public-secretariat'
+    assert result['X-Request-Trace'] == 'synthetic-public-trace'
+    assert result['X-Request-Token'] == '[REDACTED]'
+
+
 @pytest.mark.parametrize('name', ['access_token', 'refresh_token', 'api_key', 'client_secret'])
 def test_quoted_json_credentials_redacted(name):
     result = redact(json.dumps({name: 'syntheticOpaqueCredential', 'public': 'keep'}))
@@ -31,10 +44,17 @@ def test_quoted_json_credentials_redacted(name):
     assert 'keep' in result
 
 
-@pytest.mark.parametrize('field', ['poc_guide', 'frida_script', 'remediation', 'file_path', 'affected_component'])
+@pytest.mark.parametrize('field', ['poc_guide', 'remediation', 'file_path', 'affected_component'])
 def test_all_generated_finding_evidence_redacted(field):
     finding = Finding(title='Synthetic', description='Synthetic', **{field: 'password=syntheticOpaqueCredential'})
     assert 'syntheticOpaqueCredential' not in finding.model_dump()[field]
+
+
+def test_legacy_frida_script_field_is_never_exported():
+    finding = Finding(title='Synthetic', description='Synthetic', frida_script='synthetic hook payload')
+    assert 'frida_script' not in finding.model_dump()
+    assert 'frida_script' not in finding.to_report_dict()
+    assert finding.frida_script == 'synthetic hook payload'
 
 
 @pytest.mark.parametrize('decision', ['FALSE_POSITIVE', 'DUPLICATE'])

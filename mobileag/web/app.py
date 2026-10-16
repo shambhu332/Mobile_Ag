@@ -17,7 +17,7 @@ from mobileag import __version__
 from mobileag.web.repository import ScanRepository, private_write
 from mobileag.web.jobs import isolated_analysis, CANCELLED, PROCESSES
 import uuid
-from mobileag.web.security import SecurityMiddleware, authorized, check_device
+from mobileag.web.security import SecurityMiddleware, authorized, check_device, configured_list
 from mobileag.security.archives import validate_archive, MAX_UPLOAD
 from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
@@ -683,7 +683,7 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
 async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
     """Export CycloneDX v1.5 SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -693,13 +693,13 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
         gen.add_component(
             name=d.get("name", "library"),
             version=d.get("version", "unknown"),
-            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+            purl=d.get("purl", f"pkg:generic/{escape_purl_segment(str(d.get('name', 'library')))}"),
         )
     if not deps:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{app_name}@{version}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return gen.generate_cyclonedx_json()
@@ -709,7 +709,7 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
 async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
     """Export CycloneDX v1.5 XML SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -719,13 +719,13 @@ async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
         gen.add_component(
             name=d.get("name", "library"),
             version=d.get("version", "unknown"),
-            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+            purl=d.get("purl", f"pkg:generic/{escape_purl_segment(str(d.get('name', 'library')))}"),
         )
     if not deps:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{app_name}@{version}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return Response(content=gen.generate_cyclonedx_xml(), media_type="application/xml")
@@ -735,7 +735,7 @@ async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
 async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
     """Export SPDX 2.3 SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -745,13 +745,13 @@ async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
         gen.add_component(
             name=d.get("name", "library"),
             version=d.get("version", "unknown"),
-            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+            purl=d.get("purl", f"pkg:generic/{escape_purl_segment(str(d.get('name', 'library')))}"),
         )
     if not deps:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{app_name}@{version}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return gen.generate_spdx_json()
@@ -815,6 +815,7 @@ async def audit_scan_tokens(scan_id: str) -> dict[str, Any]:
         "scan_id": scan_id,
         "token_findings_count": len(findings),
         "findings": [f.model_dump() for f in findings],
+        "coverage": auditor.last_coverage,
     }
 
 
@@ -848,6 +849,7 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         cwe_id=finding_dict.get("cwe_id"),
         file_path=finding_dict.get("file_path", ""),
         metadata=finding_dict.get("metadata", {}),
+        validation_evidence=finding_dict.get("validation_evidence"),
     )
 
     pkg = scan.get("package_name") or "com.target.mobile.app"
@@ -858,7 +860,8 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         return {
             "finding_id": finding_id,
             "available": False,
-            "message": "Automated standalone exploit generator not applicable for this finding category.",
+            "message": "No PoC generated: category unsupported or finding lacks active artifact-bound analyst attestation.",
+            "execution_authorized": False,
         }
 
     return {
@@ -868,6 +871,8 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         "adb_command": poc.adb_command,
         "kotlin_exploit_code": poc.kotlin_exploit_code,
         "explanation": poc.explanation,
+        "generation_basis": "analyst_attested_not_independently_verified",
+        "execution_authorized": False,
     }
 
 
@@ -1195,7 +1200,7 @@ class TrafficAuditRequest(BaseModel):
 
 class ExecuteAdbRequest(BaseModel):
     serial: str
-    command: str
+    command: str = Field(min_length=1, max_length=4096)
 
 
 class ApiTestRequest(BaseModel):
@@ -1298,30 +1303,53 @@ async def get_frida_status(request: Request, serial: str = Query(min_length=1, m
 
 @app.get("/api/frida/presets/{script_type}")
 async def preview_frida_preset(script_type: Literal["crypto", "root_bypass", "unpinning"]):
-    """Generate preview text only. Never use the execution route for previews."""
-    generators = {"crypto": frida_runner.generate_crypto_monitor_script,
-                  "root_bypass": frida_runner.generate_root_bypass_script,
-                  "unpinning": frida_runner.generate_unpinning_script}
-    return {"script": generators[script_type](), "executed": False}
+    """Retired: do not expose hook scripts that bypass controls or collect secrets."""
+    raise HTTPException(410, "Frida hook previews are disabled by the safe assessment profile")
 
 
 @app.post("/api/dast/connect")
-async def connect_dast_device(req: DeviceConnectRequest) -> dict[str, Any]:
+async def connect_dast_device(req: DeviceConnectRequest, request: Request) -> dict[str, Any]:
     """Connect to a local or remote emulator/device over TCP/IP."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (req.host_port not in configured_list("MOBILEAG_ALLOWED_CONNECT")
+                or not check_action(repository().get_policy(), "connect", req.model_dump())):
+            raise HTTPException(403, "ADB connection scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.connect_device(req.host_port)
+    guard()
     return res
 
 
 @app.post("/api/dast/root")
-async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
+async def restart_dast_root(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Restart adbd with root privileges on the selected device."""
-    res = await adb_manager.restart_root(req.serial)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "root", req.model_dump())):
+            raise HTTPException(403, "ADB root action scope is unavailable or revoked")
+
+    guard()
+    res = await adb_manager.restart_root(req.serial, guard=guard)
+    guard()
     return res
 
 
 @app.post("/api/dast/install")
-async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
+async def install_dast_apk(req: InstallApkRequest, request: Request) -> dict[str, Any]:
     """Install an explicitly selected APK; permission grants are opt-in."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "install", req.model_dump())):
+            raise HTTPException(403, "APK installation scope is unavailable or revoked")
+
+    guard()
     path = Path(req.apk_path).resolve()
     if not path.is_relative_to(UPLOAD_DIR.resolve()):
         raise HTTPException(400, "Install an archive uploaded to this dashboard")
@@ -1330,14 +1358,25 @@ async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
             raise ValueError("Expected Android APK")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    guard()
     res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions)
+    guard()
     return res
 
 
 @app.post("/api/dast/launch")
-async def launch_dast_activity(req: LaunchActivityRequest) -> dict[str, Any]:
+async def launch_dast_activity(req: LaunchActivityRequest, request: Request) -> dict[str, Any]:
     """Launch an Android component or exported activity via am start."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "launch", req.model_dump())):
+            raise HTTPException(403, "Activity launch scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.launch_activity(req.serial, req.component)
+    guard()
     return res
 
 
@@ -1366,23 +1405,45 @@ async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest, request: Request)
 
 
 @app.post("/api/dast/execute_adb")
-async def execute_adb_command(req: ExecuteAdbRequest) -> dict[str, Any]:
+async def execute_adb_command(req: ExecuteAdbRequest, request: Request) -> dict[str, Any]:
     """Execute an ADB shell command directly on the connected BYOD device."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "execute_adb", req.model_dump())):
+            raise HTTPException(403, "Device-wide shell scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.execute_shell(req.serial, req.command)
+    guard()
     return res
 
 
 @app.get("/api/dast/logcat")
-async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+async def get_dast_logcat(serial: str, request: Request, package_name: Optional[str] = None,
+                         lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     """Return only exact target-process log records for an approved package."""
     if not package_name:
         raise HTTPException(status_code=422, detail="package_name is required for scoped log capture")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(serial)
+                or not check_action(repository().get_policy(), "logcat",
+                                   {"serial": serial, "package_name": package_name})):
+            raise HTTPException(403, "Log collection scope is unavailable or revoked")
+
     # PID filtering happens at logcat collection time, so stale Process markers
     # cannot cause the shared buffer to expose a different process reusing a PID.
+    guard()
     pids = await adb_manager.get_process_pids(serial, package_name)
     raw_lines = []
     for pid in pids:
+        guard()
         raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid))
+        guard()
+    guard()
     findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name, process_pids=pids)
     return {
         "serial": serial,
@@ -1394,19 +1455,24 @@ async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines
 
 @app.post("/api/dast/logcat/clear")
 async def clear_dast_logcat(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
-    """Clear device logcat buffer."""
+    """Retired: preserve the original device log buffer as assessment evidence."""
     require_current_session(request)
-    success = await adb_manager.clear_logcat(req.serial)
-    require_current_session(request)
-    return {"status": "success" if success else "failed"}
+    raise HTTPException(410, "Device-wide logcat clearing is disabled to preserve evidence")
 
 
 @app.post("/api/dast/screenshot")
 async def capture_dast_screenshot(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Capture a live screenshot of the device screen."""
-    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "screenshot", req.model_dump())):
+            raise HTTPException(403, "Screenshot scope is unavailable or revoked")
+
+    guard()
     png_bytes = await adb_manager.capture_screenshot(req.serial)
-    require_current_session(request)
+    guard()
     if png_bytes:
         import base64
         b64 = base64.b64encode(png_bytes).decode("utf-8")
@@ -1466,7 +1532,7 @@ async def audit_dast_deeplinks(req: DeepLinkAuditRequest, request: Request) -> d
 
 @app.post("/api/dast/memory")
 async def audit_dast_memory(req: MemoryAuditRequest, request: Request) -> dict[str, Any]:
-    """Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."""
+    """Review bounded memory-pattern category indicators; raw values are not collected."""
     require_current_session(request)
     def guard():
         from mobileag.web.policy import check_action
@@ -1500,24 +1566,9 @@ async def crawl_dast_ui(req: UICrawlRequest, request: Request) -> dict[str, Any]
 
 @app.post("/api/dast/frida")
 async def deploy_dast_frida(req: FridaDeployRequest, request: Request) -> dict[str, Any]:
-    """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass, unified)."""
+    """Retired: runtime hook deployment, bypasses, and secret harvesting are out of scope."""
     require_current_session(request)
-    from mobileag.web.policy import check_action
-    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
-        raise HTTPException(403, 'Frida device-wide diagnostic action is not approved')
-    if req.script_type == "crypto":
-        script = frida_runner.generate_crypto_monitor_script()
-    elif req.script_type == "root_bypass":
-        script = frida_runner.generate_root_bypass_script()
-    elif req.script_type in ("all", "unified"):
-        script = frida_runner.generate_all_in_one_agent_script()
-    else:
-        script = frida_runner.generate_unpinning_script()
-    res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
-    require_current_session(request)
-    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
-        raise HTTPException(403, 'Frida device-wide diagnostic action was revoked')
-    return {"status": res.get("status", "error"), "result": res, "script": script}
+    raise HTTPException(410, "Frida runtime deployment is disabled; use read-only process observation")
 
 
 @app.post("/api/dast/traffic/audit")
@@ -1607,6 +1658,7 @@ def _captured_api_catalog(txs, title: str):
             method=tx.method, url=tx.url, headers=tx.request_headers,
             body=tx.request_body,
             response_status=tx.response_status, response_body=tx.response_body,
+            response_headers=tx.response_headers,
         ))
     return catalog
 
@@ -1981,13 +2033,14 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["components"] = state.get("components", [])
         scan["deep_links"] = state.get("deep_links", [])
         scan["api_endpoints"] = state.get("api_endpoints", [])
+        scan["il2cpp_analysis"] = state.get("il2cpp_analysis", {})
         scan["coverage"] = state.get("coverage", {})
         scan["framework"] = state.get("framework_info", {}).get("framework", platform)
         if req.auto_dast:
             if platform != "android" or not check_device(req.serial):
                 raise ValueError("DAST requires an explicitly scoped Android device")
             if req.bypass_root or req.bypass_ssl:
-                raise ValueError("Automatic bypass is unsupported; use the explicit Frida workbench and verify its result")
+                raise ValueError("Automatic root/TLS bypass is disabled; review configuration without altering authorization")
             activities = [c["name"] for c in scan["components"] if c.get("type") == "activity" and c.get("exported")]
             links = [d["uri"] for d in scan["deep_links"] if d.get("uri")]
             dynamic = await intent_fuzzer.run_full_dast_suite(serial=req.serial, package_name=scan["package_name"],
@@ -2018,20 +2071,38 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
             ep_id = f"api_{ep_url}"
             if ep_id not in seen_nodes:
                 seen_nodes.add(ep_id)
+                raw_method = ep.get("method", "UNKNOWN") if isinstance(ep, dict) else getattr(ep, "method", "UNKNOWN")
+                api_method = raw_method if raw_method in {"GET", "POST", "PUT", "DELETE", "PATCH", "UNKNOWN"} else "UNKNOWN"
+                raw_evidence = ep.get("evidence_type") if isinstance(ep, dict) else getattr(ep, "evidence_type", None)
+                evidence_type = raw_evidence if raw_evidence in {
+                    "route_literal", "embedded_url_candidate", "static_endpoint_candidate"
+                } else "static_endpoint_candidate"
                 nodes.append({
                     "id": ep_id, "label": ep_url[:30], "group": "api",
-                    "shape": "dot", "size": 16, "color": "#06b6d4"
+                    "shape": "dot", "size": 16, "color": "#06b6d4",
+                    "method": api_method, "evidence_type": evidence_type,
+                    "proof_status": "not_proven",
+                    "title": f"Static endpoint candidate | method: {api_method} | proof: not_proven",
                 })
-                edges.append({"from": "app", "to": ep_id, "label": "calls"})
+                edges.append({"from": "app", "to": ep_id, "label": "endpoint_candidate"})
         for f in (scan["findings"] or [])[:20]:
             f_id = f.get("id", str(id(f)))
             if f_id not in seen_nodes:
                 seen_nodes.add(f_id)
                 sev = f.get("severity", "MEDIUM").upper()
                 f_color = "#ef4444" if sev in {"CRITICAL", "HIGH"} else "#f59e0b" if sev == "MEDIUM" else "#3b82f6"
+                finding_status = f.get("status", "UNVERIFIED")
+                if finding_status not in {"UNVERIFIED", "CONFIRMED", "FALSE_POSITIVE", "DUPLICATE"}:
+                    finding_status = "UNKNOWN"
+                proof_status = f.get("proof_status") or f.get("proof_state")
+                if proof_status not in {"not_proven", "analyst_recorded", "not_assessed"}:
+                    proof_status = ("not_proven" if finding_status == "UNVERIFIED" else
+                                    "analyst_recorded" if finding_status == "CONFIRMED" else "not_assessed")
                 nodes.append({
                     "id": f_id, "label": (f.get("title") or "Finding")[:25], "group": "vulnerability",
-                    "shape": "diamond", "size": 20, "color": f_color
+                    "shape": "diamond", "size": 20, "color": f_color, "finding_id": f_id,
+                    "status": finding_status, "proof_status": proof_status,
+                    "title": f"Status: {finding_status} | proof: {proof_status}",
                 })
                 edges.append({"from": "app", "to": f_id, "label": "has_vuln"})
         scan["attack_surface_graph"] = {"nodes": nodes, "edges": edges}
@@ -2068,7 +2139,7 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
     if request.auto_dast and (platform != "android" or not check_device(request.serial)):
         raise HTTPException(403, "DAST requires an explicit authorized Android device")
     if request.bypass_root or request.bypass_ssl:
-        raise HTTPException(422, "Automatic bypass is unsupported; use explicit Frida validation")
+        raise HTTPException(422, "Automatic root/TLS bypass is disabled; review configuration without altering authorization")
     output = Path(request.output_dir or OUTPUT_DIR).resolve()
     if output != OUTPUT_DIR.resolve():
         raise HTTPException(400, "Web job outputs use the configured output directory only")

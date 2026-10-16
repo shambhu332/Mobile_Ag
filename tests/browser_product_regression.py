@@ -33,7 +33,7 @@ async def fixture():
     findings=await SecretScanner(LLMRouter(Settings(_env_file=None,offline=True))).scan(str(source))
     result=[f.model_dump(mode='json') for f in findings]
     result[0]['id']='synthetic-finding'
-    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','artifact_sha256':'a'*64,'stats':{'total':1,'high':1},'findings':result,'coverage':{'android_surface':AndroidSurfaceAnalyzer().scan(str(source),{})['coverage']},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
+    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','artifact_sha256':'a'*64,'stats':{'total':1,'high':1},'findings':result,'attack_surface_graph':{'nodes':[{'id':'app','label':'org.example.review','group':'app'},{'id':'scan::synthetic-finding','finding_id':'synthetic-finding','label':'Review candidate','group':'vulnerability'}],'edges':[{'from':'app','to':'scan::synthetic-finding','label':'has_vuln'}]},'coverage':{'android_surface':AndroidSurfaceAnalyzer().scan(str(source),{})['coverage']},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
 scan=asyncio.run(fixture());m=importlib.import_module('mobileag.web.app')
 m.repository().save(scan)
 m.attack_graph.verify_connection=AsyncMock(return_value=False)
@@ -148,6 +148,10 @@ def main():
                     page.locator('#session-token').fill('synthetic-local-only')
                     page.locator('#session-token').press('Enter')
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
+                    page.evaluate('handleGraphNodeClick({nodes:["scan::synthetic-finding"]})')
+                    assert page.evaluate('selectedFindingId')=='synthetic-finding'
+                    page.locator('#view-findings').wait_for(state='visible')
+                    page.evaluate('switchView("overview")')
                     wait_condition(page,'document.querySelector("#auto-ready-status").textContent.startsWith("Checked ")')
                     assert page.locator('#view-assessment #assessment-readiness').count()==1
                     assert page.evaluate('dastActiveDevice') is None
@@ -219,7 +223,7 @@ def main():
                     assert sum(generated_poc_url in request for request in requests)==1
                     poc_generation_is_explicit=True
                     copied={}
-                    for pane,expression in [('poc','getOrGeneratePocGuide(currentScan.findings[0])'),('adb',"'adb shell ' + getOrGenerateAdbCommand(currentScan.findings[0])"),('frida','getOrGenerateFridaScript(currentScan.findings[0])'),('ast','currentScan.findings[0].code_snippet')]:
+                    for pane,expression in [('poc','getOrGeneratePocGuide(currentScan.findings[0])'),('ast','currentScan.findings[0].code_snippet')]:
                         page.locator('#subtab-btn-'+pane).click()
                         expected=page.evaluate(expression)
                         page.locator('#poc-pane-'+pane+' button').first.click()
@@ -228,7 +232,7 @@ def main():
                     result={'keyboard_connection':{'initial_token_focus':keyboard_initial_focus,'tab_to_submit':keyboard_submit_focus,'enter_submits':not page.locator('#session-connect').evaluate('(e) => e.open')}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
                             'poc_generation_is_explicit':poc_generation_is_explicit,
                             'xss_marker_executions':page.evaluate('window.auditXssCount'),'exact_clipboard_copies':copied,
-                            'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_kpi_present':page.locator('#kpi-masvs').count()==1,
+                            'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_coverage_view_present':page.locator('#masvs-canvas').count()==1 and page.locator('#masvs-summary-score').count()==1,
                             'inline_handlers':page.evaluate('() => [...document.querySelectorAll("*")].flatMap(e=>[...e.attributes]).filter(a=>/^on/i.test(a.name)).length'),
                             'inline_scripts':page.evaluate('document.querySelectorAll("script:not([src])").length'),'implicit_device_selection':page.evaluate('dastActiveDevice')}
                     hostile='Synthetic <img id="injected-marker" src=x onerror="window.auditXssProbe()"> title'
@@ -482,19 +486,18 @@ def main():
                         'unconfigured_execution_blocked':True,'forged_submit_blocked':True,'refresh_preserves_selection':True,
                         'configured_model_visible':True,'explicit_consent_required':True,'configuration_hosts_provider_controls':True,'assessment_keeps_explicit_consent':True,
                         'configuration_not_connectivity':True,'catalog_failure_blocks_selected_ai':True}
-                    # Status and preview have zero instrumentation POSTs.
+                    # Process status is read-only; hook preview/deploy controls are retired.
                     page.locator('#nav-dast').click()
                     wait_condition(page,'document.querySelector("#header-device-select").options.length===2')
                     assert 'executable available' in page.locator('#dast-adb-indicator').inner_text()
-                    assert page.locator('[data-onclick="static49"]').is_disabled()
+                    assert page.locator('[data-onclick="static49"]').count()==0
+                    assert page.locator('[data-onclick="static50"]').count()==0
+                    assert page.locator('#frida-script-preview-panel').count()==0
                     device_posts=[]
                     page.on('request',lambda request:device_posts.append(request.url) if request.method=='POST' and '/api/dast/' in request.url else None)
                     page.locator('#header-device-select').select_option('emulator-synthetic')
                     assert 'Root not checked' in page.locator('#header-root-badge').inner_text()
                     wait_condition(page,'document.querySelector("#frida-status-badge").textContent.includes("attachment not checked")')
-                    page.locator('[data-onclick="static50"]').click()
-                    page.locator('#frida-script-preview-panel').wait_for(state='visible')
-                    assert page.locator('#frida-script-code').inner_text()
                     assert device_posts==[]
                     # Failed refresh invalidates previously selected ready-looking state.
                     page.route('**/api/dast/devices',lambda route:route.fulfill(status=503,json={'detail':'Synthetic inventory unavailable'}))
@@ -660,7 +663,7 @@ def main():
                                   device_operations='Mocked and disabled; no real ADB/Frida commands',cloud_model_calls=0)
                     page.set_viewport_size({'width':1440,'height':1000})
                     page.locator('#workspace-navigation').wait_for(state='visible')
-                    result['a11y']={}
+                    result['a11y']={} if args.axe else 'not_run'
                     if args.axe:
                         page.evaluate(Path(args.axe).read_text())
                         for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
@@ -672,7 +675,7 @@ def main():
                     page.set_viewport_size({'width':320,'height':844})
                     result['small_screen_scrollwidth']=page.evaluate('document.documentElement.scrollWidth')
                     result['interface']['mobile_views']={}
-                    result['mobile_a11y']={}
+                    result['mobile_a11y']={} if args.axe else 'not_run'
                     page.locator('#workspace-navigation').wait_for(state='hidden')
                     assert page.locator('#workspace-menu-toggle').is_visible()
                     assert not page.locator('#workspace-navigation').is_visible()
@@ -706,6 +709,7 @@ def main():
                     assert page.locator('#view-assessment').is_visible()
                     assert page.locator('#workspace-title').bounding_box()['y'] < 500
                     result['interface']['mobile_menu_collapses_after_selection']=True
+                    result['a11y_status']='passed' if args.axe else 'not_run'
                     page.screenshot(path=str(out/'fixed-320px.png'))
                     (out/'browser-results.json').write_text(json.dumps(result,indent=2))
                     assert all(result['keyboard_connection'].values()) and result['reduced_motion_media']

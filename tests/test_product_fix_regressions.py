@@ -218,7 +218,17 @@ def test_scan_records_original_hash_and_effective_policy(client):
     uploaded=client.post('/api/upload/apk',files={'file':('synthetic.apk',original)}).json()
     assert client.post('/api/settings',json={'entropy_threshold':3.25}).status_code==200
     with patch.object(web,'Orchestrator') as orchestrator:
-        orchestrator.return_value.scan=AsyncMock(return_value={'package_name':'org.example.synthetic','filtered_findings':[], 'coverage':{'synthetic_fixture':1}})
+        orchestrator.return_value.scan=AsyncMock(return_value={
+            'package_name':'org.example.synthetic','filtered_findings':[{
+                'id':'synthetic-unverified', 'title':'Synthetic review candidate',
+                'severity':'INFO', 'status':'UNVERIFIED',
+            }],
+            'api_endpoints':[{'url':'https://api.fixture.invalid/v1/resource',
+                              'method':'UNKNOWN','evidence_type':'embedded_url_candidate'}],
+            'coverage':{'synthetic_fixture':1},
+            'il2cpp_analysis':{'metadata_version':29,'evidence_kind':'bounded_static_metadata_candidates',
+                               'runtime_status':'not_tested','proof_status':'not_proven','exhaustive':False},
+        })
         response=client.post('/api/scans/run',json={'apk_path':uploaded['file_path']})
     assert response.status_code==200
     scan=client.get('/api/scans/'+response.json()['scan_id']).json()
@@ -226,6 +236,18 @@ def test_scan_records_original_hash_and_effective_policy(client):
     assert scan['analysis_policy']['offline'] is True
     assert scan['analysis_policy']['entropy_threshold']==3.25
     assert scan['analysis_policy']['approved_llm_providers']==[]
+    assert scan['il2cpp_analysis']['metadata_version']==29
+    assert scan['il2cpp_analysis']['proof_status']=='not_proven'
+    graph_finding = next(node for node in scan['attack_surface_graph']['nodes']
+                         if node.get('finding_id') == 'synthetic-unverified')
+    assert graph_finding['status'] == 'UNVERIFIED'
+    assert graph_finding['proof_status'] == 'not_proven'
+    graph_api = next(node for node in scan['attack_surface_graph']['nodes'] if node.get('group') == 'api')
+    assert graph_api['method'] == 'UNKNOWN'
+    assert graph_api['evidence_type'] == 'embedded_url_candidate'
+    assert graph_api['proof_status'] == 'not_proven'
+    assert next(edge for edge in scan['attack_surface_graph']['edges']
+                if edge.get('to') == graph_api['id'])['label'] == 'endpoint_candidate'
     assert Path(uploaded['file_path']).read_bytes()==original
     assert Path(uploaded['file_path']).stat().st_mode & 0o777 == 0o600
 

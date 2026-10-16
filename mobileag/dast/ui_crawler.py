@@ -36,6 +36,18 @@ class UICrawler:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
+    @staticmethod
+    def _check_scope_guard(guard) -> None:
+        """Fail closed when a supplied scope guard explicitly denies access."""
+        if not callable(guard):
+            raise PermissionError("UI observation requires a valid scope guard")
+        try:
+            allowed = guard()
+        except Exception as exc:
+            raise PermissionError("UI observation scope is unavailable or revoked") from exc
+        if allowed is False:
+            raise PermissionError("UI observation scope is unavailable or revoked")
+
     async def dump_ui_hierarchy(self, serial: str, guard=None) -> str:
         """Dump the current foreground window UIAutomator hierarchy XML."""
         if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
@@ -44,18 +56,18 @@ class UICrawler:
         # Do not overwrite a user's predictable uidump.xml or read stale output.
         path='/data/local/tmp/mobileag-observe-'+uuid.uuid4().hex+'.xml'
         try:
-            if guard: guard()
+            self._check_scope_guard(guard)
             code, _, _ = await self.adb._exec_cmd(["-s",serial,"shell","uiautomator","dump",path],timeout=6,output_limit=16384)
-            if guard: guard()
+            self._check_scope_guard(guard)
             if code:return ""
             code, stdout, _ = await self.adb._exec_cmd(["-s",serial,"shell","cat",path],timeout=4,output_limit=1024*1024)
-            if guard: guard()
+            self._check_scope_guard(guard)
             if code == 0 and 0 < len(stdout) <= 1024*1024:
                 return stdout.decode("utf-8",errors="replace").strip()
             return ""
         finally:
             try:
-                guard()
+                self._check_scope_guard(guard)
                 await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
             except Exception as exc:
                 # Revocation can leave only our uniquely named temporary dump;
@@ -145,7 +157,7 @@ class UICrawler:
                 or not callable(guard)):
             return {**base, "status": "blocked", "reason": "Explicit device, package, and scope guard are required"}
         try:
-            guard()
+            self._check_scope_guard(guard)
         except Exception:
             return {**base, "status": "blocked", "reason": "UI observation scope is unavailable or revoked"}
         xml = await self.dump_ui_hierarchy(serial, guard=guard)

@@ -1,14 +1,19 @@
-"""Automated Exploit Proof-of-Concept (PoC) Synthesizer.
+"""Generate bounded review-only Android PoC templates for synthetic fixtures.
 
-Generates standalone compilable Android exploit source code (Kotlin/Java)
-and executable ADB payload commands for confirmed high-severity mobile vulnerabilities.
+This module never executes generated content. ADB output is explanatory text,
+and generated source is limited to canary-oriented review examples; neither is
+independent verification or authorization to test a target.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import re
+from pydantic import ValidationError
 
 from mobileag.reporting.finding import Finding
+from mobileag.reporting.finding import FindingStatus
+from mobileag.reporting.validation import ConfirmationEvidence
 
 
 @dataclass
@@ -21,12 +26,49 @@ class GeneratedPoc:
 
 
 class ExploitPocSynthesizer:
-    """Synthesizes reproducible PoC exploits for confirmed vulnerabilities."""
+    """Builds review-only synthetic-canary templates for attested findings."""
 
     def synthesize(self, finding: Finding, target_package: str) -> Optional[GeneratedPoc]:
         """Synthesize PoC based on finding type and parameters."""
+        # Generated commands/source are review artifacts, never proof or authorization
+        # to execute. Require a structured, artifact-bound analyst attestation first.
+        evidence = finding.validation_evidence or {}
+        if (finding.status != FindingStatus.CONFIRMED
+                or evidence.get("basis") != "analyst_attested"
+                or evidence.get("independently_verified") is not False
+                or evidence.get("active") is not True
+                or not isinstance(target_package, str)
+                or len(target_package) > 255
+                or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", target_package)):
+            return None
+        try:
+            record = ConfirmationEvidence.model_validate(evidence.get("record", {}))
+        except (ValidationError, TypeError):
+            return None
+        if record.package_name != target_package:
+            return None
         cwe = finding.cwe_id or ""
         fid = finding.id
+        # Every value below is interpolated into Kotlin source or an ADB
+        # command. Reject rather than attempting to interpret arbitrary metadata.
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", fid):
+            return None
+        component = finding.metadata.get("component_name", f"{target_package}.VulnerableActivity")
+        authority = finding.metadata.get("authority", f"{target_package}.provider")
+        affinity = finding.metadata.get("task_affinity", target_package)
+        uri = finding.metadata.get("uri_scheme", "myapp://vulnerable/action?redirect=https://mobileag.invalid/")
+        dotted_identifier = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+"
+        if (not isinstance(component, str) or not (re.fullmatch(dotted_identifier, component)
+                # Kotlin treats '$' as string-template syntax. Keep generated
+                # identifiers to literal-safe Java/Kotlin identifier chars.
+                or re.fullmatch(dotted_identifier + r"/[A-Za-z][A-Za-z0-9_.]*", component))
+                or not isinstance(authority, str) or not re.fullmatch(dotted_identifier, authority)
+                or not isinstance(affinity, str) or not re.fullmatch(dotted_identifier, affinity)
+                or not isinstance(uri, str) or len(uri) > 2048
+                or not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*://[A-Za-z0-9:/?&=._%+~-]+", uri)):
+            return None
+        if finding.affected_component and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*", finding.affected_component):
+            return None
 
         if "INTENT_REDIRECTION" in fid or cwe == "CWE-926":
             return self._synthesize_intent_redirection_poc(finding, target_package)
@@ -45,10 +87,7 @@ class ExploitPocSynthesizer:
 
     def _synthesize_intent_redirection_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
         target_component = finding.metadata.get("component_name", f"{target_package}.VulnerableActivity")
-        adb_cmd = (
-            f"adb shell am start -n {target_component} "
-            f"--es redirect_intent \"#Intent;action=android.intent.action.VIEW;component={target_package}/.PrivateActivity;end\""
-        )
+        adb_cmd = "# Review-only: no launch command generated; validate with a researcher-owned canary fixture."
 
         kotlin_code = f"""// Standalone Exploit PoC for Intent Redirection ({finding.id})
 package com.attacker.exploit
@@ -61,10 +100,10 @@ class ExploitActivity : Activity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
-        // Craft inner target Intent directing to private unexported component
+        // Use a harmless synthetic marker; never request a privileged action.
         val victimTarget = Intent().apply {{
-            setClassName("{target_package}", "{target_package}.PrivateActivity")
-            putExtra("admin_override", true)
+            action = "org.mobileag.SYNTHETIC_CANARY"
+            putExtra("mobileag_canary", "MOBILEAG_SYNTHETIC_CANARY")
         }}
 
         // Launch proxy component in victim app embedding our payload
@@ -84,13 +123,13 @@ class ExploitActivity : Activity() {{
             kotlin_exploit_code=kotlin_code,
             explanation=(
                 f"Launches exported component '{target_component}' with a nested intent extra "
-                "forcing the victim app to execute an unexported internal activity."
+                "with a synthetic canary intent. Run only against a researcher-owned fixture."
             ),
         )
 
     def _synthesize_deep_link_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
-        uri = finding.metadata.get("uri_scheme", "myapp://vulnerable/action?redirect=https://attacker.com")
-        adb_cmd = f"adb shell am start -a android.intent.action.VIEW -d \"{uri}\""
+        uri = finding.metadata.get("uri_scheme", "myapp://vulnerable/action?redirect=https://mobileag.invalid/")
+        adb_cmd = "# Review-only: no deep-link dispatch command generated; use a researcher-owned fixture after approval."
 
         kotlin_code = f"""// Standalone Exploit PoC for Deep Link Navigation ({finding.id})
 package com.attacker.exploit
@@ -117,7 +156,8 @@ class DeepLinkExploit : Activity() {{
             vulnerability_type="Deep Link Vulnerability",
             adb_command=adb_cmd,
             kotlin_exploit_code=kotlin_code,
-            explanation=f"Triggers deep link URI '{uri}' in victim package '{target_package}'.",
+            explanation=(f"Review-only dispatch of '{uri}' to researcher-owned fixture package '{target_package}'. "
+                         "The default redirect host is reserved under .invalid; validate custom URIs before use."),
         )
 
     def _synthesize_pending_intent_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
@@ -135,12 +175,13 @@ class MutablePendingIntentExploit : Activity() {{
         super.onActivityResult(requestCode, resultCode, data)
         val stolenPi = data?.getParcelableExtra<PendingIntent>("pending_intent")
         if (stolenPi != null) {{
-            // Mutate underlying intent action/data
+            // Restrict the fill-in payload to a synthetic canary marker.
             val fillInIntent = Intent().apply {{
-                setClassName("{target_package}", "{target_package}.PrivilegedReceiver")
-                putExtra("command", "GRANT_ALL")
+                action = "org.mobileag.SYNTHETIC_CANARY"
+                putExtra("mobileag_canary", "MOBILEAG_SYNTHETIC_CANARY")
             }}
-            stolenPi.send(this, 0, fillInIntent)
+            // Deliberately do not dispatch: an unknown PendingIntent may execute
+            // the creator's real action. Review its target in an owned fixture first.
         }}
     }}
 }}
@@ -150,12 +191,12 @@ class MutablePendingIntentExploit : Activity() {{
             vulnerability_type="PendingIntent Mutability",
             adb_command=adb_cmd,
             kotlin_exploit_code=kotlin_code,
-            explanation="Captures mutable PendingIntent and fills in unauthorized extras or actions.",
+            explanation="Shows a synthetic fill-in marker for review; it intentionally does not dispatch the PendingIntent.",
         )
 
     def _synthesize_file_provider_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
         authority = finding.metadata.get("authority", f"{target_package}.fileprovider")
-        adb_cmd = f"adb shell content read --uri content://{authority}/root/data/data/{target_package}/databases/app.db"
+        adb_cmd = "# Review-only: use a dedicated synthetic canary fixture; no content-read command is generated."
 
         kotlin_code = f"""// Standalone Exploit PoC for FileProvider Traversal ({finding.id})
 package com.attacker.exploit
@@ -163,16 +204,18 @@ package com.attacker.exploit
 import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class FileProviderExploit : Activity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
-        val uri = Uri.parse("content://{authority}/root/data/data/{target_package}/databases/app.db")
+        // Resolve only to a researcher-created canary file in a test fixture.
+        val uri = Uri.parse("content://{authority}/mobileag-fixtures/canary.txt")
         contentResolver.openInputStream(uri)?.use {{ stream ->
-            val content = BufferedReader(InputStreamReader(stream)).readText()
-            println("Stolen Database Content: $content")
+            val buffer = ByteArray(64)
+            val count = stream.read(buffer)
+            val marker = "MOBILEAG_SYNTHETIC_CANARY".toByteArray(Charsets.UTF_8)
+            val observed = count == marker.size && buffer.copyOf(count).contentEquals(marker)
+            println("Synthetic canary observed: $observed")
         }}
     }}
 }}
@@ -182,13 +225,13 @@ class FileProviderExploit : Activity() {{
             vulnerability_type="FileProvider Directory Traversal",
             adb_command=adb_cmd,
             kotlin_exploit_code=kotlin_code,
-            explanation=f"Reads unauthorized sensitive app data via exposed FileProvider authority '{authority}'.",
+            explanation=f"Checks only a bounded synthetic canary via fixture authority '{authority}'; no app database or raw content is emitted.",
         )
 
     def _synthesize_task_hijacking_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
         target_activity = finding.affected_component or f"{target_package}.MainActivity"
         task_affinity = finding.metadata.get("task_affinity", target_package)
-        adb_cmd = f"adb shell am start -n com.attacker.exploit/.StrandHoggActivity"
+        adb_cmd = "# Review-only: do not launch an overlay; inspect task behavior in a dedicated synthetic fixture."
         kotlin_code = f"""// Standalone Exploit PoC for Task Hijacking / StrandHogg ({finding.id})
 package com.attacker.exploit
 
@@ -212,8 +255,7 @@ import android.os.Bundle
 class StrandHoggActivity : Activity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
-        // This malicious activity places itself atop the victim's task stack.
-        // When the user launches {target_package}, this overlay activity is shown to steal credentials.
+        // Intentionally inert: no overlay, UI spoofing, or data capture.
     }}
 }}
 """
@@ -223,16 +265,17 @@ class StrandHoggActivity : Activity() {{
             adb_command=adb_cmd,
             kotlin_exploit_code=kotlin_code,
             explanation=(
-                f"Creates an overlay activity matching the victim's taskAffinity '{task_affinity}' "
-                f"to hijack task execution when '{target_activity}' is launched."
+                f"Shows the taskAffinity candidate '{task_affinity}' for review only. "
+                f"No overlay or credential capture is implemented; fixture activity: '{target_activity}'."
             ),
         )
 
     def _synthesize_content_provider_sqli_poc(self, finding: Finding, target_package: str) -> GeneratedPoc:
         authority = finding.metadata.get("authority", f"{target_package}.provider")
-        uri = f"content://{authority}/query"
-        projection = "* FROM users WHERE 1=1 --"
-        adb_cmd = f"adb shell content query --uri \"{uri}\" --projection \"{projection}\""
+        uri = f"content://{authority}/synthetic-canary"
+        projection = "mobileag_synthetic_canary"
+        adb_cmd = (f"# Review-only fixture query: authority={authority}, path=/synthetic-canary, "
+                   f"projection={projection}; do not query production data.")
         kotlin_code = f"""// Standalone Exploit PoC for ContentProvider SQL Injection ({finding.id})
 package com.attacker.exploit
 
@@ -246,9 +289,8 @@ class ProviderSqliExploit : Activity() {{
         val uri = Uri.parse("{uri}")
         val cursor = contentResolver.query(uri, arrayOf("{projection}"), null, null, null)
         cursor?.use {{ c ->
-            while (c.moveToNext()) {{
-                println("Leaked Row: " + (0 until c.columnCount).joinToString {{ c.getString(it) ?: "null" }})
-            }}
+            val observed = c.moveToFirst() && c.getString(0) == "MOBILEAG_SYNTHETIC_CANARY"
+            println("Synthetic canary observed: $observed")
         }}
     }}
 }}
@@ -258,6 +300,6 @@ class ProviderSqliExploit : Activity() {{
             vulnerability_type="ContentProvider SQL Injection",
             adb_command=adb_cmd,
             kotlin_exploit_code=kotlin_code,
-            explanation=f"Queries exposed ContentProvider authority '{authority}' injecting arbitrary SQL projection syntax.",
+            explanation=f"Queries only a named synthetic canary projection on fixture authority '{authority}'; this is not proof of SQL injection.",
         )
 

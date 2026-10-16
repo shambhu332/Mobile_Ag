@@ -6,29 +6,34 @@ Logcat, Activity Manager, and window states to establish exploitability.
 """
 from __future__ import annotations
 
+import re
+import shlex
 import subprocess
+import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, List, Optional
 
-from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
-from mobileag.reporting.finding import Finding, FindingStatus
+from mobileag.reporting.finding import Finding
 
 
 @dataclass
 class DynamicVerificationOutcome:
     finding_id: str
     verified: bool
-    verdict: str  # CONFIRMED, BLOCKED_BY_OS, NOT_REPRODUCED, TIMEOUT
+    verdict: str  # OBSERVED_* or REVIEW_REQUIRED; never an exploit verdict
     evidence_output: str
     logcat_markers: List[str] = field(default_factory=list)
+    execution_attempted: bool = False
 
 
 class DynamicVerificationLoop:
-    """Automates closed-loop live execution verification for static findings."""
+    """Runs one guarded, non-destructive deep-link dispatch observation only."""
+
+    MAX_TIMEOUT_SECONDS = 15.0
+    MAX_OUTPUT_CHARS = 4096
 
     def __init__(self, adb_path: str = "adb"):
         self.adb_path = adb_path
-        self.poc_synthesizer = ExploitPocSynthesizer()
 
     def verify_finding(
         self,
@@ -36,103 +41,66 @@ class DynamicVerificationLoop:
         target_package: str,
         device_serial: Optional[str] = None,
         timeout: float = 6.0,
+        *,
+        scope_guard: Optional[Callable[[str, str], bool]] = None,
+        operator_approved: bool = False,
+        synthetic_data_confirmed: bool = False,
     ) -> DynamicVerificationOutcome:
-        """Execute non-destructive verification probe on target device via ADB."""
-        poc = self.poc_synthesizer.synthesize(finding, target_package)
-        if not poc or not poc.adb_command or poc.adb_command.startswith("#"):
-            return DynamicVerificationOutcome(
-                finding_id=finding.id,
-                verified=False,
-                verdict="NOT_REPRODUCED",
-                evidence_output="No executable ADB command template available for this finding type.",
-            )
+        """Dispatch a synthetic custom-scheme URI after explicit scope/approval.
 
-        # Build ADB command
-        raw_cmd = poc.adb_command
-        # If command starts with 'adb shell ', strip it
-        if raw_cmd.startswith("adb shell "):
-            shell_cmd = raw_cmd[len("adb shell "):]
-        elif raw_cmd.startswith("adb "):
-            shell_cmd = raw_cmd[len("adb "):]
-        else:
-            shell_cmd = raw_cmd
+        This records only whether Activity Manager accepted the launch request;
+        it cannot establish navigation impact, authorization, or exploitability.
+        Free-form generated PoC commands are never executed here.
+        """
+        def outcome(verdict: str, message: str, attempted: bool = False) -> DynamicVerificationOutcome:
+            return DynamicVerificationOutcome(finding.id, False, verdict, message[:self.MAX_OUTPUT_CHARS],
+                                              execution_attempted=attempted)
 
-        cmd = [self.adb_path]
-        if device_serial:
-            cmd.extend(["-s", device_serial])
-        cmd.extend(["shell", shell_cmd])
-
+        serial_ok = isinstance(device_serial, str) and bool(re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", device_serial))
+        package_ok = isinstance(target_package, str) and bool(re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", target_package))
+        if (not serial_ok or not package_ok or finding.cwe_id != "CWE-601"
+                or type(timeout) not in (int, float) or not 0 < timeout <= self.MAX_TIMEOUT_SECONDS
+                or operator_approved is not True or synthetic_data_confirmed is not True
+                or not callable(scope_guard)):
+            return outcome("REVIEW_REQUIRED", "No device action: valid deep-link candidate, explicit serial, scope guard, operator approval, synthetic-data confirmation, and bounded timeout are required.")
+        uri = finding.metadata.get("uri_scheme")
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-            output = (res.stdout + res.stderr).strip()
+            parsed = urllib.parse.urlsplit(uri) if isinstance(uri, str) and len(uri) <= 2048 else None
+            uri_ok = bool(parsed and parsed.scheme and parsed.scheme.lower() not in {"http", "https"}
+                          and parsed.netloc and not any(ord(c) < 0x20 or ord(c) == 0x7f for c in uri))
+        except ValueError:
+            uri_ok = False
+        if not uri_ok:
+            return outcome("REVIEW_REQUIRED", "No device action: URI must be a bounded custom-scheme test URI without control characters.")
+        try:
+            allowed = scope_guard(target_package, device_serial)
+        except Exception:
+            allowed = False
+        if allowed is not True:
+            return outcome("BLOCKED_SCOPE", "No device action: just-in-time scope guard did not explicitly allow this package and serial.")
 
-            # Analyze execution output
-            if "SecurityException" in output or "Permission Denial" in output:
-                return DynamicVerificationOutcome(
-                    finding_id=finding.id,
-                    verified=False,
-                    verdict="BLOCKED_BY_OS",
-                    evidence_output=output,
-                    logcat_markers=["SecurityException: Calling uid does not have permission"],
-                )
-            elif "Status: ok" in output or "Starting: Intent" in output:
-                # Component successfully invoked without permission exception
-                return DynamicVerificationOutcome(
-                    finding_id=finding.id,
-                    verified=True,
-                    verdict="CONFIRMED",
-                    evidence_output=output,
-                    logcat_markers=["Intent successfully dispatched to component"],
-                )
-            elif "Error:" in output:
-                return DynamicVerificationOutcome(
-                    finding_id=finding.id,
-                    verified=False,
-                    verdict="NOT_REPRODUCED",
-                    evidence_output=output,
-                )
-            else:
-                return DynamicVerificationOutcome(
-                    finding_id=finding.id,
-                    verified=True if res.returncode == 0 and output else False,
-                    verdict="CONFIRMED" if res.returncode == 0 and output else "NOT_REPRODUCED",
-                    evidence_output=output or "Process exited cleanly",
-                )
+        # Pass a single safely quoted remote command; never invoke a local shell.
+        remote = shlex.join(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", uri, "-p", target_package])
+        cmd = [self.adb_path, "-s", device_serial, "shell", remote]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+            stdout = (result.stdout or "")[:self.MAX_OUTPUT_CHARS]
+            stderr = (result.stderr or "")[:self.MAX_OUTPUT_CHARS]
+            if result.returncode == 0:
+                return outcome("OBSERVED_DISPATCH", (stdout + "\n" + stderr).strip() or "Activity Manager returned success; impact not assessed.", True)
+            return outcome("OBSERVED_ERROR", (stdout + "\n" + stderr).strip() or f"ADB exit status {result.returncode}; impact not assessed.", True)
         except subprocess.TimeoutExpired:
-            return DynamicVerificationOutcome(
-                finding_id=finding.id,
-                verified=False,
-                verdict="TIMEOUT",
-                evidence_output=f"Execution timed out after {timeout} seconds",
-            )
-        except FileNotFoundError:
-            return DynamicVerificationOutcome(
-                finding_id=finding.id,
-                verified=False,
-                verdict="NOT_REPRODUCED",
-                evidence_output="ADB executable not found in PATH",
-            )
+            return outcome("OBSERVED_TIMEOUT", "ADB launch timed out; impact not assessed.", True)
+        except OSError as exc:
+            return outcome("OBSERVED_TOOL_ERROR", f"ADB could not run: {type(exc).__name__}", False)
 
     def apply_verification_to_finding(
         self,
         finding: Finding,
         outcome: DynamicVerificationOutcome,
     ) -> Finding:
-        """Update finding status and evidence based on verification outcome."""
-        if outcome.verified and outcome.verdict == "CONFIRMED":
-            finding.status = FindingStatus.CONFIRMED
-            finding.metadata["dynamic_verification"] = {
-                "verified": True,
-                "evidence_basis": "live_device_execution",
-                "output": outcome.evidence_output,
-                "markers": outcome.logcat_markers,
-            }
-        elif outcome.verdict == "BLOCKED_BY_OS":
-            finding.false_positive_reasons.append(
-                f"Dynamic verification failed: Android OS enforced permission denial ({outcome.evidence_output[:120]})"
-            )
-            finding.metadata["dynamic_verification"] = {
-                "verified": False,
-                "verdict": "BLOCKED_BY_OS",
-            }
+        """Do not convert caller-supplied observations into a security verdict."""
+        # Until observations are tied to an authenticated device session, scope
+        # snapshot, bounded raw evidence, and review event, mutation is unsafe.
         return finding

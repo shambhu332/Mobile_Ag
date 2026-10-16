@@ -22,6 +22,8 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert len(result.findings) == 2  # root-path and external-path with "."
     assert any(f.metadata.get("tag") == "root-path" and f.severity == "HIGH" for f in result.findings)
     assert any(f.metadata.get("tag") == "external-path" and f.severity == "MEDIUM" for f in result.findings)
+    assert all("does not establish exposure" in finding.description for finding in result.findings)
+    assert all("unauthorized third-party apps" not in finding.description for finding in result.findings)
 
     # A root-relative subdirectory is not the whole filesystem and should not
     # inherit the broad-root finding solely because of its tag.
@@ -30,6 +32,54 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     first_id = result.findings[0].id
     second_id = auditor.audit_xml_content(xml_content, "res/xml/file_paths.xml").findings[0].id
     assert first_id == second_id
+
+
+def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
+    result = FileProviderAuditor().audit_xml_content(
+        '<paths><files-path name="reports" path="reports/../" />'
+        '<files-path name="literal-dots" path="images.." /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.title == "Review FileProvider Parent-Path Segment (files-path)"
+    assert candidate.severity == "INFO"
+    assert candidate.status == "UNVERIFIED"
+    assert "canonicalization" in candidate.metadata["risk_reason"]
+
+
+@pytest.mark.parametrize("path", ["", "."])
+def test_fileprovider_flags_broad_external_media_root_as_unverified_candidate(path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><external-media-path name="media" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.metadata["tag"] == "external-media-path"
+    assert candidate.status == "UNVERIFIED"
+    assert "external-media-path" in candidate.metadata["risk_reason"]
+
+
+@pytest.mark.parametrize("tag", ["files-path", "cache-path"])
+@pytest.mark.parametrize("path", ["", "."])
+def test_fileprovider_broad_internal_roots_are_info_candidates(tag, path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><{tag} name="all" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.severity == "INFO"
+    assert candidate.status == "UNVERIFIED"
+    assert "app's internal" in candidate.metadata["risk_reason"]
+
+
+@pytest.mark.parametrize("path", ["./", ".//.", "///"])
+def test_fileprovider_normalizes_equivalent_broad_root_spellings(path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><files-path name="all" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    assert result.findings[0].severity == "INFO"
+    assert result.findings[0].status == "UNVERIFIED"
 
 
 def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
@@ -92,23 +142,17 @@ def test_fileprovider_parser_rejects_dtds_and_entities(declaration):
     assert result.findings == []
 
 
-def test_unpinning_engine_generates_multi_layer_script():
+def test_unpinning_engine_refuses_bypass_generation():
     engine = UnpinningEngine()
-    config = UnpinningConfig(target_package="com.example.bank", bypass_java=True, bypass_boringssl=True, bypass_flutter=True)
-    script = engine.generate_script(config)
-
-    assert "com.example.bank" in script
-    assert "javax.net.ssl.TrustManager" in script
-    assert "SSL_CTX_set_custom_verify" in script
-    assert "libflutter.so" in script
+    config = UnpinningConfig(target_package="org.example.synthetic")
+    with pytest.raises(NotImplementedError, match="TLS verification bypass generation is disabled"):
+        engine.generate_script(config)
 
 
-def test_crypto_harvester_script_and_event_parsing():
+def test_crypto_harvester_refuses_scripts_and_discards_sensitive_fields():
     harvester = CryptoHarvester()
-    script = harvester.generate_hook_script()
-    assert "javax.crypto.Cipher" in script
-    assert "SecretKeySpec" in script
-    assert "net.sqlcipher.database.SQLiteDatabase" in script
+    with pytest.raises(NotImplementedError, match="raw key, IV, and plaintext collection is out of scope"):
+        harvester.generate_hook_script()
 
     event = harvester.parse_event({
         "type": "crypto_event",
@@ -120,7 +164,9 @@ def test_crypto_harvester_script_and_event_parsing():
     assert event is not None
     assert event.operation == "ENCRYPT"
     assert event.algorithm == "AES/CBC/PKCS5Padding"
-    assert event.key_hex == "00112233445566778899aabbccddeeff"
+    assert not hasattr(event, "key_hex")
+    assert not hasattr(event, "iv_hex")
+    assert "00112233445566778899aabbccddeeff" not in repr(event)
 
     sqlcipher_event = harvester.parse_event({
         "type": "crypto_event",
@@ -129,8 +175,9 @@ def test_crypto_harvester_script_and_event_parsing():
         "key": "SecretDbPassword123",
     })
     assert sqlcipher_event is not None
+    assert "SecretDbPassword123" not in repr(sqlcipher_event)
+    assert harvester.parse_event({"type": "crypto_payload", "input_preview": "synthetic plaintext"}) is None
     assert sqlcipher_event.operation == "SQLCIPHER_KEY"
-    assert sqlcipher_event.key_hex == "SecretDbPassword123"
 
 
 
@@ -189,6 +236,32 @@ def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_argument
     assert command[:4] == ["adb", "-s", "synthetic-device", "shell"]
     remote_args = shlex.split(command[4])
     assert remote_args[:2] == ["content", "read"]
+
+
+def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
+    import subprocess
+    from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+
+    def forbidden_process(*args, **kwargs):
+        raise AssertionError("denied provider probe must not launch ADB")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden_process)
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    guard_calls = []
+
+    def deny_scope():
+        guard_calls.append(True)
+        return False
+
+    traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=deny_scope,
+    )
+    sql = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=deny_scope,
+    )
+    assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
+    assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
+    assert len(guard_calls) == len(traversal) + len(sql)
 
 
 def test_bola_fuzzer_candidate_extraction_and_discrepancy():
@@ -400,6 +473,29 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     assert "synthetic-provider-private-value" not in json.dumps([item.__dict__ for item in traversal + sql])
 
 
+def test_provider_sqli_permission_denial_precedes_sql_error_wording(monkeypatch):
+    import io
+    import mobileag.dast.provider_fuzzer as provider_module
+
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.BytesIO(b"")
+            self.stderr = io.BytesIO(b"SecurityException: SQLite syntax error")
+        def wait(self, timeout=None):
+            return 1
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(provider_module.subprocess, "Popen", FakeProcess)
+    results = ContentProviderFuzzer(adb_path="adb").fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=lambda: None,
+    )
+
+    assert results
+    assert all(result.status == "ACCESS_DENIED" for result in results)
+    assert all(result.output_snippet == "" for result in results)
+
+
 def test_provider_fuzzer_sqli_covers_projection_and_selection_with_shell_quoting(monkeypatch):
     import io
     import shlex
@@ -449,10 +545,7 @@ def test_poc_synthesizer_task_hijacking_and_provider_sqli():
         metadata={"task_affinity": "com.example.target.affinity"}
     )
     poc_task = synth.synthesize(f_task, "com.example.target")
-    assert poc_task is not None
-    assert "StrandHoggActivity" in poc_task.kotlin_exploit_code
-    assert "com.example.target.affinity" in poc_task.kotlin_exploit_code
-    assert "adb shell am start" in poc_task.adb_command
+    assert poc_task is None
 
     # 2. ContentProvider SQL Injection
     f_sqli = Finding(
@@ -465,10 +558,8 @@ def test_poc_synthesizer_task_hijacking_and_provider_sqli():
         metadata={"authority": "com.example.target.provider"}
     )
     poc_sqli = synth.synthesize(f_sqli, "com.example.target")
-    assert poc_sqli is not None
-    assert "ProviderSqliExploit" in poc_sqli.kotlin_exploit_code
-    assert "content://com.example.target.provider/query" in poc_sqli.kotlin_exploit_code
-    assert "adb shell content query" in poc_sqli.adb_command
+    assert poc_sqli is None
+    # Unverified candidate findings must not produce executable guidance.
 
 
 def test_traffic_auditor_catalog_and_shadow_api():
@@ -698,6 +789,88 @@ def test_openapi_catalog_bounds_har_retention_without_discarding_endpoint_model(
     assert "/v1/items" in oversized_spec["paths"]
 
 
+def test_har_exports_redacted_observed_response_headers():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/profile",
+        response_status=200,
+        response_headers={
+            "Content-Type": "application/json",
+            "Set-Cookie": "session_id=synthetic-response-cookie; Path=/; Secure",
+            "X-Session-ID": "synthetic-namespaced-session",
+            "X-Request-Trace": "synthetic-trace-id",
+        },
+    ))
+    har = catalog.export_har_json()
+    headers = har["log"]["entries"][0]["response"]["headers"]
+    assert {item["name"] for item in headers} == {
+        "Content-Type", "Set-Cookie", "X-Session-ID", "X-Request-Trace"
+    }
+    assert "synthetic-response-cookie" not in json.dumps(har)
+    assert "synthetic-namespaced-session" not in json.dumps(har)
+    assert "synthetic-trace-id" in json.dumps(har)
+
+
+def test_har_export_validates_content_type_and_does_not_echo_parameters():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "POST", "https://api.example.test/v1/upload",
+        headers={"Content-Type": "application/json; boundary=synthetic-private-boundary"},
+        body="{}",
+        response_headers={"Content-Type": "application/x-synthetic-mime-secret"},
+        response_body="{}",
+    ))
+    entry = catalog.export_har_json()["log"]["entries"][0]
+    exported = json.dumps(entry)
+    assert "synthetic-private-boundary" not in exported
+    assert "synthetic-mime-secret" not in exported
+    assert entry["request"]["postData"]["mimeType"] == "application/octet-stream"
+    assert {h["value"] for h in entry["request"]["headers"] if h["name"] == "Content-Type"} == {
+        "application/octet-stream"
+    }
+    assert {h["value"] for h in entry["response"]["headers"] if h["name"] == "Content-Type"} == {
+        "application/octet-stream"
+    }
+
+
+def test_har_rejects_unsupported_method_before_retaining_request():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "SECRET-METHOD", "https://api.example.test/v1/items",
+        body="synthetic body that must not be captured",
+    ))
+    limits = catalog.export_openapi_json()["x-mobileag-capture-limits"]
+    assert limits["unmodeledRequests"] == limits["omittedRequests"] == 1
+    assert catalog.captured_requests == []
+    assert catalog.endpoints == {}
+    assert json.loads(json.dumps(catalog.export_har_json()))["log"]["entries"] == []
+
+
+def test_api_capture_catalog_preserves_response_headers_for_redacted_har():
+    from types import SimpleNamespace
+    from mobileag.web.app import _captured_api_catalog
+
+    tx = SimpleNamespace(
+        method="GET", url="https://api.example.test/v1/profile",
+        request_headers={}, request_body=None, response_status=200,
+        response_body=None,
+        response_headers={"Set-Cookie": "session_id=synthetic-response-cookie"},
+    )
+    har = _captured_api_catalog([tx], "test").export_har_json()
+    rendered = str(har)
+    assert "Set-Cookie" in rendered
+    assert "synthetic-response-cookie" not in rendered
+
+
 def test_openapi_catalog_counts_non_string_and_overlong_urls_as_invalid():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 
@@ -768,6 +941,13 @@ def test_openapi_catalog_redacts_token_shaped_opaque_path_segments():
     assert "/v1/sessions/{id1}" in spec["paths"]
     encoded = json.dumps(spec)
     assert sample_a not in encoded and sample_b not in encoded
+
+
+def test_openapi_catalog_redacts_short_and_percent_encoded_token_like_segments():
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    assert MobileApiCataloger._path_template("/v1/users/AbC123xy") == "/v1/users/{id1}"
+    assert MobileApiCataloger._path_template("/v1/users/Ab%31Cd%32Ef") == "/v1/users/{id1}"
 
 
 def test_openapi_schema_redacts_dynamic_json_object_keys():
@@ -896,7 +1076,7 @@ def test_cyclonedx_xml_generation(tmp_path):
         name="okhttp",
         version="4.9.3",
         purl="pkg:maven/com.squareup.okhttp3/okhttp@4.9.3",
-        hashes={"SHA-256": "abc123def456"},
+        hashes={"sha256": "a" * 64},
         licenses=["Apache-2.0"],
     )
 
@@ -906,7 +1086,7 @@ def test_cyclonedx_xml_generation(tmp_path):
     assert "<name>SecureBank</name>" in xml_text
     assert "<name>okhttp</name>" in xml_text
     assert "<purl>pkg:maven/com.squareup.okhttp3/okhttp@4.9.3</purl>" in xml_text
-    assert '<hash alg="SHA-256">abc123def456</hash>' in xml_text
+    assert f'<hash alg="SHA-256">{"a" * 64}</hash>' in xml_text
     assert "<id>Apache-2.0</id>" in xml_text
 
     # Verify parseability
@@ -1084,12 +1264,71 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     valid_object = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
     assert auditor.decode_jwt(f"{json_list}.{valid_object}.sig") is None
     assert auditor.decode_jwt(f"{valid_object}.{json_list}.sig") is None
+    duplicate_header = base64.urlsafe_b64encode(b'{"alg":"none","alg":"HS256"}').decode().rstrip("=")
+    duplicate_payload = base64.urlsafe_b64encode(b'{"exp":1,"exp":253402300799}').decode().rstrip("=")
+    assert auditor.decode_jwt(f"{duplicate_header}.{valid_object}.sig") is None
+    assert auditor.decode_jwt(f"{valid_object}.{duplicate_payload}.sig") is None
     assert auditor.audit_token("x" * (auditor.MAX_TOKEN_CHARS + 1)) == []
 
     # A present but non-numeric exp is not misreported as an absent claim.
     pay_invalid_exp = base64.urlsafe_b64encode(json.dumps({"exp": True}).encode()).decode().rstrip("=")
     invalid_exp = auditor.audit_token(f"{valid_object}.{pay_invalid_exp}.sig")
     assert not any(f.title == "JWT Token Missing Expiration Claim" for f in invalid_exp)
+
+
+def test_token_session_auditor_rejects_nonfinite_and_out_of_range_time_claims():
+    import base64
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    encode = lambda value: base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+    header = encode({"alg": "HS256"})
+    for exp in (float("inf"), float("-inf"), float("nan"), 253402300800, True):
+        token = f"{header}.{encode({'exp': exp})}.signature"
+        parsed = auditor.decode_jwt(token)
+        assert parsed is not None
+        assert parsed["payload"]["has_exp_claim"] is True
+        assert "exp" not in parsed["payload"]
+
+    valid = auditor.decode_jwt(f"{header}.{encode({'exp': 253402300799})}.signature")
+    assert valid is not None
+    assert valid["payload"]["exp"] == 253402300799
+
+
+def test_token_session_auditor_bounds_header_review_and_marks_ambiguous_auth():
+    from mobileag.dast.api_cataloger import CapturedRequest
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    oversized_headers = {f"X-Test-{i}": "value" for i in range(100)}
+    oversized_headers["Authorization"] = "Bearer synthetic-hidden-token"
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile", headers=oversized_headers,
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert auditor.last_coverage["max_headers_per_transaction"] == 100
+    assert "synthetic-hidden-token" not in str(auditor.last_coverage)
+
+    oversized_value = "synthetic-oversized-token-" + "x" * 65_536
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile",
+        headers={"Authorization": oversized_value},
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert oversized_value not in str(auditor.last_coverage)
+
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile",
+        headers={"Authorization": "Bearer synthetic-one", "authorization": "Bearer synthetic-two"},
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert auditor.last_coverage["duplicate_authorization_header_transactions"] == 1
+    assert "synthetic-one" not in str(auditor.last_coverage)
+    assert "synthetic-two" not in str(auditor.last_coverage)
 
 
 def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
@@ -1143,7 +1382,7 @@ def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
     duplicate_header = encode(b'{"alg":"HS256","alg":"HS512"}')
     assert auditor.verify_hmac_jwt_signature(
         f"{duplicate_header}.{payload}.AA", min_key
-    )["status"] == "unsupported_header_parameters"
+    )["status"] == "invalid_compact_token"
     assert "synthetic-research-only-hmac-key" not in json.dumps(
         auditor.verify_hmac_jwt_signature(token, key)
     )
@@ -1210,6 +1449,103 @@ def test_token_session_auditor_transactions_and_logout_reuse():
     serialized = json.dumps([finding.model_dump(mode="json") for finding in findings])
     assert "secret_session_token_xyz_123" not in serialized
     assert "super_secret_query_tok_123" not in serialized
+
+
+def test_token_session_auditor_recognizes_credential_query_key_aliases():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    keys = ("refresh-token", "id_token", "X-Amz-Security-Token", "client_secret",
+            "accessToken", "api-key", "cookie", "user_session", "secret_key",
+            "privateKey", "password")
+    requests = [CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{key}=synthetic-secret")
+                for key in keys]
+    requests.append(CapturedRequest(method="GET", url="https://api.example.invalid/path?tokenizer=not-a-token"))
+    findings = MobileTokenSessionAuditor().audit_transactions(requests)
+    leaks = [finding for finding in findings if finding.cwe_id == "CWE-598"]
+    assert len(leaks) == len(keys)
+    assert all("synthetic-secret" not in finding.description for finding in leaks)
+    assert all("?" not in finding.affected_component for finding in leaks)
+
+
+def test_blank_sensitive_query_parameter_is_not_cleartext_credential_evidence():
+    from mobileag.dast.api_cataloger import CapturedRequest
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    blank_findings = auditor.audit_transactions([
+        CapturedRequest("GET", "http://api.example.invalid/path?access_token="),
+        CapturedRequest("GET", "http://api.example.invalid/path?session_id=%20"),
+    ])
+    assert len([finding for finding in blank_findings if finding.cwe_id == "CWE-598"]) == 2
+    assert not any(finding.cwe_id == "CWE-319" for finding in blank_findings)
+
+    nonempty_findings = auditor.audit_transactions([
+        CapturedRequest("GET", "http://api.example.invalid/path?refresh_token=synthetic-token-value"),
+    ])
+    assert {finding.cwe_id for finding in nonempty_findings} >= {"CWE-598", "CWE-319"}
+    assert auditor.last_coverage["status"] == "complete_for_supplied_input"
+
+
+def test_token_session_auditor_marks_query_credentials_on_cleartext_http():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    findings = MobileTokenSessionAuditor().audit_transactions([
+        CapturedRequest(method="GET", url="http://api.example.invalid/path?access_token=short")
+    ])
+    cwes = [finding.cwe_id for finding in findings]
+    assert "CWE-598" in cwes
+    assert "CWE-319" in cwes
+    assert all("short" not in finding.description for finding in findings)
+
+
+def test_token_session_auditor_reports_url_userinfo_without_echoing_credentials():
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    findings = MobileTokenSessionAuditor().audit_transactions([
+        CapturedRequest(method="GET", url="https://synthetic-user:synthetic-password@api.example.invalid/v1/profile")
+    ])
+    credential_leads = [finding for finding in findings if finding.cwe_id == "CWE-522"]
+    assert len(credential_leads) == 1
+    serialized = json.dumps([finding.model_dump(mode="json") for finding in findings])
+    assert "synthetic-user" not in serialized
+    assert "synthetic-password" not in serialized
+    cleartext = MobileTokenSessionAuditor().audit_transactions([
+        CapturedRequest(method="GET", url="http://synthetic-user:synthetic-password@api.example.invalid/profile")
+    ])
+    assert {finding.cwe_id for finding in cleartext} >= {"CWE-522", "CWE-319"}
+
+
+def test_token_session_auditor_bounds_findings_and_reports_partial_coverage():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    query = "&".join("access_token=x" for _ in range(256))
+    transactions = [CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{query}")
+                    for _ in range(100)]
+    auditor = MobileTokenSessionAuditor()
+    findings = auditor.audit_transactions(transactions)
+    assert len(findings) == auditor.MAX_FINDINGS
+    assert auditor.last_coverage["finding_cap_reached"] is True
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["transactions_omitted"] > 0
+
+
+def test_token_session_auditor_marks_over_limit_query_parse_as_partial():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    query = "&".join([f"field{i}=x" for i in range(256)] + ["access_token=synthetic-secret"])
+    auditor = MobileTokenSessionAuditor()
+    findings = auditor.audit_transactions([
+        CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{query}")
+    ])
+    assert not any(finding.cwe_id == "CWE-598" for finding in findings)
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["query_parse_incomplete_transactions"] == 1
 
 
 def test_token_session_auditor_does_not_call_unauthorized_responses_successful_reuse():

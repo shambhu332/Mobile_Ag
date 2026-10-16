@@ -1512,3 +1512,10 @@ current allowed-reason catalog or infer compliance. Focused privacy-manifest
 tests passed (**7 passed**) and the IPA propagation test passed (**1 passed**);
 full pytest passed (**1,250 passed**, 60.54 s); compileall and
 `git diff --check` passed.
+
+Static API URL inventory now caps processing at 1,000 endpoint records and reports
+received, analyzed, omitted, invalid-record, and incomplete-URL counts. Empty
+input is explicitly `not_analyzed`; malformed or over-limit input is `partial`,
+not a clean result. Synthetic boundary tests passed (**21 passed** in
+`test_workflow_draft_boundaries.py`). This is bounded URL-structure triage only;
+it does not test API authorization, authentication, or rate limiting.

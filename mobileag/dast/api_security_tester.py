@@ -1,6 +1,7 @@
 """Conservative API review; live testing belongs to the approved replay workflow."""
 from __future__ import annotations
 
+from itertools import islice
 from typing import Any
 from urllib.parse import urlsplit, parse_qsl
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
@@ -10,6 +11,7 @@ from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
 class APISecurityTester:
     MAX_URL_CHARS = 8192
     MAX_QUERY_FIELDS = 100
+    MAX_ENDPOINTS = 1_000
 
     def __init__(self, scan_id: str | None = None):
         self.scan_id = scan_id
@@ -61,9 +63,38 @@ class APISecurityTester:
         )]
 
     async def analyze_endpoints_static(self, endpoints: list[dict[str, Any]]) -> list[Finding]:
-        findings = []
-        for endpoint in endpoints:
-            findings.extend(await self._analyze_url_structure(endpoint.get("url", "")))
+        findings: list[Finding] = []
+        if not isinstance(endpoints, list):
+            self.observations["static_url_review_coverage"] = {
+                "status": "invalid_input", "endpoints_received": None,
+                "endpoints_analyzed": 0, "endpoints_omitted": 0,
+                "invalid_endpoint_records": 0, "incomplete_urls": 0,
+                "findings_count": 0, "endpoint_limit": self.MAX_ENDPOINTS,
+            }
+            self._telemetry("static_candidate_count", 0)
+            return findings
+        endpoints_received = len(endpoints)
+        endpoints_analyzed = 0
+        invalid_records = 0
+        incomplete_urls = 0
+        for endpoint in islice(endpoints, self.MAX_ENDPOINTS):
+            endpoints_analyzed += 1
+            if not isinstance(endpoint, dict) or not isinstance(endpoint.get("url"), str):
+                invalid_records += 1
+                continue
+            findings.extend(await self._analyze_url_structure(endpoint["url"]))
+            if self.observations.get("url_structure_status") != "analyzed":
+                incomplete_urls += 1
+        omitted = max(0, endpoints_received - endpoints_analyzed)
+        status = ("not_analyzed" if endpoints_received == 0 else
+                  "partial" if omitted or invalid_records or incomplete_urls else
+                  "analyzed_heuristically")
+        self.observations["static_url_review_coverage"] = {
+            "status": status, "endpoints_received": endpoints_received,
+            "endpoints_analyzed": endpoints_analyzed, "endpoints_omitted": omitted,
+            "invalid_endpoint_records": invalid_records, "incomplete_urls": incomplete_urls,
+            "findings_count": len(findings), "endpoint_limit": self.MAX_ENDPOINTS,
+        }
         # Missing request headers, route names, GraphQL and absent version strings
         # do not demonstrate backend authentication or access-control defects.
         self._telemetry("static_candidate_count", len(findings))

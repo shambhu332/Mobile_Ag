@@ -81,6 +81,33 @@ async def test_api_query_detector_fails_closed_on_malformed_or_over_limit_input(
     assert await tester.test_endpoint('https://[malformed/item?token=synthetic') == []
     assert tester.observations['url_structure_status'] == 'incomplete_input'
 
+
+@pytest.mark.asyncio
+async def test_static_api_url_review_reports_invalid_and_omitted_endpoint_coverage(monkeypatch):
+    tester = APISecurityTester()
+    findings = await tester.analyze_endpoints_static([
+        {'url': 'https://fixture.invalid/path?client_secret=synthetic-secret'},
+        {'url': 'https://[malformed/path?token=synthetic'},
+        None,
+    ])
+    assert len(findings) == 1
+    coverage = tester.observations['static_url_review_coverage']
+    assert coverage == {
+        'status': 'partial', 'endpoints_received': 3, 'endpoints_analyzed': 3,
+        'endpoints_omitted': 0, 'invalid_endpoint_records': 1, 'incomplete_urls': 1,
+        'findings_count': 1, 'endpoint_limit': APISecurityTester.MAX_ENDPOINTS,
+    }
+    assert 'synthetic-secret' not in json.dumps(findings[0].model_dump(mode='json'))
+
+    monkeypatch.setattr(APISecurityTester, 'MAX_ENDPOINTS', 1)
+    findings = await tester.analyze_endpoints_static([
+        {'url': 'https://fixture.invalid/a'}, {'url': 'https://fixture.invalid/b'},
+    ])
+    coverage = tester.observations['static_url_review_coverage']
+    assert coverage['status'] == 'partial'
+    assert coverage['endpoints_analyzed'] == 1
+    assert coverage['endpoints_omitted'] == 1
+
     monkeypatch.setattr(APISecurityTester, 'MAX_QUERY_FIELDS', 1)
     assert await tester.test_endpoint(
         'https://fixture.invalid/item?ordinary=1&token=synthetic'

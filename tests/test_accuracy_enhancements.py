@@ -255,12 +255,12 @@ def test_dynamic_verification_loop():
         status=FindingStatus.UNVERIFIED,
         cwe_id="CWE-601",
         file_path="RouterActivity.java",
-        metadata={"uri_scheme": "bankapp://auth?redirect=https://attacker.com"},
+        metadata={"uri_scheme": "bankapp://synthetic/callback?state=canary-123"},
     )
 
     verifier = DynamicVerificationLoop()
 
-    # Generated PoC templates are review-only; dispatch is not impact proof.
+    # Missing approval/scope must fail closed without touching ADB.
     with patch("subprocess.run") as run:
         outcome = verifier.verify_finding(finding, target_package="com.example.bank")
         assert outcome.verified is False
@@ -268,16 +268,32 @@ def test_dynamic_verification_loop():
         assert outcome.execution_attempted is False
         run.assert_not_called()
 
+    with patch("subprocess.run") as run:
+        denied = verifier.verify_finding(
+            finding, "com.example.bank", "emulator-5554", scope_guard=lambda pkg, serial: False,
+            operator_approved=True, synthetic_data_confirmed=True,
+        )
+        assert denied.verdict == "BLOCKED_SCOPE"
+        run.assert_not_called()
+
+    mock_success = MagicMock(returncode=0, stdout="Status: ok", stderr="")
+    with patch("subprocess.run", return_value=mock_success) as run:
+        outcome = verifier.verify_finding(
+            finding, "com.example.bank", "emulator-5554", scope_guard=lambda pkg, serial: True,
+            operator_approved=True, synthetic_data_confirmed=True,
+        )
+        assert outcome.verdict == "OBSERVED_DISPATCH"
+        assert outcome.verified is False
+        assert outcome.execution_attempted is True
+        argv = run.call_args.args[0]
+        assert argv[:4] == ["adb", "-s", "emulator-5554", "shell"]
+        assert "bankapp://synthetic/callback?state=canary-123" in argv[4]
+
         updated = verifier.apply_verification_to_finding(finding, outcome)
         assert updated.status == FindingStatus.UNVERIFIED
         assert "dynamic_verification" not in updated.metadata
 
-    # Case 2: Verification probe blocked by Android OS permission gate
-    mock_blocked = MagicMock()
-    mock_blocked.returncode = 1
-    mock_blocked.stdout = ""
-    mock_blocked.stderr = "java.lang.SecurityException: Permission Denial: starting Intent not exported from uid 1000\n"
-
+    # Unsupported active-exploitation kinds remain review-only.
     finding2 = Finding(
         id="INTENT_RED_02",
         title="Intent Redirection",

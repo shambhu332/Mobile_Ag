@@ -204,7 +204,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/dast/bola_fuzzer.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
-* **Boundary**: Offline extraction returns identifier candidates only. The evaluator compares already-supplied account-A/account-B responses and requires a synthetic canary in both successful controls before labeling an observation as a candidate. It never accepts or replays session tokens, stores raw response bodies, or emits a verified BOLA verdict. Report endpoints omit userinfo, query/fragment values, recognized identifiers, and path values following common credential markers; this is heuristic redaction and can hide legitimate route slugs or miss unknown encodings. Any live replay requires separate target authorization, researcher-controlled accounts/data, scope review, and independent evidence.
+* **Boundary**: Offline extraction returns identifier candidates only; query candidates require normalized ID/account/user/order-style key tokens rather than substring coincidence. The evaluator compares already-supplied account-A/account-B responses and requires a synthetic canary in both successful controls before labeling an observation as a candidate. It never accepts or replays session tokens, stores raw response bodies, or emits a verified BOLA verdict. Report endpoints omit userinfo, query/fragment values, recognized identifiers, and path values following common credential markers; this is heuristic redaction and can hide legitimate route slugs or miss unknown encodings. Any live replay requires separate target authorization, researcher-controlled accounts/data, scope review, and independent evidence.
 
 ### 5.3 Mobile Token & Session Lifecycle Auditor
 * **Objective**: Audit mobile authentication tokens, JWT lifecycle claims, cleartext transmission, and session revocation.
@@ -1123,3 +1123,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed (**1,180 passed**, 56.13 s), with compile and diff checks passing.
    This is heuristic redaction: it may hide legitimate route slugs and cannot
    guarantee removal of arbitrary or unrecognized secret encodings.
+
+   BOLA query candidate extraction now tokenizes normalized query-key names and
+   requires an identifier-related token (`id`, `account`, `user`, `order`, or
+   supported resource names), rather than accepting any key containing those
+   character sequences. A hard-negative confirms `grid=blue` is ignored while
+   `valid_id` and `orderId` remain candidates. Focused BOLA tests passed (**7
+   passed**); full pytest passed (**1,181 passed**, 56.21 s), with compile and
+   diff checks passing. Candidate extraction remains heuristic and does not
+   establish object ownership or authorization.

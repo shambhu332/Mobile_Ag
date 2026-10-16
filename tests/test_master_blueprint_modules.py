@@ -323,6 +323,14 @@ def test_bola_candidate_extraction_rejects_query_id_control_and_whitespace_value
     assert candidates == ["order_1", "valid_123"]
 
 
+def test_bola_candidate_query_keys_use_identifier_tokens_not_substrings():
+    candidates = BolaFuzzer().extract_resource_candidates(
+        "https://api.example.test/v1/resources?grid=blue&valid_id=item_123&orderId=order_456"
+    )
+
+    assert candidates == ["item_123", "order_456"]
+
+
 def test_bola_result_redacts_short_credentials_in_sensitive_path_segments():
     import json
 

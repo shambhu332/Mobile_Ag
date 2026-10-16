@@ -47,6 +47,7 @@ class BolaFuzzer:
         "token", "auth", "authorization", "password", "secret", "session", "cookie",
         "bearer", "credential", "key", "apikey",
     )
+    ID_QUERY_KEY_PARTS = {"id", "account", "user", "order", "item", "profile", "invoice", "document"}
     SENSITIVE_PATH_VALUE_KEYS = {
         "token", "accesstoken", "refreshtoken", "authtoken", "session", "sessionid",
         "jwt", "password", "passwd", "secret", "credential", "authorization",
@@ -149,7 +150,7 @@ class BolaFuzzer:
                     continue
                 if (len(key) <= self.MAX_CANDIDATE_LENGTH
                         and self._safe_resource_id(value)
-                        and any(sub in normalized_key for sub in ("id", "account", "user", "order"))):
+                        and key_parts.intersection(self.ID_QUERY_KEY_PARTS)):
                     candidates.append(value)
 
         return list(dict.fromkeys(candidates))[:self.MAX_CANDIDATES]

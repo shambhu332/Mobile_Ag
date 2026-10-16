@@ -323,6 +323,16 @@ async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
     assert any("dev-api.example.com" in finding.title for finding in findings)
 
 
+def test_api_mapper_redacts_short_and_percent_encoded_mixed_path_ids():
+    safe_short = APIMapper._safe_route("/api/v1/users/AbC123xy")
+    safe_encoded = APIMapper._safe_route("/api/v1/users/Ab%31Cd%32Ef")
+
+    assert safe_short == "/api/v1/users/{id}"
+    assert safe_encoded == "/api/v1/users/{id}"
+    assert "AbC123xy" not in safe_short
+    assert "Ab%31Cd%32Ef" not in safe_encoded
+
+
 def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_router, tmp_path):
     class Match:
         def __init__(self, index):

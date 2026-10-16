@@ -10,7 +10,7 @@ import ipaddress
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from openapi_spec_validator import validate as validate_openapi_spec
 
@@ -65,16 +65,22 @@ class MobileApiCataloger:
         uuid_segment = re.compile(
             r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         )
-        # Redact token-shaped opaque IDs in exported route templates. This
-        # deliberately errs on the side of parametrizing long mixed strings;
-        # shorter or non-token-shaped identifiers remain unsupported.
-        opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
+        # Redact long token-shaped IDs and shorter, high-entropy-looking
+        # mixed-case alphanumeric IDs; decode percent-encoded ASCII only for
+        # this privacy decision, never to construct the exported route.
+        opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
+        short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
         email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
         segments = path.split("/")
         identifier_index = 0
         for index, segment in enumerate(segments):
+            decoded_segment = unquote(segment)
             if (re.fullmatch(r"\d+", segment) or uuid_segment.fullmatch(segment)
-                    or opaque_token_segment.fullmatch(segment) or email_segment.fullmatch(segment)):
+                    or opaque_token_segment.fullmatch(segment)
+                    or opaque_token_segment.fullmatch(decoded_segment)
+                    or short_mixed_case_id.fullmatch(segment)
+                    or short_mixed_case_id.fullmatch(decoded_segment)
+                    or email_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"
         return "/".join(segments) or "/"

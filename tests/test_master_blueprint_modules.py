@@ -820,6 +820,13 @@ def test_openapi_catalog_redacts_token_shaped_opaque_path_segments():
     assert sample_a not in encoded and sample_b not in encoded
 
 
+def test_openapi_catalog_redacts_short_and_percent_encoded_token_like_segments():
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    assert MobileApiCataloger._path_template("/v1/users/AbC123xy") == "/v1/users/{id1}"
+    assert MobileApiCataloger._path_template("/v1/users/Ab%31Cd%32Ef") == "/v1/users/{id1}"
+
+
 def test_openapi_schema_redacts_dynamic_json_object_keys():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger

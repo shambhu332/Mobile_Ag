@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
@@ -66,7 +66,8 @@ class APIMapper:
             segments = (parsed.path or "/").split("/")
             safe_segments: list[str] = []
             redact_next = False
-            opaque_id = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~%-]{24,}$")
+            opaque_id = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
+            short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
             uuid = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
             email = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
             sensitive_segments = {
@@ -75,9 +76,12 @@ class APIMapper:
                 "api_key", "client_secret", "secret_key", "auth",
             }
             for segment in segments:
+                decoded_segment = unquote(segment)
                 if (redact_next or len(segment) > 128 or segment.isdigit()
                         or uuid.fullmatch(segment) or email.fullmatch(segment)
-                        or opaque_id.fullmatch(segment)):
+                        or opaque_id.fullmatch(segment) or opaque_id.fullmatch(decoded_segment)
+                        or short_mixed_case_id.fullmatch(segment)
+                        or short_mixed_case_id.fullmatch(decoded_segment)):
                     safe_segments.append("{id}")
                     redact_next = False
                     continue

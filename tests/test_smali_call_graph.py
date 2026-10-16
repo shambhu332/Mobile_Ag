@@ -1611,3 +1611,32 @@ def test_fill_array_data_clears_stale_array_taint_and_marks_coverage_partial(tmp
     assert engine.coverage["static_status"] == "partial"
     assert any("fill-array-data payload/index effects are not modeled" in warning
                for warning in engine.coverage["register_dataflow_warnings"])
+
+
+def test_const_method_type_overwrite_kills_stale_register_taint(tmp_path):
+    (tmp_path / "ConstMethodType.smali").write_text('''.class public Lfixture/ConstMethodType;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 6
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    const-method-type v2, ()V
+    new-instance v3, Ljava/lang/StringBuilder;
+    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v3, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v4
+    sget-object v5, Lfixture/ConstMethodType;->web:Landroid/webkit/WebView;
+    invoke-virtual {v5, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+''', encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+
+    assert not any(finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+                   for finding in findings)

@@ -750,7 +750,7 @@ class SmaliCallGraphEngine:
         static_put_re = re.compile(r"sput(?:-[a-z]+)?\s+([vp]\d+),\s*(L[^;]+;->[A-Za-z0-9_$]+:[^\s]+)")
         return_value_re = re.compile(r"return(?:-object|-wide)?\s+([vp]\d+)")
         write_re = re.compile(
-            r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
+            r"(?:const(?:-[a-z0-9]+)*(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
             r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
             r"(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)\s+([vp]\d+)(?:,|\s|$)"
         )

@@ -22,23 +22,57 @@ from mobileag.dast.frida_stealth import FridaStealthHarness
 from mobileag.reporting.finding import FindingStatus, Severity
 
 
-def _il2cpp_v29_metadata(literals, trailing=b""):
+def _il2cpp_v29_metadata(literals, types=None):
     """Build a small structurally valid v29 literal-table fixture (not a real APK)."""
     encoded = [value.encode("utf-8") for value in literals]
     header_size = Il2CppAuditor.V29_HEADER_MIN_BYTES
     table_offset = header_size
     table_size = len(encoded) * 8
     data_offset = table_offset + table_size
-    data = b"".join(encoded)
+    literal_data = b"".join(encoded)
     records = bytearray()
     cursor = 0
     for literal in encoded:
         records.extend(struct.pack("<II", len(literal), cursor))
         cursor += len(literal)
+    string_pool = bytearray(b"\x00")
+    string_indices = {"": 0}
+
+    def add_name(value):
+        if value not in string_indices:
+            string_indices[value] = len(string_pool)
+            string_pool.extend(value.encode("utf-8") + b"\x00")
+        return string_indices[value]
+
+    methods = bytearray()
+    type_records = bytearray()
+    for type_index, type_info in enumerate(types or []):
+        name_index = add_name(type_info["name"])
+        namespace_index = add_name(type_info.get("namespace", ""))
+        method_start = len(methods) // 36
+        method_list = type_info.get("methods", [])
+        for method in method_list:
+            methods.extend(struct.pack(
+                "<7I4H", add_name(method["name"]), type_index, 0, 0, 0, 0, 0,
+                0, 0, 0, method.get("parameter_count", 0),
+            ))
+        fields = [0] * 16 + [0] * 8 + [0, 0]
+        fields[0], fields[1], fields[9], fields[16] = (
+            name_index, namespace_index, method_start, len(method_list),
+        )
+        type_records.extend(struct.pack("<16I8H2I", *fields))
+
+    string_offset = data_offset + len(literal_data)
+    method_offset = string_offset + len(string_pool)
+    type_offset = method_offset + len(methods)
     header = bytearray(header_size)
     struct.pack_into("<6I", header, 0, Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29,
-                     table_offset, table_size, data_offset, len(data))
-    return bytes(header) + bytes(records) + data + trailing
+                     table_offset, table_size, data_offset, len(literal_data))
+    struct.pack_into("<II", header, 24, string_offset, len(string_pool))
+    struct.pack_into("<II", header, 48, method_offset, len(methods))
+    struct.pack_into("<II", header, 160, type_offset, len(type_records))
+    return (bytes(header) + bytes(records) + literal_data + bytes(string_pool)
+            + bytes(methods) + bytes(type_records))
 
 
 def test_hermes_bytecode_analyzer():
@@ -128,7 +162,8 @@ def test_il2cpp_auditor():
         content = _il2cpp_v29_metadata([
             "https://game-api.unity.com/v1", "AuthenticationManager",
             'apiKey: "synthetic-unity-secret-123"',
-        ])
+        ], types=[{"name": "AuthenticationManager", "namespace": "sample",
+                   "methods": [{"name": "authenticate", "parameter_count": 2}]}])
 
         with open(meta_file, "wb") as f:
             f.write(content)
@@ -141,7 +176,12 @@ def test_il2cpp_auditor():
         assert res.metadata_tables_status == "parsed"
         assert res.metadata_string_literals_count == 3
         assert "https://game-api.unity.com/v1" in res.api_endpoints
-        assert "AuthenticationManager" in res.reconstructed_classes
+        assert res.metadata_definitions_status == "parsed"
+        assert res.reconstructed_classes == ["sample.AuthenticationManager"]
+        assert res.reconstructed_methods == [{
+            "declaring_type": "sample.AuthenticationManager",
+            "method_name": "authenticate", "parameter_count": 2,
+        }]
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-unity-secret-123" not in repr(res.potential_secrets)
         assert res.scan_status == "complete"
@@ -169,7 +209,7 @@ def test_il2cpp_auditor_reports_string_and_candidate_caps():
 
     assert result.scan_status == "partial"
     assert result.candidate_output_truncated is True
-    assert len(result.api_endpoints) == len(result.reconstructed_classes) == 1
+    assert len(result.api_endpoints) == len(result.class_name_candidates) == 1
     assert {"api_endpoint_limit", "class_candidate_limit"} <= set(result.scan_errors)
     assert bounded.scan_status == "partial"
     assert bounded.string_literals_count == 1
@@ -190,6 +230,25 @@ def test_il2cpp_v29_literal_table_rejects_out_of_bounds_sections(tmp_path):
     assert result.metadata_string_literals_count == 0
     assert "string_literal_table_invalid" in result.scan_errors
     assert result.scan_status == "partial"
+
+
+def test_il2cpp_v29_type_table_reports_bad_method_ranges(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(
+        [], types=[{"name": "Vault", "namespace": "sample",
+                    "methods": [{"name": "load", "parameter_count": 1}]}],
+    ))
+    type_offset = struct.unpack_from("<I", data, 160)[0]
+    struct.pack_into("<H", data, type_offset + 64, 9)  # method_count exceeds table
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_definitions_status == "partial"
+    assert result.reconstructed_classes == ["sample.Vault"]
+    assert result.reconstructed_methods == []
+    assert "type_method_tables_partial" in result.scan_errors
 
 
 def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():

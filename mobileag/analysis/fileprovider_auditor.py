@@ -37,6 +37,8 @@ class FileProviderAuditor:
     """Audits FileProvider path configuration XML files for dangerous storage exposure."""
 
     MAX_XML_CHARS = 1024 * 1024
+    MAX_PATH_ENTRIES = 5000
+    MAX_ATTRIBUTE_CHARS = 256
 
     def __init__(self) -> None:
         self.coverage: Dict[str, Any] = {
@@ -86,11 +88,22 @@ class FileProviderAuditor:
             result.error_code = "unexpected_root_element"
             return result
 
-        # Common root is <paths>
-        for child in root:
+        # Cap both result amplification and attacker-controlled strings copied
+        # into findings. These limits are coverage boundaries, not evidence
+        # that omitted entries are safe.
+        for entry_index, child in enumerate(root):
+            if entry_index >= self.MAX_PATH_ENTRIES:
+                result.parse_status = "partial"
+                result.error_code = "xml_path_entry_limit"
+                break
             tag = child.tag.lower()
             name = child.attrib.get("name", "")
             path_val = child.attrib.get("path", "")
+            if (len(name) > self.MAX_ATTRIBUTE_CHARS
+                    or len(path_val) > self.MAX_ATTRIBUTE_CHARS):
+                result.parse_status = "partial"
+                result.error_code = "xml_path_attribute_limit"
+                continue
 
             is_dangerous = False
             risk_reason = ""

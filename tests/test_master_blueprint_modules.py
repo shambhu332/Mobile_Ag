@@ -128,6 +128,28 @@ def test_fileprovider_parser_bounds_direct_xml_input_and_validates_root():
     assert wrong_root.error_code == "unexpected_root_element"
 
 
+def test_fileprovider_parser_caps_path_entries_and_marks_partial_coverage():
+    xml = "<paths>" + "<files-path name='n' path='subdir'/>" * (
+        FileProviderAuditor.MAX_PATH_ENTRIES + 1) + "</paths>"
+
+    result = FileProviderAuditor().audit_xml_content(xml)
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_path_entry_limit"
+    assert len(result.entries) == FileProviderAuditor.MAX_PATH_ENTRIES
+
+
+def test_fileprovider_parser_does_not_retain_oversized_path_attributes():
+    oversized_path = "x" * (FileProviderAuditor.MAX_ATTRIBUTE_CHARS + 1)
+    result = FileProviderAuditor().audit_xml_content(
+        f"<paths><root-path name='root' path='{oversized_path}'/></paths>")
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_path_attribute_limit"
+    assert result.entries == []
+    assert result.findings == []
+
+
 @pytest.mark.parametrize("declaration", [
     '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>',
     '<!DOCTYPE paths SYSTEM "file:///tmp/researcher-controlled-nonexistent">',

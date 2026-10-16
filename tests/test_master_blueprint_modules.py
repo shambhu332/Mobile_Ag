@@ -405,6 +405,31 @@ def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
     assert len(guard_calls) == len(traversal) + len(sql)
 
 
+def test_provider_fuzzer_fails_closed_for_async_scope_guard(monkeypatch):
+    import subprocess
+    from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+
+    def forbidden_process(*args, **kwargs):
+        raise AssertionError("async scope approval must not launch ADB")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden_process)
+
+    async def async_allow():
+        return True
+
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device",
+        guard=async_allow, synthetic_data_confirmed=True,
+    )
+    sql = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device",
+        guard=async_allow, synthetic_data_confirmed=True,
+    )
+    assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
+    assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
+
+
 def test_bola_fuzzer_candidate_extraction_and_discrepancy():
     fuzzer = BolaFuzzer()
     url = "https://api.example.com/v1/users/usr_98472/orders?account_id=acc_1122"

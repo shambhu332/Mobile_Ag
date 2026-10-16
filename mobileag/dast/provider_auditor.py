@@ -4,6 +4,7 @@ Shell access is not ordinary-app authorization proof. Never retain returned rows
 """
 from __future__ import annotations
 import json
+import inspect
 import os
 import re
 from urllib.parse import urlsplit, unquote
@@ -18,14 +19,17 @@ class ProviderAuditor:
 
     @staticmethod
     def _check_scope_guard(guard) -> None:
-        if guard is None:
-            return
         if not callable(guard):
-            raise PermissionError('Provider diagnostic scope guard is invalid')
+            raise PermissionError('Provider diagnostic scope guard is required')
         try:
             allowed = guard()
         except Exception as exc:
             raise PermissionError('Provider diagnostic scope guard denied access') from exc
+        if inspect.isawaitable(allowed):
+            close = getattr(allowed, 'close', None)
+            if callable(close):
+                close()
+            raise PermissionError('Provider diagnostic scope guard must be synchronous')
         if allowed is False:
             raise PermissionError('Provider diagnostic scope guard denied access')
 

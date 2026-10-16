@@ -220,6 +220,7 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
         serial="emulator-5554",
         package_name="com.test.app",
         authorities=["com.test.app.provider"],
+        guard=lambda: None,
     )
 
     assert len(results) == 1
@@ -227,6 +228,34 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
     assert findings[0].cwe_id == "CWE-926"
     assert findings[0].cvss_score == 0
     assert "sec123" not in str(findings[0].to_dict())
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_requires_synchronous_scope_guard(monkeypatch):
+    import json
+    from unittest.mock import AsyncMock
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    adb = ADBManager()
+    adb._exec_cmd = AsyncMock(side_effect=AssertionError("Unapproved provider query"))
+    auditor = ProviderAuditor(adb=adb)
+
+    with pytest.raises(PermissionError, match="required"):
+        await auditor.audit_provider_uri("synthetic-device", "com.test.app", uri)
+
+    async def async_guard():
+        return False
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri, guard=async_guard,
+        )
+    adb._exec_cmd.assert_not_awaited()
 
 
 @pytest.mark.asyncio

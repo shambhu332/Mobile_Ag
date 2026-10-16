@@ -1766,3 +1766,13 @@ SARIF, CycloneDX/SPDX, OpenAPI/HAR, and feedback-training output were rerun
 together (**9 passed**). They verify file-entry replacement/private modes on
 synthetic paths only; no parent-directory race or production filesystem claim
 is made.
+
+The Java/Kotlin symbol-index coverage previously labeled any nonempty index as
+`completed`, even when its bounded source inventory had skipped files or
+reached a limit. Coverage now propagates the resolver's actual heuristic,
+partial, or not-analyzed status plus bounded inventory diagnostics. Synthetic
+tests verify that a skipped symlink yields `partial` and a normal index reports
+`analyzed_heuristically`, never `completed`. Focused taint coverage tests
+passed (**3 passed**); full pytest passed (**1,319 passed**, 63.72 s),
+compileall and `git diff --check` passed. This corrects coverage reporting
+only; it does not establish cross-file taint accuracy.

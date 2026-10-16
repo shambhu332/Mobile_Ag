@@ -843,3 +843,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    and compilation plus `git diff --check` passed. ADB was mocked; no Android
    device was used, and this validates only scope-boundary behavior, not IPC
    impact or runtime exploitability. Existing test-environment warnings remain.
+
+   `DeepLinkIntentFuzzer.execute_fuzz_case` now reports `BLOCKED_SCOPE` when
+   its required guard explicitly returns `False`; the subprocess mock confirms
+   no ADB process starts on this denial path. The existing exception-denial
+   behavior remains. Its focused regression passed (**1 passed**, 24
+   deselected); the full suite passed (**1,159 passed**, 74.85 s), with
+   `compileall` and `git diff --check` passing. This is mock-only scope-gate
+   evidence, not device execution or proof of a deep-link vulnerability.

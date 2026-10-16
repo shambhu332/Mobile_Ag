@@ -21,6 +21,8 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
 
     capture = SimpleNamespace(get_transactions=lambda: [HTTPTransaction(
         url="https://api.example.test/v1/me", method="GET", response_status=200,
+        response_headers={"Content-Type": "application/json",
+                          "Set-Cookie": "session_id=synthetic-export-cookie; Path=/"},
         response_body='{"account":"synthetic"}')],
         get_capture_stats=lambda: {'transaction_count': 1, 'stored_bytes_estimate': 256,
                                    'omitted_transactions': 0},
@@ -34,7 +36,12 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
     assert "/v1/me" in openapi.json()["paths"]
     har = client.get("/api/dast/api-capture/har")
     assert har.status_code == 200
-    assert har.json()["log"]["entries"][0]["request"]["method"] == "GET"
+    entry = har.json()["log"]["entries"][0]
+    assert entry["request"]["method"] == "GET"
+    assert {header["name"] for header in entry["response"]["headers"]} == {
+        "Content-Type", "Set-Cookie"
+    }
+    assert "synthetic-export-cookie" not in har.text
 
 
 def test_dast_devices_endpoint(client):

@@ -20,6 +20,8 @@ class BolaTestResult:
     status_code: int
     is_vulnerable: bool
     evidence_reason: str
+    candidate_observed: bool = False
+    proof_status: str = "not_proven"
     request_headers: Dict[str, str] = field(default_factory=dict)
     response_body_preview: str = ""
     response_sha256: str = ""
@@ -127,8 +129,7 @@ class BolaFuzzer:
         response_body: str,
         user_a_marker: Optional[str] = None,
     ) -> BolaTestResult:
-        """Evaluate whether a request made with User B's token leaked User A's private data."""
-        is_vuln = False
+        """Record a canary observation; this offline evaluator never proves BOLA."""
         reason = "Access denied or safe behavior observed."
         valid_response = isinstance(response_body, str)
         bounded_response = response_body[:self.MAX_RESPONSE_CHARS] if valid_response else ""
@@ -144,9 +145,11 @@ class BolaFuzzer:
             # A successful response alone cannot establish that the object is
             # private or belongs to account A. Require an independently known,
             # synthetic account-A canary to be reflected by account B's response.
+            # Even that is a review candidate because identity, request
+            # equivalence, ownership and server authorization are unverified.
             if marker_observed:
-                is_vuln = True
-                reason = "Endpoint returned User A's synthetic canary in User B's response; canary value omitted."
+                reason = ("A researcher-provided canary appeared in the supplied response; "
+                          "account identity, request equivalence, ownership and authorization remain unverified.")
             else:
                 reason = (
                     "HTTP success observed, but no researcher-provided User A canary matched; "
@@ -162,8 +165,12 @@ class BolaFuzzer:
             method=method,
             resource_id="[REDACTED]",
             status_code=status_code,
-            is_vulnerable=is_vuln,
+            # Retain the legacy field but fail closed: this pure observation
+            # evaluator has no verified vulnerability verdict.
+            is_vulnerable=False,
             evidence_reason=reason,
+            candidate_observed=marker_observed and status_code in {200, 206},
+            proof_status="not_proven",
             # Avoid retaining potentially real account data. Digest, status,
             # and the explicit synthetic-canary match are sufficient for a
             # bounded observation record; raw HTTP evidence belongs in an
@@ -218,7 +225,7 @@ class BolaFuzzer:
                 "Account-A control did not establish the researcher-provided canary in a successful "
                 "response; cross-account exposure is not established."
             )
-        elif result.is_vulnerable:
+        elif result.candidate_observed:
             result.comparison_status = "canary_observed_in_both_responses"
             result.evidence_reason = (
                 "Researcher-provided canary was observed in both supplied account-A and account-B "

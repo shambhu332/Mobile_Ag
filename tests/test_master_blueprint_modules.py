@@ -259,7 +259,9 @@ def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
         account_b_status=206, account_b_response_body='{"canary":"synthetic-account-a-marker"}',
         account_a_marker="synthetic-account-a-marker",
     )
-    assert positive.is_vulnerable is True
+    assert positive.is_vulnerable is False
+    assert positive.candidate_observed is True
+    assert positive.proof_status == "not_proven"
     assert positive.reference_marker_observed is True
     assert positive.marker_observed is True
     assert positive.comparison_status == "canary_observed_in_both_responses"
@@ -292,7 +294,9 @@ def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
         response_body='{"user_id": "usr_98472", "email": "victim@example.com"}',
         user_a_marker="victim@example.com",
     )
-    assert res_vuln.is_vulnerable is True
+    assert res_vuln.is_vulnerable is False
+    assert res_vuln.candidate_observed is True
+    assert res_vuln.proof_status == "not_proven"
     assert res_vuln.marker_observed is True
     assert "victim@example.com" not in res_vuln.evidence_reason
     assert res_vuln.response_body_preview == ""

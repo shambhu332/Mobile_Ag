@@ -510,10 +510,21 @@ identifier-like fields. This avoids misclassifying values such as
 authorization behavior, or perform requests; path and query identifiers that
 remain candidates still require authorized manual handling.
 
+The researcher-canary response evaluator now never sets its legacy
+`is_vulnerable` field true: observed canary matches are recorded separately as
+`candidate_observed=true`, with `proof_status=not_proven`. A captured response
+cannot verify account identity, request equivalence, object ownership, or
+server-side authorization. Verified BOLA proof still requires a scoped replay
+and independently attributable controls, neither of which is available here.
+
 The credential-key filter passed focused BOLA tests (**5 passed, 45
 deselected**) and the full suite (**1,071 passed**, 40.04 s; one expected
 synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`
 passed.
+
+Fail-closed BOLA verdict-field tests also passed (**5 passed, 45 deselected**)
+and full suite (**1,071 passed**, 40.00 s; one expected synthetic
+duplicate-ZIP-member warning); compilation and `git diff --check` passed.
 
 ### Native ELF SBOM inventory boundary
 

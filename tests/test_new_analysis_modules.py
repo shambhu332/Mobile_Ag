@@ -161,7 +161,8 @@ def test_intent_redirection_auditor():
         assert "INTENT_REDIRECTION" in findings[0].id
         assert findings[0].cwe_id == "CWE-926"
         assert findings[0].severity == "INFO"
-        assert findings[0].metadata["method_scope"] == "not_resolved"
+        assert findings[0].metadata["method_scope"] == "bounded_lexical"
+        assert findings[0].metadata["method_name"] == "onCreate"
         assert "does not resolve" in findings[0].description
         assert auditor.coverage["static_status"] == "analyzed_heuristically"
 
@@ -176,6 +177,20 @@ def test_intent_redirection_does_not_match_launch_before_later_extraction(tmp_pa
     auditor = IntentRedirectionAuditor()
     assert auditor.audit_file(source) == []
     assert auditor.audit_file(tmp_path / "missing.java") == []
+
+
+def test_intent_redirection_does_not_join_sources_and_sinks_across_methods(tmp_path):
+    source = tmp_path / "SeparateMethods.java"
+    source.write_text('''class Proxy {
+        void extract() {
+            Intent target = getIntent().getParcelableExtra("nested");
+        }
+        void launch() {
+            startActivity(target);
+        }
+    }''')
+
+    assert IntentRedirectionAuditor().audit_file(source) == []
 
 
 def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):

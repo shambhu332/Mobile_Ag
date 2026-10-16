@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.android_surface import mask_non_code, method_spans
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 
@@ -29,6 +30,17 @@ class IntentRedirectionAuditor:
                                max_total_bytes=32 * 1024 * 1024)
 
     def _audit_content(self, content: str, path_str: str) -> List[Finding]:
+        findings: List[Finding] = []
+        code = mask_non_code(content)
+        spans = list(method_spans(code))
+        for method_name, offset, masked_scope in spans:
+            body = content[offset:offset + len(masked_scope)]
+            line_base = content.count("\n", 0, offset)
+            findings.extend(self._audit_method_scope(body, path_str, method_name, line_base))
+        return findings
+
+    def _audit_method_scope(self, content: str, path_str: str,
+                            method_name: str, line_base: int) -> List[Finding]:
         findings: List[Finding] = []
         lines = content.splitlines()
         extracted_intent_vars: dict[str, tuple[int, int]] = {}
@@ -63,28 +75,30 @@ class IntentRedirectionAuditor:
                 source = extracted_intent_vars.get(launched_var)
                 if source is None or (source[0] == idx and source[1] >= position):
                     continue
-                extract_line = source[0]
+                extract_line = line_base + source[0]
+                sink_line = line_base + idx
                 findings.append(
                     Finding(
-                        id=f"INTENT_REDIRECTION_{idx}",
+                        id=f"INTENT_REDIRECTION_{sink_line}",
                         title="Potential Intent Redirection Candidate",
                         description=(
                             f"Variable '{launched_var}' is syntactically assigned from an Intent Parcelable extra at "
-                            f"line {extract_line} and passed to an Intent launch API at line {idx}. Recognized "
-                            "reassignments invalidate the local candidate, but this bounded lexical review does not "
-                            "resolve method scope, aliases, validation/allowlisting, exported-component reachability, "
-                            "platform permissions, or security impact; review the full code path."
+                            f"line {extract_line} and passed to an Intent launch API at line {sink_line}. The candidate "
+                            f"is bounded to lexical method '{method_name}', and recognized reassignments invalidate it. "
+                            "This is not AST/control-flow analysis and does not resolve aliases, validation/allowlisting, "
+                            "exported-component reachability, platform permissions, or security impact; review the full code path."
                         ),
                         severity=Severity.INFO,
                         status=FindingStatus.UNVERIFIED,
                         cwe_id="CWE-926",
                         file_path=path_str,
-                        line_number=idx,
+                        line_number=sink_line,
                         metadata={
                             "proof_state": "not_proven",
                             "analysis_kind": "intent_redirection_lexical_candidate",
                             "source_line": extract_line,
-                            "method_scope": "not_resolved",
+                            "method_scope": "bounded_lexical",
+                            "method_name": method_name,
                             "reassignment_analysis": "linewise_bounded",
                             "validation": "not_resolved",
                             "component_reachability": "not_resolved",

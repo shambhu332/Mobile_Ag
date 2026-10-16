@@ -579,14 +579,15 @@ async def get_scan_sarif(scan_id: str) -> dict[str, Any]:
 async def get_scan_apis(scan_id: str) -> dict[str, Any]:
     """Retrieve all discovered REST & GraphQL API endpoints for the specified scan."""
     scan = await get_scan_details(scan_id)
-    apis = scan.get("api_endpoints", [])
+    raw_apis = scan.get("api_endpoints", [])
+    apis = raw_apis if isinstance(raw_apis, list) else []
 
     return {
         "scan_id": scan_id,
         "endpoints": apis,
         "total": len(apis),
         "vulnerable_count": 0,
-        "candidate_count": len([e for e in apis if e.get("status") == "VULNERABLE"]),
+        "candidate_count": len(apis),
         "assessment": "Discovered routes are unverified; no server authorization proof",
     }
 

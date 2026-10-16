@@ -1330,3 +1330,11 @@ coverage aggregation, and synthetic regressions cover both outcomes. Focused
 coverage tests passed (**3 passed**); full pytest passed (**1,232 passed**,
 60.73 s); compileall and `git diff --check` passed. This fixes empty-result
 status reporting only; it does not add framework format detection or analysis.
+
+The per-scan API inventory endpoint now reports every returned route as an
+unverified candidate instead of counting only records with a `VULNERABLE`
+label (which could yield zero for a non-empty inventory). Non-list persisted
+values fail closed to an empty inventory. Synthetic route coverage passed
+(**2 focused tests**); full pytest passed (**1,233 passed**, 61.07 s);
+compileall and `git diff --check` passed. `vulnerable_count` remains zero because
+this inventory endpoint does not establish backend authorization proof.

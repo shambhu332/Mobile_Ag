@@ -484,6 +484,24 @@ def test_get_scan_apis_endpoint(client):
     assert client.get('/api/scans/scan_meesho_demo/apis').status_code == 404
 
 
+def test_get_scan_apis_counts_all_routes_as_unverified_candidates(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    endpoints = [
+        {"method": "GET", "url": "/v1/profile", "evidence_type": "route_literal"},
+        {"method": "UNKNOWN", "url": "https://api.example.test/v1/items/{id}",
+         "evidence_type": "embedded_url_candidate"},
+    ]
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={"api_endpoints": endpoints}))
+
+    response = client.get("/api/scans/synthetic-api-candidates/apis")
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["candidate_count"] == 2
+    assert response.json()["vulnerable_count"] == 0
+    assert "unverified" in response.json()["assessment"]
+
+
 def test_api_test_replay_endpoint(client):
     response = client.post(
         "/api/apis/test",

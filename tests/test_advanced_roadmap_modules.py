@@ -73,6 +73,32 @@ def test_hermes_analyzer_bounds_reads_and_skips_symlink_bundles():
     assert "symlink_bundle_skipped" in linked_result.scan_errors
 
 
+def test_hermes_analyzer_reports_candidate_and_printable_string_caps():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        bundle = Path(tmp_dir) / "bundle.hbc"
+        header = struct.pack("<QI", HermesBytecodeAnalyzer.HERMES_MAGIC, 84)
+        strings = (b"https://one.example.invalid/a\x00https://two.example.invalid/b\x00"
+                   b"https://three.example.invalid/c")
+        bundle.write_bytes(header + strings)
+
+        output_limited = HermesBytecodeAnalyzer()
+        output_limited.MAX_API_ENDPOINTS = 1
+        output_limited.MAX_EXTRACTED_STRINGS = 1
+        result = output_limited.analyze_bundle(bundle)
+
+        iteration_limited = HermesBytecodeAnalyzer()
+        iteration_limited.MAX_PRINTABLE_STRINGS = 1
+        bounded = iteration_limited.analyze_bundle(bundle)
+
+    assert result.scan_status == "partial"
+    assert result.candidate_output_truncated is True
+    assert len(result.api_endpoints) == len(result.extracted_strings) == 1
+    assert {"api_endpoint_limit", "string_sample_limit"} <= set(result.scan_errors)
+    assert bounded.scan_status == "partial"
+    assert bounded.string_count == 1
+    assert "printable_string_limit" in bounded.scan_errors
+
+
 def test_il2cpp_auditor():
     with tempfile.TemporaryDirectory() as tmp_dir:
         meta_dir = os.path.join(tmp_dir, "assets", "bin", "Data", "Managed", "Metadata")

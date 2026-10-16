@@ -29,6 +29,7 @@ class HermesAnalysisResult:
     scan_status: str = "not_started"
     bytes_scanned: int = 0
     scan_truncated: bool = False
+    candidate_output_truncated: bool = False
     scan_errors: List[str] = field(default_factory=list)
 
 
@@ -37,6 +38,7 @@ class HermesBytecodeAnalyzer:
 
     HERMES_MAGIC = 0x1F480120  # Hermes 64-bit magic header in little endian
     MAX_BUNDLE_BYTES = 15 * 1024 * 1024
+    MAX_PRINTABLE_STRINGS = 100_000
     MAX_EXTRACTED_STRINGS = 100
     MAX_API_ENDPOINTS = 100
 
@@ -89,6 +91,8 @@ class HermesBytecodeAnalyzer:
 
         # This bounded printable-string pass is not a Hermes string-table parser.
         self._extract_strings_and_secrets(data, result)
+        if result.candidate_output_truncated:
+            result.scan_status = "partial"
         return result
 
     def _extract_strings_and_secrets(self, data: bytes, result: HermesAnalysisResult) -> None:
@@ -97,9 +101,17 @@ class HermesBytecodeAnalyzer:
         strings_sample: List[str] = []
         secret_marker_added = False
 
+        def mark_truncated(reason: str) -> None:
+            result.candidate_output_truncated = True
+            if reason not in result.scan_errors:
+                result.scan_errors.append(reason)
+
         # Iterate rather than materializing every match from a potentially dense
         # binary. Keep retained outputs bounded independently of the input size.
         for match in re.finditer(b"[\x20-\x7E]{4,}", data):
+            if result.string_count >= self.MAX_PRINTABLE_STRINGS:
+                mark_truncated("printable_string_limit")
+                break
             result.string_count += 1
             s = match.group().decode("utf-8", errors="ignore")
 
@@ -107,6 +119,8 @@ class HermesBytecodeAnalyzer:
                 if not url.endswith((".png", ".jpg", ".svg", ".ttf", ".woff", ".webp")):
                     if len(endpoints) < self.MAX_API_ENDPOINTS:
                         endpoints.add(url)
+                    elif url not in endpoints:
+                        mark_truncated("api_endpoint_limit")
 
             secret_match = self.SECRET_PATTERN.search(s)
             safe_string = s
@@ -121,6 +135,8 @@ class HermesBytecodeAnalyzer:
                     secret_marker_added = True
             if len(strings_sample) < self.MAX_EXTRACTED_STRINGS:
                 strings_sample.append(safe_string)
+            else:
+                mark_truncated("string_sample_limit")
 
         result.api_endpoints = sorted(endpoints)[:100]
         result.extracted_strings = strings_sample

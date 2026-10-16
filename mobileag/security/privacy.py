@@ -41,10 +41,14 @@ def _url(match):
     value = match[0]
     try:
         p = urlsplit(value)
+        # A username is often an account identifier even when no password is
+        # present, and not every serializer routes the result through the
+        # credential-pattern fallback below. Strip URL userinfo proactively.
+        netloc = p.netloc.rsplit('@', 1)[-1]
         def clean(query):
             pairs = parse_qsl(query, keep_blank_values=True, max_num_fields=100)
             return urlencode([(k, '[REDACTED]' if _sensitive(k) else v) for k,v in pairs]) if any(_sensitive(k) for k,_ in pairs) else query
-        return urlunsplit((p.scheme,p.netloc,p.path,clean(p.query),clean(p.fragment)))
+        return urlunsplit((p.scheme,netloc,p.path,clean(p.query),clean(p.fragment)))
     except (ValueError, UnicodeError):
         return '[REDACTED URL]'
 

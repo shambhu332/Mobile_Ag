@@ -1422,3 +1422,11 @@ suite passed (**8 passed**); full pytest passed (**1,246 passed**, 62.26 s);
 compileall and `git diff --check` passed. This validates reporting for the
 injected failure path, not OSV availability, advisory freshness, or package
 inventory completeness.
+
+Best-effort URL export redaction now removes userinfo even when the URL has a
+username but no password (a case not caught by the prior credential-pattern
+fallback), while retaining a valid userinfo-free IPv6 authority. Synthetic
+privacy-export tests passed (**28 passed**); full pytest passed (**1,247
+passed**, 61.72 s); compileall and `git diff --check` passed. This is a targeted
+redaction improvement, not a guarantee against arbitrary secrets embedded in
+unknown URL components or non-URL text.

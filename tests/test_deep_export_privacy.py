@@ -37,6 +37,15 @@ def test_namespaced_redaction_preserves_noncredential_suffix_lookalikes():
     assert result['X-Request-Token'] == '[REDACTED]'
 
 
+def test_url_redaction_strips_userinfo_even_when_it_contains_only_username():
+    result = redact('https://synthetic-user@api.example.test:8443/v1/profile?access_token=synthetic-token')
+    assert 'synthetic-user' not in result
+    assert 'synthetic-token' not in result
+    assert result == 'https://api.example.test:8443/v1/profile?[REDACTED]'
+    # A userinfo-free IPv6 authority remains valid and unchanged.
+    assert redact('https://[2001:db8::1]:8443/v1/profile') == 'https://[2001:db8::1]:8443/v1/profile'
+
+
 @pytest.mark.parametrize('name', ['access_token', 'refresh_token', 'api_key', 'client_secret'])
 def test_quoted_json_credentials_redacted(name):
     result = redact(json.dumps({name: 'syntheticOpaqueCredential', 'public': 'keep'}))

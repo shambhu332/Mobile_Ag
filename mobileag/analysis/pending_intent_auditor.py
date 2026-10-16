@@ -5,6 +5,7 @@ FLAG_IMMUTABLE and unsafe FLAG_MUTABLE configurations (CWE-927 / OWASP MASVS-COD
 """
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import Any, Dict, List
@@ -120,7 +121,7 @@ class PendingIntentAuditor:
     def _resolve_flag_symbols(cls, expression: str, aliases: dict[str, str | None],
                               stack: tuple[str, ...] = ()) -> set[str] | None:
         """Resolve a literal/constant flag expression without evaluating code."""
-        if len(stack) > 8 or not re.fullmatch(r"[\w.$|&~()+\-\s]+", expression):
+        if len(stack) > 8 or len(expression) > 512 or not re.fullmatch(r"[\w.$|&~()+\-\s]+", expression):
             return None
         token_pattern = re.compile(
             r"(?P<flag>(?:[A-Za-z_$][\w$]*\.)*FLAG_[A-Z0-9_]+)"
@@ -145,6 +146,89 @@ class PendingIntentAuditor:
                     return None
                 result.update(nested)
         return result if cursor == len(expression) else None
+
+    @classmethod
+    def _resolve_numeric_flag_value(cls, expression: str,
+                                    aliases: dict[str, str | None],
+                                    stack: tuple[str, ...] = ()) -> int | None:
+        """Evaluate only integer literals, compile-time aliases, and bit operators."""
+        expression = expression.strip()
+        if len(stack) > 8 or len(expression) > 512:
+            return None
+        known_flags = {
+            "FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT": 0x01000000,
+            "FLAG_MUTABLE": 0x02000000,
+            "FLAG_IMMUTABLE": 0x04000000,
+            "FLAG_UPDATE_CURRENT": 0x08000000,
+            "FLAG_CANCEL_CURRENT": 0x10000000,
+            "FLAG_NO_CREATE": 0x20000000,
+            "FLAG_ONE_SHOT": 0x40000000,
+        }
+        tokens = re.compile(
+            r"(?P<flag>(?:[A-Za-z_$][\w$]*\.)*FLAG_[A-Z0-9_]+)"
+            r"|(?P<number>0[xX][0-9A-Fa-f]+|\d+)"
+            r"|(?P<identifier>[A-Za-z_$][\w$]*)"
+            r"|(?P<operator><<|>>|[|&^~()+\-])|(?P<space>\s+)"
+        )
+        expanded: list[str] = []
+        cursor = 0
+        for match in tokens.finditer(expression):
+            if cursor != match.start():
+                return None
+            cursor = match.end()
+            kind = match.lastgroup
+            token = match.group()
+            if kind == "flag":
+                short_name = token.rsplit(".", 1)[-1]
+                value = known_flags.get(short_name)
+                if value is None:
+                    return None
+                expanded.append(str(value))
+            elif kind == "identifier":
+                if token in stack or token not in aliases or aliases[token] is None:
+                    return None
+                value = cls._resolve_numeric_flag_value(aliases[token] or "", aliases, stack + (token,))
+                if value is None:
+                    return None
+                expanded.append(str(value))
+            else:
+                expanded.append(token)
+        if cursor != len(expression) or not expanded:
+            return None
+
+        try:
+            tree = ast.parse("".join(expanded), mode="eval")
+        except (SyntaxError, ValueError):
+            return None
+
+        def evaluate(node: ast.AST) -> int | None:
+            if isinstance(node, ast.Expression):
+                return evaluate(node.body)
+            if isinstance(node, ast.Constant) and type(node.value) is int:
+                return node.value
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Invert, ast.UAdd, ast.USub)):
+                value = evaluate(node.operand)
+                if value is None:
+                    return None
+                if isinstance(node.op, ast.Invert):
+                    return ~value
+                return value if isinstance(node.op, ast.UAdd) else -value
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.BitOr, ast.BitAnd, ast.BitXor, ast.LShift, ast.RShift, ast.Add, ast.Sub),
+            ):
+                left, right = evaluate(node.left), evaluate(node.right)
+                if left is None or right is None or (isinstance(node.op, (ast.LShift, ast.RShift)) and not 0 <= right <= 63):
+                    return None
+                if isinstance(node.op, ast.BitOr): return left | right
+                if isinstance(node.op, ast.BitAnd): return left & right
+                if isinstance(node.op, ast.BitXor): return left ^ right
+                if isinstance(node.op, ast.LShift): return left << right
+                if isinstance(node.op, ast.RShift): return left >> right
+                if isinstance(node.op, ast.Add): return left + right
+                return left - right
+            return None
+
+        return evaluate(tree)
 
     def audit_file(self, file_path: str | Path, target_sdk: int | None = None) -> List[Finding]:
         """Audit a single Java/Kotlin file for PendingIntent vulnerabilities."""
@@ -173,6 +257,7 @@ class PendingIntentAuditor:
             args = self._arguments(masked, open_paren, end)
             final_flags = args[-1] if args else ""
             resolved_flags = self._resolve_flag_symbols(final_flags, aliases)
+            numeric_flags = self._resolve_numeric_flag_value(final_flags, aliases)
             if resolved_flags is None:
                 title = f"Unresolved PendingIntent Flags in {method}()"
                 description = (
@@ -190,8 +275,10 @@ class PendingIntentAuditor:
                               "flags_resolution": "not_resolved"},
                 ))
                 continue
-            has_immutable = any(flag.endswith("FLAG_IMMUTABLE") for flag in resolved_flags)
-            has_mutable = any(flag.endswith("FLAG_MUTABLE") for flag in resolved_flags)
+            has_immutable = (any(flag.endswith("FLAG_IMMUTABLE") for flag in resolved_flags)
+                             or (numeric_flags is not None and numeric_flags & 0x04000000 != 0))
+            has_mutable = (any(flag.endswith("FLAG_MUTABLE") for flag in resolved_flags)
+                           or (numeric_flags is not None and numeric_flags & 0x02000000 != 0))
             idx = content.count("\n", 0, match.start()) + 1
 
             if has_immutable and has_mutable:

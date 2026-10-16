@@ -147,6 +147,22 @@ def test_pending_intent_auditor_resolves_bounded_flag_aliases_and_withholds_unkn
     assert PendingIntentAuditor().audit_file(kotlin) == []
 
 
+def test_pending_intent_auditor_decodes_numeric_mutability_bits(tmp_path):
+    path = tmp_path / "NumericFlags.java"
+    path.write_text('''class NumericFlags {
+        private static final int IMMUTABLE = 0x04000000 | 0x08000000;
+        void create() {
+            PendingIntent.getActivity(ctx, 0, intent, IMMUTABLE);
+            PendingIntent.getBroadcast(ctx, 0, intent, 33554432);
+            PendingIntent.getService(ctx, 0, intent, 0x06000000);
+        }
+    }''')
+    findings = PendingIntentAuditor().audit_file(path)
+    assert len(findings) == 2
+    assert findings[0].id.startswith("PENDING_INTENT_EXPLICIT_MUTABLE_")
+    assert findings[1].id.startswith("PENDING_INTENT_CONFLICTING_FLAGS_")
+
+
 def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
     outside = tmp_path.parent / "pending-intent-outside.java"
     outside.write_text("PendingIntent.getActivity(ctx, 0, intent, 0);")

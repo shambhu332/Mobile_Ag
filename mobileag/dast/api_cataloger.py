@@ -101,19 +101,10 @@ class MobileApiCataloger:
         self._graphql_operation_keys: set[tuple[str, str, str | None]] = set()
 
     @staticmethod
-    def _graphql_operations_from_body(body: Optional[str]) -> tuple[list[dict[str, str | None]], str | None]:
-        """Extract only GraphQL operation names from a bounded JSON request body."""
-        if not isinstance(body, str) or not body:
+    def _graphql_operations_from_document(query: Any) -> tuple[list[dict[str, str | None]], str | None]:
+        """Extract only GraphQL operation names from a bounded document string."""
+        if not isinstance(query, str) or not query:
             return [], None
-        if not body.lstrip().startswith("{"):
-            return [], None
-        try:
-            parsed_body = json.loads(body, object_pairs_hook=MobileApiCataloger._reject_duplicate_json_members)
-        except (ValueError, TypeError, RecursionError):
-            return [], "ambiguous_or_invalid_json"
-        if not isinstance(parsed_body, dict) or not isinstance(parsed_body.get("query"), str):
-            return [], None
-        query = parsed_body["query"]
         if len(query) > _MAX_GRAPHQL_QUERY_CHARS:
             return [], "query_size_limit"
         candidates, malformed_string, truncated = extract_graphql_operation_candidates(
@@ -124,6 +115,19 @@ class MobileApiCataloger:
         if truncated:
             return candidates, "operation_count_limit"
         return candidates, None
+
+    @staticmethod
+    def _graphql_operations_from_body(body: Optional[str]) -> tuple[list[dict[str, str | None]], str | None]:
+        """Extract GraphQL operation names from a bounded JSON request body."""
+        if not isinstance(body, str) or not body or not body.lstrip().startswith("{"):
+            return [], None
+        try:
+            parsed_body = json.loads(body, object_pairs_hook=MobileApiCataloger._reject_duplicate_json_members)
+        except (ValueError, TypeError, RecursionError):
+            return [], "ambiguous_or_invalid_json"
+        if not isinstance(parsed_body, dict) or not isinstance(parsed_body.get("query"), str):
+            return [], None
+        return MobileApiCataloger._graphql_operations_from_document(parsed_body["query"])
 
     @staticmethod
     def _reject_duplicate_json_members(pairs):
@@ -384,9 +388,20 @@ class MobileApiCataloger:
         query_names.update(name for name, _ in parsed_query)
         query_signature = tuple(sorted(query_names))
         key = f"{method}:{server_url}:{path}:{json.dumps(query_signature)}"
-        graphql_operations, graphql_issue = self._graphql_operations_from_body(req.body)
-        if graphql_issue:
+        graphql_operations, body_issue = self._graphql_operations_from_body(req.body)
+        if body_issue:
             self.graphql_operation_coverage_gaps += 1
+        query_values = [value for name, value in parsed_query if name.casefold() == "query"]
+        if not query_values:
+            query_values = [value for name, value in req.query_params.items()
+                            if isinstance(name, str) and name.casefold() == "query"]
+        if len(query_values) > 1:
+            self.graphql_operation_coverage_gaps += 1
+        elif query_values:
+            query_operations, query_issue = self._graphql_operations_from_document(query_values[0])
+            graphql_operations.extend(query_operations)
+            if query_issue:
+                self.graphql_operation_coverage_gaps += 1
         if len(self.endpoints) >= _MAX_ENDPOINTS and key not in self.endpoints:
             self.unmodeled_requests += 1
             return

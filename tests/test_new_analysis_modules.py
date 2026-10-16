@@ -736,3 +736,37 @@ def test_mobile_api_cataloger_rejects_ambiguous_graphql_query_json():
     assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["post"]
     assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
 
+
+def test_mobile_api_cataloger_extracts_graphql_get_query_without_retaining_values():
+    import json
+    from urllib.parse import urlencode
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    query = 'query LoadProfile($id: ID!) { profile(id: $id) { id } }'
+    url = "https://api.example.test/graphql?" + urlencode({"query": query})
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", url))
+
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/graphql"]["get"]
+    assert operation["x-mobileag-graphql-operation-candidates"] == [{
+        "operation_type": "query", "operation_name": "LoadProfile",
+        "evidence_type": "observed_graphql_operation_candidate",
+    }]
+    serialized = json.dumps(spec)
+    assert query not in serialized
+    assert "$id" not in serialized
+
+
+def test_mobile_api_cataloger_marks_repeated_graphql_get_query_ambiguous():
+    from urllib.parse import urlencode
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    query = urlencode([("query", "query First { viewer { id } }"),
+                       ("query", "query Second { viewer { id } }")])
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/graphql?" + query))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["get"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+

@@ -308,11 +308,11 @@ evidence.
 
 ## Comprehensive Implementation Schedule & Status
 
-> **Audit correction (refreshed 2026-10-16 at `1b05772`): this blueprint is not 100% complete.** The
+> **Audit correction (refreshed 2026-10-16 at `6b9093e`): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
 > (57.51 s). The current checkout's full suite reports **1,240 passed**
-> (61.84 s) in the pinned Python 3.14 validation environment; `compileall`
+> (61.24 s) in the pinned Python 3.14 validation environment; `compileall`
 > and `git diff --check` also passed. These are primarily mocked/synthetic
 > regressions and do not establish actual APK/device coverage,
 > exploitability, completeness, or production readiness. The implementation
@@ -1391,3 +1391,11 @@ routes are not a complete backend contract or authorization proof; this boundary
 no longer depends on using only the HTTP export route. Focused catalog tests
 passed (**3 passed**); full pytest passed (**1,240 passed**, 61.24 s); compileall
 and `git diff --check` passed. This is evidence labeling, not server validation.
+
+Observed GraphQL operation extraction now also handles GET requests whose URL
+query has a single `query` parameter. Repeated query parameters are treated as
+ambiguous and mark a coverage gap; decoded query documents and variable values
+are not copied into OpenAPI metadata. Synthetic tests verify operation-name
+export, raw-query omission, and duplicate-query rejection (**2 focused tests**);
+full pytest passed (**1,242 passed**, 62.06 s); compileall and
+`git diff --check` passed. This is capture-derived operation-name evidence only.

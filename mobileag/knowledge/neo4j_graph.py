@@ -247,6 +247,22 @@ class AttackGraph:
                     primary_label = labels[0] if labels else "Component"
 
                     if target:
+                        endpoint_evidence = target.get("evidence_type")
+                        allowed_endpoint_evidence = {
+                            "static_endpoint_candidate", "route_literal", "embedded_url_candidate"
+                        }
+                        endpoint_evidence = (endpoint_evidence if
+                                             primary_label == "APIEndpoint" and
+                                             endpoint_evidence in allowed_endpoint_evidence
+                                             else "legacy_endpoint_candidate")
+                        endpoint_method = target.get("method")
+                        if (primary_label == "APIEndpoint" and
+                                (endpoint_evidence == "legacy_endpoint_candidate" or
+                                 endpoint_method not in {"GET", "POST", "PUT", "DELETE", "PATCH", "UNKNOWN"})):
+                            endpoint_method = "UNKNOWN"
+                        endpoint_proof = target.get("proof_status")
+                        if primary_label == "APIEndpoint" and endpoint_proof != "not_proven":
+                            endpoint_proof = "not_proven"
                         target_id = (target.get("finding_id") or target.get("name")
                                      or target.get("url") or str(id(target)))
                         if target_id not in seen_nodes:
@@ -264,16 +280,17 @@ class AttackGraph:
                                 "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
                                               if primary_label == "Vulnerability" else None,
                                 "status": target.get("status") if primary_label == "Vulnerability" else None,
-                                "proof_status": target.get("proof_status")
+                                "proof_status": target.get("proof_status") if primary_label == "Vulnerability"
+                                else endpoint_proof
                                 if primary_label in {"Vulnerability", "APIEndpoint"} else None,
                                 "title": ((f"Status: {target.get('status', 'unknown')} | proof: "
                                            f"{target.get('proof_status', 'unknown')}")
                                           if primary_label == "Vulnerability" else
-                                          (f"Endpoint candidate | method: {target.get('method', 'unknown')} | "
-                                           f"proof: {target.get('proof_status', 'unknown')}")
+                                          (f"Endpoint candidate | method: {endpoint_method} | evidence: "
+                                           f"{endpoint_evidence} | proof: {endpoint_proof}")
                                           if primary_label == "APIEndpoint" else None),
-                                "method": target.get("method") if primary_label == "APIEndpoint" else None,
-                                "evidence_type": target.get("evidence_type") if primary_label == "APIEndpoint" else None,
+                                "method": endpoint_method if primary_label == "APIEndpoint" else None,
+                                "evidence_type": endpoint_evidence if primary_label == "APIEndpoint" else None,
                             })
 
                         if a and rel_type:

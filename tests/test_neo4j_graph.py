@@ -72,6 +72,22 @@ class _ApiExportDriver:
         return _ApiExportSession([])
 
 
+class _LegacyApiExportSession(_Session):
+    async def run(self, query, **params):
+        return _ExportResult({
+            "a": {"scan_id": "scan-a", "package_name": "sample", "version": "1"},
+            "rel_type": "CALLS_API",
+            "target": {"url": "legacy-url-key", "display_url": "https://api.example.invalid/legacy",
+                       "method": "GET"},
+            "target_labels": ["APIEndpoint"],
+        })
+
+
+class _LegacyApiExportDriver:
+    def session(self):
+        return _LegacyApiExportSession([])
+
+
 @pytest.mark.asyncio
 async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     graph = AttackGraph.__new__(AttackGraph)
@@ -150,6 +166,22 @@ async def test_visjs_api_endpoint_is_labeled_as_static_candidate_not_call():
     assert api_nodes[0]["evidence_type"] == "embedded_url_candidate"
     assert api_nodes[0]["proof_status"] == "not_proven"
     assert "Endpoint candidate" in api_nodes[0]["title"]
+    assert result["edges"][0]["label"] == "endpoint_candidate"
+
+
+@pytest.mark.asyncio
+async def test_visjs_legacy_endpoint_fails_closed_on_method_and_proof():
+    graph = AttackGraph.__new__(AttackGraph)
+    graph._connected = True
+    graph.driver = _LegacyApiExportDriver()
+
+    result = await graph.export_visjs_graph("scan-a")
+
+    api_node = next(node for node in result["nodes"] if node["group"] == "apiendpoint")
+    assert api_node["method"] == "UNKNOWN"
+    assert api_node["evidence_type"] == "legacy_endpoint_candidate"
+    assert api_node["proof_status"] == "not_proven"
+    assert "legacy_endpoint_candidate" in api_node["title"]
     assert result["edges"][0]["label"] == "endpoint_candidate"
 
 

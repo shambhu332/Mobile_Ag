@@ -1623,3 +1623,11 @@ full pytest passed (**1,291 passed**, 63.40 s); compileall and
 `git diff --check` passed. This validates request-shape rejection only; it
 does not grant device access, validate the ADB destination, or exercise a
 device/target.
+
+Caller-supplied captured-traffic request and response header maps now bound
+each field name (1-256 characters) and value (up to 8 KiB), in addition to
+the existing per-map entry cap. Synthetic API regressions reject oversized
+names/values before traffic analysis; focused traffic/API tests passed (**66
+passed**), full pytest passed (**1,294 passed**, 62.51 s), and compileall plus
+`git diff --check` passed. This is input-size validation only; traffic remains
+synthetic and no target requests are generated.

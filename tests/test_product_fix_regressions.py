@@ -68,6 +68,9 @@ def test_paginated_scan_summary_excludes_findings(client):
 @pytest.mark.parametrize('transaction',[
     {'url':[]}, {'url':'https://example.invalid','request_headers':[]},
     {'url':'https://example.invalid','request_headers':{'X':123}},
+    {'url':'https://example.invalid','request_headers':{'X' * 257:'ok'}},
+    {'url':'https://example.invalid','request_headers':{'X':'v' * 8193}},
+    {'url':'https://example.invalid','response_headers':{'X':'v' * 8193}},
     {'url':'https://example.invalid','response_status':700},
 ])
 def test_nested_capture_validation(client,transaction):

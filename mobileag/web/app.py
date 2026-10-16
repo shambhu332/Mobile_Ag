@@ -1236,9 +1236,11 @@ class CapturedTransaction(BaseModel):
     model_config = {'extra': 'forbid'}
     url: str = Field(max_length=8192)
     method: Literal['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'] = 'GET'
-    request_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    request_headers: dict[Annotated[str, Field(min_length=1, max_length=256)],
+                          Annotated[str, Field(max_length=8192)]] = Field(default_factory=dict, max_length=100)
     response_status: int = Field(default=200, ge=100, le=599)
-    response_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    response_headers: dict[Annotated[str, Field(min_length=1, max_length=256)],
+                           Annotated[str, Field(max_length=8192)]] = Field(default_factory=dict, max_length=100)
     request_body: Optional[str] = Field(default=None, max_length=262144)
     response_body: Optional[str] = Field(default=None, max_length=262144)
 

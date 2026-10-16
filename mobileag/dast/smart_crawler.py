@@ -38,6 +38,7 @@ class SmartUICrawler:
 
     MAX_HIERARCHY_CHARS = 2 * 1024 * 1024
     MAX_HIERARCHY_ELEMENTS = 5000
+    MAX_TRACKED_STATES = 10_000
 
     def __init__(self, test_user: Optional[str] = None, test_pass: Optional[str] = None,
                  allow_form_submit: bool = False, allow_exploratory_clicks: bool = False,
@@ -53,6 +54,7 @@ class SmartUICrawler:
         self.allow_back_navigation = allow_back_navigation
         self.visited_states: Dict[str, int] = {}  # state_hash -> visit_count
         self.last_parse_status = "not_parsed"
+        self.state_tracking_truncated = False
 
     def parse_hierarchy_xml(self, xml_content: str) -> List[UIElement]:
         """Parse uiautomator dump XML into structured UIElements."""
@@ -156,6 +158,13 @@ class SmartUICrawler:
                 f"UI hierarchy analysis is incomplete ({self.last_parse_status}); no UI action taken."
             ))
         state_hash = self.compute_state_hash(current_activity, elements)
+
+        if (state_hash not in self.visited_states
+                and len(self.visited_states) >= self.MAX_TRACKED_STATES):
+            self.state_tracking_truncated = True
+            return CrawlerDecision(action="WAIT", explanation=(
+                "Visited-state tracking limit reached; no further UI action taken."
+            ))
 
         visits = self.visited_states.get(state_hash, 0)
         self.visited_states[state_hash] = visits + 1

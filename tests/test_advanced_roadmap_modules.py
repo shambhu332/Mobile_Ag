@@ -757,6 +757,21 @@ def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
     assert approved_decisions[-1].action == "BACK"
 
 
+def test_smart_ui_crawler_stops_when_visited_state_budget_is_exhausted():
+    crawler = SmartUICrawler(allow_exploratory_clicks=True)
+    crawler.MAX_TRACKED_STATES = 1
+    first = '<hierarchy><node class="android.widget.Button" clickable="true" bounds="[0,0][1,1]" /></hierarchy>'
+    assert crawler.decide_next_action("com.example.app.FirstActivity", first).action == "CLICK"
+
+    second = '<hierarchy><node class="android.widget.Button" clickable="true" bounds="[0,0][2,2]" /></hierarchy>'
+    decision = crawler.decide_next_action("com.example.app.SecondActivity", second)
+
+    assert decision.action == "WAIT"
+    assert "tracking limit reached" in decision.explanation
+    assert crawler.state_tracking_truncated is True
+    assert len(crawler.visited_states) == 1
+
+
 def test_smart_ui_crawler_fails_closed_on_large_or_truncated_hierarchies():
     crawler = SmartUICrawler(allow_exploratory_clicks=True)
     oversized = "<hierarchy>" + " " * crawler.MAX_HIERARCHY_CHARS + "</hierarchy>"

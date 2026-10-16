@@ -246,7 +246,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Permission/consent buttons matching `allow|grant|accept` are recognized but must return `WAIT` for operator review; never auto-consent or tap them.
   3. **State Hashing & Loop Prevention**:
      - Compute a truncated SHA-256 state key over the activity and sorted resource IDs (or short visible labels for elements without IDs); raw labels are not persisted by the state counter or copied into action explanations.
-     - Track visited state counts. Repeated-state `BACK` navigation, exploratory taps, and form submission are separate opt-ins; defaults return `WAIT`.
+     - Track visited state counts with a finite per-crawler state budget; when exhausted, stop and return `WAIT`. Repeated-state `BACK` navigation, exploratory taps, and form submission are separate opt-ins; defaults return `WAIT`.
 
 ---
 
@@ -1077,3 +1077,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed (**5 passed**); full pytest passed (**1,176 passed**, 64.82 s), with
    compile and diff checks passing. Parsed hierarchy objects remain transiently
    available to classifier logic, and no device-side crawler run was performed.
+
+   The UI crawler now caps each instance at 10,000 distinct state hashes and
+   returns `WAIT` without another action when the cap is reached. A regression
+   uses a one-state test budget to verify the state map remains capped and the
+   truncation is observable. Focused crawler tests passed (**6 passed**); full
+   pytest passed (**1,177 passed**, 63.19 s), with compile and diff checks
+   passing. This guards state-tracking memory only; it does not limit total
+   session duration or demonstrate behavior on a real device.

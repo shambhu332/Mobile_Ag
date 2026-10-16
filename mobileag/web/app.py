@@ -570,10 +570,9 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
     out_dir = OUTPUT_DIR / scan_id
     from mobileag.analysis.bounded_sources import SourceInventory
 
-    # Prefer the two known apktool layouts. The compatibility fallback is
-    # bounded and refuses ambiguous roots instead of materializing an
-    # unbounded recursive glob and arbitrarily choosing its first result.
-    known_roots = [out_dir / "apktool_out" / "smali", out_dir / "apktool" / "smali"]
+    # Discover every canonical Smali root (including smali_classesN for
+    # multidex APKs) under one shared budget. Never choose an arbitrary root.
+    known_bases = [out_dir / "apktool_out", out_dir / "apktool"]
 
     def has_symlink_component(path: Path) -> bool:
         current = path
@@ -584,45 +583,63 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
         return OUTPUT_DIR.is_symlink()
 
     unsafe_scan_root = has_symlink_component(out_dir)
-    smali_roots = ([] if unsafe_scan_root else
-                   [p for p in known_roots if not has_symlink_component(p) and p.is_dir()])
+    discovery_inventory = SourceInventory(max_entries=5000, max_file_bytes=1,
+                                          max_total_bytes=1)
+
+    def discover_roots(search_root: Path, *, direct_children_only: bool) -> set[Path]:
+        found = set()
+        for candidate in discovery_inventory.paths(search_root, {".smali"}):
+            for parent in candidate.parents:
+                if parent == search_root:
+                    break
+                if (parent.name == "smali" or re.fullmatch(r"smali_classes\d+", parent.name)):
+                    if not direct_children_only or parent.parent == search_root:
+                        found.add(parent)
+                    break
+        return found
+
+    smali_roots: list[Path] = []
     discovery = {"status": "not_analyzed_symlink_root" if unsafe_scan_root else "known_layout",
-                 "roots_found": len(smali_roots),
-                 "entries_examined": 0, "limits_reached": False}
-    if unsafe_scan_root:
-        pass
-    elif len(smali_roots) > 1:
-        discovery["status"] = "not_analyzed_multiple_known_roots"
-    elif not smali_roots:
-        inventory = SourceInventory(max_entries=5000, max_file_bytes=1,
-                                    max_total_bytes=1)
-        roots = set()
-        for path in inventory.paths(out_dir, {".smali"}):
-            for parent in path.parents:
-                if parent == out_dir:
-                    break
-                if parent.name == "smali" or re.fullmatch(r"smali_classes\d+", parent.name):
-                    roots.add(parent)
-                    break
-        discovery = {"status": "bounded_fallback", "roots_found": len(roots),
-                     "entries_examined": inventory.coverage["entries_examined"],
-                     "limits_reached": inventory.coverage["limits_reached"]}
-        if len(roots) == 1 and not inventory.coverage["limits_reached"]:
-            smali_roots = list(roots)
-        else:
-            if inventory.coverage["limits_reached"]:
-                discovery["status"] = "not_analyzed_incomplete_inventory"
+                 "roots_found": 0, "entries_examined": 0, "limits_reached": False}
+    if not unsafe_scan_root:
+        safe_bases = [base for base in known_bases
+                      if not has_symlink_component(base) and base.is_dir()]
+        roots_by_base = {base: discover_roots(base, direct_children_only=True)
+                         for base in safe_bases}
+        active_bases = [base for base, roots in roots_by_base.items() if roots]
+        discovered_root_count = sum(len(roots) for roots in roots_by_base.values())
+        if len(active_bases) == 1:
+            smali_roots = sorted(roots_by_base[active_bases[0]], key=lambda p: p.name.casefold())
+            discovery["status"] = "known_layout"
+        elif len(active_bases) > 1:
+            discovery["status"] = "not_analyzed_multiple_known_bases"
+        elif not safe_bases:
+            roots = discover_roots(out_dir, direct_children_only=False)
+            root_bases = {root.parent for root in roots}
+            discovered_root_count = len(roots)
+            if len(root_bases) == 1:
+                smali_roots = sorted(roots, key=lambda p: p.name.casefold())
+                discovery["status"] = "bounded_fallback"
+            elif len(root_bases) > 1:
+                discovery["status"] = "not_analyzed_ambiguous_roots"
             else:
-                discovery["status"] = "not_analyzed_ambiguous_roots" if roots else "not_analyzed_no_root"
+                discovery["status"] = "not_analyzed_no_root"
+        else:
+            discovery["status"] = "not_analyzed_no_root"
+        discovery["roots_found"] = discovered_root_count
+        discovery["entries_examined"] = discovery_inventory.coverage["entries_examined"]
+        discovery["limits_reached"] = discovery_inventory.coverage["limits_reached"]
+        if discovery["limits_reached"]:
+            smali_roots = []
+            discovery["status"] = "not_analyzed_incomplete_inventory"
 
     from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
     auditor = RaspResilienceAuditor()
-    res = auditor.audit_package(smali_roots[0]) if len(smali_roots) == 1 else auditor.audit_package(None)
-    if discovery["status"] != "known_layout":
-        res.coverage["root_discovery"] = discovery
-        if discovery["status"] != "bounded_fallback":
-            res.coverage["static_status"] = "not_analyzed"
-            res.coverage["exhaustive"] = False
+    res = auditor.audit_package(smali_roots) if smali_roots else auditor.audit_package(None)
+    res.coverage["root_discovery"] = discovery
+    if not smali_roots:
+        res.coverage["static_status"] = "not_analyzed"
+        res.coverage["exhaustive"] = False
 
     return {
         "scan_id": scan_id,

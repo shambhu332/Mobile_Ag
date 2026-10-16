@@ -55,13 +55,18 @@ class RaspResilienceAuditor:
         "verifySignature", "checkSignature", "SHA-256", "signingCertificateHistory"
     ]
 
-    def audit_package(self, smali_dir: str | Path) -> ResilienceAssessmentResult:
-        """Audit decompiled Smali sources for resilience vectors."""
-        path = explicit_scan_root(smali_dir)
+    def audit_package(self, smali_dir: str | Path | List[str | Path]) -> ResilienceAssessmentResult:
+        """Audit one or more decompiled Smali roots under a shared budget."""
+        supplied_roots = smali_dir if isinstance(smali_dir, (list, tuple)) else [smali_dir]
+        paths = [explicit_scan_root(root) for root in supplied_roots]
         result = ResilienceAssessmentResult()
-        if path is None or path.is_symlink() or not path.is_dir():
+        if (not paths or any(path is None or path.is_symlink() or not path.is_dir()
+                             for path in paths)):
             result.coverage = SourceInventory().coverage
             return result
+        # Duplicate roots would double-count evidence; stable de-duplication
+        # also makes callers' ordering irrelevant.
+        paths = list(dict.fromkeys(paths))
 
         total_classes = 0
         obfuscated_classes = 0
@@ -73,31 +78,32 @@ class RaspResilienceAuditor:
         # Bound traversal and reads; extracted APK trees are untrusted input.
         inventory = SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
                                     max_total_bytes=32 * 1024 * 1024)
-        for _file_path, data in inventory.read(path, {".smali"}):
-            total_classes += 1
-            base_name = _file_path.stem
-            # This is a filename heuristic, not a class-identifier parser.
-            if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
-                obfuscated_classes += 1
+        for path in paths:
+            for _file_path, data in inventory.read(path, {".smali"}):
+                total_classes += 1
+                base_name = _file_path.stem
+                # This is a filename heuristic, not a class-identifier parser.
+                if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
+                    obfuscated_classes += 1
 
-            content = data.decode("utf-8", errors="replace")
-            for ind in self.ROOT_INDICATORS:
-                if ind in content:
-                    root_detections.add(ind)
-            for ind in self.DEBUG_INDICATORS:
-                if ind in content:
-                    debug_detections.add(ind)
-            for ind in self.TAMPER_INDICATORS:
-                if ind in content:
-                    tamper_detections.add(ind)
+                content = data.decode("utf-8", errors="replace")
+                for ind in self.ROOT_INDICATORS:
+                    if ind in content:
+                        root_detections.add(ind)
+                for ind in self.DEBUG_INDICATORS:
+                    if ind in content:
+                        debug_detections.add(ind)
+                for ind in self.TAMPER_INDICATORS:
+                    if ind in content:
+                        tamper_detections.add(ind)
 
-            # Cap both sample count and individual sample work for predictable CPU.
-            for match in re.finditer(r'const-string[^\"]*\"([^\"]+)\"', content):
-                s_match = match.group(1)
-                if len(s_match) > 8:
-                    if len(string_samples) >= 500:
-                        break
-                    string_samples.append(s_match[:256])
+                # Cap both sample count and individual sample work for predictable CPU.
+                for match in re.finditer(r'const-string[^\"]*\"([^\"]+)\"', content):
+                    s_match = match.group(1)
+                    if len(s_match) > 8:
+                        if len(string_samples) >= 500:
+                            break
+                        string_samples.append(s_match[:256])
         result.coverage = dict(inventory.coverage)
 
         # These are candidate indicators only. Their observed presence does not

@@ -30,6 +30,28 @@ def test_resilience_route_uses_bounded_compatibility_root(tmp_path, monkeypatch)
     }
 
 
+def test_resilience_route_includes_all_known_multidex_roots(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    base = web.OUTPUT_DIR / "resilience_fixture" / "apktool_out"
+    primary = base / "smali"
+    secondary = base / "smali_classes2"
+    primary.mkdir(parents=True)
+    secondary.mkdir()
+    (primary / "Primary.smali").write_text('.class Lx/Primary;\n', encoding="utf-8")
+    (secondary / "Secondary.smali").write_text(
+        '.class Lx/Secondary;\nconst-string v0, "magisk"\n', encoding="utf-8")
+
+    response = client.get("/api/scans/resilience_fixture/resilience")
+
+    assert response.status_code == 200, response.text
+    document = response.json()
+    assert document["coverage"]["static_status"] == "analyzed_heuristically"
+    assert document["coverage"]["source_files_analyzed"] == 2
+    assert document["coverage"]["root_discovery"]["roots_found"] == 2
+    assert document["coverage"]["root_discovery"]["status"] == "known_layout"
+    assert "magisk" in document["vectors"]["root_detection"]["indicators"]
+
+
 def test_resilience_route_does_not_choose_ambiguous_fallback_root(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     scan_dir = web.OUTPUT_DIR / "resilience_fixture"

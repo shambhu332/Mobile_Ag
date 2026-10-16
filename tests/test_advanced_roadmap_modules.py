@@ -460,6 +460,22 @@ def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
     assert approved_decisions[-1].action == "BACK"
 
 
+def test_smart_ui_crawler_fails_closed_on_large_or_truncated_hierarchies():
+    crawler = SmartUICrawler(allow_exploratory_clicks=True)
+    oversized = "<hierarchy>" + " " * crawler.MAX_HIERARCHY_CHARS + "</hierarchy>"
+    assert crawler.decide_next_action("Activity", oversized).action == "WAIT"
+    assert crawler.last_parse_status == "too_large"
+
+    nodes = "".join('<node class="Button" clickable="true" bounds="[0,0][1,1]" />'
+                    for _ in range(crawler.MAX_HIERARCHY_ELEMENTS + 1))
+    truncated = f"<hierarchy>{nodes}</hierarchy>"
+    assert len(crawler.parse_hierarchy_xml(truncated)) == crawler.MAX_HIERARCHY_ELEMENTS
+    assert crawler.last_parse_status == "truncated"
+    decision = crawler.decide_next_action("Activity", truncated)
+    assert decision.action == "WAIT"
+    assert "incomplete" in decision.explanation
+
+
 def test_ui_crawler_factory_propagates_smart_crawler_opt_ins():
     crawler = UICrawler().get_smart_crawler(
         test_user="synthetic@example.test", test_pass="synthetic-only",

@@ -35,6 +35,9 @@ class CrawlerDecision:
 class SmartUICrawler:
     """Intelligently navigates Android application UIs based on semantic element detection."""
 
+    MAX_HIERARCHY_CHARS = 2 * 1024 * 1024
+    MAX_HIERARCHY_ELEMENTS = 5000
+
     def __init__(self, test_user: Optional[str] = None, test_pass: Optional[str] = None,
                  allow_form_submit: bool = False, allow_exploratory_clicks: bool = False,
                  allow_test_credential_entry: bool = False,
@@ -48,19 +51,32 @@ class SmartUICrawler:
         self.allow_test_credential_entry = allow_test_credential_entry
         self.allow_back_navigation = allow_back_navigation
         self.visited_states: Dict[str, int] = {}  # state_hash -> visit_count
+        self.last_parse_status = "not_parsed"
 
     def parse_hierarchy_xml(self, xml_content: str) -> List[UIElement]:
         """Parse uiautomator dump XML into structured UIElements."""
         elements: List[UIElement] = []
+        if not isinstance(xml_content, str):
+            self.last_parse_status = "invalid_input"
+            return elements
+        if len(xml_content) > self.MAX_HIERARCHY_CHARS:
+            self.last_parse_status = "too_large"
+            return elements
         if not xml_content or "<hierarchy" not in xml_content:
+            self.last_parse_status = "empty"
             return elements
 
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError:
+            self.last_parse_status = "parse_error"
             return elements
 
-        for node in root.iter("node"):
+        self.last_parse_status = "ok"
+        for index, node in enumerate(root.iter("node")):
+            if index >= self.MAX_HIERARCHY_ELEMENTS:
+                self.last_parse_status = "truncated"
+                break
             r_id = node.get("resource-id", "")
             cls = node.get("class", "")
             text = node.get("text", "")
@@ -131,6 +147,10 @@ class SmartUICrawler:
     def decide_next_action(self, current_activity: str, xml_content: str) -> CrawlerDecision:
         """Analyze current screen and select best next exploratory action."""
         elements = self.parse_hierarchy_xml(xml_content)
+        if self.last_parse_status not in {"ok", "empty"}:
+            return CrawlerDecision(action="WAIT", explanation=(
+                f"UI hierarchy analysis is incomplete ({self.last_parse_status}); no UI action taken."
+            ))
         state_hash = self.compute_state_hash(current_activity, elements)
 
         visits = self.visited_states.get(state_hash, 0)

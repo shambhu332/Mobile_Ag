@@ -983,6 +983,8 @@ class SmaliCallGraphEngine:
                         static_field_writes.add((field_key, trace))
 
                 invoke = invoke_re.search(text)
+                if text.startswith("invoke-") and not invoke:
+                    warn(f"unmodeled invoke form in {method.key} at line {line_no}")
                 if invoke:
                     target_class, target_name, signature = invoke.group(2), invoke.group(3), invoke.group(4)
                     target_key = f"{target_class}->{target_name}"

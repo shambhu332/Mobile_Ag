@@ -958,6 +958,32 @@ def test_smali_malformed_switch_payload_marks_coverage_partial(tmp_path):
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_unmodeled_invoke_form_marks_register_flow_partial(tmp_path):
+    (tmp_path / "CustomInvoke.smali").write_text("""
+.class public Lcom/example/CustomInvoke;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 5
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-custom {v2}, call_site@dynamic(Ljava/lang/Object;)Ljava/lang/String;
+    move-result-object v3
+    sget-object v4, Lcom/example/CustomInvoke;->web:Landroid/webkit/WebView;
+    invoke-virtual {v4, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert not any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("unmodeled invoke form" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_call_graph_reflection_resolution():
     engine = SmaliCallGraphEngine()
 

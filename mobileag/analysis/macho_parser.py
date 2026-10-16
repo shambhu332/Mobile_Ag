@@ -39,6 +39,7 @@ class MachoAnalysisResult:
     swift_type_name_candidates: List[str] = field(default_factory=list)
     swift_type_field_candidates: List[Dict[str, object]] = field(default_factory=list)
     swift_field_type_candidates: List[Dict[str, str]] = field(default_factory=list)
+    swift_field_metadata_candidates: List[Dict[str, object]] = field(default_factory=list)
     swift_type_metadata_status: str = "not_attempted"
     swift_protocol_name_candidates: List[str] = field(default_factory=list)
     swift_protocol_metadata_status: str = "not_attempted"
@@ -269,6 +270,9 @@ class MachoBinaryParser:
             for field_type in slice_result.swift_field_type_candidates:
                 if field_type not in result.swift_field_type_candidates and len(result.swift_field_type_candidates) < 1000:
                     result.swift_field_type_candidates.append(field_type)
+            for field_metadata in slice_result.swift_field_metadata_candidates:
+                if field_metadata not in result.swift_field_metadata_candidates and len(result.swift_field_metadata_candidates) < 1000:
+                    result.swift_field_metadata_candidates.append(field_metadata)
             for name in slice_result.swift_protocol_name_candidates:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
@@ -452,6 +456,19 @@ class MachoBinaryParser:
                         result.swift_type_metadata_status = "partial"
                         continue
                     field_names.append(field_name)
+                    field_flags = struct.unpack_from(endian + "I", data, record)[0]
+                    field_metadata_candidate = {
+                        "type_name": candidate,
+                        "field_name": field_name,
+                        "is_indirect_case": bool(field_flags & 0x1),
+                        "is_var": bool(field_flags & 0x2),
+                        "is_artificial": bool(field_flags & 0x4),
+                    }
+                    if field_metadata_candidate not in result.swift_field_metadata_candidates:
+                        if len(result.swift_field_metadata_candidates) < 1000:
+                            result.swift_field_metadata_candidates.append(field_metadata_candidate)
+                        else:
+                            result.swift_type_metadata_status = "partial"
                     type_relative = struct.unpack_from(endian + "i", data, record + 4)[0]
                     if type_relative == 0:
                         continue

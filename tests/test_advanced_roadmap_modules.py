@@ -525,7 +525,7 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     struct.pack_into("<i", type_blob, 20, field_offset - (body_offset + 20))
     field_name = b"displayName\0"
     field_blob = bytearray(struct.pack("<iiHHI", 0, 0, 0, 12, 1))
-    field_blob.extend(struct.pack("<Iii", 0, 20, 4))
+    field_blob.extend(struct.pack("<Iii", 6, 20, 4))  # var + artificial field
     field_blob.extend(field_name)
     field_type_blob = b"$sSiD\0"  # Relative target is outside __swift5_fieldmd.
 
@@ -546,6 +546,10 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     assert result.swift_field_type_candidates == [{
         "type_name": "Example", "field_name": "displayName", "mangled_type_name": "$sSiD",
     }]
+    assert result.swift_field_metadata_candidates == [{
+        "type_name": "Example", "field_name": "displayName",
+        "is_indirect_case": False, "is_var": True, "is_artificial": True,
+    }]
 
     malformed = bytearray(binary.read_bytes())
     struct.pack_into("<H", malformed, field_offset + 10, 11)  # unsupported record stride
@@ -555,6 +559,7 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     assert malformed_result.swift_type_metadata_status == "partial"
     assert malformed_result.swift_type_field_candidates == []
     assert malformed_result.swift_field_type_candidates == []
+    assert malformed_result.swift_field_metadata_candidates == []
 
     symbolic = bytearray(binary.read_bytes())
     type_offset = field_offset + len(field_blob)

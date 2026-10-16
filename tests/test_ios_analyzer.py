@@ -130,6 +130,10 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
         swift_field_type_candidates=[{
             "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
         }],
+        swift_field_metadata_candidates=[{
+            "type_name": "Shape", "field_name": "size",
+            "is_indirect_case": False, "is_var": True, "is_artificial": False,
+        }],
     )
     monkeypatch.setattr(MachoBinaryParser, "parse_binary", lambda _self, _path: synthetic_parse)
 
@@ -141,6 +145,10 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
     ]
     assert report["swift_metadata"]["swift_field_type_candidates"] == [{
         "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
+    }]
+    assert report["swift_metadata"]["swift_field_metadata_candidates"] == [{
+        "type_name": "Shape", "field_name": "size",
+        "is_indirect_case": False, "is_var": True, "is_artificial": False,
     }]
 
     review = report["privacy_manifest"]["binary_api_symbol_review"]

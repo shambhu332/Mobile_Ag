@@ -111,7 +111,7 @@ class CryptoApiMetadataAuditor:
                     record["locations"].append({"file": relative, "line": line})
 
         status = inventory.coverage.get("static_status", "not_analyzed")
-        if records_truncated or decode_errors:
+        if records_truncated or decode_errors or unmodeled_calls:
             status = "partial"
         limitations = [
             "Only Java/Kotlin literal getInstance calls for selected platform APIs are inventoried.",

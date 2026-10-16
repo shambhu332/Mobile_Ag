@@ -17,7 +17,7 @@ def test_crypto_audit_records_allowlisted_algorithms_without_source_values(tmp_p
 
     result = CryptoApiMetadataAuditor().audit_directory(tmp_path)
 
-    assert result["coverage"]["static_status"] == "analyzed_heuristically"
+    assert result["coverage"]["static_status"] == "partial"
     assert result["coverage"]["factory_call_count"] == 5
     assert result["coverage"]["literal_algorithm_call_count"] == 3
     assert result["coverage"]["unmodeled_call_count"] == 2
@@ -46,6 +46,13 @@ def test_crypto_audit_fails_closed_for_missing_or_symlink_source_roots(tmp_path)
     link = tmp_path / "linked"
     link.symlink_to(outside, target_is_directory=True)
     assert auditor.audit_directory(link)["coverage"]["static_status"] == "incomplete"
+
+
+def test_crypto_audit_reports_heuristic_completion_when_all_calls_are_modeled(tmp_path):
+    (tmp_path / "Crypto.kt").write_text('Cipher.getInstance("AES/GCM/NoPadding")')
+    result = CryptoApiMetadataAuditor().audit_directory(tmp_path)
+    assert result["coverage"]["static_status"] == "analyzed_heuristically"
+    assert result["coverage"]["unmodeled_call_count"] == 0
 
 
 def test_crypto_audit_propagates_partial_inventory_coverage(tmp_path):

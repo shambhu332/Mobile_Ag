@@ -1825,3 +1825,12 @@ and skipped-source cases passed with the orchestrator/ledger regressions
 one expected duplicate-ZIP-member warning). `compileall` and `git diff --check`
 passed. This is not runtime crypto instrumentation, key-size inference, a
 cryptographic-quality verdict, or proof of API reachability.
+
+A crypto factory call that is observed but cannot be assigned an allowlisted
+literal algorithm/mode (including dynamic or unsupported literals) now makes
+that analyzer's static status `partial` instead of a clean heuristic pass. The
+coverage retains only the bounded count, not the unrecognized value. A positive
+static-only control and dynamic/unrecognized negatives passed with the crypto
+pipeline regressions (**115 focused tests passed**); full pytest passed
+(**1,327 passed**, 54.51 s; one expected duplicate-ZIP-member warning).
+`compileall` and `git diff --check` passed.

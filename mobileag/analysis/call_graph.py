@@ -766,9 +766,11 @@ class SmaliCallGraphEngine:
         successors: list[list[int]] = [[] for _ in instructions]
 
         def warn(message: str) -> None:
+            # Count every diagnostic event, including repeated messages. Keep
+            # the human-readable sample bounded independently from the count.
+            self.local_register_analysis_warning_count += 1
             if message in self.local_register_analysis_warnings:
                 return
-            self.local_register_analysis_warning_count += 1
             if len(self.local_register_analysis_warnings) < self.MAX_REGISTER_ANALYSIS_WARNINGS:
                 self.local_register_analysis_warnings.append(message)
             else:

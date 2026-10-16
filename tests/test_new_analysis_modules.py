@@ -178,6 +178,27 @@ def test_intent_redirection_does_not_match_launch_before_later_extraction(tmp_pa
     assert auditor.audit_file(tmp_path / "missing.java") == []
 
 
+def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):
+    source = tmp_path / "Reassignment.java"
+    source.write_text('''class Proxy {
+        void trustedReplacement() {
+            Intent next = getIntent().getParcelableExtra("nested");
+            next = new Intent();
+            startActivity(next);
+        }
+        void laterUntrustedValue() {
+            Intent next = new Intent();
+            next = getIntent().getParcelableExtra("nested");
+            startActivity(next);
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 1
+    assert findings[0].line_number == 10
+    assert findings[0].metadata["reassignment_analysis"] == "linewise_bounded"
+
+
 def test_intent_redirection_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
     target = tmp_path.parent / "intent-redirection-outside.java"
     target.write_text('''class Outside {

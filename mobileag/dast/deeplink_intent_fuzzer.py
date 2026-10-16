@@ -13,6 +13,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from mobileag.analysis.api_endpoint_safety import safe_api_route
 
 
 @dataclass
@@ -29,13 +30,13 @@ class DeepLinkIntentFuzzer:
     """Runs researcher-scoped Android deep-link launch probes via ADB."""
 
     MUTATION_PAYLOADS = [
-        "https://attacker.com",
-        "javascript:alert(document.domain)",
-        "content://com.android.contacts/contacts",
-        "file:///data/data/",
-        "../../../../../../etc/hosts",
-        "' OR '1'='1",
-        "{\"admin\": true, \"debug\": 1}",
+        "https://mobileag.invalid/redirect-review-marker",
+        "javascript:void(0)",
+        "content://mobileag.invalid/synthetic/canary",
+        "file:///mobileag-synthetic-nonexistent.txt",
+        "../../mobileag_synthetic_canary.txt",
+        "' OR 'mobileag_synthetic_canary'='mobileag_synthetic_canary",
+        '{"mobileag_canary": "synthetic"}',
     ]
     MAX_URI_LENGTH = 4096
     MAX_QUERY_FIELDS = 64
@@ -44,6 +45,29 @@ class DeepLinkIntentFuzzer:
 
     def __init__(self, adb_path: str = "adb"):
         self.adb_path = adb_path
+
+    @staticmethod
+    def _safe_target_uri(value: object) -> str:
+        """Retain only a report-safe URI locator, never path/query values."""
+        if not isinstance(value, str) or not value or len(value) > DeepLinkIntentFuzzer.MAX_URI_LENGTH:
+            return "[REDACTED URI]"
+        try:
+            parsed = urlsplit(value)
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]{0,31}", parsed.scheme):
+                return "[REDACTED URI]"
+            if parsed.scheme.lower() in {"http", "https"}:
+                safe = safe_api_route(value)
+                return safe if safe != "[REDACTED URL]" else "[REDACTED URI]"
+            if parsed.netloc:
+                host, port = parsed.hostname, parsed.port
+                if not host:
+                    return "[REDACTED URI]"
+                host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+                authority = host + (f":{port}" if port is not None else "")
+                return f"{parsed.scheme.lower()}://{authority}"
+            return f"{parsed.scheme.lower()}:[REDACTED]"
+        except (TypeError, ValueError, UnicodeError):
+            return "[REDACTED URI]"
 
     def generate_mutations(self, base_uri: str) -> List[str]:
         """Generate a bounded set of properly encoded query-value mutations."""
@@ -85,6 +109,7 @@ class DeepLinkIntentFuzzer:
         *,
         serial: Optional[str] = None,
         guard: Optional[Callable[[], None]] = None,
+        synthetic_data_confirmed: bool = False,
     ) -> FuzzResult:
         """Execute one bounded case only after caller scope checks pass.
 
@@ -93,15 +118,18 @@ class DeepLinkIntentFuzzer:
         immediately before execution. This helper does not itself establish
         authorization or prove a vulnerability.
         """
+        evidence_uri = self._safe_target_uri(target_uri)
         if not isinstance(serial, str) or not serial.strip() or not callable(guard):
-            return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+            return FuzzResult(target_uri=evidence_uri, status="BLOCKED_SCOPE")
+        if synthetic_data_confirmed is not True:
+            return FuzzResult(target_uri=evidence_uri, status="BLOCKED_SYNTHETIC_SCOPE")
         if (not isinstance(target_uri, str) or not 0 < timeout <= 15 or not target_uri
                 or len(target_uri) > self.MAX_URI_LENGTH
                 or "\x00" in target_uri):
-            return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
+            return FuzzResult(target_uri=evidence_uri, status="INVALID_INPUT")
         if package_name is not None and (not isinstance(package_name, str) or
                 not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)):
-            return FuzzResult(target_uri=target_uri, status="INVALID_INPUT")
+            return FuzzResult(target_uri=evidence_uri, status="INVALID_INPUT")
 
         remote_args = ["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", target_uri]
         if package_name:
@@ -116,11 +144,11 @@ class DeepLinkIntentFuzzer:
                 close = getattr(approved, "close", None)
                 if callable(close):
                     close()
-                return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+                return FuzzResult(target_uri=evidence_uri, status="BLOCKED_SCOPE")
             if approved is False:
-                return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+                return FuzzResult(target_uri=evidence_uri, status="BLOCKED_SCOPE")
         except Exception:
-            return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+            return FuzzResult(target_uri=evidence_uri, status="BLOCKED_SCOPE")
         try:
             returncode, stdout, stderr, output_bytes, truncated, timed_out = self._run_bounded(cmd, timeout)
             output = stdout + stderr
@@ -137,7 +165,7 @@ class DeepLinkIntentFuzzer:
                 status = "UNKNOWN"
 
             return FuzzResult(
-                target_uri=target_uri,
+                target_uri=evidence_uri,
                 status=status,
                 response_code=returncode,
                 # The launcher does not capture logcat; never retain raw
@@ -147,9 +175,9 @@ class DeepLinkIntentFuzzer:
                 output_truncated=truncated,
             )
         except subprocess.TimeoutExpired:
-            return FuzzResult(target_uri=target_uri, status="TIMEOUT")
+            return FuzzResult(target_uri=evidence_uri, status="TIMEOUT")
         except FileNotFoundError:
-            return FuzzResult(target_uri=target_uri, status="ADB_NOT_FOUND")
+            return FuzzResult(target_uri=evidence_uri, status="ADB_NOT_FOUND")
 
     def _run_bounded(self, cmd: list[str], timeout: float):
         """Drain ADB output concurrently and retain at most a small prefix."""

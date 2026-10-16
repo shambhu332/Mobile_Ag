@@ -756,8 +756,12 @@ def test_deeplink_fuzzer_mutations():
     assert len(mutations) > 5
     decoded_values = [value for mutation in mutations[1:]
                       for values in parse_qs(urlsplit(mutation).query).values() for value in values]
-    assert "https://attacker.com" in decoded_values
-    assert "javascript:alert(document.domain)" in decoded_values
+    assert "https://mobileag.invalid/redirect-review-marker" in decoded_values
+    assert "javascript:void(0)" in decoded_values
+    assert "content://mobileag.invalid/synthetic/canary" in decoded_values
+    assert "../../mobileag_synthetic_canary.txt" in decoded_values
+    assert not any("com.android.contacts" in value or "/etc/hosts" in value
+                   or "/data/data/" in value for value in decoded_values)
     assert all(set(parse_qs(urlsplit(mutation).query)) == {"code", "redirect"}
                for mutation in mutations[1:])
 
@@ -795,23 +799,39 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     fuzzer = DeepLinkIntentFuzzer()
     assert fuzzer.execute_fuzz_case("https://example.test/path").status == "BLOCKED_SCOPE"
     assert fuzzer.execute_fuzz_case(
-        "https://example.test/path", serial="device-1", guard=lambda: None
+        "https://example.test/path", serial="device-1", guard=lambda: None,
+    ).status == "BLOCKED_SYNTHETIC_SCOPE"
+    assert called == []
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=lambda: None,
+        synthetic_data_confirmed=True,
     ).status == "SUCCESS"
     args, _ = called[0]
     assert args[0][:3] == ["adb", "-s", "device-1"]
     result = fuzzer.execute_fuzz_case(
-        "https://example.test/path", serial="device-1", guard=lambda: None
+        "https://example.test/path", serial="device-1", guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
     assert result.status == "SUCCESS"
     assert result.output_truncated is True
     assert result.output_bytes_observed > 100_000
     assert result.logcat_errors == []
+    secret_uri = "fixture://host/auth/token/path-secret?access_token=query-secret#fragment-secret"
+    safe_result = fuzzer.execute_fuzz_case(
+        secret_uri, serial="device-1", guard=lambda: None,
+        synthetic_data_confirmed=True,
+    )
+    assert safe_result.target_uri == "fixture://host"
+    assert all(secret not in repr(safe_result) for secret in (
+        "path-secret", "query-secret", "fragment-secret",
+    ))
 
     injection_shaped_uri = "myapp://host/path?next=x; touch /tmp/mobileag-not-run"
     assert fuzzer.execute_fuzz_case(
-        injection_shaped_uri, serial="device-1", guard=lambda: None
+        injection_shaped_uri, serial="device-1", guard=lambda: None,
+        synthetic_data_confirmed=True,
     ).status == "SUCCESS"
-    args, _ = called[2]
+    args, _ = called[3]
     remote_args = shlex.split(args[0][4])
     assert remote_args[-2:] == ["-d", injection_shaped_uri]
 
@@ -819,22 +839,25 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
         raise PermissionError("scope revoked")
 
     assert fuzzer.execute_fuzz_case(
-        "https://example.test/path", serial="device-1", guard=deny
+        "https://example.test/path", serial="device-1", guard=deny,
+        synthetic_data_confirmed=True,
     ).status == "BLOCKED_SCOPE"
-    assert len(called) == 3
+    assert len(called) == 4
 
     assert fuzzer.execute_fuzz_case(
-        "https://example.test/path", serial="device-1", guard=lambda: False
+        "https://example.test/path", serial="device-1", guard=lambda: False,
+        synthetic_data_confirmed=True,
     ).status == "BLOCKED_SCOPE"
-    assert len(called) == 3
+    assert len(called) == 4
 
     async def async_allow():
         return True
 
     assert fuzzer.execute_fuzz_case(
-        "https://example.test/path", serial="device-1", guard=async_allow
+        "https://example.test/path", serial="device-1", guard=async_allow,
+        synthetic_data_confirmed=True,
     ).status == "BLOCKED_SCOPE"
-    assert len(called) == 3
+    assert len(called) == 4
 
 
 def test_mobile_api_cataloger():

@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "description": "Public synthetic smoke corpus for bounded same-method Smali register flow, including external-content and provider Cursor and exact lifecycle Intent paths with hard-negative untainted selectors. Matched by CWE and sink line; not blind, independent, whole-program, or APK-recall evidence.",
+  "description": "Public synthetic smoke corpus for bounded same-method Smali register flow, including external-content and provider Cursor and exact lifecycle Intent paths with hard-negative untainted selectors, wrong callback bases, and non-callback helpers. Matched by CWE and sink line; not blind, independent, whole-program, or APK-recall evidence.",
   "cases": [
     {
       "id": "intent_extra_direct_to_webview",
@@ -130,6 +130,16 @@
         }
       ],
       "source": ".class public Lfixture/LifecycleExtra;\n.super Landroid/app/Activity;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 4\n const-string v0, \"url\"\n invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v1\n sget-object v2, Lfixture/LifecycleExtra;->web:Landroid/webkit/WebView;\n invoke-virtual {v2, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "same_named_callback_wrong_superclass_is_not_a_root",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/NotAnActivity;\n.super Ljava/lang/Object;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 3\n invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v0\n invoke-virtual {v0}, Landroid/net/Uri;->toString()Ljava/lang/String;\n move-result-object v1\n sget-object v0, Lfixture/NotAnActivity;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "ordinary_intent_parameter_helper_is_not_a_lifecycle_root",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/IntentHelper;\n.super Ljava/lang/Object;\n.method public open(Landroid/content/Intent;Landroid/webkit/WebView;)V\n .registers 5\n invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v0\n invoke-virtual {v0}, Landroid/net/Uri;->toString()Ljava/lang/String;\n move-result-object v1\n invoke-virtual {p2, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     }
   ]
 }

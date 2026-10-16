@@ -28,7 +28,9 @@ def test_smali_register_flow_benchmark_has_no_smoke_regressions():
     assert lifecycle_extra_case["tp"] == 1
     for negative_id in ("hardcoded_content_uri_is_not_tainted", "hardcoded_path_is_not_tainted",
                        "locally_constructed_intent_data_is_not_tainted",
-                       "local_intent_extra_is_not_tainted"):
+                       "local_intent_extra_is_not_tainted",
+                       "same_named_callback_wrong_superclass_is_not_a_root",
+                       "ordinary_intent_parameter_helper_is_not_a_lifecycle_root"):
         negative_case = next(case for case in result["cases"] if case["id"] == negative_id)
         assert negative_case["observed"] == []
     duplicate_cwe_case = next(case for case in result["cases"] if case["id"] == "two_sink_instances_same_cwe")

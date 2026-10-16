@@ -7,8 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import re
+from pydantic import ValidationError
 
 from mobileag.reporting.finding import Finding
+from mobileag.reporting.finding import FindingStatus
+from mobileag.reporting.validation import ConfirmationEvidence
 
 
 @dataclass
@@ -25,6 +29,21 @@ class ExploitPocSynthesizer:
 
     def synthesize(self, finding: Finding, target_package: str) -> Optional[GeneratedPoc]:
         """Synthesize PoC based on finding type and parameters."""
+        # Generated commands/source are review artifacts, never proof or authorization
+        # to execute. Require a structured, artifact-bound analyst attestation first.
+        evidence = finding.validation_evidence or {}
+        if (finding.status != FindingStatus.CONFIRMED
+                or evidence.get("basis") != "analyst_attested"
+                or evidence.get("independently_verified") is not False
+                or evidence.get("active") is not True
+                or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", target_package)):
+            return None
+        try:
+            record = ConfirmationEvidence.model_validate(evidence.get("record", {}))
+        except (ValidationError, TypeError):
+            return None
+        if record.package_name != target_package:
+            return None
         cwe = finding.cwe_id or ""
         fid = finding.id
 

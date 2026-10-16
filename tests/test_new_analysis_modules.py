@@ -393,11 +393,36 @@ def test_exploit_poc_synthesizer():
     synthesizer = ExploitPocSynthesizer()
     poc = synthesizer.synthesize(finding, target_package="com.target.app")
 
+    # A detection alone is not sufficient authority to emit executable guidance.
+    assert poc is None
+
+
+def test_poc_requires_artifact_bound_analyst_attestation():
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+
+    record = {
+        "artifact_sha256": "a" * 64, "package_name": "com.target.app",
+        "app_version": "1.0", "os_build": "Android synthetic test build",
+        "attacker_context": "ordinary_app", "entry_point": "synthetic exported activity",
+        "attacker_control": "researcher controlled input", "sensitive_sink": "synthetic canary",
+        "security_boundary": "synthetic app boundary", "observed_impact": "canary observed",
+        "reproduction_steps": ["launch test app", "observe canary"],
+        "positive_control": "positive fixture", "negative_control": "negative fixture",
+        "evidence_refs": ["fixture:positive"], "unprivileged_attacker_confirmed": True,
+        "unmodified_authorization_confirmed": True, "synthetic_data_confirmed": True,
+        "scope_confirmed": True,
+    }
+    finding = Finding(
+        id="INTENT_REDIRECTION_SYNTHETIC", title="Synthetic intent issue", description="test",
+        severity=Severity.HIGH, status=FindingStatus.CONFIRMED, cwe_id="CWE-926",
+        validation_evidence={"basis": "analyst_attested", "independently_verified": False,
+                             "active": True, "record": record},
+    )
+    poc = ExploitPocSynthesizer().synthesize(finding, "com.target.app")
     assert poc is not None
-    assert poc.vulnerability_type == "Intent Redirection"
-    assert "adb shell am start" in poc.adb_command
-    assert "class ExploitActivity" in poc.kotlin_exploit_code
-    assert "com.target.app" in poc.kotlin_exploit_code
+    assert "analyst" not in poc.explanation.lower()  # output is not itself confirmation
+    assert ExploitPocSynthesizer().synthesize(finding, "com.other.app") is None
 
 
 def test_deeplink_fuzzer_mutations():

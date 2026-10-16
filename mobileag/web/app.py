@@ -848,6 +848,7 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         cwe_id=finding_dict.get("cwe_id"),
         file_path=finding_dict.get("file_path", ""),
         metadata=finding_dict.get("metadata", {}),
+        validation_evidence=finding_dict.get("validation_evidence"),
     )
 
     pkg = scan.get("package_name") or "com.target.mobile.app"
@@ -858,7 +859,8 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         return {
             "finding_id": finding_id,
             "available": False,
-            "message": "Automated standalone exploit generator not applicable for this finding category.",
+            "message": "No PoC generated: category unsupported or finding lacks active artifact-bound analyst attestation.",
+            "execution_authorized": False,
         }
 
     return {
@@ -868,6 +870,8 @@ async def get_finding_poc(scan_id: str, finding_id: str) -> dict[str, Any]:
         "adb_command": poc.adb_command,
         "kotlin_exploit_code": poc.kotlin_exploit_code,
         "explanation": poc.explanation,
+        "generation_basis": "analyst_attested_not_independently_verified",
+        "execution_authorized": False,
     }
 
 

@@ -284,7 +284,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/web/app.py` (Enhancement)
   - `mobileag/web/static/telemetry.js` (Enhancement)
-* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
+* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. A pending subscriber slot remains reserved during awaited scan validation and transfers to the active set without an intervening await, preserving the 32-connection cap during concurrent setup. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
 
 ### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
 * **Objective**: Visualize currently modeled component/finding/API-candidate associations; do not label co-occurrence as data flow or an exploit chain.
@@ -1189,3 +1189,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    A 10,000-property synthetic mapping verifies the visit cap and explicit
    truncation marker. Focused validation follows; this reduces intermediate
    allocation but does not establish complete schema inference.
+
+   WebSocket setup now holds its pending-capacity reservation through awaited
+   scan validation and transfers that slot to the active subscriber list
+   without yielding, closing a concurrent-handshake over-admission race. A
+   synthetic async interleaving with 31 occupied slots verifies the second
+   handshake is rejected and the first activates at the cap. Focused WebSocket
+   tests passed (**3 passed**); full-suite and compile results follow. This is
+   local concurrency regression evidence, not production load testing.

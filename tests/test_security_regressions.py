@@ -113,6 +113,60 @@ async def test_scan_telemetry_broadcast_isolation():
     assert [m['scan_id'] for m in first.messages] == ['scan-one']
     assert second.messages == []
 
+
+@pytest.mark.asyncio
+async def test_websocket_capacity_slot_stays_reserved_during_scan_validation(monkeypatch):
+    manager = web.ConnectionManager()
+    monkeypatch.setattr(web, "manager", manager)
+    gate = asyncio.Event()
+    validation_started = asyncio.Event()
+    token = web.app.state.auth_token
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.closed_code = None
+            self.active_count_during_receive = None
+
+        async def accept(self):
+            pass
+
+        async def receive_json(self):
+            return {"token": token}
+
+        async def send_json(self, _message):
+            pass
+
+        async def receive_text(self):
+            self.active_count_during_receive = len(manager.active_connections)
+            raise WebSocketDisconnect()
+
+        async def close(self, code):
+            self.closed_code = code
+
+    # Leave one slot. The first authenticated scan connection reserves it
+    # while awaiting validation; a concurrent handshake must be rejected.
+    manager.active_connections.extend(object() for _ in range(31))
+
+    async def delayed_scan_validation(_scan_id):
+        validation_started.set()
+        await gate.wait()
+        return {}
+
+    monkeypatch.setattr(web, "get_scan_details", delayed_scan_validation)
+    first, second = FakeWebSocket(), FakeWebSocket()
+    first_task = asyncio.create_task(web._telemetry_stream(first, "synthetic-a"))
+    await validation_started.wait()
+    assert manager.pending == 1
+
+    await web._telemetry_stream(second, "synthetic-b")
+    assert second.closed_code == 1013
+    assert manager.pending == 1
+
+    gate.set()
+    await first_task
+    assert first.active_count_during_receive == 32
+    assert manager.pending == 0
+
 def test_device_scope(client):
     assert client.post('/api/dast/root',json={'serial':'unscoped'}).status_code == 403
 

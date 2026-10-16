@@ -222,26 +222,34 @@ async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) ->
         await websocket.close(code=1013)
         return
     manager.pending += 1
+    reservation_held = True
     try:
-        await websocket.accept()
-        auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
-        if time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict) or not authorized(auth.get("token"), app.state.auth_token):
-            await websocket.close(code=1008)
-            return
-    except Exception:
-        await websocket.close(code=1008)
-        return
-    finally:
-        manager.pending -= 1
-    if scan_id is not None:
         try:
-            await get_scan_details(scan_id)
-        except HTTPException:
+            await websocket.accept()
+            auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            if (time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict)
+                    or not authorized(auth.get("token"), app.state.auth_token)):
+                await websocket.close(code=1008)
+                return
+        except Exception:
             await websocket.close(code=1008)
             return
-    manager.active_connections.append(websocket)
-    manager.sessions[websocket] = auth["token"]
-    manager.subscriptions[websocket] = scan_id
+        if scan_id is not None:
+            try:
+                await get_scan_details(scan_id)
+            except HTTPException:
+                await websocket.close(code=1008)
+                return
+        manager.active_connections.append(websocket)
+        manager.sessions[websocket] = auth["token"]
+        manager.subscriptions[websocket] = scan_id
+        # Transfer the slot from pending to active without an await between
+        # operations, so concurrent handshakes cannot exceed the cap.
+        manager.pending -= 1
+        reservation_held = False
+    finally:
+        if reservation_held:
+            manager.pending -= 1
     try:
         await websocket.send_json({
             "type": "connection_established",

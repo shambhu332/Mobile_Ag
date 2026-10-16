@@ -11,6 +11,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 
 @dataclass
@@ -50,9 +51,9 @@ class FlutterEngineAnalyzer:
 
     def analyze_package_directory(self, extracted_dir: str | Path) -> FlutterAnalysisResult:
         """Scan extracted APK directory for Flutter libraries and assets."""
-        base_path = Path(extracted_dir)
+        base_path = explicit_scan_root(extracted_dir)
         result = FlutterAnalysisResult()
-        if base_path.is_symlink() or not base_path.is_dir():
+        if base_path is None or base_path.is_symlink() or not base_path.is_dir():
             result.scan_status = "invalid"
             result.scan_errors.append("invalid_scan_root")
             return result

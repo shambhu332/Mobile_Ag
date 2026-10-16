@@ -11,6 +11,13 @@ from mobileag.analysis.native_analyzer import NativeAnalyzer
 from mobileag.analysis.secret_scanner import SecretScanner
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.analysis.symbol_resolver import SymbolResolver
+from mobileag.analysis.flutter_engine import FlutterEngineAnalyzer
+from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
+from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
+from mobileag.analysis.network_security_config_auditor import NetworkSecurityConfigAuditor
+from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
+from mobileag.analysis.react_native_scanner import ReactNativeScanner
+from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 
 
 @pytest.mark.parametrize("missing", [None, "", "   "])
@@ -78,3 +85,34 @@ def test_taint_engine_passes_missing_root_as_none_not_dot(monkeypatch, missing):
     assert reads == [None]
     assert engine.coverage["static_status"] == "not_analyzed"
     assert engine.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.parametrize("missing", [None, "", "   "])
+def test_framework_and_resource_auditors_reject_missing_roots(monkeypatch, missing):
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("filesystem scan attempted without an explicit root")
+
+    # os.walk-based auditors must return before touching the process directory.
+    monkeypatch.setattr("mobileag.analysis.flutter_engine.os.walk", unexpected)
+    monkeypatch.setattr("mobileag.analysis.il2cpp_auditor.os.walk", unexpected)
+    monkeypatch.setattr("mobileag.analysis.privacy_manifest_auditor.os.walk", unexpected)
+    assert FlutterEngineAnalyzer().analyze_package_directory(missing).scan_status == "invalid"
+    assert Il2CppAuditor().audit_package(missing).scan_status == "invalid"
+    assert PrivacyManifestAuditor().audit_ios_privacy_manifest(missing).parse_status == "invalid"
+
+    network = NetworkSecurityConfigAuditor()
+    monkeypatch.setattr(SourceInventory, "read", unexpected)
+    assert network.locate_config_path(missing) is None
+    assert network.coverage["static_status"] == "not_analyzed"
+
+    react = ReactNativeScanner()
+    assert react.locate_bundle(missing) is None
+    assert react.coverage["static_status"] == "not_analyzed"
+
+    binary = BinaryProtectionAuditor()
+    assert binary.find_native_libraries(missing) == []
+    assert binary.audit_directory(missing) == []
+    assert binary.coverage["static_status"] == "not_analyzed"
+
+    hermes = HermesBytecodeAnalyzer()
+    assert hermes.audit_package_bundles(missing) == []

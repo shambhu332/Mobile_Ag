@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,11 @@ class NetworkSecurityConfigAuditor:
         Returns:
             Path object to the XML file if found, else None.
         """
-        root_path = Path(decompiled_dir)
+        root_path = explicit_scan_root(decompiled_dir)
+        if root_path is None or root_path.is_symlink() or not root_path.is_dir():
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return None
         xml_name = "network_security_config"
 
         # 1. Inspect manifest for android:networkSecurityConfig attribute

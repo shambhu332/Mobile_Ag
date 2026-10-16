@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,11 @@ class ReactNativeScanner:
 
     def locate_bundle(self, decompiled_dir: str | Path) -> Optional[Path]:
         """Locate assets/index.android.bundle in an extracted APK directory."""
-        root = Path(decompiled_dir)
+        root = explicit_scan_root(decompiled_dir)
+        if root is None or root.is_symlink() or not root.is_dir():
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return None
         candidates = [
             root / "assets" / "index.android.bundle",
             root / "apktool_out" / "assets" / "index.android.bundle",

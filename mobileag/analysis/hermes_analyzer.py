@@ -12,6 +12,7 @@ import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
+from mobileag.analysis.bounded_sources import explicit_scan_root
 from typing import Dict, List, Optional, Set
 
 
@@ -144,7 +145,9 @@ class HermesBytecodeAnalyzer:
     def audit_package_bundles(self, extracted_dir: str | Path) -> List[HermesAnalysisResult]:
         """Find and audit any React Native bundles inside an extracted APK."""
         results: List[HermesAnalysisResult] = []
-        base = Path(extracted_dir)
+        base = explicit_scan_root(extracted_dir)
+        if base is None or base.is_symlink() or not base.is_dir():
+            return []
 
         # Typical locations: assets/index.android.bundle
         candidate_files = [

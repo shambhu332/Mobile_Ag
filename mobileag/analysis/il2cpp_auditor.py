@@ -12,6 +12,7 @@ import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
+from mobileag.analysis.bounded_sources import explicit_scan_root
 from typing import Dict, List, Optional, Set
 
 
@@ -51,9 +52,9 @@ class Il2CppAuditor:
 
     def audit_package(self, extracted_dir: str | Path) -> Il2CppAnalysisResult:
         """Scan extracted package for Unity IL2CPP assets and binaries."""
-        base = Path(extracted_dir)
+        base = explicit_scan_root(extracted_dir)
         result = Il2CppAnalysisResult()
-        if base.is_symlink() or not base.is_dir():
+        if base is None or base.is_symlink() or not base.is_dir():
             result.scan_status = "invalid"
             result.scan_errors.append("invalid_scan_root")
             return result

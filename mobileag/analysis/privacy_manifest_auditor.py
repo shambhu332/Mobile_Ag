@@ -13,6 +13,7 @@ import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from mobileag.analysis.bounded_sources import explicit_scan_root
 from typing import Any, Dict, List, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
@@ -67,9 +68,9 @@ class PrivacyManifestAuditor:
         tree instead of silently selecting the first match. Parse/shape failures
         are represented in the result rather than turning into an empty pass.
         """
-        base = Path(app_dir)
+        base = explicit_scan_root(app_dir)
         result = PrivacyManifestResult()
-        if base.is_symlink() or not base.is_dir():
+        if base is None or base.is_symlink() or not base.is_dir():
             result.parse_status = "invalid"
             result.errors.append("invalid_scan_root")
             return result

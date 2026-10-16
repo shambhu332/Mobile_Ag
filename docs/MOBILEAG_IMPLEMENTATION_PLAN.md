@@ -921,3 +921,13 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed (**2 passed**, 27 deselected); the full suite passed (**1,168
    passed**, 55.38 s), with `compileall` and `git diff --check` passing. No
    device connection was attempted. Existing test-environment warnings remain.
+
+   Destructive device-wide logcat clearing is now retired: the dashboard
+   control and policy choice were removed, and the API handler returns 410
+   without invoking `clear_logcat` (the middleware also rejects the retired
+   action). Synthetic tests cover the handler, endpoint denial, and UI control
+   removal. Focused logcat/retirement tests passed (**4 passed**, 26
+   deselected); the full suite passed (**1,169 passed**, 55.74 s), with
+   `compileall` and `git diff --check` passing. No device log buffer was
+   touched. This preserves evidence; the old endpoint is intentionally
+   incompatible and its helper remains unused for legacy callers only.

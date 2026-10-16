@@ -123,6 +123,29 @@ def test_dast_logcat_withholds_result_after_scope_revocation(client, monkeypatch
     assert "synthetic log line" not in response.text
 
 
+@pytest.mark.asyncio
+async def test_device_wide_logcat_clear_is_retired(client, monkeypatch):
+    import importlib
+    from starlette.requests import Request
+    from fastapi import HTTPException
+
+    web = importlib.import_module("mobileag.web.app")
+    clear = AsyncMock(return_value=True)
+    monkeypatch.setattr(web.adb_manager, "clear_logcat", clear)
+    request = Request({
+        "type": "http", "headers": [],
+        "state": {"authenticated_token": web.app.state.auth_token},
+    })
+    with pytest.raises(HTTPException) as raised:
+        await web.clear_dast_logcat(web.DeviceActionRequest(serial="emulator-5554"), request)
+    assert raised.value.status_code == 410
+
+    response = client.post("/api/dast/logcat/clear", json={"serial": "emulator-5554"})
+    assert response.status_code == 403  # Retired action is also absent from scope choices.
+    clear.assert_not_awaited()
+    assert "data-onclick=\"static59\"" not in client.get("/").text
+
+
 def test_dast_fuzz_trigger_endpoint(client):
     with patch("mobileag.web.app.intent_fuzzer.fuzz_activity_intents") as mock_fuzz:
         mock_fuzz.return_value = ([], [

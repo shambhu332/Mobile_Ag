@@ -1458,11 +1458,9 @@ async def get_dast_logcat(serial: str, request: Request, package_name: Optional[
 
 @app.post("/api/dast/logcat/clear")
 async def clear_dast_logcat(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
-    """Clear device logcat buffer."""
+    """Retired: preserve the original device log buffer as assessment evidence."""
     require_current_session(request)
-    success = await adb_manager.clear_logcat(req.serial)
-    require_current_session(request)
-    return {"status": "success" if success else "failed"}
+    raise HTTPException(410, "Device-wide logcat clearing is disabled to preserve evidence")
 
 
 @app.post("/api/dast/screenshot")

@@ -384,28 +384,6 @@
       renderDastTerminal(filtered);
     }
 
-    async function clearDastLogcat() {
-      if (!window.confirm('Clear the device-wide logcat buffer? This deletes logs.')) return;
-      if (!dastActiveDevice) {
-        showToast('Select a device first', 'error');
-        return;
-      }
-      try {
-        await fetch('/api/dast/logcat/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dastActiveDevice }),
-        });
-        dastRawLogs = [];
-        renderDastTerminal([]);
-        const counter = document.getElementById('dast-log-counter');
-        if (counter) counter.textContent = '0 lines';
-        showToast('Device logcat buffer cleared', 'success');
-      } catch (e) {
-        showToast(`Clear error: ${e}`, 'error');
-      }
-    }
-
     async function captureDastScreenshot() {
       if (!dastActiveDevice) {
         showToast('Select a device first', 'error');

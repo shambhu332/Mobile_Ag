@@ -127,7 +127,6 @@
     actionCallbacks.set('static56', function(event) { document.getElementById('frida-script-preview-panel').classList.add('hidden'); });
     actionCallbacks.set('static57', function(event) { filterDastTerminalLogs(); });
     actionCallbacks.set('static58', function(event) { fetchDastLogcat(); });
-    actionCallbacks.set('static59', function(event) { clearDastLogcat(); });
     actionCallbacks.set('static60', function(event) { captureDastScreenshot(); });
     actionCallbacks.set('static61', function(event) { loadSelectedTaintSample(); });
     actionCallbacks.set('static62', function(event) { runTaintAnalysis(); });

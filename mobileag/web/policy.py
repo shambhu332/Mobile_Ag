@@ -3,7 +3,7 @@ from urllib.parse import urlsplit
 import re
 from mobileag.web.security import configured_list
 
-DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb','logcat','logcat/clear',
+DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb','logcat',
                    'automation_observe','automation_execute','screenshot','storage','providers','deeplinks','memory','crawl','frida','frida_status','fuzz','api_capture'}
 METHODS = {'GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'}
 

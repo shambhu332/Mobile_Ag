@@ -19,6 +19,9 @@ from mobileag.reporting.finding import Finding
 
 logger = logging.getLogger(__name__)
 
+_GRAPH_FINDING_STATUSES = {"UNVERIFIED", "CONFIRMED", "FALSE_POSITIVE", "DUPLICATE"}
+_GRAPH_PROOF_STATUSES = {"not_proven", "analyst_recorded", "not_assessed"}
+
 
 def _scoped_key(scan_id: str, kind: str, value: str) -> str:
     """Stable globally unique key while retaining legacy uniqueness constraints."""
@@ -263,6 +266,14 @@ class AttackGraph:
                         endpoint_proof = target.get("proof_status")
                         if primary_label == "APIEndpoint" and endpoint_proof != "not_proven":
                             endpoint_proof = "not_proven"
+                        finding_status = target.get("status")
+                        if (primary_label == "Vulnerability" and
+                                (not isinstance(finding_status, str) or finding_status not in _GRAPH_FINDING_STATUSES)):
+                            finding_status = "unknown"
+                        finding_proof = target.get("proof_status")
+                        if (primary_label == "Vulnerability" and
+                                (not isinstance(finding_proof, str) or finding_proof not in _GRAPH_PROOF_STATUSES)):
+                            finding_proof = "unknown"
                         target_id = (target.get("finding_id") or target.get("name")
                                      or target.get("url") or str(id(target)))
                         if target_id not in seen_nodes:
@@ -279,12 +290,11 @@ class AttackGraph:
                                 "color": color_map.get(primary_label, "#94A3B8"),
                                 "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
                                               if primary_label == "Vulnerability" else None,
-                                "status": target.get("status") if primary_label == "Vulnerability" else None,
-                                "proof_status": target.get("proof_status") if primary_label == "Vulnerability"
+                                "status": finding_status if primary_label == "Vulnerability" else None,
+                                "proof_status": finding_proof if primary_label == "Vulnerability"
                                 else endpoint_proof
                                 if primary_label in {"Vulnerability", "APIEndpoint"} else None,
-                                "title": ((f"Status: {target.get('status', 'unknown')} | proof: "
-                                           f"{target.get('proof_status', 'unknown')}")
+                                "title": ((f"Status: {finding_status} | proof: {finding_proof}")
                                           if primary_label == "Vulnerability" else
                                           (f"Endpoint candidate | method: {endpoint_method} | evidence: "
                                            f"{endpoint_evidence} | proof: {endpoint_proof}")

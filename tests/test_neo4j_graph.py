@@ -88,6 +88,24 @@ class _LegacyApiExportDriver:
         return _LegacyApiExportSession([])
 
 
+class _UntrustedLabelSession(_Session):
+    async def run(self, query, **params):
+        return _ExportResult({
+            "a": {"scan_id": "scan-a", "package_name": "sample", "version": "1"},
+            "rel_type": "HAS_VULNERABILITY",
+            "target": {"finding_id": ' ["scan-a","finding","bad"]',
+                       "display_finding_id": "bad", "title": "candidate",
+                       "status": "<img src=x onerror=alert(1)>",
+                       "proof_status": {"html": "<script>"}},
+            "target_labels": ["Vulnerability"],
+        })
+
+
+class _UntrustedLabelDriver:
+    def session(self):
+        return _UntrustedLabelSession([])
+
+
 @pytest.mark.asyncio
 async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     graph = AttackGraph.__new__(AttackGraph)
@@ -150,6 +168,19 @@ async def test_visjs_vulnerability_node_carries_original_finding_id():
     assert finding_nodes[0]["status"] == "UNVERIFIED"
     assert finding_nodes[0]["proof_status"] == "not_proven"
     assert "not_proven" in finding_nodes[0]["title"]
+
+
+@pytest.mark.asyncio
+async def test_visjs_vulnerability_tooltip_allowlists_legacy_lifecycle_labels():
+    graph = AttackGraph.__new__(AttackGraph)
+    graph._connected = True
+    graph.driver = _UntrustedLabelDriver()
+
+    result = await graph.export_visjs_graph("scan-a")
+    finding = next(node for node in result["nodes"] if node["group"] == "vulnerability")
+    assert finding["status"] == "unknown"
+    assert finding["proof_status"] == "unknown"
+    assert "<" not in finding["title"]
 
 
 @pytest.mark.asyncio

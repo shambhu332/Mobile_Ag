@@ -349,6 +349,12 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Edges: Intents, URI Grants, Network Calls, Data Flows.
   2. Highlight vulnerable paths in red with click-to-expand evidence panels.
 
+Graph exports now allowlist legacy vulnerability lifecycle/proof labels before
+placing them in Vis.js node tooltip text; missing or unexpected values render as
+`unknown`. A synthetic regression exercises markup-like and non-string legacy
+values. This is output hardening, not live Neo4j isolation or graph-completeness
+evidence.
+
 ---
 
 ## Comprehensive Implementation Schedule & Status

@@ -490,6 +490,7 @@ class IOSSecurityAnalyzer:
 
         macho_headers = MachOSecurityHeaders()
         swift_metadata = {}
+        m_res = None
         if extracted.get("binary_path"):
             macho_headers, bin_findings = self.audit_macho_binary(extracted["binary_path"])
             all_findings.extend(bin_findings)
@@ -527,6 +528,7 @@ class IOSSecurityAnalyzer:
             from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
             p_auditor = PrivacyManifestAuditor()
             p_res = p_auditor.audit_ios_privacy_manifest(temp_extract_dir)
+            app_manifest_result = p_auditor.audit_ios_privacy_manifest(extracted["app_dir"])
             privacy_manifest_summary = {
                 "has_privacy_manifest": p_res.has_privacy_manifest,
                 "parse_status": p_res.parse_status,
@@ -538,6 +540,26 @@ class IOSSecurityAnalyzer:
                 "tracking_domains": p_res.tracking_domains,
                 "declared_api_categories": p_res.declared_api_categories,
             }
+            app_manifest = next((item for item in app_manifest_result.manifests
+                                 if item.get("path") == "PrivacyInfo.xcprivacy"), None)
+            if app_manifest is not None:
+                app_manifest_state = "parsed"
+                app_declared_categories = app_manifest.get("declared_api_categories", [])
+            elif "PrivacyInfo.xcprivacy" in app_manifest_result.manifest_paths:
+                app_manifest_state = "invalid"
+                app_declared_categories = []
+            else:
+                app_manifest_state = "absent"
+                app_declared_categories = []
+            api_symbol_review = p_auditor.audit_ios_binary_api_symbols(
+                m_res.symbol_names if m_res is not None and m_res.is_macho else None,
+                app_declared_categories,
+                app_manifest_state=app_manifest_state,
+                binary_path=extracted.get("binary_path") or "",
+                binary_parse_status=m_res.parse_status if m_res is not None else "not_tested",
+            )
+            all_findings.extend(api_symbol_review.pop("findings"))
+            privacy_manifest_summary["binary_api_symbol_review"] = api_symbol_review
             for manifest_index, manifest in enumerate(p_res.manifests, start=1):
                 if manifest["tracking_enabled"] is True and not manifest["tracking_domains"]:
                     all_findings.append(Finding(
@@ -564,7 +586,8 @@ class IOSSecurityAnalyzer:
             "platform": "iOS",
             "findings_count": len(all_findings),
             "coverage": {"info_plist":"parsed", "binary_format":"mach_o_64" if macho_headers.is_macho else "unsupported",
-                         "symbols":"byte_string_heuristic", "entitlements":"not_assessed", "runtime":"not_assessed"},
+                         "symbols":"byte_string_heuristic", "privacy_api_symbol_review": privacy_manifest_summary.get("binary_api_symbol_review", {}).get("status", "not_analyzed"),
+                         "entitlements":"not_assessed", "runtime":"not_assessed"},
             "errors": [] if macho_headers.is_macho else ["Unsupported or truncated executable; binary security was not assessed"],
             "findings": all_findings,
             "macho_security": {

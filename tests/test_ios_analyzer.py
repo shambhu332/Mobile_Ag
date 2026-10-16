@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 
 from mobileag.analysis.ios_analyzer import IOSSecurityAnalyzer, MH_MAGIC_64, MH_PIE
+from mobileag.analysis.macho_parser import MachoAnalysisResult, MachoBinaryParser
+from mobileag.reporting.finding import FindingStatus
 
 
 def test_ios_info_plist_auditing():
@@ -99,6 +101,42 @@ def test_ios_ipa_full_pipeline():
         assert results["findings_count"] >= 1
         assert results["macho_security"]["pie_enabled"] is True
         assert results["macho_security"]["has_stack_canary"] is True
+
+
+def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkeypatch):
+    ipa_path = tmp_path / "PrivacyFixture.ipa"
+    extract_dir = tmp_path / "extract"
+    with zipfile.ZipFile(ipa_path, "w") as archive:
+        app = "Payload/PrivacyFixture.app/"
+        archive.writestr(app + "Info.plist", plistlib.dumps({
+            "CFBundleIdentifier": "org.example.synthetic",
+            "CFBundleExecutable": "PrivacyFixture",
+        }))
+        archive.writestr(app + "PrivacyInfo.xcprivacy", plistlib.dumps({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": [],
+            "NSPrivacyAccessedAPITypes": [],
+        }))
+        archive.writestr(app + "PrivacyFixture", struct.pack(
+            "<IIIIIIII", MH_MAGIC_64, 0, 0, 2, 0, 0, MH_PIE, 0) + b"\x00" * 80)
+
+    synthetic_parse = MachoAnalysisResult(
+        is_macho=True, parse_status="parsed", symbol_names=["_stat"],
+    )
+    monkeypatch.setattr(MachoBinaryParser, "parse_binary", lambda _self, _path: synthetic_parse)
+
+    report = IOSSecurityAnalyzer().audit_ipa(ipa_path, extract_dir)
+
+    review = report["privacy_manifest"]["binary_api_symbol_review"]
+    assert report["coverage"]["privacy_api_symbol_review"] == "analyzed_heuristically"
+    assert review["manifest_state"] == "parsed"
+    assert review["undeclared_review_candidates"] == [{
+        "category": "NSPrivacyAccessedAPITypeFileTimestamp", "symbol_markers": ["stat"],
+    }]
+    candidate = next(f for f in report["findings"]
+                     if f.id == "IOS_PRIVACY_API_SYMBOL_REVIEW_FileTimestamp")
+    assert candidate.status == FindingStatus.UNVERIFIED
+    assert candidate.metadata["proof_status"] == "not_proven"
 
 
 def test_ios_advanced_api_and_keychain_audit():

@@ -517,9 +517,14 @@ The iOS manifest pass now inspects at most 128 manifests and 50,000 tree
 entries, reads only regular non-symlink manifest files up to 2 MiB, and
 preserves per-manifest declarations so a tracking declaration in one framework
 cannot be incorrectly paired with domains from another. Results report
-`absent`, `parsed`, `partial`, or `invalid` plus bounded error codes. These are
-parser/inventory statuses only; required-reason API call analysis and validation
-against current Apple submission requirements remain unimplemented.
+`absent`, `parsed`, `partial`, or `invalid` plus bounded error codes. A bounded
+review-only cross-check now compares up to 2,000 symbol names from the parsed
+main executable against the app-root manifest's required-reason API categories;
+missing declarations produce informational, unverified review candidates, not
+compliance violations. This does not trace reachable calls, Objective-C message
+dispatch, embedded framework use, runtime execution, or determine current Apple
+submission requirements. Symbol absence is not evidence of API absence, and
+symbol presence is not proof of API use.
 
 ### Token/session evidence boundary
 

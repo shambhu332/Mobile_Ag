@@ -19,6 +19,7 @@ from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.dast.smart_crawler import SmartUICrawler
 from mobileag.dast.ui_crawler import UICrawler
 from mobileag.dast.frida_stealth import FridaStealthHarness
+from mobileag.reporting.finding import FindingStatus, Severity
 
 
 def test_hermes_bytecode_analyzer():
@@ -693,6 +694,51 @@ def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():
         result = PrivacyManifestAuditor().audit_ios_privacy_manifest(link)
     assert result.parse_status == "invalid"
     assert result.errors == ["invalid_scan_root"]
+
+
+def test_ios_privacy_symbol_cross_check_emits_only_unverified_review_candidates():
+    auditor = PrivacyManifestAuditor()
+
+    report = auditor.audit_ios_binary_api_symbols(
+        ["_stat", "_standardUserDefaults", "_mach_absolute_time", "_unrelatedStatistic"],
+        {"NSPrivacyAccessedAPITypeUserDefaults"},
+        app_manifest_state="parsed", binary_path="Synthetic.app/Synthetic",
+        binary_parse_status="parsed",
+    )
+
+    assert report["status"] == "analyzed_heuristically"
+    assert {item["category"] for item in report["candidate_categories"]} == {
+        "NSPrivacyAccessedAPITypeFileTimestamp",
+        "NSPrivacyAccessedAPITypeSystemBootTime",
+        "NSPrivacyAccessedAPITypeUserDefaults",
+    }
+    assert len(report["findings"]) == 2
+    assert all(finding.status == FindingStatus.UNVERIFIED for finding in report["findings"])
+    assert all(finding.severity == Severity.INFO for finding in report["findings"])
+    assert all(finding.metadata["proof_status"] == "not_proven"
+               and finding.metadata["compliance_verdict"] == "not_assessed"
+               for finding in report["findings"])
+    assert all("does not prove a reachable API call" in finding.description
+               for finding in report["findings"])
+
+
+def test_ios_privacy_symbol_cross_check_withholds_on_invalid_manifest_and_caps_symbols():
+    auditor = PrivacyManifestAuditor()
+    invalid = auditor.audit_ios_binary_api_symbols(
+        ["_stat"], [], app_manifest_state="invalid", binary_path="Synthetic",
+        binary_parse_status="parsed",
+    )
+    assert invalid["status"] == "not_analyzed_invalid_app_manifest"
+    assert invalid["findings"] == []
+
+    auditor.MAX_BINARY_SYMBOLS = 1
+    capped = auditor.audit_ios_binary_api_symbols(
+        ["_stat", "_fstat"], [], app_manifest_state="absent", binary_path="Synthetic",
+        binary_parse_status="partial",
+    )
+    assert capped["status"] == "partial"
+    assert capped["truncated"] is True
+    assert len(capped["findings"]) == 1
 
 
 def test_android_data_safety_indicator_is_only_a_static_review_lead():

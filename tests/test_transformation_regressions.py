@@ -327,6 +327,15 @@ async def test_adb_connect_shell_and_screenshot_fail_closed_without_guard():
     with pytest.raises(ValueError):await manager.connect_device('127.0.0.1:65536',guard=lambda: True)
     manager._exec_cmd.assert_not_awaited()
 
+@pytest.mark.asyncio
+async def test_logcat_and_pid_helpers_fail_closed_without_scope_guard():
+    from mobileag.dast.adb_manager import ADBManager
+    from unittest.mock import AsyncMock
+    manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'1234',b''))
+    with pytest.raises(PermissionError):await manager.get_logcat_dump('owned-device')
+    with pytest.raises(PermissionError):await manager.get_process_pids('owned-device','org.example.app')
+    manager._exec_cmd.assert_not_awaited()
+
 def test_dependency_constraints_have_no_local_artifact_references():
     from pathlib import Path
     snapshot = (Path(__file__).resolve().parents[1]/'requirements/validated-python314.txt').read_text()

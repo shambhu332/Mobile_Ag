@@ -102,7 +102,7 @@ class IntentFuzzer:
 
         try:
             checked_guard()
-            before = await self.adb.get_logcat_dump(serial, lines=150)
+            before = await self.adb.get_logcat_dump(serial, lines=150, guard=checked_guard)
             checked_guard()
             code, stdout, stderr = await self.adb._exec_cmd(cmd_args, timeout=3.0)
             checked_guard()
@@ -115,7 +115,7 @@ class IntentFuzzer:
             await asyncio.sleep(0.5)
 
             checked_guard()
-            logs = await self.adb.get_logcat_dump(serial, lines=150)
+            logs = await self.adb.get_logcat_dump(serial, lines=150, guard=checked_guard)
             checked_guard()
             findings = self.auditor.audit_lines(new_lines(before, logs), package_name=package_name)
             result["findings"] = findings

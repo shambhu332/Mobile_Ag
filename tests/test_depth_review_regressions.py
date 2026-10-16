@@ -51,7 +51,7 @@ async def test_adb_logcat_requests_attributable_threadtime_format():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'10-08 12:00:00.000 1234 1234 E App: safe', b''))
-    await adb.get_logcat_dump('emulator-5554', filter_pkg='org.example.fixture', lines=7)
+    await adb.get_logcat_dump('emulator-5554', filter_pkg='org.example.fixture', lines=7, guard=lambda: True)
     command = adb._exec_cmd.await_args.args[0]
     assert command[command.index('logcat') + 1:command.index('logcat') + 3] == ['-v', 'threadtime']
 
@@ -74,10 +74,10 @@ async def test_adb_target_logcat_uses_validated_exact_pid():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'10-08 12:00:00.000 1234 1234 E App: safe', b''))
-    await adb.get_logcat_dump('emulator-5554', pid=1234)
+    await adb.get_logcat_dump('emulator-5554', pid=1234, guard=lambda: True)
     assert '--pid=1234' in adb._exec_cmd.await_args.args[0]
     with pytest.raises(ValueError):
-        await adb.get_logcat_dump('emulator-5554', pid=-1)
+        await adb.get_logcat_dump('emulator-5554', pid=-1, guard=lambda: True)
 
 
 @pytest.mark.asyncio
@@ -85,9 +85,9 @@ async def test_process_pid_lookup_is_exact_and_bounded():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'1234 2345 1234 invalid', b''))
-    assert await adb.get_process_pids('emulator-5554', 'org.example.fixture') == [1234, 2345]
+    assert await adb.get_process_pids('emulator-5554', 'org.example.fixture', guard=lambda: True) == [1234, 2345]
     with pytest.raises(ValueError):
-        await adb.get_process_pids('emulator-5554', 'org.example;id')
+        await adb.get_process_pids('emulator-5554', 'org.example;id', guard=lambda: True)
 
 
 def test_escaped_json_credential_redaction_preserves_json():

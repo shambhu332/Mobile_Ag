@@ -106,7 +106,7 @@ class DeepLinkFuzzer:
             raise ValueError("Deep-link execution input is invalid or exceeds limits")
 
         self._check_scope_guard(guard)
-        baseline=await self.adb.get_logcat_dump(serial,lines=100)
+        baseline=await self.adb.get_logcat_dump(serial,lines=100,guard=lambda:self._check_scope_guard(guard))
         self._check_scope_guard(guard)
         # Build am start command
         cmd = ["-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", target_uri, "-p", package_name]
@@ -121,7 +121,7 @@ class DeepLinkFuzzer:
         # Let the activity process the intent
         await asyncio.sleep(1.0)
         self._check_scope_guard(guard)
-        logs = await self.adb.get_logcat_dump(serial, lines=100)
+        logs = await self.adb.get_logcat_dump(serial, lines=100, guard=lambda:self._check_scope_guard(guard))
         self._check_scope_guard(guard)
 
         return code, out_msg, new_lines(baseline,logs)

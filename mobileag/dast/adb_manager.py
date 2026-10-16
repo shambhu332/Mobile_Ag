@@ -268,8 +268,9 @@ class ADBManager:
         }
 
     async def get_logcat_dump(self, serial: str, filter_pkg: Optional[str] = None, lines: int = 300,
-                              pid: Optional[int] = None) -> list[str]:
+                              pid: Optional[int] = None, guard=None) -> list[str]:
         """Retrieve the recent logcat buffer."""
+        self._check_mutation_guard(guard)
         # The auditor requires PID/TID attribution. Android's default brief format
         # omits the structured fields and silently defeats target-process checks.
         cmd = ["-s", serial, "logcat", "-v", "threadtime", "-d", "-t", str(lines)]
@@ -277,7 +278,9 @@ class ADBManager:
             if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
                 raise ValueError('A positive process ID is required')
             cmd.append(f'--pid={pid}')
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(cmd, timeout=3.0)
+        self._check_mutation_guard(guard)
         if code != 0:
             return []
 
@@ -287,11 +290,14 @@ class ADBManager:
         # Callers must attribute threadtime records to exact Process/PID records.
         return raw_lines
 
-    async def get_process_pids(self, serial: str, package_name: str) -> list[int]:
+    async def get_process_pids(self, serial: str, package_name: str, guard=None) -> list[int]:
         """Return bounded numeric PIDs for an exact validated Android package."""
+        self._check_mutation_guard(guard)
         if not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
             raise ValueError('Invalid Android package name')
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(['-s', serial, 'shell', 'pidof', package_name], timeout=3.0)
+        self._check_mutation_guard(guard)
         if code != 0:
             return []
         return list(dict.fromkeys(int(token) for token in stdout.decode('ascii', errors='ignore').split()

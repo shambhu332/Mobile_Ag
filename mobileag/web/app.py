@@ -1508,11 +1508,11 @@ async def get_dast_logcat(serial: str, request: Request, package_name: Optional[
     # PID filtering happens at logcat collection time, so stale Process markers
     # cannot cause the shared buffer to expose a different process reusing a PID.
     guard()
-    pids = await adb_manager.get_process_pids(serial, package_name)
+    pids = await adb_manager.get_process_pids(serial, package_name, guard=guard)
     raw_lines = []
     for pid in pids:
         guard()
-        raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid))
+        raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid, guard=guard))
         guard()
     guard()
     findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name, process_pids=pids)

@@ -1706,3 +1706,11 @@ no-command tests. Focused route/helper tests passed (**59 passed**); full pytest
 passed (**1,313 passed**, 64.63 s), compileall and `git diff --check` passed.
 No device or network endpoint was contacted; shell behavior and screenshot
 contents were not dynamically assessed.
+
+Direct process-PID and logcat helpers now require synchronous per-command
+guards, rechecked around shell dispatch; the web log endpoint and intent/deep-
+link fuzzers pass their current scope guard. Synthetic controls confirm absent
+guards cannot issue PID/logcat commands, while the existing scope-revocation
+route test still withholds captured output. Focused DAST/helper tests passed
+(**164 passed**); full pytest passed (**1,314 passed**, 64.04 s), compileall
+and `git diff --check` passed. No device log or process metadata was read.

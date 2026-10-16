@@ -142,7 +142,7 @@ def test_dast_logcat_withholds_result_after_scope_revocation(client, monkeypatch
     web = importlib.import_module("mobileag.web.app")
     web.adb_manager.get_process_pids = AsyncMock(return_value=[4242])
 
-    async def revoke_during_log_read(*, serial, lines, pid):
+    async def revoke_during_log_read(*, serial, lines, pid, guard=None):
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "logcat"]
         web.repository().save_policy(policy)

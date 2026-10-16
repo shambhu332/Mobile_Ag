@@ -85,11 +85,16 @@ class IntentFuzzer:
         }
 
         def checked_guard():
-            if guard:
-                try:
-                    guard()
-                except Exception as exc:
-                    raise PermissionError("Device diagnostic approval revoked") from exc
+            if guard is None:
+                return
+            if not callable(guard):
+                raise PermissionError("Device diagnostic scope guard is invalid")
+            try:
+                allowed = guard()
+            except Exception as exc:
+                raise PermissionError("Device diagnostic approval revoked") from exc
+            if allowed is False:
+                raise PermissionError("Device diagnostic approval revoked")
 
         try:
             checked_guard()

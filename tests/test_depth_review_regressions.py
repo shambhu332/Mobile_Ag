@@ -170,6 +170,39 @@ async def test_intent_revocation_during_baseline_blocks_launch(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_intent_explicit_false_scope_denial_blocks_baseline():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    with pytest.raises(PermissionError):
+        await IntentFuzzer(adb=adb).exercise_component(
+            'synthetic', 'org.example.fixture', '.Entry', guard=lambda: False,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_intent_explicit_false_after_baseline_blocks_launch(monkeypatch):
+    import mobileag.dast.intent_fuzzer as module
+    monkeypatch.setattr(module, 'asyncio', SimpleNamespace(sleep=AsyncMock()))
+    adb = SimpleNamespace(
+        _exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock(return_value=[]),
+    )
+    checks = 0
+
+    def revoke_after_baseline():
+        nonlocal checks
+        checks += 1
+        return checks < 2
+
+    with pytest.raises(PermissionError):
+        await IntentFuzzer(adb=adb).exercise_component(
+            'synthetic', 'org.example.fixture', '.Entry', guard=revoke_after_baseline,
+        )
+    adb.get_logcat_dump.assert_awaited_once()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_provider_approval_does_not_authorize_arbitrary_authority():
     adb = SimpleNamespace(_exec_cmd=AsyncMock(return_value=(0, b'Row: synthetic data', b'')))
     with pytest.raises(PermissionError):

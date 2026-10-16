@@ -834,3 +834,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    `compileall` and `git diff --check` passing. All ADB actions were mocked;
    no Android device or UI behavior was tested. Existing pytest-asyncio and
    async-resource warnings remain.
+
+   `IntentFuzzer.exercise_component` now treats an explicit `False` guard
+   result as denial, matching its existing exception-denial behavior. Synthetic
+   tests verify denial before baseline capture and after baseline capture but
+   before the component launch. Focused intent-scope regressions passed (**3
+   passed**, 18 deselected); the full suite passed (**1,159 passed**, 70.52 s),
+   and compilation plus `git diff --check` passed. ADB was mocked; no Android
+   device was used, and this validates only scope-boundary behavior, not IPC
+   impact or runtime exploitability. Existing test-environment warnings remain.

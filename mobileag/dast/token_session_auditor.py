@@ -116,6 +116,10 @@ class MobileTokenSessionAuditor:
     def _valid_numeric_claim(value: Any) -> bool:
         if type(value) not in (int, float):
             return False
+        try:
+            return math.isfinite(value) and abs(value) <= 253402300799
+        except (OverflowError, TypeError, ValueError):
+            return False
 
     @classmethod
     def _is_sensitive_query_key(cls, name: str) -> bool:
@@ -126,10 +130,6 @@ class MobileTokenSessionAuditor:
                       "cookie", "session", "password", "passwd", "pwd", "secretkey",
                       "privatekey", "xapikey", "xgoogapikey"})
         return normalized in exact or normalized.endswith(cls.TOKEN_QUERY_SUFFIXES)
-        try:
-            return math.isfinite(value) and abs(value) <= 253402300799
-        except (OverflowError, TypeError, ValueError):
-            return False
 
     def decode_jwt(self, token: str) -> Optional[Dict[str, Any]]:
         """Safely parse JWT header and payload without cryptographic verification."""

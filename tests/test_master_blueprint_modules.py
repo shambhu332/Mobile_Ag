@@ -1183,6 +1183,26 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     assert not any(f.title == "JWT Token Missing Expiration Claim" for f in invalid_exp)
 
 
+def test_token_session_auditor_rejects_nonfinite_and_out_of_range_time_claims():
+    import base64
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    encode = lambda value: base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+    header = encode({"alg": "HS256"})
+    for exp in (float("inf"), float("-inf"), float("nan"), 253402300800, True):
+        token = f"{header}.{encode({'exp': exp})}.signature"
+        parsed = auditor.decode_jwt(token)
+        assert parsed is not None
+        assert parsed["payload"]["has_exp_claim"] is True
+        assert "exp" not in parsed["payload"]
+
+    valid = auditor.decode_jwt(f"{header}.{encode({'exp': 253402300799})}.signature")
+    assert valid is not None
+    assert valid["payload"]["exp"] == 253402300799
+
+
 def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
     import base64
     import hashlib

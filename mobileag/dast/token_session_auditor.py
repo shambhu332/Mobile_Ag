@@ -64,6 +64,7 @@ class MobileTokenSessionAuditor:
     MAX_TOKEN_CHARS = 64 * 1024
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
     MAX_TRANSACTIONS = 10_000
+    MAX_FINDINGS = 20_000
     MAX_TRACKED_LOGOUT_TOKENS = 1_000
     MAX_VERIFICATION_KEY_BYTES = 4 * 1024
 
@@ -399,8 +400,17 @@ class MobileTokenSessionAuditor:
         """Audit intercepted HTTP transactions for session and token vulnerabilities."""
         findings: List[Finding] = []
         logged_out_tokens: Dict[str, int] = {}
+        if not isinstance(transactions, (list, tuple)):
+            self.last_coverage = {"status": "invalid_input", "transactions_received": None,
+                                  "transactions_analyzed": 0, "transactions_omitted": 0,
+                                  "finding_count": 0, "finding_cap_reached": False}
+            return findings
+        total_transactions = len(transactions)
+        transactions_analyzed = 0
+        finding_cap_reached = False
 
         for idx, tx in enumerate(transactions[:self.MAX_TRANSACTIONS]):
+            transactions_analyzed += 1
             url = getattr(tx, "url", "")
             if not isinstance(url, str) or len(url) > 8192:
                 url = ""
@@ -450,6 +460,9 @@ class MobileTokenSessionAuditor:
                 query_tuples = []
             for q_name, q_val in query_tuples:
                 if self._is_sensitive_query_key(q_name):
+                    if len(findings) >= self.MAX_FINDINGS:
+                        finding_cap_reached = True
+                        break
                     findings.append(Finding(
                         title="Sensitive Authentication Token in URL Query Parameter",
                         description="A token-like query parameter is present in the captured URL, which can expose credentials to access logs, referrer headers, or WebView history. The value is omitted from evidence.",
@@ -462,10 +475,17 @@ class MobileTokenSessionAuditor:
                     ))
                     if not token:
                         token = q_val
+            if finding_cap_reached:
+                break
 
             # Audit JWT claims if token is found
             if token:
-                findings.extend(self.audit_token(token, context_url=safe_url))
+                token_findings = self.audit_token(token, context_url=safe_url)
+                room = self.MAX_FINDINGS - len(findings)
+                findings.extend(token_findings[:room])
+                if len(token_findings) > room or len(findings) >= self.MAX_FINDINGS:
+                    finding_cap_reached = True
+                    break
 
             # 3. Track logout / session revocation
             path_lower = parsed.path.lower()
@@ -491,5 +511,21 @@ class MobileTokenSessionAuditor:
                         remediation="Ensure the backend invalidates session tokens in the server-side cache upon user logout.",
                         metadata={"logout_index": logout_idx, "reuse_index": idx},
                     ))
+
+            if len(findings) >= self.MAX_FINDINGS:
+                finding_cap_reached = True
+                break
+
+        omitted = max(0, total_transactions - transactions_analyzed)
+        self.last_coverage = {
+            "status": "partial" if omitted or finding_cap_reached else "complete_for_supplied_input",
+            "transactions_received": total_transactions,
+            "transactions_analyzed": transactions_analyzed,
+            "transactions_omitted": omitted,
+            "transaction_limit": self.MAX_TRANSACTIONS,
+            "finding_count": len(findings),
+            "finding_limit": self.MAX_FINDINGS,
+            "finding_cap_reached": finding_cap_reached,
+        }
 
         return findings

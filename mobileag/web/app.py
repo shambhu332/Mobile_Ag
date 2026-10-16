@@ -815,6 +815,7 @@ async def audit_scan_tokens(scan_id: str) -> dict[str, Any]:
         "scan_id": scan_id,
         "token_findings_count": len(findings),
         "findings": [f.model_dump() for f in findings],
+        "coverage": auditor.last_coverage,
     }
 
 

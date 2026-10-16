@@ -556,6 +556,11 @@ common aliases/suffixed names such as `refresh-token`, `id_token`,
 value is short, never copies the value into evidence, and deliberately avoids
 substring matches such as `tokenizer`. This remains name-based heuristic
 coverage and cannot discover arbitrary credential parameter names.
+Transaction-level token findings also have a 20,000-result ceiling; the auditor
+reports received/analyzed/omitted transactions and marks the output partial
+when either transaction or finding limits truncate processing. The token audit
+API exposes this coverage rather than silently presenting a capped result as
+complete.
 
 ### BOLA candidate extraction boundary
 

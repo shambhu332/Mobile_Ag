@@ -1280,6 +1280,21 @@ def test_token_session_auditor_recognizes_credential_query_key_aliases():
     assert all("?" not in finding.affected_component for finding in leaks)
 
 
+def test_token_session_auditor_bounds_findings_and_reports_partial_coverage():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    query = "&".join("access_token=x" for _ in range(256))
+    transactions = [CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{query}")
+                    for _ in range(100)]
+    auditor = MobileTokenSessionAuditor()
+    findings = auditor.audit_transactions(transactions)
+    assert len(findings) == auditor.MAX_FINDINGS
+    assert auditor.last_coverage["finding_cap_reached"] is True
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["transactions_omitted"] > 0
+
+
 def test_token_session_auditor_does_not_call_unauthorized_responses_successful_reuse():
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest

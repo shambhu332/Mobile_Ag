@@ -884,3 +884,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    arbitrary command semantics; enabling it is not ordinary-app authority and
    must be explicitly scoped/approved. It is unsuitable for unattended or
    destructive testing.
+
+   `/api/dast/logcat` now rechecks authenticated session, configured device,
+   and exact package/action policy before PID lookup and around each
+   PID-filtered log read. A synthetic test revokes logcat permission during a
+   mocked read and verifies the route returns 403 without returning the log
+   line. Focused logcat route tests passed (**3 passed**, 23 deselected); the
+   full suite passed (**1,165 passed**, 71.52 s), with `compileall` and
+   `git diff --check` passing. Logcat and PID access were mocked; no device was
+   used. Existing warnings remain.

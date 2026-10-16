@@ -1396,16 +1396,29 @@ async def execute_adb_command(req: ExecuteAdbRequest, request: Request) -> dict[
 
 
 @app.get("/api/dast/logcat")
-async def get_dast_logcat(serial: str, package_name: Optional[str] = None, lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+async def get_dast_logcat(serial: str, request: Request, package_name: Optional[str] = None,
+                         lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     """Return only exact target-process log records for an approved package."""
     if not package_name:
         raise HTTPException(status_code=422, detail="package_name is required for scoped log capture")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(serial)
+                or not check_action(repository().get_policy(), "logcat",
+                                   {"serial": serial, "package_name": package_name})):
+            raise HTTPException(403, "Log collection scope is unavailable or revoked")
+
     # PID filtering happens at logcat collection time, so stale Process markers
     # cannot cause the shared buffer to expose a different process reusing a PID.
+    guard()
     pids = await adb_manager.get_process_pids(serial, package_name)
     raw_lines = []
     for pid in pids:
+        guard()
         raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid))
+        guard()
+    guard()
     findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name, process_pids=pids)
     return {
         "serial": serial,

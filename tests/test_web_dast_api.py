@@ -83,6 +83,27 @@ def test_dast_logcat_requires_explicit_package(client):
     assert response.status_code in (403, 422)  # middleware scope may reject first
 
 
+def test_dast_logcat_withholds_result_after_scope_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    web.adb_manager.get_process_pids = AsyncMock(return_value=[4242])
+
+    async def revoke_during_log_read(*, serial, lines, pid):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "logcat"]
+        web.repository().save_policy(policy)
+        return ["synthetic log line"]
+
+    web.adb_manager.get_logcat_dump = AsyncMock(side_effect=revoke_during_log_read)
+    response = client.get(
+        "/api/dast/logcat?serial=emulator-5554&package_name=org.example&lines=10",
+    )
+    assert web.adb_manager.get_logcat_dump.await_count == 1
+    assert response.status_code == 403
+    assert "synthetic log line" not in response.text
+
+
 def test_dast_fuzz_trigger_endpoint(client):
     with patch("mobileag.web.app.intent_fuzzer.fuzz_activity_intents") as mock_fuzz:
         mock_fuzz.return_value = ([], [

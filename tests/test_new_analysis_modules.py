@@ -193,6 +193,19 @@ def test_intent_redirection_does_not_join_sources_and_sinks_across_methods(tmp_p
     assert IntentRedirectionAuditor().audit_file(source) == []
 
 
+def test_intent_redirection_ignores_comment_and_string_lookalikes(tmp_path):
+    source = tmp_path / "LexicalLookalikes.java"
+    source.write_text('''class Proxy {
+        void open() {
+            // Intent next = getIntent().getParcelableExtra("nested");
+            String example = "Intent next = getIntent().getParcelableExtra(\\"x\\"); startActivity(next);";
+            // startActivity(next);
+        }
+    }''')
+
+    assert IntentRedirectionAuditor().audit_file(source) == []
+
+
 def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):
     source = tmp_path / "Reassignment.java"
     source.write_text('''class Proxy {

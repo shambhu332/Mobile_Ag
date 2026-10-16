@@ -47,8 +47,14 @@ class IntentRedirectionAuditor:
         assignment_pattern = re.compile(r"(?<![=!<>])\b([A-Za-z_$][\w$]*)\s*=(?!=)")
 
         for idx, line in enumerate(lines, 1):
+            masked_line = mask_non_code(line)
             extraction = self.EXTRA_INTENT_EXTRACTION_PATTERN.search(line)
-            assignments = list(assignment_pattern.finditer(line))
+            code_extraction = self.EXTRA_INTENT_EXTRACTION_CODE_PATTERN.search(masked_line)
+            if (extraction is not None and (code_extraction is None
+                    or code_extraction.group(1) != extraction.group(1)
+                    or code_extraction.start() != extraction.start())):
+                extraction = None
+            assignments = list(assignment_pattern.finditer(masked_line))
             events: list[tuple[int, int, str, Any]] = []
             if extraction:
                 events.append((extraction.start(), 0, "extract", extraction))
@@ -59,7 +65,7 @@ class IntentRedirectionAuditor:
                         and extraction.start() <= assignment.start() < extraction.end()):
                     continue
                 events.append((assignment.start(), 1, "assign", assignment.group(1)))
-            forward = self.START_ACTIVITY_FORWARD_PATTERN.search(line)
+            forward = self.START_ACTIVITY_FORWARD_PATTERN.search(masked_line)
             if forward:
                 events.append((forward.start(), 2, "sink", forward))
 
@@ -114,6 +120,15 @@ class IntentRedirectionAuditor:
         r"(?:\s*<\s*(?:android\.content\.)?Intent\s*>)?"
         r"\s*\(\s*[\"'][^\"']+[\"']\s*(?:,\s*(?:Intent\.class|Intent::class\.java)\s*)?\)"
         r"(?:\s+as\s+(?:android\.content\.)?Intent)?"
+    )
+
+    # The code-only counterpart is checked against mask_non_code() so an
+    # apparent extraction inside a comment or quoted literal cannot seed flow.
+    EXTRA_INTENT_EXTRACTION_CODE_PATTERN = re.compile(
+        r"(?:Intent\s+)?([a-zA-Z0-9_]+)(?:\s*:\s*(?:android\.content\.)?Intent)?\s*=\s*"
+        r"(?:(?:\(\s*(?:android\.content\.)?Intent\s*\)|\bas\s+(?:android\.content\.)?Intent)\s*)?"
+        r"(?:[a-zA-Z0-9_().]+\.)?getParcelableExtra"
+        r"(?:\s*<\s*(?:android\.content\.)?Intent\s*>)?\s*\("
     )
 
     START_ACTIVITY_FORWARD_PATTERN = re.compile(

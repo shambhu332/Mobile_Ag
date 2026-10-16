@@ -113,6 +113,28 @@ async def test_guard_revocation_after_429_prevents_secondary(pair,failure):
     with pytest.raises(type(failure)):await broker.review('gemini',pair,guard,secondary='grok',fallback_confirmed=True)
     assert mock.await_count==1 and not broker.busy
 
+
+@pytest.mark.asyncio
+async def test_explicit_false_scope_denial_blocks_provider_request(pair):
+    transport=AsyncMock();broker=LLMBroker(transport)
+    with pytest.raises(PermissionError):
+        await broker.review('gemini',pair,lambda:False,secondary='grok',fallback_confirmed=True)
+    transport.assert_not_called()
+    assert not broker.busy
+
+
+@pytest.mark.asyncio
+async def test_explicit_false_revocation_after_response_blocks_fallback(pair):
+    allowed=True
+    async def provider(*args,**kwargs):
+        nonlocal allowed
+        allowed=False
+        return response('gemini',429)
+    transport=AsyncMock(side_effect=provider);broker=LLMBroker(transport)
+    with pytest.raises(PermissionError):
+        await broker.review('gemini',pair,lambda:allowed,secondary='grok',fallback_confirmed=True)
+    assert transport.await_count==1 and not broker.busy
+
 @pytest.mark.asyncio
 async def test_provider_approval_revocation_after_429_prevents_secondary(pair,monkeypatch):
     async def transport(*args,**kw):

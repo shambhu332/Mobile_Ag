@@ -851,3 +851,13 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    deselected); the full suite passed (**1,159 passed**, 74.85 s), with
    `compileall` and `git diff --check` passing. This is mock-only scope-gate
    evidence, not device execution or proof of a deep-link vulnerability.
+
+   The outbound `LLMBroker` now treats an explicit `False` scope-guard result
+   as a denial before contacting a provider, between requests, and after a
+   response before any approved fallback. Synthetic tests verify that initial
+   denial sends no request and post-response revocation prevents the secondary
+   request. Focused LLM fallback tests passed (**34 passed**); the full suite
+   passed (**1,161 passed**, 79.01 s), with `compileall` and `git diff --check`
+   passing. Provider transports were mocked; no credentials or real network
+   requests were used. Existing pytest-asyncio and async-resource warnings
+   remain.

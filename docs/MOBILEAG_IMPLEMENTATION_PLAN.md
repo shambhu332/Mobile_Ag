@@ -1714,3 +1714,19 @@ guards cannot issue PID/logcat commands, while the existing scope-revocation
 route test still withholds captured output. Focused DAST/helper tests passed
 (**164 passed**); full pytest passed (**1,314 passed**, 64.04 s), compileall
 and `git diff --check` passed. No device log or process metadata was read.
+
+The researcher-guided Android driver now requires the same synchronous scope
+guard on metadata, foreground checks, hierarchy snapshots, launch, tap/swipe,
+and back commands. The automation engine supplies guards bound to the current
+session, run scope, and execute/cancel state at the driver boundary; temporary
+hierarchy cleanup is skipped after revocation rather than issuing another
+command. Synthetic adapters now exercise these call boundaries. Focused
+automation/session/driver tests passed (**102 passed**), with an additional
+guard-specific smoke test passing (**24 passed** with the automation suite).
+The full pytest suite passed (**1,315 passed**, 64.87 s), compileall and
+`git diff --check` passed. No device was accessed; these synthetic assertions
+do not establish UI behavior or ordinary-app exploitability on Android. The
+standalone browser regression also completed successfully in Chromium 155 with
+the synthetic ADB/UI adapter; it reported zero executed XSS markers and zero
+requests outside loopback. Its accessibility checks remain explicitly
+`not_run` and its provider inference is mocked, not live.

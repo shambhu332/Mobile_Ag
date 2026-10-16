@@ -29,13 +29,18 @@ def screen(name='Home',bounds='[10,10][200,90]',duplicate=False,secret='device-s
 
 class Driver:
     def __init__(self):self.state='Home';self.calls=[];self.snapshots=0;self.callback=None
-    async def snapshot(self):
+    async def snapshot(self,guard=None):
+        if guard:guard()
         self.snapshots+=1
         if self.callback:await self.callback(self)
-        return screen(self.state)
-    async def act(self,action,element=None):
+        result=screen(self.state)
+        if guard:guard()
+        return result
+    async def act(self,action,element=None,guard=None):
+        if guard:guard()
         self.calls.append((action,element))
         self.state='Home' if action=='back' else 'Profile'
+        if guard:guard()
 
 def request(**kw):
     data={'serial':'emulator-5554','package_name':PACKAGE,'component':PACKAGE+'/.Main',
@@ -129,8 +134,8 @@ async def test_position_healing_requires_same_unique_screen_locator(setup):
     svc,driver,token=setup;doc=await svc.create(request(max_steps=1),token)
     aid=next(a['id'] for a in doc['actions'] if not a['blocked_reason'])
     original=driver.snapshot
-    async def moved():
-        result=await original()
+    async def moved(guard=None):
+        result=await original(guard=guard)
         if driver.snapshots==3:return screen(bounds='[20,20][210,100]')
         return result
     driver.snapshot=moved

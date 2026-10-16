@@ -52,11 +52,17 @@ from mobileag.automation.models import CreateRun
 from mobileag.automation.android import parse_snapshot
 class SyntheticNavigator:
     def __init__(self):self.screen='Profile'
-    async def snapshot(self):
+    async def snapshot(self,guard=None):
+        if guard:guard()
         pkg='org.example.automation'
         control='Settings' if self.screen=='Profile' else 'Home'
-        return parse_snapshot(f'<hierarchy><node package="{pkg}" class="android.widget.Button" resource-id="{pkg}:id/{control.lower()}" text="{control}" clickable="true" bounds="[20,20][220,100]"/></hierarchy>',pkg)
-    async def act(self,action,element=None):self.screen='Settings' if self.screen=='Profile' else 'Home'
+        result=parse_snapshot(f'<hierarchy><node package="{pkg}" class="android.widget.Button" resource-id="{pkg}:id/{control.lower()}" text="{control}" clickable="true" bounds="[20,20][220,100]"/></hierarchy>',pkg)
+        if guard:guard()
+        return result
+    async def act(self,action,element=None,guard=None):
+        if guard:guard()
+        self.screen='Settings' if self.screen=='Profile' else 'Home'
+        if guard:guard()
 navigator=SyntheticNavigator();service=m.automation_service()
 async def guided_static(apk,linked):
     await linked('scan_guided_ui_fixture')

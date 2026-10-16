@@ -52,45 +52,67 @@ def parse_snapshot(xml,package):
 
 class AndroidDriver:
     def __init__(self,adb:ADBManager,serial,package):self.adb,self.serial,self.package=adb,serial,package
-    async def metadata(self):
+    def _check(self,guard):self.adb._check_mutation_guard(guard)
+    async def metadata(self,guard=None):
+        self._check(guard)
         result={'adapter':'ADB/UIAutomator','ordinary_app_exploit_proof':False}
         for name,prop in [('android_version','ro.build.version.release'),('sdk_level','ro.build.version.sdk'),('fingerprint','ro.build.fingerprint')]:
+            self._check(guard)
             code,value,_=await self.adb._exec_cmd(['-s',self.serial,'shell','getprop',prop],timeout=2,output_limit=4096)
+            self._check(guard)
             result[name]=value.decode(errors='replace').strip()[:512] if not code else 'not_observed'
+        self._check(guard)
         code,identity,_=await self.adb._exec_cmd(['-s',self.serial,'shell','id'],timeout=2,output_limit=4096)
+        self._check(guard)
         result['root_shell_observed']=code==0 and b'uid=0(root)' in identity
+        self._check(guard)
         code,package,_=await self.adb._exec_cmd(['-s',self.serial,'shell','dumpsys','package',self.package],timeout=3,output_limit=1024*1024)
+        self._check(guard)
         text=package.decode(errors='replace') if not code else ''
         for field,pattern in [('version_name',r'versionName=([A-Za-z0-9_.+-]{1,128})'),('version_code',r'versionCode=(\d+)')]:
             match=re.search(pattern,text);result[field]=match[1] if match else 'not_observed'
         return result
 
-    async def foreground(self):
+    async def foreground(self,guard=None):
+        self._check(guard)
         code,out,_=await self.adb._exec_cmd(['-s',self.serial,'shell','dumpsys','window','windows'],timeout=4,output_limit=1024*1024)
+        self._check(guard)
         text=out.decode(errors='replace')
         focused=re.search(r'mCurrentFocus=Window\{[^\n]*?\s([\w.]+)/',text)
         if code or not focused or focused[1]!=self.package:raise PermissionError('Foreground package is not the approved application')
-    async def snapshot(self):
-        await self.foreground()
+    async def snapshot(self,guard=None):
+        self._check(guard)
+        await self.foreground(guard)
         path='/data/local/tmp/mobileag-ui-'+uuid.uuid4().hex+'.xml'
         try:
+            self._check(guard)
             code,_,_=await self.adb._exec_cmd(['-s',self.serial,'shell','uiautomator','dump',path],timeout=15,output_limit=16384)
+            self._check(guard)
             if code:raise ValueError('UI hierarchy dump failed')
+            self._check(guard)
             code,out,_=await self.adb._exec_cmd(['-s',self.serial,'shell','cat',path],timeout=4,output_limit=1024*1024)
+            self._check(guard)
             if code:raise ValueError('UI hierarchy read failed')
-            await self.foreground()
+            await self.foreground(guard)
             return parse_snapshot(out.decode(errors='replace'),self.package)
         finally:
-            await self.adb._exec_cmd(['-s',self.serial,'shell','rm','-f',path],timeout=3,output_limit=16384)
+            try:
+                self._check(guard)
+                await self.adb._exec_cmd(['-s',self.serial,'shell','rm','-f',path],timeout=3,output_limit=16384)
+            except PermissionError:
+                pass
     async def launch(self,component,guard=None):
         result=await self.adb.launch_activity(self.serial,component,guard=guard)
         if result['status']!='success':raise ValueError('Application launch failed or timed out')
-    async def act(self,action,element=None):
-        await self.foreground()
+    async def act(self,action,element=None,guard=None):
+        self._check(guard)
+        await self.foreground(guard)
         if action=='back':args=['keyevent','4']
         else:
             if not element or not element['bounds']:raise ValueError('No safe current locator bounds')
             x1,y1,x2,y2=element['bounds'];x=(x1+x2)//2;y=(y1+y2)//2
             args=['tap',str(x),str(y)] if action=='tap' else ['swipe',str(x),str(y2-1),str(x),str(y1+1),'300']
+        self._check(guard)
         code,_,_=await self.adb._exec_cmd(['-s',self.serial,'shell','input',*args],timeout=3,output_limit=16384)
+        self._check(guard)
         if code:raise ValueError('UI input was not acknowledged')

@@ -672,7 +672,7 @@ defense effectiveness.
 ```
 Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
 ├── Phase 1: Static Engine & Frameworks [PARTIAL; bounded analyzers exist]
-├── Phase 2: Dynamic Engine & Frida [GENERATORS EXIST; runtime validation NOT DONE]
+├── Phase 2: Dynamic Engine & Frida [SAFE PROFILE DISABLES HOOK EXECUTION; authorized runtime validation NOT DONE]
 ├── Phase 3: IPC Fuzzing & API [PROTOTYPES EXIST; confirmed exploitation NOT DONE]
 ├── Phase 4: RASP, SBOM & Automation [PARTIAL; measurement/format validation open]
 └── Phase 5: Dashboard & Reporting [PARTIAL; tests pass, production gates open]

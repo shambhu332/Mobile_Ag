@@ -662,6 +662,21 @@ def test_android_data_safety_uses_permission_elements_not_comments_or_substrings
         assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir) == []
 
 
+def test_android_data_safety_rejects_manifest_dtd_and_entity_declarations():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.java"
+        source.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        manifest = '''<!DOCTYPE manifest [<!ENTITY permission "android.permission.ACCESS_FINE_LOCATION">]>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="&permission;" />
+          </manifest>'''
+        findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir)
+
+    # A declaration-bearing manifest is invalid input, not a trusted source
+    # for permission candidates; the method emits no discrepancy candidate.
+    assert findings == []
+
+
 def test_android_data_safety_source_inventory_is_bounded_and_reports_partial_coverage():
     with tempfile.TemporaryDirectory() as tmp_dir:
         base = Path(tmp_dir)

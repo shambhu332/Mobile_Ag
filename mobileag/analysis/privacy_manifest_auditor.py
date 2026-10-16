@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -212,7 +213,16 @@ class PrivacyManifestAuditor:
         # Parse actual permission elements; substring scans also matched comments,
         # examples and unrelated permission names. APK/source evidence remains a lead.
         permissions: Set[str] = set()
-        if isinstance(manifest_content, str) and len(manifest_content) <= self.MAX_ANDROID_MANIFEST_CHARS:
+        if not isinstance(manifest_content, str) or len(manifest_content) > self.MAX_ANDROID_MANIFEST_CHARS:
+            coverage["manifest_parse"] = "invalid"
+            coverage["manifest_truncated"] = isinstance(manifest_content, str)
+            coverage["errors"].append("manifest_missing_or_too_large")
+        elif re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", manifest_content, re.IGNORECASE):
+            # Android manifests do not require DTD entities. Reject them before
+            # parsing so attacker-supplied XML cannot alter parser behavior.
+            coverage["manifest_parse"] = "invalid"
+            coverage["errors"].append("manifest_entity_declaration_unsupported")
+        else:
             try:
                 root = ET.fromstring(manifest_content)
                 for element in root.iter():
@@ -227,10 +237,6 @@ class PrivacyManifestAuditor:
             except ET.ParseError:
                 coverage["manifest_parse"] = "invalid"
                 coverage["errors"].append("manifest_parse_error")
-        else:
-            coverage["manifest_parse"] = "invalid"
-            coverage["manifest_truncated"] = isinstance(manifest_content, str)
-            coverage["errors"].append("manifest_missing_or_too_large")
         has_location = bool(permissions & {
             "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
         })

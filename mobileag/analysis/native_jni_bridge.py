@@ -65,20 +65,64 @@ class NativeJniAnalyzer:
     }
 
     def demangle_jni_name(self, symbol: str) -> Optional[tuple[str, str]]:
-        """Convert Java_com_example_app_NativeClass_methodName to (FQCN, method)."""
+        """Decode the JNI long-name prefix into a class and method name.
+
+        Overload signatures are omitted from the returned method name. This is
+        a name decoder only; it does not resolve Java declarations or prove use.
+        """
         if not symbol.startswith("Java_"):
             return None
+        body = symbol[5:]
+        overload = body.find("__")
+        if overload >= 0:
+            body = body[:overload]
 
-        # JNI name encoding replaces '_' with '/' or package separators
-        # Java_com_example_app_NativeClass_nativeMethod
-        parts = symbol.split("_")
-        if len(parts) >= 3:
-            # parts[0] is 'Java'
-            # middle parts form package + class
-            method = parts[-1]
-            pkg_class = ".".join(parts[1:-1])
-            return pkg_class, method
-        return None
+        delimiter = None
+        index = len(body) - 1
+        while index >= 0:
+            if body[index] != "_":
+                index -= 1
+                continue
+            if index + 1 < len(body) and body[index + 1] in "123":
+                index -= 1
+                continue
+            if (index + 5 < len(body) and body[index + 1] == "0"
+                    and re.fullmatch(r"[0-9a-fA-F]{4}", body[index + 2:index + 6])):
+                index -= 1
+                continue
+            delimiter = index
+            break
+        if delimiter is None or delimiter == 0 or delimiter == len(body) - 1:
+            return None
+
+        def decode(component: str, *, class_name: bool) -> str:
+            output: list[str] = []
+            cursor = 0
+            while cursor < len(component):
+                char = component[cursor]
+                if char == "_" and cursor + 1 < len(component):
+                    marker = component[cursor + 1]
+                    replacements = {"1": "_", "2": ";", "3": "["}
+                    if marker in replacements:
+                        output.append(replacements[marker])
+                        cursor += 2
+                        continue
+                    if (marker == "0" and cursor + 5 < len(component)
+                            and re.fullmatch(r"[0-9a-fA-F]{4}", component[cursor + 2:cursor + 6])):
+                        output.append(chr(int(component[cursor + 2:cursor + 6], 16)))
+                        cursor += 6
+                        continue
+                    output.append("." if class_name else "_")
+                else:
+                    output.append(char)
+                cursor += 1
+            return "".join(output)
+
+        class_name = decode(body[:delimiter], class_name=True)
+        method_name = decode(body[delimiter + 1:], class_name=False)
+        if not class_name or not method_name:
+            return None
+        return class_name, method_name
 
     def audit_library(self, so_path: str | Path) -> NativeLibraryAuditResult:
         """Audit an individual .so ELF library."""

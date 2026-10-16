@@ -51,6 +51,17 @@ def test_native_jni_analyzer():
             assert "does not establish an ELF dynamic import" in finding.description
 
 
+@pytest.mark.parametrize("symbol, expected", [
+    ("Java_com_example_Native_run__I", ("com.example.Native", "run")),
+    ("Java_com_example_Native_do_1Thing", ("com.example.Native", "do_Thing")),
+    ("Java_com_example_Native_text_2value", ("com.example.Native", "text;value")),
+    ("Java_com_example_Native_array_3value", ("com.example.Native", "array[value")),
+    ("Java_com_example_Native_name_00041", ("com.example.Native", "nameA")),
+])
+def test_jni_export_name_decoder_handles_overload_and_escape_forms(symbol, expected):
+    assert NativeJniAnalyzer().demangle_jni_name(symbol) == expected
+
+
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="gcc required for synthetic ELF fixture")
 def test_native_jni_analyzer_parses_import_and_export_symbols_without_call_path(tmp_path):
     source = tmp_path / "native.c"

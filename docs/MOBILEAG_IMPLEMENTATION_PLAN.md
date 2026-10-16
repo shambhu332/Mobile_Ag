@@ -528,6 +528,16 @@ because method-level native call graphs are not analyzed. Compiler-built
 synthetic tests verify symbol import/export inventory only, not runtime
 reachability or a real application.
 
+Top-level scan status is now `partial` when pyelftools is unavailable, the
+input is truncated, symbol parsing fails/limits out, or `.dynsym` is absent;
+the latter case is distinct from an empty dynamic import set. A compiler-built
+relocatable-object regression verifies the missing-table state is not reported
+as a clean import inventory.
+
+The scan-status regression passed the focused JNI tests (**4 passed, 2
+deselected**) and full suite (**1,063 passed**, 40.18 s; one expected synthetic
+duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.
+
 The ELF symbol-table improvement passed focused JNI tests (**4 passed, 2
 deselected**) and full suite (**1,063 passed**, 39.93 s; one expected synthetic
 duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.

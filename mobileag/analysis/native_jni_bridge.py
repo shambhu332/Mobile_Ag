@@ -137,8 +137,12 @@ class NativeJniAnalyzer:
             try:
                 elf = ELFFile(BytesIO(data))
                 dynsym = elf.get_section_by_name(".dynsym")
-                result.elf_parse_status = "parsed"
-                if dynsym is not None:
+                if dynsym is None:
+                    result.elf_parse_status = "not_present"
+                    result.scan_status = "partial"
+                    result.scan_errors.append("dynamic_symbol_table_missing")
+                else:
+                    result.elf_parse_status = "parsed"
                     for index, symbol in enumerate(dynsym.iter_symbols()):
                         if index >= 5000:
                             result.elf_parse_status = "partial"
@@ -161,7 +165,11 @@ class NativeJniAnalyzer:
                                 ))
             except Exception:
                 result.elf_parse_status = "partial"
+                result.scan_status = "partial"
                 result.scan_errors.append("elf_symbol_parse_error")
+
+        if result.elf_parse_status in {"partial", "unsupported", "not_present"}:
+            result.scan_status = "partial"
 
         # Identify JNI-looking strings for review, but do not promote them to
         # verified exports unless the dynamic symbol table says so.

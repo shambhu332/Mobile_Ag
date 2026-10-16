@@ -78,6 +78,17 @@ def test_native_jni_analyzer_parses_import_and_export_symbols_without_call_path(
     assert system_finding.severity == Severity.INFO
     assert system_finding.cwe_id == "CWE-Unknown"
 
+    object_file = tmp_path / "native.o"
+    subprocess.run(
+        [shutil.which("gcc"), "-c", "-fno-builtin", "-o", str(object_file), str(source)],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+    object_result = NativeJniAnalyzer().audit_library(object_file)
+    assert object_result.elf_parse_status == "not_present"
+    assert object_result.scan_status == "partial"
+    assert object_result.imported_dangerous_symbols == []
+    assert "dynamic_symbol_table_missing" in object_result.scan_errors
+
 
 def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):
     target = tmp_path / "synthetic.elf"

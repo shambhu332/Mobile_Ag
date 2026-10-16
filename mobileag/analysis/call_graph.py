@@ -765,6 +765,7 @@ class SmaliCallGraphEngine:
             move_alias = re.match(r"move(?:-object|-wide)?(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
+            filled_new_array = re.match(r"filled-new-array(?:/range)?\s+\{([^}]*)\}", text)
             instance_get = re.match(r"iget(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
             instance_put = re.match(r"iput(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
             static_get = static_get_re.match(text)
@@ -773,7 +774,7 @@ class SmaliCallGraphEngine:
             if not move_result:
                 registers.pop("@pending_return", None)
                 registers.pop("@pending_builder", None)
-                registers.pop("@pending_external_array", None)
+                registers.pop("@pending_array_elements", None)
             if static_get:
                 dest, field_key = static_get.groups()
                 static_field_reads.add(field_key)
@@ -797,9 +798,9 @@ class SmaliCallGraphEngine:
                     registers[dest] = pending
                 else:
                     registers.pop(dest, None)
-                external_array_taints = registers.pop("@pending_external_array", frozenset())
-                if external_array_taints:
-                    registers[f"@array:{dest}"] = external_array_taints
+                pending_array_taints = registers.pop("@pending_array_elements", frozenset())
+                if pending_array_taints:
+                    registers[f"@array:{dest}"] = pending_array_taints
                 if return_taints:
                     registers[f"@returned:{dest}"] = return_taints
                 if builder_taints:
@@ -851,6 +852,13 @@ class SmaliCallGraphEngine:
                     warn(f"instance field read value is not modeled in {method.key} at line {line_no}")
                 if instance_put:
                     warn(f"instance field write value is not modeled in {method.key} at line {line_no}")
+                if filled_new_array:
+                    element_traces = frozenset(
+                        trace for register in _invocation_registers(filled_new_array.group(1))
+                        for trace in registers.get(register, ())
+                    )
+                    if element_traces:
+                        registers["@pending_array_elements"] = element_traces
                 if return_value:
                     return_flows.update(registers.get(return_value.group(1), ()))
                 arithmetic = re.match(
@@ -939,7 +947,7 @@ class SmaliCallGraphEngine:
                                 method.key, method.file_path,
                             )})
                             if target_key.endswith("->readAllBytes"):
-                                registers["@pending_external_array"] = pending
+                                registers["@pending_array_elements"] = pending
 
                     if target_name == "<init>" and args:
                         if target_class in SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS:
@@ -981,7 +989,7 @@ class SmaliCallGraphEngine:
                             pending = receiver_traces
                         elif target_name == "readAllBytes":
                             pending = receiver_traces
-                            registers["@pending_external_array"] = receiver_traces
+                            registers["@pending_array_elements"] = receiver_traces
                     if receiver_traces and target_class in SMALI_CONTENT_LINE_READERS and target_name in {
                         "next", "nextLine", "nextInt", "nextLong", "nextFloat", "nextDouble",
                     }:

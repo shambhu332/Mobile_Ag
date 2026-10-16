@@ -8,7 +8,7 @@ def test_smali_register_flow_benchmark_has_no_smoke_regressions():
     corpus = json.loads((root / "tests/fixtures/smali_register_flow_benchmark.json").read_text())
     evaluate = runpy.run_path(str(root / "scripts/evaluate-smali-flow-benchmark.py"))["evaluate"]
     result = evaluate(corpus)
-    assert result["tp"] == 10
+    assert result["tp"] == 11
     assert result["fp"] == 0
     assert result["fn"] == 0
     cursor_case = next(case for case in result["cases"]
@@ -23,6 +23,9 @@ def test_smali_register_flow_benchmark_has_no_smoke_regressions():
     activity_result_case = next(case for case in result["cases"]
                                 if case["id"] == "activity_result_intent_data_to_webview")
     assert activity_result_case["tp"] == 1
+    filled_array_case = next(case for case in result["cases"]
+                             if case["id"] == "filled_new_array_preserves_tainted_elements")
+    assert filled_array_case["tp"] == 1
     lifecycle_extra_case = next(case for case in result["cases"]
                                if case["id"] == "lifecycle_intent_extra_to_webview")
     assert lifecycle_extra_case["tp"] == 1

@@ -115,6 +115,29 @@ def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):
     assert result.scan_errors == ["library_read_error"]
 
 
+def test_native_jni_package_inventory_is_bounded_and_skips_symlinks(tmp_path):
+    root = tmp_path / "package"
+    lib = root / "lib" / "arm64-v8a"
+    lib.mkdir(parents=True)
+    payload = b"\x7fELF\x00system\x00"
+    (lib / "liba.so").write_bytes(payload)
+    (lib / "libb.so").write_bytes(payload)
+    outside = tmp_path / "outside.so"
+    outside.write_bytes(payload)
+    (lib / "a-link.so").symlink_to(outside)
+
+    analyzer = NativeJniAnalyzer()
+    analyzer.MAX_PACKAGE_LIBRARIES = 1
+    results = analyzer.audit_package_libraries(root)
+
+    assert len(results) == 1
+    assert results[0].library_name == "liba.so"
+    assert analyzer.package_coverage["libraries_analyzed"] == 1
+    assert analyzer.package_coverage["limits_reached"] is True
+    assert analyzer.package_coverage["source_files_skipped"] >= 1
+    assert analyzer.package_coverage["static_status"] == "partial"
+
+
 def test_native_jni_analyzer_reports_bounded_prefix_as_partial(tmp_path):
     library = tmp_path / "liblarge.so"
     library.write_bytes(b"\x7fELF\x00system\x00" + b"\x00" * (5 * 1024 * 1024))

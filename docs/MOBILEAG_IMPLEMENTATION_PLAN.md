@@ -570,6 +570,16 @@ because method-level native call graphs are not analyzed. Compiler-built
 synthetic tests verify symbol import/export inventory only, not runtime
 reachability or a real application.
 
+Package-wide JNI library enumeration now uses the shared no-follow inventory
+with limits of 5,000 entries, 5 MiB per library, 1,000 libraries, and 64 MiB
+total source bytes. Its `package_coverage` reports skips/truncation separately
+from individual library parse states; it does not imply that skipped libraries
+had no indicators.
+
+Package-inventory regressions passed native JNI focused tests (**7 passed, 7
+deselected**) and full suite (**1,074 passed**, 40.50 s; one expected synthetic
+duplicate-ZIP-member warning); compilation and `git diff --check` passed.
+
 JNI long-name decoding now strips overload descriptors and decodes the JNI
 escape forms for underscore, semicolon, array marker, and four-digit Unicode
 characters. This improves symbol-name attribution but does not resolve native

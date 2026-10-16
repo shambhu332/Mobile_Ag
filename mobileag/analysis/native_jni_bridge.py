@@ -1,8 +1,8 @@
 """Native JNI Cross-Boundary Analyzer (inspired by REA).
 
-Inspects native shared libraries (.so) in mobile packages, maps exported JNI entry points
-(Java_<package>_<class>_<method>), and audits imported libc and OS calls to uncover
-hidden native execution sinks (system, popen, strcpy, sqlite3_exec).
+Inspects bounded native shared-library inputs, inventories selected ELF dynamic
+symbols and JNI export names, and emits unverified review leads without claiming
+native call reachability or exploitability.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
-from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 try:
     from elftools.elf.elffile import ELFFile
@@ -55,6 +55,11 @@ class NativeLibraryAuditResult:
 class NativeJniAnalyzer:
     """Collects bounded printable-string and JNI-name candidates from ELF files."""
 
+    MAX_LIBRARY_BYTES = 5 * 1024 * 1024
+    MAX_PACKAGE_ENTRIES = 5000
+    MAX_PACKAGE_LIBRARIES = 1000
+    MAX_PACKAGE_BYTES = 64 * 1024 * 1024
+
     DANGEROUS_LIBC_SINKS = {
         "system": ("CWE-78", Severity.HIGH, "Native Command Injection sink 'system()' imported"),
         "popen": ("CWE-78", Severity.HIGH, "Native Command Injection sink 'popen()' imported"),
@@ -63,6 +68,13 @@ class NativeJniAnalyzer:
         "sprintf": ("CWE-120", Severity.MEDIUM, "Unbounded format sink 'sprintf()' imported"),
         "sqlite3_exec": ("CWE-89", Severity.HIGH, "Raw SQL execution sink 'sqlite3_exec()' imported in native library"),
     }
+
+    def __init__(self) -> None:
+        self.package_coverage = SourceInventory(
+            max_entries=self.MAX_PACKAGE_ENTRIES,
+            max_file_bytes=self.MAX_LIBRARY_BYTES,
+            max_total_bytes=self.MAX_PACKAGE_BYTES,
+        ).coverage
 
     def demangle_jni_name(self, symbol: str) -> Optional[tuple[str, str]]:
         """Decode the JNI long-name prefix into a class and method name.
@@ -124,30 +136,37 @@ class NativeJniAnalyzer:
             return None
         return class_name, method_name
 
-    def audit_library(self, so_path: str | Path) -> NativeLibraryAuditResult:
-        """Audit an individual .so ELF library."""
+    def audit_library(self, so_path: str | Path, *, data: bytes | None = None) -> NativeLibraryAuditResult:
+        """Audit one library path, or bytes from the bounded package inventory."""
         path = Path(so_path)
         lib_name = path.name
         arch = path.parent.name if path.parent.name in ("arm64-v8a", "armeabi-v7a", "x86", "x86_64") else "unknown"
 
         result = NativeLibraryAuditResult(library_name=lib_name, architecture=arch)
 
-        try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd, "rb") as f:
-                if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-                    result.scan_status = "invalid"
-                    result.scan_errors.append("non_regular_library")
-                    return result
-                file_size = os.fstat(f.fileno()).st_size
-                data = f.read(5 * 1024 * 1024 + 1)
-                result.scan_truncated = file_size > 5 * 1024 * 1024 or len(data) > 5 * 1024 * 1024
-                if len(data) > 5 * 1024 * 1024:
-                    data = data[:5 * 1024 * 1024]
-        except OSError:
-            result.scan_status = "invalid"
-            result.scan_errors.append("library_read_error")
-            return result
+        if data is not None:
+            if not isinstance(data, bytes):
+                result.scan_status = "invalid"
+                result.scan_errors.append("invalid_library_bytes")
+                return result
+            file_size = len(data)
+        else:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as f:
+                    if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                        result.scan_status = "invalid"
+                        result.scan_errors.append("non_regular_library")
+                        return result
+                    file_size = os.fstat(f.fileno()).st_size
+                    data = f.read(self.MAX_LIBRARY_BYTES + 1)
+            except OSError:
+                result.scan_status = "invalid"
+                result.scan_errors.append("library_read_error")
+                return result
+        result.scan_truncated = file_size > self.MAX_LIBRARY_BYTES or len(data) > self.MAX_LIBRARY_BYTES
+        if len(data) > self.MAX_LIBRARY_BYTES:
+            data = data[:self.MAX_LIBRARY_BYTES]
         result.bytes_scanned = len(data)
         if result.scan_truncated:
             result.scan_status = "partial"
@@ -269,15 +288,31 @@ class NativeJniAnalyzer:
         results: List[NativeLibraryAuditResult] = []
         root = explicit_scan_root(extracted_dir)
         if root is None or root.is_symlink() or not root.is_dir():
+            self.package_coverage = SourceInventory(
+                max_entries=self.MAX_PACKAGE_ENTRIES,
+                max_file_bytes=self.MAX_LIBRARY_BYTES,
+                max_total_bytes=self.MAX_PACKAGE_BYTES,
+            ).coverage
             return results
         lib_dir = root / "lib"
         if lib_dir.is_symlink() or not lib_dir.is_dir():
+            self.package_coverage = SourceInventory(
+                max_entries=self.MAX_PACKAGE_ENTRIES,
+                max_file_bytes=self.MAX_LIBRARY_BYTES,
+                max_total_bytes=self.MAX_PACKAGE_BYTES,
+            ).coverage
             return results
 
-        for current, dirs, files in os.walk(lib_dir, followlinks=False):
-            dirs[:] = sorted(name for name in dirs if not (Path(current) / name).is_symlink())
-            for file in files:
-                candidate = Path(current) / file
-                if file.endswith(".so") and not candidate.is_symlink() and candidate.is_file():
-                    results.append(self.audit_library(candidate))
+        inventory = SourceInventory(
+            max_entries=self.MAX_PACKAGE_ENTRIES,
+            max_file_bytes=self.MAX_LIBRARY_BYTES,
+            max_total_bytes=self.MAX_PACKAGE_BYTES,
+        )
+        for candidate, data in inventory.read(lib_dir, {".so"}):
+            if len(results) >= self.MAX_PACKAGE_LIBRARIES:
+                inventory.record_limit("native_library_count")
+                break
+            results.append(self.audit_library(candidate, data=data))
+        self.package_coverage = dict(inventory.coverage)
+        self.package_coverage["libraries_analyzed"] = len(results)
         return results

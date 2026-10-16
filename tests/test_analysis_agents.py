@@ -226,6 +226,71 @@ async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
     assert any("dev-api.example.com" in finding.title for finding in findings)
 
 
+def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_router, tmp_path):
+    class Match:
+        def __init__(self, index):
+            self.index = index
+
+        def group(self, number):
+            assert number == 1
+            return f"/api/v1/resource/item-{self.index:05}-slug"
+
+    class LazyMatches:
+        def __init__(self):
+            self.yielded = 0
+
+        def finditer(self, _content):
+            for index in range(10_000):
+                self.yielded += 1
+                yield Match(index)
+
+        def findall(self, _content):
+            raise AssertionError("findall would materialize all attacker-controlled matches")
+
+    (tmp_path / "routes.smali").write_text("synthetic route corpus", encoding="utf-8")
+    mapper = APIMapper(mock_router)
+    lazy = LazyMatches()
+    mapper.route_literal_pattern = lazy
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 5000
+    assert lazy.yielded == 5001  # One match is consumed to detect the cap.
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limit_reasons"]["endpoint_count"] == 1
+
+
+def test_api_mapper_deduplicates_redacted_routes_without_marking_partial(mock_router, tmp_path):
+    (tmp_path / "routes.smali").write_text(
+        '.class public Lx/Routes;\n'
+        'const-string v0, "/api/v1/users/12345678-1234-4234-8234-123456789abc"\n'
+        'const-string v1, "/api/v1/users/abcdefab-cdef-4abc-8def-abcdefabcdef"\n',
+        encoding="utf-8",
+    )
+    mapper = APIMapper(mock_router)
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 1
+    assert endpoints[0]["url"] == "/api/v1/users/{id}"
+    assert mapper.coverage["deduplicated_endpoint_count"] == 1
+    assert mapper.coverage["static_status"] == "analyzed_heuristically"
+    assert mapper.coverage["limits_reached"] is False
+
+
+def test_api_mapper_marks_sensitive_route_finding_cap_as_partial(mock_router, tmp_path):
+    routes = '\n'.join('@GET("/api/v1/admin/resource")' for _ in range(501))
+    (tmp_path / "Api.java").write_text(routes, encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 501
+    assert len(findings) == 500
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limit_reasons"]["finding_count"] == 1
+
+
 def test_api_mapper_safe_route_strips_userinfo_and_encodes_control_characters():
     safe = APIMapper._safe_route(
         "https://researcher:synthetic-password@example.com/api/token/canary?auth_token=secret#frag"

@@ -80,6 +80,8 @@ class APIMapper:
         """Synchronously scan source files for API definitions and URL references."""
         endpoints: list[dict] = []
         raw_findings: list[dict] = []
+        seen_endpoint_urls: set[str] = set()
+        deduplicated_endpoint_count = 0
 
         inventory = SourceInventory()
         for file_path, data in inventory.read(
@@ -90,20 +92,22 @@ class APIMapper:
                 stem = file_path.stem
                 
                 # Extract Retrofit annotations
-                for method, path in self.retrofit_pattern.findall(content):
+                for match in self.retrofit_pattern.finditer(content):
                     if len(endpoints) >= 5000:
                         inventory.record_limit('endpoint_count')
                         break
+                    method, path = match.groups()
+                    safe_path = self._safe_route(path)
                     endpoints.append({
                         "method": method,
-                        "url": self._safe_route(path),
+                        "url": safe_path,
                         "class_name": stem,
                         # Header occurrences elsewhere in this class are not a
                         # reliable endpoint-specific authorization signal.
                         "requires_auth": None
                     })
-                    
-                    safe_path = self._safe_route(path)
+                    seen_endpoint_urls.add(safe_path)
+
                     if "admin" in path.lower() or "privilege" in path.lower():
                         if len(raw_findings) < 500:
                             raw_findings.append({
@@ -112,25 +116,30 @@ class APIMapper:
                             "component": stem,
                             "file_path": rel_path
                             })
+                        else:
+                            inventory.record_limit('finding_count')
 
                 # Extract route-shaped literals from binary/resource/decompiled
                 # sources, without pretending a literal is a callable endpoint.
                 if file_path.suffix.lower() not in {".java", ".kt"}:
-                    for route in self.route_literal_pattern.findall(content):
+                    for match in self.route_literal_pattern.finditer(content):
                         if len(endpoints) >= 5000:
                             inventory.record_limit('endpoint_count')
                             break
+                        route = match.group(1)
                         safe_route = self._safe_route(route)
-                        if not any(ep.get("url") == safe_route for ep in endpoints):
+                        if safe_route not in seen_endpoint_urls:
                             endpoints.append({"method": "UNKNOWN", "url": safe_route,
                                               "class_name": stem, "requires_auth": None,
                                               "evidence_type": "route_literal",
                                               "source_file": rel_path})
+                            seen_endpoint_urls.add(safe_route)
                         else:
-                            inventory.record_limit('api_candidate_count')
+                            deduplicated_endpoint_count += 1
 
                 # Extract hardcoded URLs
-                for url in self.url_pattern.findall(content):
+                for match in self.url_pattern.finditer(content):
+                    url = match.group(0)
                     hostname = (urlsplit(url).hostname or "").lower()
                     host_labels = {part for part in re.split(r"[.-]+", hostname) if part}
                     environment_labels = {
@@ -165,6 +174,7 @@ class APIMapper:
         self.coverage = dict(inventory.coverage)
         self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
                              candidate_count=len(raw_findings), endpoints_count=len(endpoints),
+                             deduplicated_endpoint_count=deduplicated_endpoint_count,
                              limits={**inventory.coverage['limits'], 'endpoints':5000,'findings':500})
         return endpoints, raw_findings
 

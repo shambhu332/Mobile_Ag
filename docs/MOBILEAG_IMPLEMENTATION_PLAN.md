@@ -505,8 +505,9 @@ from finding text and the sanitized location. This pattern does not prove that
 the credentials were valid or accepted.
 Transaction-level token findings also have a 20,000-result ceiling; the auditor
 reports received/analyzed/omitted transactions and marks the output partial
-when either transaction or finding limits truncate processing. The token audit
-API exposes this coverage rather than silently presenting a capped result as
+when transaction or finding limits truncate processing, query parsing exceeds
+its field cap, or malformed/oversized URLs are unmodeled. The token audit API
+exposes this coverage rather than silently presenting a bounded result as
 complete.
 
 ### BOLA candidate extraction boundary

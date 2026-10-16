@@ -1311,6 +1311,20 @@ def test_token_session_auditor_bounds_findings_and_reports_partial_coverage():
     assert auditor.last_coverage["transactions_omitted"] > 0
 
 
+def test_token_session_auditor_marks_over_limit_query_parse_as_partial():
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    query = "&".join([f"field{i}=x" for i in range(256)] + ["access_token=synthetic-secret"])
+    auditor = MobileTokenSessionAuditor()
+    findings = auditor.audit_transactions([
+        CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{query}")
+    ])
+    assert not any(finding.cwe_id == "CWE-598" for finding in findings)
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["query_parse_incomplete_transactions"] == 1
+
+
 def test_token_session_auditor_does_not_call_unauthorized_responses_successful_reuse():
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest

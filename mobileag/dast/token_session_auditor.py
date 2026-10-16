@@ -408,16 +408,22 @@ class MobileTokenSessionAuditor:
         if not isinstance(transactions, (list, tuple)):
             self.last_coverage = {"status": "invalid_input", "transactions_received": None,
                                   "transactions_analyzed": 0, "transactions_omitted": 0,
-                                  "finding_count": 0, "finding_cap_reached": False}
+                                  "query_parse_incomplete_transactions": 0,
+                                  "url_inputs_unmodeled": 0, "finding_count": 0,
+                                  "finding_cap_reached": False, "transaction_limit": self.MAX_TRANSACTIONS,
+                                  "finding_limit": self.MAX_FINDINGS}
             return findings
         total_transactions = len(transactions)
         transactions_analyzed = 0
         finding_cap_reached = False
+        query_parse_incomplete = 0
+        url_inputs_unmodeled = 0
 
         for idx, tx in enumerate(transactions[:self.MAX_TRANSACTIONS]):
             transactions_analyzed += 1
             url = getattr(tx, "url", "")
             if not isinstance(url, str) or len(url) > 8192:
+                url_inputs_unmodeled += 1
                 url = ""
             safe_url = self._safe_context_url(url)
             headers = getattr(tx, "request_headers", {}) or getattr(tx, "headers", {}) or {}
@@ -458,6 +464,7 @@ class MobileTokenSessionAuditor:
             try:
                 parsed = urlsplit(url)
             except ValueError:
+                url_inputs_unmodeled += 1
                 parsed = urlsplit("")
             if (parsed.scheme.lower() in {"http", "https"}
                     and (parsed.username is not None or parsed.password is not None)):
@@ -475,6 +482,7 @@ class MobileTokenSessionAuditor:
                 query_tuples = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=256)
             except ValueError:
                 query_tuples = []
+                query_parse_incomplete += 1
             for q_name, q_val in query_tuples:
                 if self._is_sensitive_query_key(q_name):
                     if len(findings) >= self.MAX_FINDINGS:
@@ -534,11 +542,14 @@ class MobileTokenSessionAuditor:
                 break
 
         omitted = max(0, total_transactions - transactions_analyzed)
+        incomplete = bool(omitted or finding_cap_reached or query_parse_incomplete or url_inputs_unmodeled)
         self.last_coverage = {
-            "status": "partial" if omitted or finding_cap_reached else "complete_for_supplied_input",
+            "status": "partial" if incomplete else "complete_for_supplied_input",
             "transactions_received": total_transactions,
             "transactions_analyzed": transactions_analyzed,
             "transactions_omitted": omitted,
+            "query_parse_incomplete_transactions": query_parse_incomplete,
+            "url_inputs_unmodeled": url_inputs_unmodeled,
             "transaction_limit": self.MAX_TRANSACTIONS,
             "finding_count": len(findings),
             "finding_limit": self.MAX_FINDINGS,

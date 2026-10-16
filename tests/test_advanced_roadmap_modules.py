@@ -1162,6 +1162,23 @@ def test_android_data_safety_uses_permission_elements_not_comments_or_substrings
         assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir) == []
 
 
+def test_android_data_safety_ignores_sdk_names_in_java_kotlin_comments_and_literals():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.kt"
+        source.write_text(
+            '// com.google.firebase.analytics.FirebaseAnalytics\n'
+            '/* com.facebook.android */\n'
+            'val example = "com.google.firebase.analytics.FirebaseAnalytics"\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        ) == []
+
+
 def test_android_data_safety_ignores_nested_permission_examples_and_non_manifest_roots():
     with tempfile.TemporaryDirectory() as tmp_dir:
         source = Path(tmp_dir) / "App.java"

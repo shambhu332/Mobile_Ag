@@ -20,6 +20,46 @@ from typing import Any, Dict, List, Set
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 
+def _mask_java_kotlin_comments_and_strings(source: str) -> str:
+    """Blank Java/Kotlin comments and string/char literals, preserving offsets."""
+    chars = list(source)
+
+    def blank(start: int, end: int) -> None:
+        for pos in range(start, end):
+            if chars[pos] not in "\r\n":
+                chars[pos] = " "
+
+    index = 0
+    while index < len(source):
+        if source.startswith("//", index):
+            end = index + 2
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            blank(index, end)
+            index = end
+        elif source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            end = len(source) if end < 0 else end + 2
+            blank(index, end)
+            index = end
+        elif source[index] in {'"', "'"}:
+            quote = source[index]
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                elif source[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+            blank(index, min(end, len(source)))
+            index = end
+        else:
+            index += 1
+    return "".join(chars)
+
+
 @dataclass
 class PrivacyManifestResult:
     has_privacy_manifest: bool = False
@@ -523,7 +563,9 @@ class PrivacyManifestAuditor:
                     total_bytes += len(raw)
                     coverage["bytes_read"] = total_bytes
                     coverage["files_read"] += 1
-                    text = raw.decode("utf-8", errors="ignore")
+                    text = _mask_java_kotlin_comments_and_strings(
+                        raw.decode("utf-8", errors="ignore")
+                    )
                     for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
                         if package in text:
                             detected_trackers.add(description)

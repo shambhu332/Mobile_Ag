@@ -1648,3 +1648,13 @@ gate is rejected with 422 and never reaches `TrafficAuditor`; focused API/
 security tests passed (**148 passed**), full pytest passed (**1,303 passed**,
 62.77 s), and compileall plus `git diff --check` passed. This protects local
 offline processing only; it does not add captured data or make live requests.
+
+Direct deep-link execution now rejects invalid serial/package/URI/activity
+inputs, caps a batch at 30 links and 256 KiB total URI text, and prevalidates
+all mutations before any device access. A scope guard that returns an
+awaitable fails closed rather than being treated as approval. Synthetic
+negative controls verified that malformed later links, over-limit batches,
+oversized URIs, and async guards issue no ADB or logcat calls. Focused
+deep-link/runtime/API tests passed (**213 passed**); full pytest passed
+(**1,306 passed**, 63.96 s); compileall and `git diff --check` passed. No
+device was selected or contacted; runtime vulnerability proof remains open.

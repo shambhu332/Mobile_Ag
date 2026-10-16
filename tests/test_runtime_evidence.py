@@ -86,6 +86,52 @@ async def test_explicit_false_scope_guard_blocks_before_baseline():
 
 
 @pytest.mark.asyncio
+async def test_async_scope_guard_is_rejected_before_device_access():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+
+    async def deny_async():
+        return False
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await DeepLinkFuzzer(adb).exercise_deep_link(
+            "synthetic-serial", "org.example.fixture", "fixture://canary", guard=deny_async,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_deeplink_batch_is_fully_validated_before_device_access():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    too_many_query_fields = "fixture://route/?" + "&".join(f"k{i}=v" for i in range(101))
+    with pytest.raises(ValueError, match="query limits"):
+        await DeepLinkFuzzer(adb).fuzz_deep_links(
+            "synthetic-serial", "org.example.fixture",
+            ["fixture://valid", too_many_query_fields], guard=lambda: None,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_deeplink_direct_batch_count_and_uri_limits_fail_before_device_access():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    fuzzer = DeepLinkFuzzer(adb)
+    with pytest.raises(ValueError, match="exceeds limits"):
+        await fuzzer.fuzz_deep_links(
+            "synthetic-serial", "org.example.fixture", ["fixture://ok"] * 31,
+            guard=lambda: None,
+        )
+    with pytest.raises(ValueError, match="exceeds limits"):
+        await fuzzer.exercise_deep_link(
+            "synthetic-serial", "org.example.fixture", "fixture://" + "x" * 8192,
+            guard=lambda: None,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_scope_denial_after_baseline_blocks_deep_link_launch():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

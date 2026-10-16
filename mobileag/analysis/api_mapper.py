@@ -76,6 +76,17 @@ class APIMapper:
         except (TypeError, ValueError, UnicodeError):
             return "[REDACTED URL]"
 
+    @staticmethod
+    def _matches_with_line_numbers(pattern, content: str):
+        """Iterate regex matches with 1-based line numbers in one linear pass."""
+        offset = 0
+        line_number = 1
+        for match in pattern.finditer(content):
+            line_number += content.count("\n", offset, match.start())
+            yield match, line_number
+            line_number += content.count("\n", match.start(), match.end())
+            offset = match.end()
+
     def _sync_map_apis(self, base_path: Path) -> tuple[list[dict], list[dict]]:
         """Synchronously scan source files for API definitions and URL references."""
         endpoints: list[dict] = []
@@ -92,7 +103,7 @@ class APIMapper:
                 stem = file_path.stem
                 
                 # Extract Retrofit annotations
-                for match in self.retrofit_pattern.finditer(content):
+                for match, line_number in self._matches_with_line_numbers(self.retrofit_pattern, content):
                     if len(endpoints) >= 5000:
                         inventory.record_limit('endpoint_count')
                         break
@@ -102,6 +113,8 @@ class APIMapper:
                         "method": method,
                         "url": safe_path,
                         "class_name": stem,
+                        "source_file": rel_path,
+                        "line_number": line_number,
                         # Header occurrences elsewhere in this class are not a
                         # reliable endpoint-specific authorization signal.
                         "requires_auth": None
@@ -114,7 +127,8 @@ class APIMapper:
                             "type": "sensitive_route_name",
                             "path": safe_path,
                             "component": stem,
-                            "file_path": rel_path
+                            "file_path": rel_path,
+                            "line_number": line_number
                             })
                         else:
                             inventory.record_limit('finding_count')
@@ -122,7 +136,7 @@ class APIMapper:
                 # Extract route-shaped literals from binary/resource/decompiled
                 # sources, without pretending a literal is a callable endpoint.
                 if file_path.suffix.lower() not in {".java", ".kt"}:
-                    for match in self.route_literal_pattern.finditer(content):
+                    for match, line_number in self._matches_with_line_numbers(self.route_literal_pattern, content):
                         if len(endpoints) >= 5000:
                             inventory.record_limit('endpoint_count')
                             break
@@ -132,13 +146,14 @@ class APIMapper:
                             endpoints.append({"method": "UNKNOWN", "url": safe_route,
                                               "class_name": stem, "requires_auth": None,
                                               "evidence_type": "route_literal",
-                                              "source_file": rel_path})
+                                              "source_file": rel_path,
+                                              "line_number": line_number})
                             seen_endpoint_urls.add(safe_route)
                         else:
                             deduplicated_endpoint_count += 1
 
                 # Extract hardcoded URLs
-                for match in self.url_pattern.finditer(content):
+                for match, line_number in self._matches_with_line_numbers(self.url_pattern, content):
                     url = match.group(0)
                     hostname = (urlsplit(url).hostname or "").lower()
                     host_labels = {part for part in re.split(r"[.-]+", hostname) if part}
@@ -152,7 +167,8 @@ class APIMapper:
                             "type": "staging_url",
                                 "url": self._safe_route(url),
                             "component": stem,
-                            "file_path": rel_path
+                            "file_path": rel_path,
+                            "line_number": line_number
                             })
                         else:
                             inventory.record_limit('url_count')
@@ -163,7 +179,8 @@ class APIMapper:
                             "type": "cleartext_url",
                                 "url": self._safe_route(url),
                             "component": stem,
-                            "file_path": rel_path
+                            "file_path": rel_path,
+                            "line_number": line_number
                             })
                         else:
                             inventory.record_limit('http_url_candidate_count')
@@ -209,7 +226,7 @@ class APIMapper:
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Ensure privileged endpoints enforce robust server-side RBAC and avoid hardcoding administrative routes in client binaries.",
-                    file_path=item["file_path"]
+                    file_path=item["file_path"], line_number=item.get("line_number")
                 ))
             elif item["type"] == "staging_url":
                 cwe = "CWE-489"
@@ -224,7 +241,7 @@ class APIMapper:
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Configure build variants (buildConfigField) to ensure non-production URLs are excluded from release packages.",
-                    file_path=item["file_path"]
+                    file_path=item["file_path"], line_number=item.get("line_number")
                 ))
             elif item["type"] == "cleartext_url":
                 cwe = "CWE-319"
@@ -239,7 +256,7 @@ class APIMapper:
                     detection_method="APIMapper",
                     status=FindingStatus.UNVERIFIED,
                     remediation="Migrate all network endpoints to HTTPS with modern TLS configurations.",
-                    file_path=item["file_path"]
+                    file_path=item["file_path"], line_number=item.get("line_number")
                 ))
 
         logger.info(f"API mapping complete: {len(endpoints)} endpoints, {len(findings)} findings.")

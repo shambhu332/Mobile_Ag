@@ -164,10 +164,14 @@ async def test_api_mapper(mock_router):
         assert len(endpoints) == 1
         assert endpoints[0]["url"] == "/api/v1/admin/users"
         assert endpoints[0]["requires_auth"] is None
+        assert endpoints[0]["source_file"] == "ApiClient.java"
+        assert endpoints[0]["line_number"] == 2
         assert len(findings) == 1
         assert findings[0].cwe_id == "CWE-Unknown"
         assert findings[0].severity == Severity.INFO
         assert findings[0].cvss_score == 0.0
+        assert findings[0].file_path == "ApiClient.java"
+        assert findings[0].line_number == 2
 
 
 @pytest.mark.asyncio
@@ -201,6 +205,8 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
     staging = [finding for finding in findings if "Staging/Dev" in finding.title]
     assert len(staging) == 1
     assert "dev-api.example.com" in staging[0].title
+    assert staging[0].file_path == "Urls.java"
+    assert staging[0].line_number == 2
 
 
 @pytest.mark.asyncio
@@ -215,6 +221,8 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
     ep = next(e for e in endpoints if e["url"] == "/api/v2/profile")
     assert ep["method"] == "UNKNOWN"
     assert ep["evidence_type"] == "route_literal"
+    assert ep["source_file"] == "Api.smali"
+    assert ep["line_number"] == 2
     assert ep["requires_auth"] is None
     assert mapper.coverage["runtime_status"] == "not_tested"
     assert mapper.coverage["proof_status"] == "not_proven"
@@ -253,6 +261,12 @@ def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_r
         def group(self, number):
             assert number == 1
             return f"/api/v1/resource/item-{self.index:05}-slug"
+
+        def start(self):
+            return self.index
+
+        def end(self):
+            return self.index
 
     class LazyMatches:
         def __init__(self):

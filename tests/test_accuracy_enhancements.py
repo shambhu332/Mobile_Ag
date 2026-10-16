@@ -43,6 +43,18 @@ def test_native_jni_analyzer():
         assert len(res.findings) >= 2
 
 
+def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):
+    target = tmp_path / "synthetic.elf"
+    target.write_bytes(b"\x7fELF" + b"\x00" * 40 + b"system\x00")
+    link = tmp_path / "libcandidate.so"
+    link.symlink_to(target)
+
+    result = NativeJniAnalyzer().audit_library(link)
+
+    assert result.imported_dangerous_symbols == []
+    assert result.findings == []
+
+
 def test_sanitizer_filter_path_sensitive_guards():
     mock_router = MagicMock()
     filter_engine = SanitizerFilter(router=mock_router)

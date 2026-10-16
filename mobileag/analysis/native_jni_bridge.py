@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,8 +73,13 @@ class NativeJniAnalyzer:
         result = NativeLibraryAuditResult(library_name=lib_name, architecture=arch)
 
         try:
-            with open(path, "rb") as f:
-                data = f.read(5 * 1024 * 1024)  # Read up to 5MB
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as f:
+                if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                    return result
+                data = f.read(5 * 1024 * 1024 + 1)
+                if len(data) > 5 * 1024 * 1024:
+                    data = data[:5 * 1024 * 1024]
         except OSError:
             return result
 

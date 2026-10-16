@@ -337,6 +337,25 @@ def test_rasp_resilience_auditor():
         assert res.coverage["source_files_analyzed"] == 1
 
 
+def test_rasp_resilience_auditor_ignores_bare_su_substrings(tmp_path):
+    smali = tmp_path / "Ordinary.smali"
+    smali.write_text(
+        ".class public Lfixture/Ordinary;\n"
+        ".super Ljava/lang/Object;\n"
+        ".method public result()V\n"
+        "    const-string v0, \"subscription result\"\n"
+        ".end method\n",
+        encoding="utf-8",
+    )
+
+    result = RaspResilienceAuditor().audit_package(tmp_path)
+
+    assert "su" not in result.vectors["root_detection"].detected_indicators
+    assert result.vectors["root_detection"].detected_indicators == [
+        "No root-related indicator strings found in scanned Smali"
+    ]
+
+
 def test_rasp_resilience_inventory_bounds_oversized_smali(tmp_path):
     oversized = tmp_path / "Huge.smali"
     oversized.write_bytes(b".class public Lfixture/Huge;\n" + b"x" * (2 * 1024 * 1024))

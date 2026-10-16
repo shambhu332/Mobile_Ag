@@ -228,7 +228,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/analysis/rasp_resilience_auditor.py` (New)
   - `mobileag/analysis/binary_protection_auditor.py` (Enhancement)
-* **Current boundary**: The analyzer inventories bounded Smali strings/names and reports coverage; it withholds aggregate/per-vector scores and control-flow conclusions. Candidate indicators do not prove that controls are reachable, effective, or resistant to an attacker.
+* **Current boundary**: The analyzer inventories bounded Smali strings/names and reports coverage; it withholds aggregate/per-vector scores and control-flow conclusions. The ambiguous bare `su` substring is excluded because it matches ordinary directives such as `.super`; candidate indicators do not prove that controls are reachable, effective, or resistant to an attacker.
 
 ---
 
@@ -1059,3 +1059,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    (**1,174 passed**, 67.10 s), with compile and diff checks passing. This does
    not verify token acceptance, server policy, token provenance, or live
    session behavior.
+
+   RASP indicator review removed the bare `su` substring, which matched common
+   Smali such as `.super` and generated false root-detection leads. A synthetic
+   negative control covers `.super`, `result`, and `subscription` text while
+   preserving context-bearing root path matches. Focused RASP/root-boundary
+   tests passed (**6 passed**); full pytest passed (**1,175 passed**, 66.64 s),
+   with compile and diff checks passing. This improves one lexical heuristic;
+   the inventory remains incomplete and does not establish effective root
+   detection or absence of root checks.

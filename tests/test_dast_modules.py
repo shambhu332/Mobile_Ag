@@ -194,6 +194,58 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
     assert "sec123" not in str(findings[0].to_dict())
 
 
+@pytest.mark.asyncio
+async def test_provider_auditor_honors_boolean_scope_denial_before_adb(monkeypatch):
+    import json
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    called = []
+
+    async def forbidden_exec(*args, **kwargs):
+        called.append(True)
+        raise AssertionError("denied provider diagnostic must not invoke ADB")
+
+    auditor = ProviderAuditor(adb=ADBManager())
+    auditor.adb._exec_cmd = forbidden_exec
+    with pytest.raises(PermissionError):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri, guard=lambda: False,
+        )
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_honors_scope_revocation_after_adb(monkeypatch):
+    import json
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    calls = []
+
+    async def mock_exec(*args, **kwargs):
+        calls.append(True)
+        return 0, b"Row: synthetic controlled fixture", b""
+
+    auditor = ProviderAuditor(adb=ADBManager())
+    auditor.adb._exec_cmd = mock_exec
+    approvals = iter((True, False))
+    with pytest.raises(PermissionError):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri,
+            guard=lambda: next(approvals),
+        )
+    assert calls == [True]
+
+
 def test_traffic_auditor_owasp_api_top10():
     auditor = TrafficAuditor()
     transactions = [

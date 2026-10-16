@@ -16,6 +16,19 @@ class ProviderAuditor:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
+    @staticmethod
+    def _check_scope_guard(guard) -> None:
+        if guard is None:
+            return
+        if not callable(guard):
+            raise PermissionError('Provider diagnostic scope guard is invalid')
+        try:
+            allowed = guard()
+        except Exception as exc:
+            raise PermissionError('Provider diagnostic scope guard denied access') from exc
+        if allowed is False:
+            raise PermissionError('Provider diagnostic scope guard denied access')
+
     def approved_uris(self, serial: str, package_name: str) -> list[str]:
         """Configuration is operator-owned, not supplied by an APK or HTTP request."""
         if serial not in os.getenv('MOBILEAG_ALLOWED_DEVICES', '').split(','):
@@ -45,12 +58,12 @@ class ProviderAuditor:
             raise PermissionError('Invalid provider fixture configuration') from None
 
     async def audit_provider_uri(self, serial: str, package_name: str, uri: str, guard=None) -> list[Finding]:
-        if guard: guard()
+        self._check_scope_guard(guard)
         if uri not in self.approved_uris(serial, package_name):
             raise PermissionError('Exact synthetic provider fixture is not approved')
         code, stdout, stderr = await self.adb._exec_cmd(
             ['-s', serial, 'shell', 'content', 'query', '--uri', uri], timeout=4.0)
-        if guard: guard()
+        self._check_scope_guard(guard)
         # No SQL mutations or raw-row evidence collection. A successful shell
         # read says nothing about an ordinary application's permission checks.
         if code != 0 or b'Row:' not in stdout:
@@ -65,7 +78,7 @@ class ProviderAuditor:
             remediation='Validate expected permissions using an ordinary-app caller and controlled fixture before changing provider exposure.')]
 
     async def audit_providers(self, serial: str, package_name: str, authorities: list[str], guard=None) -> tuple[list[dict[str, Any]], list[Finding]]:
-        if guard: guard()
+        self._check_scope_guard(guard)
         approved = self.approved_uris(serial, package_name)
         if len(authorities) > 30 or any(not any(urlsplit(u).netloc == a for u in approved) for a in authorities):
             raise PermissionError('Provider authority has no approved synthetic fixture')

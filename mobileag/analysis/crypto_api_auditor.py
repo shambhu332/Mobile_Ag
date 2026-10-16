@@ -123,7 +123,8 @@ class CryptoApiMetadataAuditor:
                             records_truncated = True
 
         status = inventory.coverage.get("static_status", "not_analyzed")
-        if records_truncated or decode_errors or unmodeled_calls:
+        location_truncated_count = sum(bool(row.get("locations_truncated")) for row in records.values())
+        if records_truncated or decode_errors or unmodeled_calls or location_truncated_count:
             status = "partial"
         limitations = [
             "Only Java/Kotlin literal calls and direct Smali literal-register calls for selected platform APIs are inventoried.",
@@ -147,6 +148,7 @@ class CryptoApiMetadataAuditor:
                 "unmodeled_call_count": unmodeled_calls,
                 "algorithm_record_count": len(records),
                 "records_truncated": records_truncated,
+                "location_samples_truncated_count": location_truncated_count,
                 "decode_error_files": decode_errors,
                 "limitations": limitations,
             },
@@ -169,6 +171,7 @@ class CryptoApiMetadataAuditor:
                 "unmodeled_call_count": 0,
                 "algorithm_record_count": 0,
                 "records_truncated": False,
+                "location_samples_truncated_count": 0,
                 "decode_error_files": 0,
                 "source_files_analyzed": 0,
                 "source_files_skipped": 0,
@@ -187,7 +190,7 @@ class CryptoApiMetadataAuditor:
             if len(records) >= self.MAX_RECORDS:
                 return False
             record = {"api": api, "algorithm": algorithm, "call_count": 0,
-                      "locations": []}
+                      "locations": [], "locations_truncated": False}
             records[key] = record
         record["call_count"] += 1
         if len(record["locations"]) < self.MAX_LOCATIONS_PER_RECORD:
@@ -196,6 +199,8 @@ class CryptoApiMetadataAuditor:
             except ValueError:
                 relative = "<outside-root>"
             record["locations"].append({"file": relative, "line": line})
+        else:
+            record["locations_truncated"] = True
         return True
 
     def _scan_smali_file(self, source: str, path: Path, root: Path,

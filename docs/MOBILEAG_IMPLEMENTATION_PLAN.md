@@ -1859,3 +1859,14 @@ focused report/IL2CPP integration tests passed (**141 passed**) and full pytest
 passed (**1,329 passed**, 54.50 s; one expected duplicate-ZIP-member warning).
 `compileall` and `git diff --check` passed. This does not reconstruct signatures,
 resolve metadata formats beyond parser support, or establish callability.
+
+
+The crypto metadata inventory now exposes when its per-record source-location
+sample cap is reached and marks static status partial instead of silently
+returning incomplete provenance. A synthetic over-cap case verifies the call
+count is retained, only the configured location sample is emitted, and the
+truncation state is visible. The focused crypto/scan integration suite passed
+(**41 passed**); full-suite validation follows.
+The location-sample truncation batch passed the full suite (**1,330 passed**,
+54.03 s; one expected duplicate-ZIP-member warning); `compileall` and
+`git diff --check` passed. No target/device runtime evidence was produced.

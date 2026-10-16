@@ -26,9 +26,10 @@ def test_crypto_audit_records_allowlisted_algorithms_without_source_values(tmp_p
     assert result["coverage"]["proof_status"] == "not_proven"
     assert result["inventory"] == [
         {"api": "java.security.MessageDigest", "algorithm": "SHA-256", "call_count": 1,
-         "locations": [{"file": "Crypto.java", "line": 6}]},
+         "locations": [{"file": "Crypto.java", "line": 6}], "locations_truncated": False},
         {"api": "javax.crypto.Cipher", "algorithm": "AES/GCM/NoPadding", "call_count": 2,
-         "locations": [{"file": "Crypto.java", "line": 4}, {"file": "Crypto.java", "line": 5}]},
+         "locations": [{"file": "Crypto.java", "line": 4}, {"file": "Crypto.java", "line": 5}],
+         "locations_truncated": False},
     ]
     serialized = repr(result)
     assert "syntheticSecretValue" not in serialized
@@ -81,10 +82,27 @@ def test_crypto_audit_resolves_only_adjacent_smali_string_factory_calls(tmp_path
     assert result["coverage"]["unmodeled_call_count"] == 2
     assert result["inventory"] == [{
         "api": "javax.crypto.Cipher", "algorithm": "AES/GCM/NoPadding", "call_count": 1,
-        "locations": [{"file": "Crypto.smali", "line": 8}],
+        "locations": [{"file": "Crypto.smali", "line": 8}], "locations_truncated": False,
     }]
     assert "syntheticSecretValue" not in repr(result)
     assert "AES/ECB/PKCS5Padding" not in repr(result)
+
+
+def test_crypto_audit_marks_truncated_source_location_samples_partial(tmp_path):
+    (tmp_path / "Crypto.java").write_text('''
+Cipher.getInstance("AES/GCM/NoPadding");
+Cipher.getInstance("AES/GCM/NoPadding");
+''')
+    auditor = CryptoApiMetadataAuditor()
+    auditor.MAX_LOCATIONS_PER_RECORD = 1
+
+    result = auditor.audit_directory(tmp_path)
+
+    assert result["coverage"]["static_status"] == "partial"
+    assert result["coverage"]["location_samples_truncated_count"] == 1
+    assert result["inventory"][0]["call_count"] == 2
+    assert result["inventory"][0]["locations"] == [{"file": "Crypto.java", "line": 2}]
+    assert result["inventory"][0]["locations_truncated"] is True
 
 
 def test_crypto_audit_propagates_partial_inventory_coverage(tmp_path):

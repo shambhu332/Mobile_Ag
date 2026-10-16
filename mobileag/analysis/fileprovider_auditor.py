@@ -91,8 +91,16 @@ class FileProviderAuditor:
 
             is_dangerous = False
             risk_reason = ""
+            # A literal parent segment may broaden the configured directory
+            # after filesystem normalization. This remains a review candidate:
+            # this parser cannot establish canonicalization, URI grants, or
+            # caller reachability.
+            has_parent_segment = ".." in path_val.split("/")
 
-            if tag == "root-path" and path_val in {".", "", "/"}:
+            if has_parent_segment:
+                is_dangerous = True
+                risk_reason = "path contains a '..' segment; review the normalized configured root and provider canonicalization"
+            elif tag == "root-path" and path_val in {".", "", "/"}:
                 is_dangerous = True
                 risk_reason = "root-path exposes root filesystem (/)"
             elif tag == "root-path":
@@ -122,14 +130,15 @@ class FileProviderAuditor:
                     id="FILEPROVIDER-" + hashlib.sha256(
                         "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
                     ).hexdigest()[:12].upper(),
-                    title=f"Insecure FileProvider Path Configuration ({tag})",
+                    title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
+                           else f"Insecure FileProvider Path Configuration ({tag})"),
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
                         f"(name='{name}', path='{path_val}'). {entry.risk_reason}. "
                         "When combined with grantUriPermissions=\"true\", this can allow unauthorized third-party apps "
                         "to read or write sensitive private application sandbox files."
                     ),
-                    severity="HIGH" if tag == "root-path" else "MEDIUM",
+                    severity="INFO" if has_parent_segment else "HIGH" if tag == "root-path" else "MEDIUM",
                     file_path=source_path,
                     line_number=1,
                     code_snippet=f"<{child.tag} name=\"{name}\" path=\"{path_val}\" />",

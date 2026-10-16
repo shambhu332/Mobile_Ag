@@ -32,6 +32,19 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert first_id == second_id
 
 
+def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
+    result = FileProviderAuditor().audit_xml_content(
+        '<paths><files-path name="reports" path="reports/../" />'
+        '<files-path name="literal-dots" path="images.." /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.title == "Review FileProvider Parent-Path Segment (files-path)"
+    assert candidate.severity == "INFO"
+    assert candidate.status == "UNVERIFIED"
+    assert "canonicalization" in candidate.metadata["risk_reason"]
+
+
 def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
     xml_dir = tmp_path / "res" / "xml"
     xml_dir.mkdir(parents=True)

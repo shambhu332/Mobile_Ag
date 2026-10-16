@@ -423,6 +423,8 @@ def test_poc_requires_artifact_bound_analyst_attestation():
     assert poc is not None
     assert "analyst" not in poc.explanation.lower()  # output is not itself confirmation
     assert ExploitPocSynthesizer().synthesize(finding, "com.other.app") is None
+    injected = finding.model_copy(update={"metadata": {"component_name": 'com.target.app.Proxy";id'}})
+    assert ExploitPocSynthesizer().synthesize(injected, "com.target.app") is None
 
 
 def test_deeplink_fuzzer_mutations():

@@ -46,6 +46,24 @@ class ExploitPocSynthesizer:
             return None
         cwe = finding.cwe_id or ""
         fid = finding.id
+        # Every value below is interpolated into Kotlin source or an ADB
+        # command. Reject rather than attempting to interpret arbitrary metadata.
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", fid):
+            return None
+        component = finding.metadata.get("component_name", f"{target_package}.VulnerableActivity")
+        authority = finding.metadata.get("authority", f"{target_package}.provider")
+        affinity = finding.metadata.get("task_affinity", target_package)
+        uri = finding.metadata.get("uri_scheme", "myapp://vulnerable/action?redirect=https://attacker.com")
+        dotted_identifier = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+"
+        if (not isinstance(component, str) or not (re.fullmatch(dotted_identifier, component)
+                or re.fullmatch(dotted_identifier + r"/[A-Za-z][A-Za-z0-9_.$]*", component))
+                or not isinstance(authority, str) or not re.fullmatch(dotted_identifier, authority)
+                or not isinstance(affinity, str) or not re.fullmatch(dotted_identifier, affinity)
+                or not isinstance(uri, str) or len(uri) > 2048
+                or not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*://[A-Za-z0-9:/?&=._%+~-]+", uri)):
+            return None
+        if finding.affected_component and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*", finding.affected_component):
+            return None
 
         if "INTENT_REDIRECTION" in fid or cwe == "CWE-926":
             return self._synthesize_intent_redirection_poc(finding, target_package)

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from typing import Dict, List, Optional, Set
 
 
@@ -44,6 +45,7 @@ class SymbolResolver:
         self.max_file_count = max_file_count
         self.classes: Dict[str, ClassSymbol] = {}
         self.simple_name_index: Dict[str, List[str]] = {}
+        self.coverage = SourceInventory().coverage
 
     def index_directory(self, source_dir: str | Path) -> int:
         """Scan and index all Java and Kotlin files in source_dir."""
@@ -53,23 +55,32 @@ class SymbolResolver:
         if not source_path.is_dir():
             return 0
 
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
+                                    max_total_bytes=64 * 1024 * 1024)
         indexed_count = 0
-        for root, _, files in os.walk(source_path):
-            for file in files:
-                if file.endswith((".java", ".kt")):
-                    full_path = os.path.join(root, file)
-                    if self._index_file(full_path):
-                        indexed_count += 1
-                        if indexed_count >= self.max_file_count:
-                            return indexed_count
+        for full_path, data in inventory.read(source_path, {".java", ".kt"}):
+            if self._index_file(str(full_path), data.decode("utf-8", errors="replace")):
+                indexed_count += 1
+                if indexed_count >= self.max_file_count:
+                    inventory.record_limit("symbol_file_count")
+                    break
+        self.coverage = dict(inventory.coverage)
         return indexed_count
 
-    def _index_file(self, file_path: str) -> bool:
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-        except OSError:
-            return False
+    def _index_file(self, file_path: str, content: str | None = None) -> bool:
+        """Index one already-bounded inventory item (or bounded direct file read)."""
+        if content is None:
+            try:
+                fd = os.open(file_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        return False
+                    raw = stream.read(2 * 1024 * 1024 + 1)
+                if len(raw) > 2 * 1024 * 1024:
+                    return False
+                content = raw.decode("utf-8", errors="replace")
+            except OSError:
+                return False
 
         pkg_match = re.search(r"^\s*package\s+([a-zA-Z0-9_.]+);?", content, re.MULTILINE)
         package_name = pkg_match.group(1) if pkg_match else ""

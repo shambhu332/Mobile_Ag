@@ -33,6 +33,25 @@ def test_explicit_scan_root_preserves_explicit_current_directory():
     assert explicit_scan_root(".") == Path(".")
 
 
+def test_symbol_resolver_uses_bounded_no_follow_source_inventory(tmp_path):
+    root = tmp_path / "source"
+    root.mkdir()
+    outside = tmp_path / "Outside.java"
+    outside.write_text("package hidden; class Outside {}", encoding="utf-8")
+    (root / "Linked.java").symlink_to(outside)
+    (root / "Large.java").write_text("class Large {}\n" + (" " * (2 * 1024 * 1024)),
+                                     encoding="utf-8")
+    (root / "Good.java").write_text("package visible; class Good {}", encoding="utf-8")
+
+    resolver = SymbolResolver()
+    assert resolver.index_directory(root) == 1
+    assert "visible.Good" in resolver.classes
+    assert "hidden.Outside" not in resolver.classes
+    assert "Large" not in resolver.classes
+    assert resolver.coverage["static_status"] == "partial"
+    assert resolver.coverage["source_files_skipped"] >= 2
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("missing", [None, "", "   "])
 async def test_source_analyzers_fail_closed_on_missing_root(monkeypatch, missing):

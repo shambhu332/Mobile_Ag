@@ -302,7 +302,7 @@ evidence.
 
 ### 9.3 Evidence-limited JSON, Markdown, and PDF report artifacts
 * **Objective**: Persist researcher-readable reports without converting unverified candidates into confirmed impact.
-* **Current boundary**: `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. Other legacy export writers require separate review. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
+* **Current boundary**: `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. Other legacy export writers require separate review. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
 
 ---
 
@@ -1219,3 +1219,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    pre-existing symlink. Synthetic tests cover both conditions. Focused report
    writer tests passed (**2 passed**); full-suite and compile results follow.
    Other legacy file writers remain subject to separate review.
+
+   Pentest checklist state persistence now uses a 1 MiB cap, private atomic
+   replacement on save, and no-follow regular-file reads on load. Parsed rows
+   are validated before any checklist item is mutated, preventing partial
+   state application on malformed later entries. Focused checklist tests
+   passed (**4 passed**); full-suite and compile results follow. This covers
+   local planning-state persistence only; the checklist remains a planning
+   reference and does not authorize or execute tests.

@@ -102,3 +102,57 @@ def test_checklist_is_explicitly_planning_not_execution():
     checklist = PentestChecklist()
     assert checklist.progress()['completed'] == 0
     assert 'Planning reference only' in checklist.to_markdown()
+
+
+def test_checklist_state_save_replaces_symlink_atomically_with_private_file(tmp_path):
+    import os
+    from mobileag.reporting.pentest_checklist import PentestChecklist
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "checklist.json"
+    output.symlink_to(victim)
+
+    PentestChecklist().save(output)
+
+    assert not output.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_checklist_state_loader_rejects_symlinks_and_oversized_files(tmp_path, monkeypatch):
+    import mobileag.reporting.pentest_checklist as checklist_module
+
+    checklist = checklist_module.PentestChecklist()
+    item = checklist.items[0]
+    original_status = item.status
+    target = tmp_path / "state.json"
+    target.write_text('[{"id":"' + item.id + '","status":"completed"}]')
+    link = tmp_path / "linked-state.json"
+    link.symlink_to(target)
+
+    checklist.load_state(link)
+    assert item.status == original_status
+
+    monkeypatch.setattr(checklist_module, "_MAX_CHECKLIST_STATE_BYTES", 8)
+    checklist.load_state(target)
+    assert item.status == original_status
+
+    monkeypatch.undo()
+    second = checklist.items[1]
+    target.write_text(json.dumps([
+        {"id": item.id, "status": "completed"},
+        {"id": second.id, "status": "invalid-state"},
+    ]))
+    checklist.load_state(target)
+    assert item.status == original_status  # Invalid later row must not partially apply earlier state.
+
+
+def test_checklist_state_save_rejects_oversized_output_before_replace(tmp_path, monkeypatch):
+    import mobileag.reporting.pentest_checklist as checklist_module
+
+    output = tmp_path / "state.json"
+    monkeypatch.setattr(checklist_module, "_MAX_CHECKLIST_STATE_BYTES", 1)
+    with pytest.raises(ValueError, match="output size limit"):
+        checklist_module.PentestChecklist().save(output)
+    assert not output.exists()

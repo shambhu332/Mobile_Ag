@@ -23,6 +23,7 @@ import json
 import math
 import re
 from datetime import datetime, timezone
+from itertools import islice
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
@@ -67,6 +68,7 @@ class MobileTokenSessionAuditor:
     MAX_TOKEN_CHARS = 64 * 1024
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
     MAX_TRANSACTIONS = 10_000
+    MAX_HEADERS_PER_TRANSACTION = 100
     MAX_FINDINGS = 20_000
     MAX_TRACKED_LOGOUT_TOKENS = 1_000
     MAX_VERIFICATION_KEY_BYTES = 4 * 1024
@@ -409,8 +411,12 @@ class MobileTokenSessionAuditor:
             self.last_coverage = {"status": "invalid_input", "transactions_received": None,
                                   "transactions_analyzed": 0, "transactions_omitted": 0,
                                   "query_parse_incomplete_transactions": 0,
-                                  "url_inputs_unmodeled": 0, "finding_count": 0,
+                                  "url_inputs_unmodeled": 0,
+                                  "header_input_incomplete_transactions": 0,
+                                  "duplicate_authorization_header_transactions": 0,
+                                  "finding_count": 0,
                                   "finding_cap_reached": False, "transaction_limit": self.MAX_TRANSACTIONS,
+                                  "max_headers_per_transaction": self.MAX_HEADERS_PER_TRANSACTION,
                                   "finding_limit": self.MAX_FINDINGS}
             return findings
         total_transactions = len(transactions)
@@ -418,6 +424,8 @@ class MobileTokenSessionAuditor:
         finding_cap_reached = False
         query_parse_incomplete = 0
         url_inputs_unmodeled = 0
+        header_input_incomplete = 0
+        duplicate_authorization_headers = 0
 
         for idx, tx in enumerate(transactions[:self.MAX_TRANSACTIONS]):
             transactions_analyzed += 1
@@ -427,15 +435,38 @@ class MobileTokenSessionAuditor:
                 url = ""
             safe_url = self._safe_context_url(url)
             headers = getattr(tx, "request_headers", {}) or getattr(tx, "headers", {}) or {}
+            header_incomplete = False
             if not isinstance(headers, dict):
                 headers = {}
+                header_incomplete = True
+            header_items = list(islice(headers.items(), self.MAX_HEADERS_PER_TRANSACTION + 1))
+            header_too_many = len(header_items) > self.MAX_HEADERS_PER_TRANSACTION
+            if header_too_many:
+                header_items = header_items[:self.MAX_HEADERS_PER_TRANSACTION]
+                header_incomplete = True
+            auth_headers = []
+            malformed_header = False
+            for key, value in header_items:
+                if not isinstance(key, str) or len(key) > 256 or not isinstance(value, str):
+                    malformed_header = True
+                    continue
+                if key.casefold() == "authorization":
+                    auth_headers.append(value)
+            if malformed_header:
+                header_incomplete = True
+            if len(auth_headers) > 1:
+                duplicate_authorization_headers += 1
+                header_incomplete = True
+            if header_incomplete:
+                header_input_incomplete += 1
             status_code = getattr(tx, "response_status", 200)
             if type(status_code) is not int or not 100 <= status_code <= 599:
                 status_code = None
 
             # Find token in headers
-            auth_header = next((value for key, value in headers.items()
-                                if isinstance(key, str) and key.lower() == "authorization"), "")
+            # Duplicate case-insensitive Authorization entries are ambiguous;
+            # inspect the first bounded value but expose the coverage gap.
+            auth_header = auth_headers[0] if auth_headers else ""
             if not isinstance(auth_header, str):
                 auth_header = ""
             if len(auth_header) > self.MAX_TOKEN_CHARS + 16:
@@ -549,7 +580,8 @@ class MobileTokenSessionAuditor:
                 break
 
         omitted = max(0, total_transactions - transactions_analyzed)
-        incomplete = bool(omitted or finding_cap_reached or query_parse_incomplete or url_inputs_unmodeled)
+        incomplete = bool(omitted or finding_cap_reached or query_parse_incomplete
+                          or url_inputs_unmodeled or header_input_incomplete)
         self.last_coverage = {
             "status": "partial" if incomplete else "complete_for_supplied_input",
             "transactions_received": total_transactions,
@@ -557,7 +589,10 @@ class MobileTokenSessionAuditor:
             "transactions_omitted": omitted,
             "query_parse_incomplete_transactions": query_parse_incomplete,
             "url_inputs_unmodeled": url_inputs_unmodeled,
+            "header_input_incomplete_transactions": header_input_incomplete,
+            "duplicate_authorization_header_transactions": duplicate_authorization_headers,
             "transaction_limit": self.MAX_TRANSACTIONS,
+            "max_headers_per_transaction": self.MAX_HEADERS_PER_TRANSACTION,
             "finding_count": len(findings),
             "finding_limit": self.MAX_FINDINGS,
             "finding_cap_reached": finding_cap_reached,

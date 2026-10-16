@@ -1203,6 +1203,32 @@ def test_token_session_auditor_rejects_nonfinite_and_out_of_range_time_claims():
     assert valid["payload"]["exp"] == 253402300799
 
 
+def test_token_session_auditor_bounds_header_review_and_marks_ambiguous_auth():
+    from mobileag.dast.api_cataloger import CapturedRequest
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    oversized_headers = {f"X-Test-{i}": "value" for i in range(100)}
+    oversized_headers["Authorization"] = "Bearer synthetic-hidden-token"
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile", headers=oversized_headers,
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert auditor.last_coverage["max_headers_per_transaction"] == 100
+    assert "synthetic-hidden-token" not in str(auditor.last_coverage)
+
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile",
+        headers={"Authorization": "Bearer synthetic-one", "authorization": "Bearer synthetic-two"},
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert auditor.last_coverage["duplicate_authorization_header_transactions"] == 1
+    assert "synthetic-one" not in str(auditor.last_coverage)
+    assert "synthetic-two" not in str(auditor.last_coverage)
+
+
 def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
     import base64
     import hashlib

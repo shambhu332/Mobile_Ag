@@ -1325,8 +1325,16 @@ async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/install")
-async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
+async def install_dast_apk(req: InstallApkRequest, request: Request) -> dict[str, Any]:
     """Install an explicitly selected APK; permission grants are opt-in."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "install", req.model_dump())):
+            raise HTTPException(403, "APK installation scope is unavailable or revoked")
+
+    guard()
     path = Path(req.apk_path).resolve()
     if not path.is_relative_to(UPLOAD_DIR.resolve()):
         raise HTTPException(400, "Install an archive uploaded to this dashboard")
@@ -1335,7 +1343,9 @@ async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
             raise ValueError("Expected Android APK")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    guard()
     res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions)
+    guard()
     return res
 
 

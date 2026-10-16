@@ -893,3 +893,13 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    full suite passed (**1,165 passed**, 71.52 s), with `compileall` and
    `git diff --check` passing. Logcat and PID access were mocked; no device was
    used. Existing warnings remain.
+
+   `/api/dast/install` now rechecks the authenticated session, configured
+   device allowlist, and explicit install action immediately before and after
+   archive validation and installation. A synthetic uploaded fixture revokes
+   install scope during validation and confirms no installer call occurs.
+   Permission grants remain opt-in and default to false. Focused install-route
+   regression passed (**1 passed**, 26 deselected); the full suite passed
+   (**1,166 passed**, 70.28 s), with `compileall` and `git diff --check`
+   passing. Archive validation and installation were mocked; no APK was
+   installed on a device. Existing test-environment warnings remain.

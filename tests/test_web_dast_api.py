@@ -328,6 +328,30 @@ def test_dast_execute_adb_command_length_is_bounded(client):
     assert response.status_code == 422
 
 
+def test_dast_install_rechecks_scope_after_archive_validation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    artifact = web.UPLOAD_DIR / "synthetic-install.apk"
+    artifact.write_bytes(b"synthetic APK fixture")
+
+    def revoke_install_scope(path):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "install"]
+        web.repository().save_policy(policy)
+        return "android"
+
+    monkeypatch.setattr(web, "validate_archive", revoke_install_scope)
+    installer = AsyncMock(return_value={"status": "success"})
+    monkeypatch.setattr(web.adb_manager, "install_apk", installer)
+    response = client.post("/api/dast/install", json={
+        "serial": "emulator-5554", "apk_path": str(artifact),
+        "grant_permissions": False,
+    })
+    assert response.status_code == 403
+    installer.assert_not_awaited()
+
+
 def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch):
     import importlib
 

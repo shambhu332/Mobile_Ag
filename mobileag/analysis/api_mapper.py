@@ -150,24 +150,25 @@ class APIMapper:
                             else:
                                 inventory.record_limit('finding_count')
 
-                # Extract route-shaped literals from binary/resource/decompiled
-                # sources, without pretending a literal is a callable endpoint.
-                if file_path.suffix.lower() not in {".java", ".kt"}:
-                    for match, line_number in self._matches_with_line_numbers(self.route_literal_pattern, content):
-                        if len(endpoints) >= 5000:
-                            inventory.record_limit('endpoint_count')
-                            break
-                        route = match.group(1)
-                        safe_route = self._safe_route(route)
-                        if safe_route not in seen_endpoint_urls:
-                            endpoints.append({"method": "UNKNOWN", "url": safe_route,
-                                              "class_name": stem, "requires_auth": None,
-                                              "evidence_type": "route_literal",
-                                              "source_file": rel_path,
-                                              "line_number": line_number})
-                            seen_endpoint_urls.add(safe_route)
-                        else:
-                            deduplicated_endpoint_count += 1
+                # Route-shaped literals are useful in Java/Kotlin too, where
+                # they may be assembled outside Retrofit. Keep these as
+                # UNKNOWN-method inventory candidates and deduplicate paths
+                # already emitted from Retrofit declarations.
+                for match, line_number in self._matches_with_line_numbers(self.route_literal_pattern, content):
+                    if len(endpoints) >= 5000:
+                        inventory.record_limit('endpoint_count')
+                        break
+                    route = match.group(1)
+                    safe_route = self._safe_route(route)
+                    if safe_route not in seen_endpoint_urls:
+                        endpoints.append({"method": "UNKNOWN", "url": safe_route,
+                                          "class_name": stem, "requires_auth": None,
+                                          "evidence_type": "route_literal",
+                                          "source_file": rel_path,
+                                          "line_number": line_number})
+                        seen_endpoint_urls.add(safe_route)
+                    else:
+                        deduplicated_endpoint_count += 1
 
                 # Extract hardcoded URLs
                 for match, line_number in self._matches_with_line_numbers(self.url_pattern, content):

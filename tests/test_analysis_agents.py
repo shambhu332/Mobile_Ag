@@ -201,7 +201,10 @@ async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_method
         ("OPTIONS", "/api/v1/resource", 3),
         ("PATCH", "/api/v2/orders", 4),
         ("HEAD", "/api/v2/status", 6),
+        ("UNKNOWN", "/api/v2/ignored", 10),
     }
+    assert next(endpoint for endpoint in endpoints if endpoint["url"] == "/api/v2/ignored")[
+        "evidence_type"] == "route_literal"
 
 
 @pytest.mark.asyncio
@@ -273,6 +276,25 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
     assert ep["line_number"] == 2
     assert ep["requires_auth"] is None
     assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_finds_java_kotlin_route_literals_without_method_claims(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Routes.kt").write_text(
+        'private const val PROFILE_ROUTE = "/api/v4/profile/{userId}"\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    route = next(endpoint for endpoint in endpoints if endpoint["url"] == "/api/v4/profile/{userId}")
+    assert route["method"] == "UNKNOWN"
+    assert route["evidence_type"] == "route_literal"
+    assert route["source_file"] == "Routes.kt"
+    assert route["line_number"] == 1
+    assert route["requires_auth"] is None
     assert mapper.coverage["proof_status"] == "not_proven"
 
 

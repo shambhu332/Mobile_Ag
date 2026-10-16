@@ -261,6 +261,28 @@ def test_flutter_analyzer_enforces_aggregate_binary_byte_budget():
     assert "total_binary_byte_limit" in result.scan_errors
 
 
+def test_flutter_analyzer_caps_printable_strings_and_candidates_with_partial_status():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        lib = Path(tmp_dir) / "lib" / "arm64-v8a"
+        lib.mkdir(parents=True)
+        binary = lib / "libapp.so"
+        binary.write_bytes(
+            b"https://one.example.invalid/a\x00https://two.example.invalid/b\x00"
+            b"https://three.example.invalid/c\x00"
+        )
+        analyzer = FlutterEngineAnalyzer()
+        analyzer.MAX_PRINTABLE_STRINGS_PER_BINARY = 2
+        analyzer.MAX_ENDPOINTS = 1
+
+        result = analyzer.analyze_package_directory(tmp_dir)
+
+    assert result.extracted_strings_count == 2
+    assert len(result.api_endpoints) == 1
+    assert result.candidate_output_truncated is True
+    assert result.scan_status == "partial"
+    assert {"endpoint_candidate_limit", "printable_string_limit"} <= set(result.scan_errors)
+
+
 def test_rasp_resilience_auditor():
     with tempfile.TemporaryDirectory() as tmp_dir:
         smali_content = """

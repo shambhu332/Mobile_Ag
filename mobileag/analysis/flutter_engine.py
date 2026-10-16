@@ -28,6 +28,7 @@ class FlutterAnalysisResult:
     binary_bytes_scanned: int = 0
     binary_truncated: bool = False
     asset_inventory_truncated: bool = False
+    candidate_output_truncated: bool = False
     scan_errors: List[str] = field(default_factory=list)
 
 
@@ -37,7 +38,11 @@ class FlutterEngineAnalyzer:
     MAX_TREE_ENTRIES = 50_000
     MAX_BINARY_BYTES = 10 * 1024 * 1024
     MAX_TOTAL_BINARY_BYTES = 32 * 1024 * 1024
+    MAX_PRINTABLE_STRINGS_PER_BINARY = 100_000
     MAX_ASSETS = 10_000
+    MAX_ENDPOINTS = 100
+    MAX_NAMED_ROUTES = 100
+    MAX_SECRET_MARKERS = 100
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
     SECRET_PATTERN = re.compile(r"(?:api_?key|auth_?token|bearer|secret|password)[\"']?\s*[:=]\s*[\"']([a-zA-Z0-9_\-]{16,})[\"']", re.IGNORECASE)
@@ -153,13 +158,17 @@ class FlutterEngineAnalyzer:
             return
 
         # Simple ASCII / UTF-8 string scanner
-        ascii_strings = re.findall(b"[\x20-\x7E]{" + str(min_length).encode() + b",}", data)
-        result.extracted_strings_count = len(ascii_strings)
-
-        endpoints: Set[str] = set()
-        routes: Set[str] = set()
-
-        for raw in ascii_strings:
+        endpoints: Set[str] = set(result.api_endpoints)
+        routes: Set[str] = set(result.named_routes)
+        strings_scanned = 0
+        string_pattern = b"[\x20-\x7E]{" + str(min_length).encode() + b",}"
+        for match in re.finditer(string_pattern, data):
+            if strings_scanned >= self.MAX_PRINTABLE_STRINGS_PER_BINARY:
+                result.candidate_output_truncated = True
+                result.scan_errors.append("printable_string_limit")
+                break
+            strings_scanned += 1
+            raw = match.group(0)
             try:
                 s = raw.decode("utf-8", errors="ignore")
             except Exception:
@@ -167,16 +176,29 @@ class FlutterEngineAnalyzer:
 
             for url in self.URL_PATTERN.findall(s):
                 if not url.endswith((".png", ".jpg", ".svg", ".ttf", ".woff")):
-                    endpoints.add(url)
+                    if url not in endpoints and len(endpoints) >= self.MAX_ENDPOINTS:
+                        result.candidate_output_truncated = True
+                        result.scan_errors.append("endpoint_candidate_limit")
+                    else:
+                        endpoints.add(url)
 
             if self.ROUTE_PATTERN.search(s) and len(s) < 60 and not s.startswith("http"):
-                routes.add(s)
+                if s not in routes and len(routes) >= self.MAX_NAMED_ROUTES:
+                    result.candidate_output_truncated = True
+                    result.scan_errors.append("route_candidate_limit")
+                else:
+                    routes.add(s)
 
             secret_match = self.SECRET_PATTERN.search(s)
             if secret_match:
                 # Keep the signal, never copy a credential-like value from an
                 # application binary into a report or downstream persistence.
-                result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})
+                if len(result.potential_secrets) >= self.MAX_SECRET_MARKERS:
+                    result.candidate_output_truncated = True
+                    result.scan_errors.append("secret_marker_limit")
+                else:
+                    result.potential_secrets.append({"name": "embedded credential", "value_redacted": True})
 
-        result.api_endpoints = sorted(endpoints)[:100]
-        result.named_routes = sorted(routes)[:100]
+        result.extracted_strings_count += strings_scanned
+        result.api_endpoints = sorted(endpoints)
+        result.named_routes = sorted(routes)

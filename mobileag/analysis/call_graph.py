@@ -1098,6 +1098,32 @@ class SmaliCallGraphEngine:
                         pending = receiver_traces
 
                     exact_target_key = f"{target_class}->{target_name}{signature}"
+                    tainted_arguments = any(registers.get(register) for register in args)
+                    modeled_invocation_summary = (
+                        target_key in SMALI_SOURCES
+                        or target_key in SMALI_DERIVED_SOURCES
+                        or target_key in SMALI_TAINT_TRANSFORMS
+                        or target_key in SMALI_BUILDER_TO_STRING
+                        or target_key in SMALI_BUILDER_MUTATORS
+                        or target_key in SMALI_STREAM_SOURCE_ACCESSORS
+                        or target_key in SMALI_EXTERNAL_URI_STREAMS
+                        or target_key in SMALI_EXTERNAL_PATH_READERS
+                        or (target_name == "<init>" and target_class in (
+                            SMALI_EXTERNAL_PATH_STREAM_CONSTRUCTORS
+                            | SMALI_PATH_OBJECT_CONSTRUCTORS
+                            | SMALI_STREAM_WRAPPER_CONSTRUCTORS
+                        ))
+                        or (target_class in SMALI_BUFFER_READERS and target_name in {
+                            "read", "readLine", "readText", "readAllBytes",
+                        })
+                        or (target_class in SMALI_CONTENT_LINE_READERS and target_name in {
+                            "next", "nextLine", "nextInt", "nextLong", "nextFloat", "nextDouble",
+                        })
+                        or target_key in SMALI_SINKS
+                        or exact_target_key in self.methods
+                    )
+                    if tainted_arguments and not modeled_invocation_summary:
+                        warn(f"tainted arguments passed to an unmodeled invocation in {method.key} at line {line_no}")
                     if exact_target_key in SMALI_BUILDER_CONSTRUCTORS and len(args) > 1:
                         builder_key = f"@builder:{args[0]}"
                         constructor_traces = frozenset(

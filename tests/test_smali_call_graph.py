@@ -1026,6 +1026,32 @@ def test_smali_primitive_conversion_preserves_intent_extra_taint(tmp_path):
     assert any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
 
 
+def test_smali_unmodeled_call_with_tainted_argument_marks_coverage_partial(tmp_path):
+    (tmp_path / "UnknownCall.smali").write_text("""
+.class public Lcom/example/UnknownCall;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 6
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v2}, Lcom/vendor/Unknown;->transform(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v3
+    sget-object v4, Lcom/example/UnknownCall;->web:Landroid/webkit/WebView;
+    invoke-virtual {v4, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert not any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("tainted arguments passed to an unmodeled invocation" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_call_graph_reflection_resolution():
     engine = SmaliCallGraphEngine()
 

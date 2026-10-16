@@ -514,6 +514,24 @@ oversized inputs, and I/O failures make native inventory status partial or
 invalid rather than a clean complete result. This is not exhaustive supply-chain
 inventory and does not establish that a library is loaded or used at runtime.
 
+### Native JNI string-candidate evidence boundary
+
+The JNI helper scans a bounded byte prefix for printable strings that resemble
+JNI export names or risky libc symbols; it does not parse ELF dynamic-symbol
+tables, relocations, disassembly, or call graphs. Outputs now use
+`dangerous_symbol_string_candidates`, report INFO / `CWE-Unknown` review leads,
+and explicitly withhold call reachability. The legacy
+`imported_dangerous_symbols` property remains a compatibility alias for those
+candidates; `dangerous_calls_referenced` on each JNI name remains empty because
+whole-binary co-occurrence is not a method-level call edge. This inventory
+cannot establish an imported function, execution, attacker-controlled
+arguments, or a vulnerability.
+
+The reclassification and regression checks passed the focused JNI tests
+(**3 passed, 2 deselected**) and full suite (**1,062 passed**, 39.85 s; one
+expected synthetic duplicate-ZIP-member warning); `compileall` and
+`git diff --check` passed.
+
 ### RASP resilience inventory boundary
 
 The Smali string inventory uses the shared no-symlink `SourceInventory` reader:

@@ -24,6 +24,8 @@ class JniExportedFunction:
     java_class: str
     java_method: str
     library_name: str
+    # Deprecated compatibility field. Binary-wide string co-occurrence cannot
+    # establish that a JNI method reaches or calls a native symbol.
     dangerous_calls_referenced: List[str] = field(default_factory=list)
 
 
@@ -36,12 +38,17 @@ class NativeLibraryAuditResult:
     scan_truncated: bool = False
     scan_errors: List[str] = field(default_factory=list)
     exported_jni_functions: List[JniExportedFunction] = field(default_factory=list)
-    imported_dangerous_symbols: List[str] = field(default_factory=list)
+    dangerous_symbol_string_candidates: List[str] = field(default_factory=list)
     findings: List[Finding] = field(default_factory=list)
+
+    @property
+    def imported_dangerous_symbols(self) -> List[str]:
+        """Deprecated compatibility alias; values are printable-string candidates."""
+        return self.dangerous_symbol_string_candidates
 
 
 class NativeJniAnalyzer:
-    """Disassembles and audits ELF dynamic symbols and JNI exported functions."""
+    """Collects bounded printable-string and JNI-name candidates from ELF files."""
 
     DANGEROUS_LIBC_SINKS = {
         "system": ("CWE-78", Severity.HIGH, "Native Command Injection sink 'system()' imported"),
@@ -109,10 +116,11 @@ class NativeJniAnalyzer:
         raw_strings = re.findall(b"[a-zA-Z0-9_]{3,}", data)
         strings_set: Set[str] = {s.decode("ascii", errors="ignore") for s in raw_strings}
 
-        # Identify dangerous imported sinks
-        for sink, (cwe, sev, desc) in self.DANGEROUS_LIBC_SINKS.items():
+        # This intentionally does not parse ELF dynamic symbols: strings in a
+        # binary are only candidates and can be unrelated data or debug text.
+        for sink in self.DANGEROUS_LIBC_SINKS:
             if sink in strings_set:
-                result.imported_dangerous_symbols.append(sink)
+                result.dangerous_symbol_string_candidates.append(sink)
 
         # Identify exported JNI functions
         for s in strings_set:
@@ -125,30 +133,28 @@ class NativeJniAnalyzer:
                         java_class=cls_name,
                         java_method=method_name,
                         library_name=lib_name,
-                        dangerous_calls_referenced=[d for d in result.imported_dangerous_symbols],
                     )
                     result.exported_jni_functions.append(jni_func)
 
-        # Generate findings for high-risk native configurations
-        for sink in result.imported_dangerous_symbols:
-            cwe, sev, desc = self.DANGEROUS_LIBC_SINKS[sink]
-            matching_jni = [f.java_class + "." + f.java_method for f in result.exported_jni_functions]
-            jni_ctx = f" Exposed via JNI endpoints: {', '.join(matching_jni[:3])}." if matching_jni else ""
-
+        # Co-presence of strings and JNI-style names does not prove a call edge.
+        for sink in result.dangerous_symbol_string_candidates:
             result.findings.append(
                 Finding(
                     id=f"NATIVE_LIBC_SINK_{lib_name}_{sink}",
-                    title=f"Native Dangerous Execution Sink in {lib_name}: {sink}()",
-                    description=f"{desc} inside shared library '{lib_name}' ({arch}).{jni_ctx}",
-                    severity=sev,
+                    title=f"Review native symbol-like string candidate in {lib_name}: {sink}",
+                    description=(f"The bounded printable-string scan found '{sink}' in '{lib_name}' ({arch}). "
+                                 "This does not establish an ELF dynamic import, call site, execution, "
+                                 "tainted arguments, or reachability from an exported JNI method."),
+                    severity=Severity.INFO,
                     status=FindingStatus.UNVERIFIED,
-                    cwe_id=cwe,
+                    cwe_id="CWE-Unknown",
                     file_path=str(path),
                     metadata={
                         "library": lib_name,
                         "architecture": arch,
-                        "sink": sink,
-                        "exported_jni_methods": [f.mangled_name for f in result.exported_jni_functions],
+                        "symbol_string_candidate": sink,
+                        "exported_jni_symbols_co_located": [f.mangled_name for f in result.exported_jni_functions],
+                        "call_reachability": "not_analyzed",
                     },
                 )
             )

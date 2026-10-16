@@ -13,7 +13,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from mobileag.analysis.bounded_sources import explicit_scan_root
-from mobileag.analysis.api_endpoint_safety import safe_api_route
+from mobileag.analysis.api_endpoint_safety import safe_api_route, sanitize_candidate_text
 from typing import Dict, List, Optional, Set
 
 
@@ -127,7 +127,7 @@ class HermesBytecodeAnalyzer:
                         mark_truncated("api_endpoint_limit")
 
             secret_match = self.SECRET_PATTERN.search(s)
-            safe_string = s
+            safe_string = sanitize_candidate_text(s)
             if secret_match:
                 # A candidate is enough to trigger manual review. Do not leak
                 # the matched token or surrounding credential-bearing text.

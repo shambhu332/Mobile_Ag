@@ -103,6 +103,7 @@ def test_hermes_bytecode_analyzer():
         version_bytes = struct.pack("<I", 84)
         payload = (b"https://api.example.com/mobile/v1" + b"\x00" * 20
                    + b"https://api.example.com/mobile/token/synthetic-private-token" + b"\x00"
+                   + b"https://api.example.com/auth/token/synthetic-string-secret?access_token=query-secret" + b"\x00"
                    + b'apiKey: "abcdef0123456789abcdef"')
 
         with open(bundle_path, "wb") as f:
@@ -116,6 +117,8 @@ def test_hermes_bytecode_analyzer():
         assert "https://api.example.com/mobile/v1" in res.api_endpoints
         assert "https://api.example.com/mobile/token/{id}" in res.api_endpoints
         assert "synthetic-private-token" not in repr(res.api_endpoints)
+        assert "synthetic-string-secret" not in repr(res.extracted_strings)
+        assert "query-secret" not in repr(res.extracted_strings)
         assert len(res.secrets) >= 1
         assert all(secret == {"name": "embedded credential", "value_redacted": True}
                    for secret in res.secrets)
@@ -393,7 +396,8 @@ def test_macho_binary_parser():
 def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tmp_path):
     import struct
 
-    strings = b"https://api.example.test/v1\0"
+    strings = (b"https://api.example.test/v1\0"
+               b"https://api.example.test/auth/token/synthetic-cstring-secret\0")
     dylib_name = b"/System/Library/Frameworks/Security.framework/Security\0"
     dylib_size = (24 + len(dylib_name) + 7) & ~7
     dylib = struct.pack("<IIIIII", 0x0C, dylib_size, 24, 0, 0, 0) + dylib_name
@@ -417,6 +421,8 @@ def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tm
     assert "/System/Library/Frameworks/Security.framework/Security" in result.imported_dylibs
     assert "__swift5_types" in result.swift_sections_detected
     assert "https://api.example.test/v1" in result.cstring_samples
+    assert "https://api.example.test/auth/token/{id}" in result.cstring_samples
+    assert "synthetic-cstring-secret" not in repr(result.cstring_samples)
 
 
 def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path):

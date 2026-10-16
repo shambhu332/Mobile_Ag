@@ -1457,3 +1457,13 @@ route markers and redacts the following value. Focused Mach-O tests passed (**15
 passed**); full pytest passed (**1,247 passed**, 60.12 s); compileall and
 `git diff --check` passed. This remains a bounded binary string candidate, not
 proof of an iOS network request or Swift control flow.
+
+Retained Hermes printable-string samples and Mach-O `__cstring` samples now
+pass through shared candidate-text minimization: embedded URLs lose query,
+fragment, userinfo, and recognized sensitive/opaque path values, and known
+credential patterns are redacted before storage in the result object. Synthetic
+Hermes/Mach-O fixtures verify that values in both token paths and URL queries do
+not survive in retained samples. The roadmap module suite passed (**46
+passed**); full pytest passed (**1,247 passed**, 60.31 s); compileall and
+`git diff --check` passed. This minimizes known candidates but cannot guarantee
+redaction of arbitrary application secrets in binary strings.

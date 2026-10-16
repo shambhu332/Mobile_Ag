@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import re
 from urllib.parse import quote, unquote, urlsplit
+from mobileag.security.privacy import redact
+
+_RAW_URL_PATTERN = re.compile(r"https?://[^\s\"'<>`]+", re.IGNORECASE)
 
 
 def safe_api_route(value: str) -> str:
@@ -74,3 +77,11 @@ def safe_api_route(value: str) -> str:
         return f"{origin}{safe_path}"[:4096]
     except (TypeError, ValueError, UnicodeError):
         return "[REDACTED URL]"
+
+
+def sanitize_candidate_text(value: str) -> str:
+    """Redact known secrets and minimize URLs before retaining text samples."""
+    if not isinstance(value, str):
+        return ""
+    minimized = _RAW_URL_PATTERN.sub(lambda match: safe_api_route(match.group(0)), value)
+    return redact(minimized)

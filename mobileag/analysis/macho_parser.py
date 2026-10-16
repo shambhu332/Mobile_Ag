@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 from mobileag.analysis.bounded_sources import explicit_scan_root
-from mobileag.analysis.api_endpoint_safety import safe_api_route
+from mobileag.analysis.api_endpoint_safety import safe_api_route, sanitize_candidate_text
 
 
 @dataclass
@@ -526,7 +526,7 @@ class MachoBinaryParser:
                 continue
             raw = data[offset:offset + size]
             for value in re.findall(rb"[\x20-\x7e]{4,}", raw):
-                sample = value.decode("ascii", errors="replace")
+                sample = sanitize_candidate_text(value.decode("ascii", errors="replace"))
                 if sample not in result.cstring_samples:
                     result.cstring_samples.append(sample)
                     if len(result.cstring_samples) >= 1000:

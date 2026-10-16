@@ -22,6 +22,25 @@ from mobileag.dast.frida_stealth import FridaStealthHarness
 from mobileag.reporting.finding import FindingStatus, Severity
 
 
+def _il2cpp_v29_metadata(literals, trailing=b""):
+    """Build a small structurally valid v29 literal-table fixture (not a real APK)."""
+    encoded = [value.encode("utf-8") for value in literals]
+    header_size = Il2CppAuditor.V29_HEADER_MIN_BYTES
+    table_offset = header_size
+    table_size = len(encoded) * 8
+    data_offset = table_offset + table_size
+    data = b"".join(encoded)
+    records = bytearray()
+    cursor = 0
+    for literal in encoded:
+        records.extend(struct.pack("<II", len(literal), cursor))
+        cursor += len(literal)
+    header = bytearray(header_size)
+    struct.pack_into("<6I", header, 0, Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29,
+                     table_offset, table_size, data_offset, len(data))
+    return bytes(header) + bytes(records) + data + trailing
+
+
 def test_hermes_bytecode_analyzer():
     with tempfile.TemporaryDirectory() as tmp_dir:
         bundle_path = os.path.join(tmp_dir, "index.android.bundle")
@@ -106,20 +125,21 @@ def test_il2cpp_auditor():
         os.makedirs(meta_dir)
 
         meta_file = os.path.join(meta_dir, "global-metadata.dat")
-        # Magic: 0xFAB11BAF, Version: 29
-        header = struct.pack("<II", 0xFAB11BAF, 29) + b"\x00" * 56
-        content = (b"https://game-api.unity.com/v1" + b"\x00" * 20
-                   + b"AuthenticationManager" + b"\x00"
-                   + b'apiKey: "synthetic-unity-secret-123"')
+        content = _il2cpp_v29_metadata([
+            "https://game-api.unity.com/v1", "AuthenticationManager",
+            'apiKey: "synthetic-unity-secret-123"',
+        ])
 
         with open(meta_file, "wb") as f:
-            f.write(header + content)
+            f.write(content)
 
         auditor = Il2CppAuditor()
         res = auditor.audit_package(tmp_dir)
 
         assert res.is_il2cpp is True
         assert res.metadata_version == 29
+        assert res.metadata_tables_status == "parsed"
+        assert res.metadata_string_literals_count == 3
         assert "https://game-api.unity.com/v1" in res.api_endpoints
         assert "AuthenticationManager" in res.reconstructed_classes
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
@@ -133,10 +153,10 @@ def test_il2cpp_auditor_reports_string_and_candidate_caps():
         metadata_dir = Path(tmp_dir) / "assets/bin/Data/Managed/Metadata"
         metadata_dir.mkdir(parents=True)
         metadata = metadata_dir / "global-metadata.dat"
-        payload = struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
-        strings = (b"https://one.example.invalid/a\x00https://two.example.invalid/b\x00"
-                   b"AuthManager\x00AccountManager\x00PaymentManager")
-        metadata.write_bytes(payload + strings)
+        metadata.write_bytes(_il2cpp_v29_metadata([
+            "https://one.example.invalid/a", "https://two.example.invalid/b",
+            "AuthManager", "AccountManager", "PaymentManager",
+        ]))
 
         candidate_limited = Il2CppAuditor()
         candidate_limited.MAX_ENDPOINTS = 1
@@ -144,7 +164,7 @@ def test_il2cpp_auditor_reports_string_and_candidate_caps():
         result = candidate_limited.audit_package(tmp_dir)
 
         iteration_limited = Il2CppAuditor()
-        iteration_limited.MAX_PRINTABLE_STRINGS = 1
+        iteration_limited.MAX_STRING_LITERAL_ITEMS = 1
         bounded = iteration_limited.audit_package(tmp_dir)
 
     assert result.scan_status == "partial"
@@ -153,7 +173,23 @@ def test_il2cpp_auditor_reports_string_and_candidate_caps():
     assert {"api_endpoint_limit", "class_candidate_limit"} <= set(result.scan_errors)
     assert bounded.scan_status == "partial"
     assert bounded.string_literals_count == 1
-    assert "printable_string_limit" in bounded.scan_errors
+    assert "string_literal_table_partial" in bounded.scan_errors
+    assert bounded.metadata_string_literals_count == 1
+
+
+def test_il2cpp_v29_literal_table_rejects_out_of_bounds_sections(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    metadata = bytearray(_il2cpp_v29_metadata(["example literal"]))
+    struct.pack_into("<I", metadata, 12, len(metadata) + 1)  # table byte size exceeds file
+    (metadata_dir / "global-metadata.dat").write_bytes(metadata)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_tables_status == "invalid"
+    assert result.metadata_string_literals_count == 0
+    assert "string_literal_table_invalid" in result.scan_errors
+    assert result.scan_status == "partial"
 
 
 def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
@@ -162,15 +198,15 @@ def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
         metadata_dir = base / "assets/bin/Data/Managed/Metadata"
         metadata_dir.mkdir(parents=True)
         metadata = metadata_dir / "global-metadata.dat"
-        metadata.write_bytes(struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
-                             + b"\x00" * 56 + b"https://late.example.invalid/api")
+        metadata.write_bytes(_il2cpp_v29_metadata(
+            ["https://late.example.invalid/api"],
+        ))
         auditor = Il2CppAuditor()
         auditor.MAX_METADATA_BYTES = 32
         truncated = auditor.audit_package(base)
 
         outside = Path(outside_dir) / "global-metadata.dat"
-        outside.write_bytes(struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
-                            + b"\x00" * 56)
+        outside.write_bytes(_il2cpp_v29_metadata([]))
         metadata.unlink()
         metadata.symlink_to(outside)
         linked = Il2CppAuditor().audit_package(base)
@@ -178,6 +214,8 @@ def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
     assert truncated.metadata_version == 29
     assert truncated.metadata_truncated is True
     assert truncated.metadata_bytes_scanned == 32
+    assert truncated.metadata_tables_status == "parsed"
+    assert truncated.metadata_string_literals_count == 1
     assert truncated.scan_status == "partial"
     assert "symlink_metadata_skipped" in linked.scan_errors
     assert linked.global_metadata_present is False

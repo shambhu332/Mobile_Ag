@@ -606,6 +606,19 @@ def test_openapi_catalog_bounds_har_retention_without_discarding_endpoint_model(
     assert "/v1/items" in oversized_spec["paths"]
 
 
+def test_openapi_catalog_counts_non_string_and_overlong_urls_as_invalid():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", None))  # type: ignore[arg-type]
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/" + "x" * 8193))
+    limits = catalog.export_openapi_json()["x-mobileag-capture-limits"]
+    assert limits["invalidURLs"] == 2
+    assert limits["unmodeledRequests"] == 2
+    assert limits["omittedRequests"] == 2
+    assert catalog.captured_requests == []
+
+
 def test_openapi_catalog_normalizes_default_http_ports():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 

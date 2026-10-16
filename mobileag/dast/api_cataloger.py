@@ -173,16 +173,20 @@ class MobileApiCataloger:
 
     def ingest_request(self, req: CapturedRequest) -> None:
         """Process and index an intercepted request."""
+        if not isinstance(req, CapturedRequest):
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        if not isinstance(req.url, str) or len(req.url) > 8192:
+            self.invalid_urls += 1
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
         if len(self.captured_requests) >= _MAX_CAPTURE_REQUESTS:
             self.omitted_requests += 1
             return
         capture_size = self._estimate_capture_size(req)
         if capture_size is None:
-            self.unmodeled_requests += 1
-            self.omitted_requests += 1
-            return
-        if len(req.url) > 8192:
-            self.invalid_urls += 1
             self.unmodeled_requests += 1
             self.omitted_requests += 1
             return
@@ -192,10 +196,6 @@ class MobileApiCataloger:
         else:
             # Keep endpoint modeling independent of bounded HAR retention.
             self.omitted_requests += 1
-        if not isinstance(req.url, str) or len(req.url) > 8192:
-            self.invalid_urls += 1
-            self.unmodeled_requests += 1
-            return
         try:
             parsed = urlparse(req.url)
             # Accessing hostname/port validates malformed authority syntax.

@@ -223,6 +223,8 @@ def test_scan_records_original_hash_and_effective_policy(client):
                 'id':'synthetic-unverified', 'title':'Synthetic review candidate',
                 'severity':'INFO', 'status':'UNVERIFIED',
             }],
+            'api_endpoints':[{'url':'https://api.fixture.invalid/v1/resource',
+                              'method':'UNKNOWN','evidence_type':'embedded_url_candidate'}],
             'coverage':{'synthetic_fixture':1},
             'il2cpp_analysis':{'metadata_version':29,'evidence_kind':'bounded_static_metadata_candidates',
                                'runtime_status':'not_tested','proof_status':'not_proven','exhaustive':False},
@@ -240,6 +242,12 @@ def test_scan_records_original_hash_and_effective_policy(client):
                          if node.get('finding_id') == 'synthetic-unverified')
     assert graph_finding['status'] == 'UNVERIFIED'
     assert graph_finding['proof_status'] == 'not_proven'
+    graph_api = next(node for node in scan['attack_surface_graph']['nodes'] if node.get('group') == 'api')
+    assert graph_api['method'] == 'UNKNOWN'
+    assert graph_api['evidence_type'] == 'embedded_url_candidate'
+    assert graph_api['proof_status'] == 'not_proven'
+    assert next(edge for edge in scan['attack_surface_graph']['edges']
+                if edge.get('to') == graph_api['id'])['label'] == 'endpoint_candidate'
     assert Path(uploaded['file_path']).read_bytes()==original
     assert Path(uploaded['file_path']).stat().st_mode & 0o777 == 0o600
 

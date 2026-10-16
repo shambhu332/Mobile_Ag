@@ -55,6 +55,23 @@ class _ExportDriver:
         return _ExportSession([])
 
 
+class _ApiExportSession(_Session):
+    async def run(self, query, **params):
+        return _ExportResult({
+            "a": {"scan_id": "scan-a", "package_name": "sample", "version": "1"},
+            "rel_type": "HAS_API_CANDIDATE",
+            "target": {"url": '["scan-a","api","https://api.example.invalid/v1/profile"]',
+                       "display_url": "https://api.example.invalid/v1/profile", "method": "UNKNOWN",
+                       "evidence_type": "embedded_url_candidate", "proof_status": "not_proven"},
+            "target_labels": ["APIEndpoint"],
+        })
+
+
+class _ApiExportDriver:
+    def session(self):
+        return _ApiExportSession([])
+
+
 @pytest.mark.asyncio
 async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     graph = AttackGraph.__new__(AttackGraph)
@@ -86,6 +103,12 @@ async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     assert finding_params[0]["scan_id"] == "scan-a"
     assert finding_params[0]["status"] == "UNVERIFIED"
     assert finding_params[0]["proof_status"] == "not_proven"
+    endpoint_query = next(query for query, _ in graph.driver.calls if "MERGE (e:APIEndpoint" in query)
+    assert "HAS_API_CANDIDATE" in endpoint_query
+    assert "CALLS_API" not in endpoint_query
+    assert endpoint_params[0]["method"] == "GET"
+    assert endpoint_params[0]["evidence_type"] == "static_endpoint_candidate"
+    assert endpoint_params[0]["proof_status"] == "not_proven"
 
 
 def test_scoped_keys_are_stable_and_type_distinct():
@@ -111,6 +134,23 @@ async def test_visjs_vulnerability_node_carries_original_finding_id():
     assert finding_nodes[0]["status"] == "UNVERIFIED"
     assert finding_nodes[0]["proof_status"] == "not_proven"
     assert "not_proven" in finding_nodes[0]["title"]
+
+
+@pytest.mark.asyncio
+async def test_visjs_api_endpoint_is_labeled_as_static_candidate_not_call():
+    graph = AttackGraph.__new__(AttackGraph)
+    graph._connected = True
+    graph.driver = _ApiExportDriver()
+
+    result = await graph.export_visjs_graph("scan-a")
+
+    api_nodes = [node for node in result["nodes"] if node["group"] == "apiendpoint"]
+    assert len(api_nodes) == 1
+    assert api_nodes[0]["method"] == "UNKNOWN"
+    assert api_nodes[0]["evidence_type"] == "embedded_url_candidate"
+    assert api_nodes[0]["proof_status"] == "not_proven"
+    assert "Endpoint candidate" in api_nodes[0]["title"]
+    assert result["edges"][0]["label"] == "endpoint_candidate"
 
 
 @pytest.mark.asyncio

@@ -33,10 +33,12 @@ class VulnerabilityNode:
 
 @dataclass
 class APIEndpointNode:
-    """Represents an API endpoint node."""
+    """Represents a static endpoint candidate, not proven network traffic."""
     url: str
-    method: str = "GET"
+    method: str = "UNKNOWN"
     requires_auth: Optional[bool] = None
+    evidence_type: str = "static_endpoint_candidate"
+    proof_status: str = "not_proven"
 
 @dataclass
 class SecretNode:
@@ -49,5 +51,6 @@ class SecretNode:
 HAS_COMPONENT = "HAS_COMPONENT"
 HAS_VULNERABILITY = "HAS_VULNERABILITY"
 CALLS_API = "CALLS_API"
+HAS_API_CANDIDATE = "HAS_API_CANDIDATE"
 CONTAINS_SECRET = "CONTAINS_SECRET"
 CHAINS_TO = "CHAINS_TO"

@@ -13,7 +13,7 @@ except ImportError:
 
 from mobileag.knowledge.schemas import (
     AppNode, ComponentNode, VulnerabilityNode, APIEndpointNode,
-    HAS_COMPONENT, HAS_VULNERABILITY, CALLS_API
+    HAS_COMPONENT, HAS_VULNERABILITY, CALLS_API, HAS_API_CANDIDATE
 )
 from mobileag.reporting.finding import Finding
 
@@ -143,15 +143,16 @@ class AttackGraph:
             )
 
     async def add_api_endpoint(self, scan_id: str, endpoint_data: APIEndpointNode) -> None:
-        """Creates an API node and links to App."""
+        """Stores a static endpoint candidate; this does not prove a network call."""
         if not self._connected or not self.driver:
             return
             
-        query = """
-        MATCH (a:App {scan_id: $scan_id})
-        MERGE (e:APIEndpoint {url: $node_key})
-        SET e.display_url = $display_url, e.method = $method, e.requires_auth = $requires_auth
-        MERGE (a)-[:CALLS_API]->(e)
+        query = f"""
+        MATCH (a:App {{scan_id: $scan_id}})
+        MERGE (e:APIEndpoint {{url: $node_key}})
+        SET e.display_url = $display_url, e.method = $method, e.requires_auth = $requires_auth,
+            e.evidence_type = $evidence_type, e.proof_status = $proof_status
+        MERGE (a)-[:{HAS_API_CANDIDATE}]->(e)
         """
         async with self.driver.session() as session:
             await session.run(
@@ -160,7 +161,9 @@ class AttackGraph:
                 node_key=_scoped_key(scan_id, "api", endpoint_data.url),
                 display_url=endpoint_data.url,
                 method=endpoint_data.method,
-                requires_auth=endpoint_data.requires_auth
+                requires_auth=endpoint_data.requires_auth,
+                evidence_type=endpoint_data.evidence_type,
+                proof_status=endpoint_data.proof_status,
             )
 
     async def find_attack_chains(self, scan_id: str) -> List[Dict[str, Any]]:
@@ -178,11 +181,11 @@ class AttackGraph:
         if not self._connected or not self.driver:
             return {"status": "neo4j not available"}
 
-        query = """
-        MATCH (a:App {scan_id: $scan_id})
+        query = f"""
+        MATCH (a:App {{scan_id: $scan_id}})
         OPTIONAL MATCH (a)-[:HAS_COMPONENT]->(c:Component)
         OPTIONAL MATCH (a)-[:HAS_VULNERABILITY]->(v:Vulnerability)
-        OPTIONAL MATCH (a)-[:CALLS_API]->(e:APIEndpoint)
+        OPTIONAL MATCH (a)-[:{CALLS_API}|{HAS_API_CANDIDATE}]->(e:APIEndpoint)
         RETURN 
             COUNT(DISTINCT c) AS components_count,
             COUNT(DISTINCT v) AS vulns_count,
@@ -261,17 +264,24 @@ class AttackGraph:
                                 "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
                                               if primary_label == "Vulnerability" else None,
                                 "status": target.get("status") if primary_label == "Vulnerability" else None,
-                                "proof_status": target.get("proof_status") if primary_label == "Vulnerability" else None,
-                                "title": (f"Status: {target.get('status', 'unknown')} | proof: "
-                                          f"{target.get('proof_status', 'unknown')}")
-                                         if primary_label == "Vulnerability" else None,
+                                "proof_status": target.get("proof_status")
+                                if primary_label in {"Vulnerability", "APIEndpoint"} else None,
+                                "title": ((f"Status: {target.get('status', 'unknown')} | proof: "
+                                           f"{target.get('proof_status', 'unknown')}")
+                                          if primary_label == "Vulnerability" else
+                                          (f"Endpoint candidate | method: {target.get('method', 'unknown')} | "
+                                           f"proof: {target.get('proof_status', 'unknown')}")
+                                          if primary_label == "APIEndpoint" else None),
+                                "method": target.get("method") if primary_label == "APIEndpoint" else None,
+                                "evidence_type": target.get("evidence_type") if primary_label == "APIEndpoint" else None,
                             })
 
                         if a and rel_type:
                             edges.append({
                                 "from": a.get("scan_id"),
                                 "to": target_id,
-                                "label": rel_type.replace("HAS_", "").replace("CALLS_", "").lower()
+                                "label": ("endpoint_candidate" if primary_label == "APIEndpoint"
+                                          else rel_type.replace("HAS_", "").replace("CALLS_", "").lower())
                             })
 
             return {"nodes": nodes, "edges": edges} if nodes else None

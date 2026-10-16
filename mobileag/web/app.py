@@ -2019,11 +2019,20 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
             ep_id = f"api_{ep_url}"
             if ep_id not in seen_nodes:
                 seen_nodes.add(ep_id)
+                raw_method = ep.get("method", "UNKNOWN") if isinstance(ep, dict) else getattr(ep, "method", "UNKNOWN")
+                api_method = raw_method if raw_method in {"GET", "POST", "PUT", "DELETE", "PATCH", "UNKNOWN"} else "UNKNOWN"
+                raw_evidence = ep.get("evidence_type") if isinstance(ep, dict) else getattr(ep, "evidence_type", None)
+                evidence_type = raw_evidence if raw_evidence in {
+                    "route_literal", "embedded_url_candidate", "static_endpoint_candidate"
+                } else "static_endpoint_candidate"
                 nodes.append({
                     "id": ep_id, "label": ep_url[:30], "group": "api",
-                    "shape": "dot", "size": 16, "color": "#06b6d4"
+                    "shape": "dot", "size": 16, "color": "#06b6d4",
+                    "method": api_method, "evidence_type": evidence_type,
+                    "proof_status": "not_proven",
+                    "title": f"Static endpoint candidate | method: {api_method} | proof: not_proven",
                 })
-                edges.append({"from": "app", "to": ep_id, "label": "calls"})
+                edges.append({"from": "app", "to": ep_id, "label": "endpoint_candidate"})
         for f in (scan["findings"] or [])[:20]:
             f_id = f.get("id", str(id(f)))
             if f_id not in seen_nodes:

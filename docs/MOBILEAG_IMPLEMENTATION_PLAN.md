@@ -677,7 +677,7 @@ inventory does not inspect native code, prove runtime control flow, or score
 defense effectiveness.
 
 ```
-Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
+Timeline & Execution Inventory [audited 2026-10-16; NOT COMPLETE]
 ├── Phase 1: Static Engine & Frameworks [PARTIAL; bounded analyzers exist]
 ├── Phase 2: Dynamic Engine & Frida [SAFE PROFILE DISABLES HOOK EXECUTION; authorized runtime validation NOT DONE]
 ├── Phase 3: IPC Fuzzing & API [PROTOTYPES EXIST; confirmed exploitation NOT DONE]
@@ -1467,3 +1467,11 @@ not survive in retained samples. The roadmap module suite passed (**46
 passed**); full pytest passed (**1,247 passed**, 60.31 s); compileall and
 `git diff --check` passed. This minimizes known candidates but cannot guarantee
 redaction of arbitrary application secrets in binary strings.
+
+Token-session finding context URLs now use the same shared route sanitizer as
+static and framework endpoint candidates. This aligns handling of encoded and
+chained credential path markers and removes URL userinfo before endpoint
+context is retained. Focused token/JWT tests passed (**17 passed**); full pytest
+passed (**1,247 passed**, 60.52 s); compileall and `git diff --check` passed.
+This is evidence minimization only; token parsing and server-side session
+acceptance remain separate, bounded review tasks.

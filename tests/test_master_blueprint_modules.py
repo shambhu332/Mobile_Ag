@@ -1474,7 +1474,11 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     assert "supersecretpassword" not in json.dumps(decoded)
     assert auditor._safe_context_url(
         "https://api.example.test/reset/abCDef01234567890123456789012345?x=secret#frag") == (
-            "https://api.example.test/reset/[REDACTED]")
+            "https://api.example.test/reset/{id}")
+    encoded_context = auditor._safe_context_url(
+        "https://synthetic-user@api.example.test/auth/%74oken/short-secret?access_token=hidden")
+    assert encoded_context == "https://api.example.test/auth/%74oken/{id}"
+    assert "synthetic-user" not in encoded_context and "short-secret" not in encoded_context
 
     # 2. Low entropy token
     low_ent_findings = auditor.audit_token("aaaaaaaaaaaaaaaa")

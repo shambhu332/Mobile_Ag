@@ -143,7 +143,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 3.3 Cryptographic API metadata review (no key/plaintext harvesting)
 * **Objective**: Record bounded cryptographic-use metadata for an authorized synthetic test case.
-* **Safe scope**: If separately approved, runtime review may record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Static support now inventories bounded Java/Kotlin literal `getInstance` calls for selected platform crypto APIs, retaining only allowlisted algorithm/mode names, counts, and relative source locations; output has no code snippets or key material. Smali/native, dynamic algorithm resolution, imports/type identity, key-size inference, runtime observation, and algorithm quality/usage correctness remain unsupported. This static inventory is a review lead, not evidence of reachable crypto calls, key safety, data confidentiality, or cryptographic correctness.
+* **Safe scope**: If separately approved, runtime review may record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Static support now inventories bounded Java/Kotlin literal `getInstance` calls and exact adjacent Smali `const-string`-register calls for selected platform crypto APIs, retaining only allowlisted algorithm/mode names, counts, and relative source locations; output has no code snippets or key material. Non-adjacent/interprocedural Smali constants, native, dynamic algorithm resolution, imports/type identity, key-size inference, runtime observation, and algorithm quality/usage correctness remain unsupported. Unmodeled observed factory calls mark static coverage partial. This static inventory is a review lead, not evidence of reachable crypto calls, key safety, data confidentiality, or cryptographic correctness.
 
 ---
 
@@ -1816,8 +1816,10 @@ root.
 The bounded static cryptography metadata inventory now runs in the scan pipeline
 and appears in JSON/Markdown/PDF source report data with its coverage entry. It
 accepts only a fixed set of conventional Java/Kotlin crypto factory API names
-and allowlisted algorithm/mode strings; arbitrary literals, snippets, keys, IVs,
-and plaintext are not retained. The cryptography/native review-surface ledger
+and exact adjacent Smali constant-register calls, with allowlisted
+algorithm/mode strings; arbitrary literals, snippets, keys, IVs,
+and plaintext are not retained. Unresolved calls are counted without exporting
+their literal values and force partial coverage. The cryptography/native review-surface ledger
 now includes this analyzer while leaving missing stages, runtime behavior, and
 proof state explicit. Synthetic positive, dynamic-value, comment, symlink-root,
 and skipped-source cases passed with the orchestrator/ledger regressions
@@ -1834,3 +1836,14 @@ static-only control and dynamic/unrecognized negatives passed with the crypto
 pipeline regressions (**115 focused tests passed**); full pytest passed
 (**1,327 passed**, 54.51 s; one expected duplicate-ZIP-member warning).
 `compileall` and `git diff --check` passed.
+
+The crypto metadata inventory now also handles an exact Smali `const-string`
+register passed directly to a supported `getInstance(String)` invocation. It
+clears that bounded value on any intervening instruction, method boundary, or
+label; values from unsupported overloads, unknown algorithms, or non-adjacent
+flows are counted without copying their literal contents and make coverage
+partial. Synthetic direct-call, stale-register negative, comment, and allowlist
+cases passed (**116 focused tests**); full pytest passed (**1,328 passed**,
+54.05 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This remains a bounded local heuristic, not general
+Smali dataflow or API reachability.

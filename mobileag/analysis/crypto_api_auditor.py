@@ -9,7 +9,7 @@ from bisect import bisect_left
 import re
 from pathlib import Path
 
-from mobileag.analysis.api_mapper import _mask_java_kotlin_comments
+from mobileag.analysis.api_mapper import _mask_java_kotlin_comments, _mask_smali_comments
 from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 
@@ -28,6 +28,23 @@ _CALL_RE = re.compile(rf"\b(?P<class>{_API_NAMES})\s*\.\s*getInstance\s*\(")
 _LITERAL_RE = re.compile(
     rf"\b(?P<class>{_API_NAMES})\s*\.\s*getInstance\s*\(\s*"
     r"(?P<quote>['\"])(?P<algorithm>[^'\"\r\n]{1,256})(?P=quote)"
+)
+_SMALI_OWNERS = {
+    "Ljavax/crypto/Cipher;": "javax.crypto.Cipher",
+    "Ljavax/crypto/Mac;": "javax.crypto.Mac",
+    "Ljavax/crypto/KeyGenerator;": "javax.crypto.KeyGenerator",
+    "Ljavax/crypto/SecretKeyFactory;": "javax.crypto.SecretKeyFactory",
+    "Ljavax/crypto/KeyAgreement;": "javax.crypto.KeyAgreement",
+    "Ljava/security/MessageDigest;": "java.security.MessageDigest",
+    "Ljava/security/Signature;": "java.security.Signature",
+    "Ljava/security/KeyPairGenerator;": "java.security.KeyPairGenerator",
+}
+_SMALI_CALL_RE = re.compile(
+    r"invoke-static(?:/range)?\s+\{(?P<registers>[^}]*)\},\s*"
+    r"(?P<owner>L[^;]+;)->getInstance\((?P<parameters>[^)]*)\)(?P<return>\S+)"
+)
+_SMALI_STRING_RE = re.compile(
+    r'^const-string(?:/jumbo)?\s+(?P<register>[vp]\d+),\s*"(?P<value>[^"\r\n]{0,256})"\s*$'
 )
 _ALGORITHM_RE = re.compile(
     r"(?:AES(?:/(?:GCM|CBC|CTR|ECB|CCM|XTS|CFB|OFB|KW|KWP)"
@@ -69,54 +86,49 @@ class CryptoApiMetadataAuditor:
         records: dict[tuple[str, str], dict] = {}
         factory_calls = 0
         unmodeled_calls = 0
+        smali_factory_calls = 0
         records_truncated = False
         decode_errors = 0
-        for path, raw in inventory.read(root, {".java", ".kt"}):
+        for path, raw in inventory.read(root, {".java", ".kt", ".smali"}):
             try:
                 source = raw.decode("utf-8")
             except UnicodeDecodeError:
                 decode_errors += 1
                 continue
-            masked = _mask_java_kotlin_comments(source)
-            literal_matches = list(_LITERAL_RE.finditer(masked))
-            literals_by_start = {match.start(): match for match in literal_matches}
-            newline_offsets = [index for index, char in enumerate(masked) if char == "\n"]
-            for call in _CALL_RE.finditer(masked):
-                factory_calls += 1
-                match = literals_by_start.get(call.start())
-                if match is None:
-                    unmodeled_calls += 1
-                    continue
-                algorithm = match.group("algorithm")
-                if not _ALGORITHM_RE.fullmatch(algorithm):
-                    unmodeled_calls += 1
-                    continue
-                api = _FACTORIES[match.group("class")]
-                key = (api, algorithm)
-                record = records.get(key)
-                if record is None:
-                    if len(records) >= self.MAX_RECORDS:
-                        records_truncated = True
+            if path.suffix.lower() == ".smali":
+                calls, unresolved, truncated = self._scan_smali_file(
+                    source, path, root, records)
+                factory_calls += calls
+                smali_factory_calls += calls
+                unmodeled_calls += unresolved
+                records_truncated |= truncated
+            else:
+                masked = _mask_java_kotlin_comments(source)
+                literal_matches = list(_LITERAL_RE.finditer(masked))
+                literals_by_start = {match.start(): match for match in literal_matches}
+                newline_offsets = [index for index, char in enumerate(masked) if char == "\n"]
+                for call in _CALL_RE.finditer(masked):
+                    factory_calls += 1
+                    match = literals_by_start.get(call.start())
+                    if match is None:
+                        unmodeled_calls += 1
                         continue
-                    record = {"api": api, "algorithm": algorithm, "call_count": 0,
-                              "locations": []}
-                    records[key] = record
-                record["call_count"] += 1
-                if len(record["locations"]) < self.MAX_LOCATIONS_PER_RECORD:
-                    line = bisect_left(newline_offsets, match.start()) + 1
-                    try:
-                        relative = str(path.relative_to(root))[:512]
-                    except ValueError:
-                        relative = "<outside-root>"
-                    record["locations"].append({"file": relative, "line": line})
+                    api = _FACTORIES[match.group("class")]
+                    algorithm = match.group("algorithm")
+                    if not self._record_candidate(records, api, algorithm, path, root,
+                                                  bisect_left(newline_offsets, match.start()) + 1):
+                        unmodeled_calls += 1
+                        if (_ALGORITHM_RE.fullmatch(algorithm) and (api, algorithm) not in records
+                                and len(records) >= self.MAX_RECORDS):
+                            records_truncated = True
 
         status = inventory.coverage.get("static_status", "not_analyzed")
         if records_truncated or decode_errors or unmodeled_calls:
             status = "partial"
         limitations = [
-            "Only Java/Kotlin literal getInstance calls for selected platform APIs are inventoried.",
+            "Only Java/Kotlin literal calls and direct Smali literal-register calls for selected platform APIs are inventoried.",
             "Class-name matching is lexical; imports and same-named application classes are not resolved.",
-            "Smali, native, reflection, aliases, dynamic algorithm names, dataflow, and runtime calls are not resolved.",
+            "Non-adjacent/interprocedural Smali constants, native, reflection, aliases, dynamic algorithm names, dataflow, and runtime calls are not resolved.",
             "No key sizes, key material, IVs, plaintext, cryptographic correctness, or reachability are inferred.",
         ]
         return {
@@ -127,8 +139,9 @@ class CryptoApiMetadataAuditor:
                 "runtime_status": "not_tested",
                 "proof_status": "not_proven",
                 "exhaustive": False,
-                "analysis_kind": "bounded_java_kotlin_crypto_factory_inventory",
+                "analysis_kind": "bounded_java_kotlin_smali_crypto_factory_inventory",
                 "factory_call_count": factory_calls,
+                "smali_factory_call_count": smali_factory_calls,
                 "literal_algorithm_call_count": sum(row["call_count"] for row in records.values()),
                 "candidate_count": sum(row["call_count"] for row in records.values()),
                 "unmodeled_call_count": unmodeled_calls,
@@ -148,8 +161,9 @@ class CryptoApiMetadataAuditor:
                 "runtime_status": "not_tested",
                 "proof_status": "not_proven",
                 "exhaustive": False,
-                "analysis_kind": "bounded_java_kotlin_crypto_factory_inventory",
+                "analysis_kind": "bounded_java_kotlin_smali_crypto_factory_inventory",
                 "factory_call_count": 0,
+                "smali_factory_call_count": 0,
                 "literal_algorithm_call_count": 0,
                 "candidate_count": 0,
                 "unmodeled_call_count": 0,
@@ -162,3 +176,63 @@ class CryptoApiMetadataAuditor:
                 "limitations": [reason],
             },
         }
+
+    def _record_candidate(self, records: dict, api: str, algorithm: str,
+                          path: Path, root: Path, line: int) -> bool:
+        if not _ALGORITHM_RE.fullmatch(algorithm):
+            return False
+        key = (api, algorithm)
+        record = records.get(key)
+        if record is None:
+            if len(records) >= self.MAX_RECORDS:
+                return False
+            record = {"api": api, "algorithm": algorithm, "call_count": 0,
+                      "locations": []}
+            records[key] = record
+        record["call_count"] += 1
+        if len(record["locations"]) < self.MAX_LOCATIONS_PER_RECORD:
+            try:
+                relative = str(path.relative_to(root))[:512]
+            except ValueError:
+                relative = "<outside-root>"
+            record["locations"].append({"file": relative, "line": line})
+        return True
+
+    def _scan_smali_file(self, source: str, path: Path, root: Path,
+                         records: dict) -> tuple[int, int, bool]:
+        """Resolve only immediate const-string to exact one-String factory calls."""
+        masked = _mask_smali_comments(source)
+        last_string: tuple[str, str] | None = None
+        calls = unresolved = 0
+        truncated = False
+        for line_number, raw_line in enumerate(masked.splitlines(), 1):
+            line = raw_line.strip()
+            if not line or line.startswith(".line") or line.startswith(".locals") or line.startswith(".registers"):
+                continue
+            if line.startswith((".method", ".end method", ":")):
+                last_string = None
+                continue
+            string_match = _SMALI_STRING_RE.match(line)
+            if string_match:
+                last_string = (string_match.group("register"), string_match.group("value"))
+                continue
+            call = _SMALI_CALL_RE.match(line)
+            if call is not None and call.group("owner") in _SMALI_OWNERS:
+                calls += 1
+                registers = list(dict.fromkeys(re.findall(r"\b[vp]\d+\b", call.group("registers"))))
+                candidate = (last_string[1] if last_string and len(registers) == 1
+                             and registers[0] == last_string[0]
+                             and call.group("parameters") == "Ljava/lang/String;" else None)
+                if candidate is None or not self._record_candidate(
+                        records, _SMALI_OWNERS[call.group("owner")], candidate,
+                        path, root, line_number):
+                    unresolved += 1
+                    if len(records) >= self.MAX_RECORDS:
+                        truncated = True
+                last_string = None
+                continue
+            # Unknown instructions may overwrite the tracked register or alter
+            # control flow. Do not carry a string constant across them.
+            if not line.startswith((".locals", ".registers")):
+                last_string = None
+        return calls, unresolved, truncated

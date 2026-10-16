@@ -55,6 +55,38 @@ def test_crypto_audit_reports_heuristic_completion_when_all_calls_are_modeled(tm
     assert result["coverage"]["unmodeled_call_count"] == 0
 
 
+def test_crypto_audit_resolves_only_adjacent_smali_string_factory_calls(tmp_path):
+    (tmp_path / "Crypto.smali").write_text('''
+.class public Lfixture/Crypto;
+.method public run()V
+    .locals 3
+    # Cipher.getInstance("CommentSecretValue")
+    const-string v0, "AES/GCM/NoPadding"
+    .line 8
+    invoke-static {v0}, Ljavax/crypto/Cipher;->getInstance(Ljava/lang/String;)Ljavax/crypto/Cipher;
+    const-string v1, "syntheticSecretValue"
+    invoke-static {v1}, Ljava/security/MessageDigest;->getInstance(Ljava/lang/String;)Ljava/security/MessageDigest;
+    const-string v2, "AES/ECB/PKCS5Padding"
+    move-object v2, v0
+    invoke-static {v2}, Ljavax/crypto/Cipher;->getInstance(Ljava/lang/String;)Ljavax/crypto/Cipher;
+.end method
+''')
+
+    result = CryptoApiMetadataAuditor().audit_directory(tmp_path)
+
+    assert result["coverage"]["static_status"] == "partial"
+    assert result["coverage"]["smali_factory_call_count"] == 3
+    assert result["coverage"]["factory_call_count"] == 3
+    assert result["coverage"]["literal_algorithm_call_count"] == 1
+    assert result["coverage"]["unmodeled_call_count"] == 2
+    assert result["inventory"] == [{
+        "api": "javax.crypto.Cipher", "algorithm": "AES/GCM/NoPadding", "call_count": 1,
+        "locations": [{"file": "Crypto.smali", "line": 8}],
+    }]
+    assert "syntheticSecretValue" not in repr(result)
+    assert "AES/ECB/PKCS5Padding" not in repr(result)
+
+
 def test_crypto_audit_propagates_partial_inventory_coverage(tmp_path):
     (tmp_path / "Crypto.java").write_text('Cipher.getInstance("AES/GCM/NoPadding");')
     (tmp_path / "Skipped.java").symlink_to(tmp_path / "Crypto.java")

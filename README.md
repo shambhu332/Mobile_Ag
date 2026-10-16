@@ -214,7 +214,7 @@ The Android orchestrator can inspect decoded Java/Kotlin and Smali plus selected
 - WebView, PendingIntent, intent redirection and related source/config patterns;
 - bounded source-to-sink and Smali local-flow heuristics;
 - network security config and transport settings;
-- bounded Java/Kotlin literal crypto-factory metadata (allowlisted algorithm/mode names, call counts, relative locations only); this is not a key-size or cryptographic-quality assessment;
+- bounded Java/Kotlin literal and exact adjacent Smali constant-register crypto-factory metadata (allowlisted algorithm/mode names, call counts, relative locations only); this is not a key-size or cryptographic-quality assessment;
 - native/JNI and binary-protection indicators;
 - React Native/Hermes, Flutter and IL2CPP artifact heuristics;
 - dependency inventory from supported Gradle/Maven/npm/Yarn metadata.
@@ -382,7 +382,7 @@ Mobile_Ag/
 - API fuzz/replay capabilities are deliberately constrained; authenticated cross-account authorization testing still needs explicit, safe setup and human interpretation.
 - Web app is single-user/local-first; remote multi-user hosting is unsupported.
 - Some security checks are inventory/rule heuristics, not deep semantic analysis. Native/reflection/dynamic code paths and complex frameworks may be missed.
-- Cryptographic API inventory is static and Java/Kotlin-only; it does not resolve imports/types, Smali/native/reflection calls, dynamic algorithms, key sizes, or runtime reachability.
+- Cryptographic API inventory is static and bounded; Smali support is limited to exact adjacent constant-register calls. It does not resolve imports/types, native/reflection calls, dynamic algorithms, key sizes, or runtime reachability.
 - Provider cost/quota/token usage is not measured. External service features require a separate egress decision.
 
 See the [market adaptation roadmap](docs/MARKET_ADAPTATION_ROADMAP-2026-10-13.md) for prioritized future work and the [contributor roadmap](docs/CONTRIBUTOR_ROADMAP.md) for bounded starter tasks. A roadmap item is not an implemented capability until code and validation evidence exist.

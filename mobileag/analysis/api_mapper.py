@@ -182,6 +182,14 @@ class APIMapper:
         """Map API endpoints and identify API-related vulnerabilities."""
         logger.info(f"Starting API mapping in: {decompiled_path}")
         findings: list[Finding] = []
+        if not isinstance(decompiled_path, (str, Path)) or not str(decompiled_path).strip():
+            self.coverage = {
+                "static_status": "not_analyzed", "runtime_status": "not_tested",
+                "proof_status": "not_proven", "exhaustive": False,
+                "candidate_count": 0, "endpoints_count": 0,
+                "limits_reached": False, "limit_reasons": {},
+            }
+            return [], findings
         base_path = Path(decompiled_path)
         
         endpoints, raw_findings = await asyncio.to_thread(self._sync_map_apis, base_path)

@@ -171,6 +171,25 @@ async def test_api_mapper(mock_router):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("missing_path", [None, "", "   "])
+async def test_api_mapper_does_not_scan_current_directory_for_missing_path(mock_router, monkeypatch, missing_path):
+    mapper = APIMapper(mock_router)
+
+    def unexpected_scan(_path):
+        raise AssertionError("missing input must not resolve to the process working directory")
+
+    monkeypatch.setattr(mapper, "_sync_map_apis", unexpected_scan)
+    endpoints, findings = await mapper.map_apis(missing_path)
+
+    assert endpoints == []
+    assert findings == []
+    assert mapper.coverage["static_status"] == "not_analyzed"
+    assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+    assert mapper.coverage["exhaustive"] is False
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
     mapper = APIMapper(mock_router)
     with tempfile.TemporaryDirectory() as tmpdir:

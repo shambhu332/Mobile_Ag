@@ -185,13 +185,15 @@ def test_provider_fuzzer_traversal_and_sqli_payloads():
     fuzzer = ContentProviderFuzzer(adb_path="echo")
     scope = lambda: None
     results = fuzzer.fuzz_provider_traversal(
-        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope,
+        synthetic_data_confirmed=True,
     )
     assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
-    assert any("databases" in r.target_uri for r in results)
+    assert all("mobileag_synthetic_canary" in r.target_uri for r in results)
 
     sqli_results = fuzzer.fuzz_provider_sqli(
-        "com.example.provider", serial="synthetic-device", guard=scope
+        "com.example.provider", serial="synthetic-device", guard=scope,
+        synthetic_data_confirmed=True,
     )
     assert len(sqli_results) == 2 * len(ContentProviderFuzzer.SQLI_PROBES)
     assert {item.action for item in sqli_results} == {"selection", "projection"}
@@ -222,12 +224,23 @@ def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_argument
     assert len(invalid) == 1 and invalid[0].status == "INVALID_INPUT"
     assert called == []
 
+    unconfirmed_traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=lambda: None,
+    )
+    unconfirmed_query = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=lambda: None,
+    )
+    assert [result.status for result in unconfirmed_traversal] == ["BLOCKED_SYNTHETIC_SCOPE"]
+    assert [result.status for result in unconfirmed_query] == ["BLOCKED_SYNTHETIC_SCOPE"]
+    assert called == []
+
     guarded_calls = []
     def guard():
         guarded_calls.append(True)
 
     results = fuzzer.fuzz_provider_traversal(
         "com.example.provider", "com.example.app", serial="synthetic-device", guard=guard,
+        synthetic_data_confirmed=True,
     )
     assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
     assert len(called) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
@@ -255,9 +268,11 @@ def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
 
     traversal = fuzzer.fuzz_provider_traversal(
         "com.example.provider", "com.example.app", serial="synthetic-device", guard=deny_scope,
+        synthetic_data_confirmed=True,
     )
     sql = fuzzer.fuzz_provider_sqli(
         "com.example.provider", serial="synthetic-device", guard=deny_scope,
+        synthetic_data_confirmed=True,
     )
     assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
     assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
@@ -459,10 +474,12 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     scope_guard = lambda: None
     traversal = fuzzer.fuzz_provider_traversal(
-        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope_guard
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope_guard,
+        synthetic_data_confirmed=True,
     )
     sql = fuzzer.fuzz_provider_sqli(
-        "com.example.provider", serial="synthetic-device", guard=scope_guard
+        "com.example.provider", serial="synthetic-device", guard=scope_guard,
+        synthetic_data_confirmed=True,
     )
     assert traversal[0].status == "OBSERVED_READABLE"
     assert sql[0].status == "QUERY_RESULT_OBSERVED"
@@ -489,6 +506,7 @@ def test_provider_sqli_permission_denial_precedes_sql_error_wording(monkeypatch)
     monkeypatch.setattr(provider_module.subprocess, "Popen", FakeProcess)
     results = ContentProviderFuzzer(adb_path="adb").fuzz_provider_sqli(
         "com.example.provider", serial="synthetic-device", guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
 
     assert results
@@ -517,7 +535,7 @@ def test_provider_fuzzer_sqli_covers_projection_and_selection_with_shell_quoting
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     results = fuzzer.fuzz_provider_sqli(
         "com.example.provider", projection_param="name); SELECT synthetic",
-        serial="synthetic-device", guard=lambda: None,
+        serial="synthetic-device", guard=lambda: None, synthetic_data_confirmed=True,
     )
     assert len(results) == 2 * len(fuzzer.SQLI_PROBES)
     assert {result.action for result in results} == {"selection", "projection"}

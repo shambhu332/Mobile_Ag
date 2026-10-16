@@ -172,11 +172,9 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   - `mobileag/dast/provider_auditor.py` (Enhancement)
 * **Technical Implementation**:
   1. Identify all ContentProviders with `android:exported="true"`.
-  2. Probe each provider with `adb shell content query` and `adb shell content read`:
-     - Path Traversal: `content://<authority>/../../../../data/data/<package>/databases/app.db`
-     - Projection/Selection SQLi: `content://<authority>/users --projection "* FROM users WHERE 1=1 --"`
-  3. Verify whether file descriptors or database rows are leaked without required permissions.
-* **Observation handling**: Explicit `SecurityException` / `Permission Denial` output takes precedence over SQL-parser wording; a denied query is not classified as an observed SQL error or a vulnerability.
+  2. Probe only researcher-owned test builds containing synthetic data. Path traversal payloads target fixed `mobileag_synthetic_canary` fixture filenames; never request app databases, preferences, `/etc/hosts`, or other user/OS data. Projection/selection SQLi queries require explicit `synthetic_data_confirmed=true` in addition to the selected serial and scope guard.
+  3. Record bounded access/query observations without retaining returned rows; assess disclosure only against the documented test-fixture canary and controls.
+* **Observation handling**: Explicit `SecurityException` / `Permission Denial` output takes precedence over SQL-parser wording; a denied query is not classified as an observed SQL error or a vulnerability. Missing synthetic-data confirmation returns `BLOCKED_SYNTHETIC_SCOPE` without starting ADB.
 
 ### 4.3 Review-Only PoC Output (Not Execution Authorization)
 * **Objective**: Provide bounded review material for eligible, analyst-attested findings without claiming independent proof or authorizing execution.
@@ -1095,3 +1093,14 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    (**5 passed**); full pytest passed (**1,178 passed**, 64.34 s), with compile
    and diff checks passing. This remains observation classification only; it
    does not prove provider authorization, data sensitivity, or SQL injection.
+
+   Provider fuzzing now requires `synthetic_data_confirmed=True` as well as its
+   explicit serial and scope guard before either traversal or SQLi probes can
+   start. Traversal payloads target only fixed synthetic-canary filenames; app
+   databases, shared preferences, and OS files were removed. Synthetic tests
+   verify missing confirmation returns `BLOCKED_SYNTHETIC_SCOPE` without ADB,
+   and that only canary paths are formed. Focused provider tests passed (**6
+   passed**); full pytest passed (**1,178 passed**, 74.48 s), with compile and
+   diff checks passing. The boolean is an operator assertion, not verification
+   that a device actually contains synthetic-only data; live testing remains
+   subject to scope and fixture review.

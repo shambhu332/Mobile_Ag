@@ -63,6 +63,32 @@ async def test_api_query_secrets_never_copied_to_evidence():
 
 
 @pytest.mark.asyncio
+async def test_api_query_detector_recognizes_namespaced_credential_keys():
+    tester = APISecurityTester()
+    findings = await tester.test_endpoint(
+        'https://fixture.invalid/item?X-Refresh-Token=synthetic-refresh&client_secret=synthetic-secret'
+    )
+    assert len(findings) == 1
+    assert tester.observations['url_structure_status'] == 'analyzed'
+    serialized = json.dumps(findings[0].model_dump(mode='json'))
+    assert 'synthetic-refresh' not in serialized
+    assert 'synthetic-secret' not in serialized
+
+
+@pytest.mark.asyncio
+async def test_api_query_detector_fails_closed_on_malformed_or_over_limit_input(monkeypatch):
+    tester = APISecurityTester()
+    assert await tester.test_endpoint('https://[malformed/item?token=synthetic') == []
+    assert tester.observations['url_structure_status'] == 'incomplete_input'
+
+    monkeypatch.setattr(APISecurityTester, 'MAX_QUERY_FIELDS', 1)
+    assert await tester.test_endpoint(
+        'https://fixture.invalid/item?ordinary=1&token=synthetic'
+    ) == []
+    assert tester.observations['url_structure_status'] == 'incomplete_input'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('method,args', [
     ('test_endpoint', ['https://fixture.invalid']),
     ('check_rate_limiting', ['https://fixture.invalid']),

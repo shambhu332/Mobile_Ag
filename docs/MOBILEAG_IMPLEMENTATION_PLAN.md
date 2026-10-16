@@ -390,6 +390,16 @@ cover per-manifest truncation and explicit partial status (**8 focused privacy
 tests**); the related privacy/IPA suites passed (**58 passed**); full pytest
 passed (**1,251 passed**, 60.25 s); compileall and `git diff --check` passed.
 
+The offline API query-string indicator now shares normalized credential-key
+recognition with the token-session auditor (including namespaced suffixes),
+caps URL/query parsing, validates malformed authorities, and labels rejected or
+over-limit inputs `incomplete_input` instead of silently treating them as a
+clean review. Findings still omit query values and remain unverified CWE-598
+review leads. The focused workflow boundary suite passed (**20 passed**); full
+pytest passed (**1,253 passed**, 60.60 s); compileall and `git diff --check`
+passed. This does not establish that a query value is a credential or that any
+server uses it.
+
 Legacy dashboard snapshot import is now bounded by tree-entry, per-file, and
 aggregate-byte budgets; it considers only direct scan-child `dashboard.json`
 files, uses no-follow reads, and returns explicit partial coverage when files

@@ -4,9 +4,13 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit, parse_qsl
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
 
 
 class APISecurityTester:
+    MAX_URL_CHARS = 8192
+    MAX_QUERY_FIELDS = 100
+
     def __init__(self, scan_id: str | None = None):
         self.scan_id = scan_id
         self.observations: dict[str, Any] = {}
@@ -28,9 +32,23 @@ class APISecurityTester:
         return findings
 
     async def _analyze_url_structure(self, url: str) -> list[Finding]:
-        parsed = urlsplit(url)
-        sensitive = {"token", "access_token", "refresh_token", "password", "apikey", "api_key", "secret", "auth"}
-        if not any(key.lower() in sensitive for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
+        if not isinstance(url, str) or not url or len(url) > self.MAX_URL_CHARS:
+            self.observations["url_structure_status"] = "incomplete_input"
+            return []
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+                self.observations["url_structure_status"] = "unsupported_or_invalid_url"
+                return []
+            # Validate authority syntax and bound query parsing before scanning.
+            _ = parsed.port
+            query = parse_qsl(parsed.query, keep_blank_values=True,
+                              max_num_fields=self.MAX_QUERY_FIELDS)
+        except (TypeError, ValueError, UnicodeError):
+            self.observations["url_structure_status"] = "incomplete_input"
+            return []
+        self.observations["url_structure_status"] = "analyzed"
+        if not any(MobileTokenSessionAuditor._is_sensitive_query_key(key) for key, _ in query):
             return []
         # Do not copy any URL/userinfo/query/path values into durable evidence.
         return [Finding(

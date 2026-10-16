@@ -260,20 +260,17 @@ def test_dynamic_verification_loop():
 
     verifier = DynamicVerificationLoop()
 
-    # Case 1: Verification probe succeeds on device
-    mock_success = MagicMock()
-    mock_success.returncode = 0
-    mock_success.stdout = "Starting: Intent { act=android.intent.action.VIEW dat=bankapp://auth... }\nStatus: ok\n"
-    mock_success.stderr = ""
-
-    with patch("subprocess.run", return_value=mock_success):
+    # Generated PoC templates are review-only; dispatch is not impact proof.
+    with patch("subprocess.run") as run:
         outcome = verifier.verify_finding(finding, target_package="com.example.bank")
-        assert outcome.verified is True
-        assert outcome.verdict == "CONFIRMED"
+        assert outcome.verified is False
+        assert outcome.verdict == "REVIEW_REQUIRED"
+        assert outcome.execution_attempted is False
+        run.assert_not_called()
 
         updated = verifier.apply_verification_to_finding(finding, outcome)
-        assert updated.status == FindingStatus.CONFIRMED
-        assert "dynamic_verification" in updated.metadata
+        assert updated.status == FindingStatus.UNVERIFIED
+        assert "dynamic_verification" not in updated.metadata
 
     # Case 2: Verification probe blocked by Android OS permission gate
     mock_blocked = MagicMock()
@@ -291,11 +288,11 @@ def test_dynamic_verification_loop():
         file_path="VulnerableActivity.java",
     )
 
-    with patch("subprocess.run", return_value=mock_blocked):
+    with patch("subprocess.run") as run:
         outcome2 = verifier.verify_finding(finding2, target_package="com.example.bank")
         assert outcome2.verified is False
-        assert outcome2.verdict == "BLOCKED_BY_OS"
+        assert outcome2.verdict == "REVIEW_REQUIRED"
+        run.assert_not_called()
 
         updated2 = verifier.apply_verification_to_finding(finding2, outcome2)
-        assert len(updated2.false_positive_reasons) > 0
-        assert "Android OS enforced permission denial" in updated2.false_positive_reasons[0]
+        assert updated2.false_positive_reasons == []

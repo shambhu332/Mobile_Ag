@@ -243,6 +243,22 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_recognizes_case_insensitive_json_escaped_url_scheme(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Urls.json").write_text(
+        r'{"endpoint":"HTTPS:\/\/dev-api.example.com/v1/profile"}' + "\n",
+        encoding="utf-8",
+    )
+
+    _endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    candidate = next(finding for finding in findings if "Staging/Dev" in finding.title)
+    assert candidate.title.endswith("https://dev-api.example.com/v1/profile")
+    assert candidate.file_path == "Urls.json"
+    assert candidate.line_number == 1
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_recognizes_bracketed_ipv6_cleartext_url(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "Ipv6Url.java").write_text(

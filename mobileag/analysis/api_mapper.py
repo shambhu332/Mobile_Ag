@@ -29,7 +29,7 @@ class APIMapper:
         )
         self.url_pattern = re.compile(
             r'https?://(?:\[[0-9A-Fa-f:.]+\]|[a-zA-Z0-9.-]+)'
-            r'(?::\d+)?(?:/[a-zA-Z0-9._/?%&=+-]*)?'
+            r'(?::\d+)?(?:/[a-zA-Z0-9._/?%&=+-]*)?', re.IGNORECASE
         )
         # Decompiled APKs are not always available as Java/Kotlin: obfuscated
         # apps and cross-platform bundles often leave useful route literals in
@@ -175,7 +175,11 @@ class APIMapper:
                         deduplicated_endpoint_count += 1
 
                 # Extract hardcoded URLs
-                for match, line_number in self._matches_with_line_numbers(self.url_pattern, content):
+                # Source may serialize URLs with JSON/JavaScript escaped
+                # slashes. Normalize only this local scan copy; line numbers
+                # are unchanged because the replacement does not touch newlines.
+                url_scan_content = content.replace("\\/", "/")
+                for match, line_number in self._matches_with_line_numbers(self.url_pattern, url_scan_content):
                     url = match.group(0)
                     hostname = (urlsplit(url).hostname or "").lower()
                     host_labels = {part for part in re.split(r"[.-]+", hostname) if part}

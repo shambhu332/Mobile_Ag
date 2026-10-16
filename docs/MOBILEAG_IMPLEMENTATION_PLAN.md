@@ -861,3 +861,14 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passing. Provider transports were mocked; no credentials or real network
    requests were used. Existing pytest-asyncio and async-resource warnings
    remain.
+
+   `/api/dast/launch` now rechecks the authenticated session, configured
+   device allowlist, and exact launch action/package policy immediately before
+   and after dispatch, in addition to the central middleware gate. A synthetic
+   route regression revokes the launch action during the mocked dispatch and
+   confirms the response is denied. Focused route/session regressions passed
+   (**3 passed**, 34 deselected); the full suite passed (**1,162 passed**,
+   73.14 s), with `compileall` and `git diff --check` passing. Dispatch was
+   mocked; no device was used. A revocation during dispatch cannot undo a
+   command already sent, but the result is not accepted after the scope check
+   fails. Existing test-environment warnings remain.

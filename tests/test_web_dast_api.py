@@ -279,6 +279,28 @@ def test_dast_execute_adb_endpoint(client):
     assert "output" in data
 
 
+def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_launch_scope(serial, component):
+        calls.append((serial, component))
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "launch"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic Activity Manager response"}
+
+    monkeypatch.setattr(web.adb_manager, "launch_activity", revoke_launch_scope)
+    response = client.post("/api/dast/launch", json={
+        "serial": "emulator-5554",
+        "component": "org.example/.MainActivity",
+    })
+    assert calls == [("emulator-5554", "org.example/.MainActivity")]
+    assert response.status_code == 403
+
+
 def test_copilot_requires_real_scan(client):
     assert client.post('/api/copilot', json={'prompt':'Write a PoC'}).status_code == 422
     assert client.post('/api/copilot', json={'prompt':'Write a PoC', 'scan_id':'absent'}).status_code == 404

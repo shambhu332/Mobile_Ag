@@ -1340,9 +1340,18 @@ async def install_dast_apk(req: InstallApkRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/launch")
-async def launch_dast_activity(req: LaunchActivityRequest) -> dict[str, Any]:
+async def launch_dast_activity(req: LaunchActivityRequest, request: Request) -> dict[str, Any]:
     """Launch an Android component or exported activity via am start."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "launch", req.model_dump())):
+            raise HTTPException(403, "Activity launch scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.launch_activity(req.serial, req.component)
+    guard()
     return res
 
 

@@ -1881,3 +1881,10 @@ increment. Direct-record and tagged-reference synthetic cases passed with the
 Mach-O/iOS pipeline suite (**59 passed**); full pytest passed (**1,331 passed**,
 54.68 s; one expected duplicate-ZIP-member warning), as did `compileall` and
 `git diff --check`. No real IPA or device runtime evidence was produced.
+
+Added an iOS pipeline regression that asserts the Swift conformance status and
+candidate pairs survive into the serialized `swift_metadata` report object,
+rather than only being present on the parser result. The focused pipeline test
+passed (**1 passed**); full pytest passed again (**1,331 passed**, 54.69 s; one
+expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`.

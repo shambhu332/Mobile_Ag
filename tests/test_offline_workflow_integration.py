@@ -184,3 +184,22 @@ async def test_real_offline_reviews_integrated_with_failure_coverage(monkeypatch
     report = ReportEngine()._generate_markdown(ReportEngine()._prepare_data(result))
     assert 'auth_session: static=analyzed_heuristically' in report
     assert 'firebase: static=incomplete' in report
+
+
+def test_orchestrator_scan_output_rejects_path_traversal_and_symlink_escape(tmp_path):
+    output_root = tmp_path / "scans"
+    output_root.mkdir()
+    scan_id, output = Orchestrator._prepare_scan_output(output_root, "scan-safe_1")
+    assert scan_id == "scan-safe_1"
+    assert output == output_root / scan_id
+    assert output.is_dir()
+
+    with pytest.raises(ValueError, match="Invalid scan identifier"):
+        Orchestrator._prepare_scan_output(output_root, "../escaped")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (output_root / "linked-scan").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        Orchestrator._prepare_scan_output(output_root, "linked-scan")
+    assert list(outside.iterdir()) == []

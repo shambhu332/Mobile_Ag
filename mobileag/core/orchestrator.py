@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 import json
+import re
 from mobileag.security.privacy import redact
 from mobileag.reporting.report_engine import ReportEngine
 from pathlib import Path
@@ -110,6 +111,25 @@ class Orchestrator:
         # Generators
         self._poc_generator = PoCGenerator(self._router)
 
+    @staticmethod
+    def _prepare_scan_output(output_dir: str | Path, requested_scan_id: str | None) -> tuple[str, Path]:
+        """Create a path-safe scan directory beneath the caller-selected root."""
+        scan_id = requested_scan_id or str(uuid.uuid4())[:8]
+        if (not isinstance(scan_id, str) or len(scan_id) > 128
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scan_id)):
+            raise ValueError("Invalid scan identifier for output directory")
+        root = Path(output_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        resolved_root = root.resolve()
+        output_path = root / scan_id
+        if output_path.is_symlink():
+            raise ValueError("Scan output directory must not be a symlink")
+        output_path.mkdir(parents=True, exist_ok=True)
+        resolved_output = output_path.resolve()
+        if not resolved_output.is_relative_to(resolved_root):
+            raise ValueError("Scan output directory escapes the selected output root")
+        return scan_id, output_path
+
     async def scan(
         self,
         apk_path: str,
@@ -129,10 +149,8 @@ class Orchestrator:
         Returns:
             Complete ScanState with all findings and generated outputs.
         """
-        sid = scan_id or str(uuid.uuid4())[:8]
         output = output_dir or self._settings.OUTPUT_DIR
-        output_path = Path(output) / sid
-        output_path.mkdir(parents=True, exist_ok=True)
+        sid, output_path = self._prepare_scan_output(output, scan_id)
 
         state = create_initial_state(sid, apk_path, str(output_path))
         state["allow_advisory_lookup"] = bool(allow_advisory_lookup)

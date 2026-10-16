@@ -79,6 +79,23 @@ def test_dast_connect_rechecks_policy_after_connect_attempt(client, monkeypatch)
     assert response.status_code == 403
 
 
+def test_dast_screenshot_withholds_image_after_policy_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+
+    async def revoke_screenshot_scope(serial):
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "screenshot"]
+        web.repository().save_policy(policy)
+        return b"\x89PNG\r\n\x1a\nsynthetic-image"
+
+    monkeypatch.setattr(web.adb_manager, "capture_screenshot", revoke_screenshot_scope)
+    response = client.post("/api/dast/screenshot", json={"serial": "emulator-5554"})
+    assert response.status_code == 403
+    assert "image_b64" not in response.text
+
+
 def test_dast_root_endpoint(client):
     response = client.post("/api/dast/root", json={"serial": "emulator-5554"})
     assert response.status_code == 200

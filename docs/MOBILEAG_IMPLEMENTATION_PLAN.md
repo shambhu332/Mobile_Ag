@@ -931,3 +931,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    `compileall` and `git diff --check` passing. No device log buffer was
    touched. This preserves evidence; the old endpoint is intentionally
    incompatible and its helper remains unused for legacy callers only.
+
+   Screenshot capture now rechecks authenticated session, configured device,
+   and explicit `screenshot` action immediately before and after acquisition.
+   A mocked regression revokes scope during capture and confirms no image is
+   returned. Focused screenshot-route test passed (**1 passed**, 30 deselected);
+   the full suite passed (**1,170 passed**, 56.44 s), with `compileall` and
+   `git diff --check` passing. Capture was mocked; no device screen was read.
+   Existing test-environment warnings remain.

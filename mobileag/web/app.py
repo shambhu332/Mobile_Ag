@@ -1466,9 +1466,16 @@ async def clear_dast_logcat(req: DeviceActionRequest, request: Request) -> dict[
 @app.post("/api/dast/screenshot")
 async def capture_dast_screenshot(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Capture a live screenshot of the device screen."""
-    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "screenshot", req.model_dump())):
+            raise HTTPException(403, "Screenshot scope is unavailable or revoked")
+
+    guard()
     png_bytes = await adb_manager.capture_screenshot(req.serial)
-    require_current_session(request)
+    guard()
     if png_bytes:
         import base64
         b64 = base64.b64encode(png_bytes).decode("utf-8")

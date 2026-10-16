@@ -41,6 +41,8 @@ class BolaFuzzer:
     MAX_CANDIDATES = 100
     MAX_CANDIDATE_LENGTH = 256
     MAX_RESPONSE_CHARS = 1024 * 1024
+    MAX_MARKER_CHARS = 256
+    ALLOWED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
     SENSITIVE_QUERY_KEY_PARTS = (
         "token", "auth", "authorization", "password", "secret", "session", "cookie",
         "bearer", "credential", "key", "apikey",
@@ -130,18 +132,29 @@ class BolaFuzzer:
         user_a_marker: Optional[str] = None,
     ) -> BolaTestResult:
         """Record a canary observation; this offline evaluator never proves BOLA."""
+        normalized_method = (
+            method.upper() if isinstance(method, str) and len(method) <= 16
+            and method.upper() in self.ALLOWED_METHODS else "UNKNOWN"
+        )
+        valid_status = type(status_code) is int and 100 <= status_code <= 599
+        observed_status = status_code if valid_status else 0
+        valid_marker = (
+            isinstance(user_a_marker, str) and 0 < len(user_a_marker) <= self.MAX_MARKER_CHARS
+        )
         reason = "Access denied or safe behavior observed."
+        if not valid_status:
+            reason = "Invalid HTTP status input; no access-control conclusion is possible."
         valid_response = isinstance(response_body, str)
         bounded_response = response_body[:self.MAX_RESPONSE_CHARS] if valid_response else ""
         hash_status = "invalid_input" if not valid_response else (
             "truncated" if len(response_body) > self.MAX_RESPONSE_CHARS else "complete"
         )
         marker_observed = bool(
-            isinstance(user_a_marker, str) and user_a_marker and valid_response
+            valid_marker and valid_response
             and user_a_marker in bounded_response
         )
 
-        if status_code in {200, 206}:
+        if observed_status in {200, 206}:
             # A successful response alone cannot establish that the object is
             # private or belongs to account A. Require an independently known,
             # synthetic account-A canary to be reflected by account B's response.
@@ -155,21 +168,21 @@ class BolaFuzzer:
                     "HTTP success observed, but no researcher-provided User A canary matched; "
                     "object ownership and confidentiality are unverified."
                 )
-        elif status_code in {401, 403}:
-            reason = f"Proper authorization enforcement observed (HTTP {status_code})."
-        elif status_code == 404:
+        elif observed_status in {401, 403}:
+            reason = f"Authorization denial observed (HTTP {observed_status}); scope and request equivalence remain unverified."
+        elif observed_status == 404:
             reason = f"Resource not found (HTTP 404); potential object-level isolation or absent resource."
 
         return BolaTestResult(
             endpoint=self._safe_endpoint(endpoint),
-            method=method,
+            method=normalized_method,
             resource_id="[REDACTED]",
-            status_code=status_code,
+            status_code=observed_status,
             # Retain the legacy field but fail closed: this pure observation
             # evaluator has no verified vulnerability verdict.
             is_vulnerable=False,
             evidence_reason=reason,
-            candidate_observed=marker_observed and status_code in {200, 206},
+            candidate_observed=marker_observed and observed_status in {200, 206},
             proof_status="not_proven",
             # Avoid retaining potentially real account data. Digest, status,
             # and the explicit synthetic-canary match are sufficient for a
@@ -214,11 +227,12 @@ class BolaFuzzer:
             account_a_response_body[:self.MAX_RESPONSE_CHARS] if reference_valid else ""
         )
         reference_marker = bool(
-            isinstance(account_a_marker, str) and account_a_marker
+            isinstance(account_a_marker, str) and 0 < len(account_a_marker) <= self.MAX_MARKER_CHARS
             and reference_valid and account_a_marker in reference_bounded
         )
         result.reference_marker_observed = reference_marker
-        if not reference_marker or account_a_status not in {200, 206}:
+        if (not reference_marker or type(account_a_status) is not int
+                or account_a_status not in {200, 206}):
             result.is_vulnerable = False
             result.comparison_status = "reference_not_established"
             result.evidence_reason = (

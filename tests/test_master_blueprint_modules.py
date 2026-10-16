@@ -250,6 +250,27 @@ def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
     assert invalid.response_hash_status == "invalid_input"
 
 
+def test_bola_evaluator_sanitizes_method_status_and_bounds_canary_input():
+    result = BolaFuzzer().evaluate_response_discrepancy(
+        endpoint="/v1/orders/order_1", method="GET\r\nX-Leak: synthetic",
+        resource_id="order_1", status_code="200", response_body="canary",
+        user_a_marker="canary",
+    )
+    assert result.method == "UNKNOWN"
+    assert result.status_code == 0
+    assert result.is_vulnerable is False
+    assert result.candidate_observed is False
+    assert result.proof_status == "not_proven"
+    assert "Invalid HTTP status" in result.evidence_reason
+
+    oversized_marker = BolaFuzzer().evaluate_response_discrepancy(
+        endpoint="/v1/orders/order_1", method="GET", resource_id="order_1",
+        status_code=200, response_body="x" * 1000, user_a_marker="x" * 1000,
+    )
+    assert oversized_marker.marker_observed is False
+    assert oversized_marker.candidate_observed is False
+
+
 def test_bola_dual_session_observation_requires_a_control_and_b_canary_match():
     fuzzer = BolaFuzzer()
     positive = fuzzer.evaluate_dual_session_observations(

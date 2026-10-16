@@ -517,6 +517,15 @@ cannot verify account identity, request equivalence, object ownership, or
 server-side authorization. Verified BOLA proof still requires a scoped replay
 and independently attributable controls, neither of which is available here.
 
+Its result fields now also bound input-derived reporting: methods are allowlist-
+normalized, non-integer/out-of-range statuses become `0` with an invalid-input
+reason, and researcher-supplied canary markers are limited to 256 characters.
+Invalid account-A status values cannot establish the comparison control.
+
+Input-field validation passed focused BOLA tests (**6 passed, 45 deselected**)
+and full suite (**1,072 passed**, 39.49 s; one expected synthetic
+duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.
+
 The credential-key filter passed focused BOLA tests (**5 passed, 45
 deselected**) and the full suite (**1,071 passed**, 40.04 s; one expected
 synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`

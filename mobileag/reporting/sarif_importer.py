@@ -75,6 +75,14 @@ def _preflight_sarif_limits(document: dict[str, Any]) -> None:
         raise SarifImportError("SARIF document does not conform to the OASIS 2.1.0 schema")
 
 
+def validate_sarif_document(document: dict[str, Any]) -> None:
+    """Validate a generated SARIF object against local limits and bundled schema."""
+    if not isinstance(document, dict) or document.get("version") != "2.1.0":
+        raise SarifImportError("Only SARIF version 2.1.0 is accepted")
+    _bounded_object_size(document, [MAX_BYTES], set())
+    _preflight_sarif_limits(document)
+
+
 def _text(value: Any, limit: int = MAX_TEXT) -> str:
     return value[:limit] if isinstance(value, str) else ""
 

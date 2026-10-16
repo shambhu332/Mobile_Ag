@@ -1160,3 +1160,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
 
 
    Network Security Config resolution now rejects traversal-shaped `@xml/` resource names, unresolved resource IDs, explicit manifest paths outside the extraction root, and direct candidate paths with symlink components. A missing manifest-referenced custom config no longer falls back to an unrelated default; each rejection reports partial coverage. Synthetic tests cover traversal, symlink, external manifest path, and unrelated-default controls. Focused Network Security Config tests passed (**8 passed**); full pytest passed (**1,197 passed**, 59.60 s), with compile and diff checks passing. This is offline path handling only; no Android platform TLS policy or live traffic behavior was exercised.
+
+   SARIF export now validates generated documents against the bundled OASIS
+   2.1.0 schema and the importer's shared run/rule/result/object-size bounds;
+   file output is capped and atomically replaces symlink destinations using a
+   private temporary file. Focused exporter/importer validation passed (**12
+   passed**). This validates format and local file-write behavior only; no
+   GitHub/GitLab ingestion or hosted CI integration is established.

@@ -1,7 +1,10 @@
 """Test suite for accuracy improvements: Native JNI analyzer, path-sensitive sanitizers, and dynamic verification loop."""
 import os
+import shutil
+import subprocess
 import tempfile
 from unittest.mock import MagicMock, patch
+import pytest
 
 from mobileag.analysis.native_jni_bridge import NativeJniAnalyzer
 from mobileag.filters.sanitizer_check import SanitizerFilter
@@ -35,21 +38,45 @@ def test_native_jni_analyzer():
 
         assert res.library_name == "libsecurity.so"
         assert res.architecture == "arm64-v8a"
-        assert len(res.exported_jni_functions) == 1
-        assert res.exported_jni_functions[0].java_class == "com.example.app.NativeSecurity"
-        assert res.exported_jni_functions[0].java_method == "executeCommand"
+        assert res.exported_jni_functions == []  # The malformed fixture has no parsed dynamic symbols.
+        assert "Java_com_example_app_NativeSecurity_executeCommand" in res.jni_export_name_candidates
         assert "system" in res.dangerous_symbol_string_candidates
         assert "sqlite3_exec" in res.dangerous_symbol_string_candidates
-        # Deprecated output aliases remain for compatibility but are explicitly
-        # candidates, not evidence of ELF imports or JNI call reachability.
-        assert res.imported_dangerous_symbols == res.dangerous_symbol_string_candidates
-        assert res.exported_jni_functions[0].dangerous_calls_referenced == []
+        assert res.imported_dangerous_symbols == []
         assert len(res.findings) >= 2
         for finding in res.findings:
             assert finding.cwe_id == "CWE-Unknown"
             assert finding.severity == Severity.INFO
             assert finding.metadata["call_reachability"] == "not_analyzed"
             assert "does not establish an ELF dynamic import" in finding.description
+
+
+@pytest.mark.skipif(shutil.which("gcc") is None, reason="gcc required for synthetic ELF fixture")
+def test_native_jni_analyzer_parses_import_and_export_symbols_without_call_path(tmp_path):
+    source = tmp_path / "native.c"
+    library = tmp_path / "libnative.so"
+    source.write_text(
+        "#include <stdlib.h>\n"
+        "void Java_com_example_Native_run(void) { system(\"true\"); }\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [shutil.which("gcc"), "-shared", "-fPIC", "-fno-builtin", "-o", str(library), str(source)],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "parsed"
+    assert result.dynamic_symbols_seen > 0
+    assert "system" in result.imported_dangerous_symbols
+    assert any(item.java_method == "run" for item in result.exported_jni_functions)
+    assert result.exported_jni_functions[0].dangerous_calls_referenced == []
+    system_finding = next(item for item in result.findings if item.title.endswith(": system"))
+    assert system_finding.metadata["analysis_kind"] == "elf_dynamic_symbol_import"
+    assert system_finding.metadata["call_reachability"] == "not_analyzed"
+    assert system_finding.severity == Severity.INFO
+    assert system_finding.cwe_id == "CWE-Unknown"
 
 
 def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):

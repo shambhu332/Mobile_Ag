@@ -516,21 +516,21 @@ inventory and does not establish that a library is loaded or used at runtime.
 
 ### Native JNI string-candidate evidence boundary
 
-The JNI helper scans a bounded byte prefix for printable strings that resemble
-JNI export names or risky libc symbols; it does not parse ELF dynamic-symbol
-tables, relocations, disassembly, or call graphs. Outputs now use
-`dangerous_symbol_string_candidates`, report INFO / `CWE-Unknown` review leads,
-and explicitly withhold call reachability. The legacy
-`imported_dangerous_symbols` property remains a compatibility alias for those
-candidates; `dangerous_calls_referenced` on each JNI name remains empty because
-whole-binary co-occurrence is not a method-level call edge. This inventory
-cannot establish an imported function, execution, attacker-controlled
-arguments, or a vulnerability.
+The JNI helper parses a bounded `.dynsym` table (up to 5,000 records) when
+`pyelftools` is available, separating undefined `STT_FUNC` imports and defined
+JNI export symbols from printable-string candidates. A 5 MiB input cap and
+explicit invalid/partial/unsupported parser states prevent a truncated or
+malformed file from being treated as a complete symbol inventory. Generated
+INFO / `CWE-Unknown` leads explicitly withhold call reachability; a dynamic
+symbol import is not proof of a call site, execution, attacker-controlled
+arguments, or a vulnerability. `dangerous_calls_referenced` remains empty
+because method-level native call graphs are not analyzed. Compiler-built
+synthetic tests verify symbol import/export inventory only, not runtime
+reachability or a real application.
 
-The reclassification and regression checks passed the focused JNI tests
-(**3 passed, 2 deselected**) and full suite (**1,062 passed**, 39.85 s; one
-expected synthetic duplicate-ZIP-member warning); `compileall` and
-`git diff --check` passed.
+The ELF symbol-table improvement passed focused JNI tests (**4 passed, 2
+deselected**) and full suite (**1,063 passed**, 39.93 s; one expected synthetic
+duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.
 
 ### RASP resilience inventory boundary
 

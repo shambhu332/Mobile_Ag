@@ -10,12 +10,18 @@ import os
 import re
 import stat
 import struct
+from io import BytesIO
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.analysis.bounded_sources import explicit_scan_root
+
+try:
+    from elftools.elf.elffile import ELFFile
+except ImportError:  # pragma: no cover - dependency is pinned for normal installs
+    ELFFile = None
 
 
 @dataclass
@@ -38,13 +44,12 @@ class NativeLibraryAuditResult:
     scan_truncated: bool = False
     scan_errors: List[str] = field(default_factory=list)
     exported_jni_functions: List[JniExportedFunction] = field(default_factory=list)
+    jni_export_name_candidates: List[str] = field(default_factory=list)
     dangerous_symbol_string_candidates: List[str] = field(default_factory=list)
+    imported_dangerous_symbols: List[str] = field(default_factory=list)
+    elf_parse_status: str = "not_attempted"
+    dynamic_symbols_seen: int = 0
     findings: List[Finding] = field(default_factory=list)
-
-    @property
-    def imported_dangerous_symbols(self) -> List[str]:
-        """Deprecated compatibility alias; values are printable-string candidates."""
-        return self.dangerous_symbol_string_candidates
 
 
 class NativeJniAnalyzer:
@@ -112,39 +117,75 @@ class NativeJniAnalyzer:
             result.scan_errors.append("invalid_elf_header")
             return result
 
-        # Extract printable strings
+        # Extract printable strings as candidates; these are not ELF imports.
         raw_strings = re.findall(b"[a-zA-Z0-9_]{3,}", data)
         strings_set: Set[str] = {s.decode("ascii", errors="ignore") for s in raw_strings}
 
-        # This intentionally does not parse ELF dynamic symbols: strings in a
-        # binary are only candidates and can be unrelated data or debug text.
         for sink in self.DANGEROUS_LIBC_SINKS:
             if sink in strings_set:
                 result.dangerous_symbol_string_candidates.append(sink)
 
-        # Identify exported JNI functions
+        # Parse dynamic symbols separately from byte-string heuristics. Imports
+        # still do not prove a call site or JNI reachability.
+        if ELFFile is None:
+            result.elf_parse_status = "unsupported"
+            result.scan_errors.append("elf_parser_unavailable")
+        elif result.scan_truncated:
+            result.elf_parse_status = "partial"
+            result.scan_errors.append("elf_table_may_be_truncated")
+        else:
+            try:
+                elf = ELFFile(BytesIO(data))
+                dynsym = elf.get_section_by_name(".dynsym")
+                result.elf_parse_status = "parsed"
+                if dynsym is not None:
+                    for index, symbol in enumerate(dynsym.iter_symbols()):
+                        if index >= 5000:
+                            result.elf_parse_status = "partial"
+                            result.scan_errors.append("dynamic_symbol_limit")
+                            break
+                        result.dynamic_symbols_seen += 1
+                        name = symbol.name
+                        if not name or len(name) > 256 or symbol.entry.st_info.type != "STT_FUNC":
+                            continue
+                        if symbol.entry.st_shndx == "SHN_UNDEF":
+                            if name in self.DANGEROUS_LIBC_SINKS:
+                                result.imported_dangerous_symbols.append(name)
+                        elif name.startswith("Java_"):
+                            demangled = self.demangle_jni_name(name)
+                            if demangled:
+                                cls_name, method_name = demangled
+                                result.exported_jni_functions.append(JniExportedFunction(
+                                    mangled_name=name, java_class=cls_name,
+                                    java_method=method_name, library_name=lib_name,
+                                ))
+            except Exception:
+                result.elf_parse_status = "partial"
+                result.scan_errors.append("elf_symbol_parse_error")
+
+        # Identify JNI-looking strings for review, but do not promote them to
+        # verified exports unless the dynamic symbol table says so.
         for s in strings_set:
             if s.startswith("Java_"):
                 demangled = self.demangle_jni_name(s)
                 if demangled:
-                    cls_name, method_name = demangled
-                    jni_func = JniExportedFunction(
-                        mangled_name=s,
-                        java_class=cls_name,
-                        java_method=method_name,
-                        library_name=lib_name,
-                    )
-                    result.exported_jni_functions.append(jni_func)
+                    result.jni_export_name_candidates.append(s)
 
-        # Co-presence of strings and JNI-style names does not prove a call edge.
-        for sink in result.dangerous_symbol_string_candidates:
+        # Imports or symbol-like strings are review leads, never exploit claims.
+        for sink in sorted(set(result.imported_dangerous_symbols) |
+                           set(result.dangerous_symbol_string_candidates)):
+            is_import = sink in result.imported_dangerous_symbols
             result.findings.append(
                 Finding(
                     id=f"NATIVE_LIBC_SINK_{lib_name}_{sink}",
-                    title=f"Review native symbol-like string candidate in {lib_name}: {sink}",
-                    description=(f"The bounded printable-string scan found '{sink}' in '{lib_name}' ({arch}). "
-                                 "This does not establish an ELF dynamic import, call site, execution, "
-                                 "tainted arguments, or reachability from an exported JNI method."),
+                    title=(f"Review native ELF import in {lib_name}: {sink}" if is_import else
+                           f"Review native symbol-like string candidate in {lib_name}: {sink}"),
+                    description=((f"The ELF dynamic symbol table lists undefined function import '{sink}' in '{lib_name}' ({arch}). "
+                                  "This does not establish a call site, execution, attacker-controlled arguments, or JNI reachability.")
+                                 if is_import else
+                                 (f"The bounded printable-string scan found '{sink}' in '{lib_name}' ({arch}). "
+                                  "This does not establish an ELF dynamic import, call site, execution, "
+                                  "tainted arguments, or reachability from an exported JNI method.")),
                     severity=Severity.INFO,
                     status=FindingStatus.UNVERIFIED,
                     cwe_id="CWE-Unknown",
@@ -152,7 +193,8 @@ class NativeJniAnalyzer:
                     metadata={
                         "library": lib_name,
                         "architecture": arch,
-                        "symbol_string_candidate": sink,
+                        "symbol_string_candidate": not is_import,
+                        "analysis_kind": "elf_dynamic_symbol_import" if is_import else "byte_string_inventory",
                         "exported_jni_symbols_co_located": [f.mangled_name for f in result.exported_jni_functions],
                         "call_reachability": "not_analyzed",
                     },

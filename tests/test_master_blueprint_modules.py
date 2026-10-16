@@ -473,6 +473,29 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     assert "synthetic-provider-private-value" not in json.dumps([item.__dict__ for item in traversal + sql])
 
 
+def test_provider_sqli_permission_denial_precedes_sql_error_wording(monkeypatch):
+    import io
+    import mobileag.dast.provider_fuzzer as provider_module
+
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.BytesIO(b"")
+            self.stderr = io.BytesIO(b"SecurityException: SQLite syntax error")
+        def wait(self, timeout=None):
+            return 1
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(provider_module.subprocess, "Popen", FakeProcess)
+    results = ContentProviderFuzzer(adb_path="adb").fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=lambda: None,
+    )
+
+    assert results
+    assert all(result.status == "ACCESS_DENIED" for result in results)
+    assert all(result.output_snippet == "" for result in results)
+
+
 def test_provider_fuzzer_sqli_covers_projection_and_selection_with_shell_quoting(monkeypatch):
     import io
     import shlex

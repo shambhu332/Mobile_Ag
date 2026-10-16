@@ -176,6 +176,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Path Traversal: `content://<authority>/../../../../data/data/<package>/databases/app.db`
      - Projection/Selection SQLi: `content://<authority>/users --projection "* FROM users WHERE 1=1 --"`
   3. Verify whether file descriptors or database rows are leaked without required permissions.
+* **Observation handling**: Explicit `SecurityException` / `Permission Denial` output takes precedence over SQL-parser wording; a denied query is not classified as an observed SQL error or a vulnerability.
 
 ### 4.3 Review-Only PoC Output (Not Execution Authorization)
 * **Objective**: Provide bounded review material for eligible, analyst-attested findings without claiming independent proof or authorizing execution.
@@ -1085,3 +1086,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    pytest passed (**1,177 passed**, 63.19 s), with compile and diff checks
    passing. This guards state-tracking memory only; it does not limit total
    session duration or demonstrate behavior on a real device.
+
+   ContentProvider SQL probe classification now gives explicit permission
+   denial precedence over coincident SQLite/syntax-error wording, since a
+   denied call cannot establish that the query reached provider SQL handling.
+   A mocked regression covers mixed `SecurityException` plus SQL-error output
+   and confirms no raw output is retained. Focused provider tests passed
+   (**5 passed**); full pytest passed (**1,178 passed**, 64.34 s), with compile
+   and diff checks passing. This remains observation classification only; it
+   does not prove provider authorization, data sensitivity, or SQL injection.

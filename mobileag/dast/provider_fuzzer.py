@@ -164,15 +164,16 @@ class ContentProviderFuzzer:
                 output = stdout.strip()
                 err = stderr.strip()
 
-                # If query succeeds or reflects SQL error syntax rather than SecurityException
+                # Authorization denial takes precedence over parser wording;
+                # a denied operation did not reach a meaningful SQL test.
                 if timed_out:
                     status = "TIMEOUT"
+                elif "SecurityException" in err or "Permission Denial" in err:
+                    status = "ACCESS_DENIED"
                 elif "sqlite" in err.lower() or "syntax error" in err.lower():
                     status = "SQL_ERROR_OBSERVED"
                 elif returncode == 0 and "Row:" in output:
                     status = "QUERY_RESULT_OBSERVED"
-                elif "SecurityException" in err or "Permission Denial" in err:
-                    status = "ACCESS_DENIED"
                 else:
                     status = "INCONCLUSIVE"
 

@@ -199,6 +199,24 @@ def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):
     assert findings[0].metadata["reassignment_analysis"] == "linewise_bounded"
 
 
+def test_intent_redirection_recognizes_bounded_typed_parcelable_forms(tmp_path):
+    source = tmp_path / "TypedParcelable.java"
+    source.write_text('''class Proxy {
+        void javaCast() {
+            Intent target = (Intent) getIntent().getParcelableExtra("nested");
+            startActivity(target);
+        }
+        fun kotlinGeneric() {
+            val other: Intent = intent.getParcelableExtra<Intent>("nested")
+            startActivity(other)
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 2
+    assert [finding.metadata["source_line"] for finding in findings] == [3, 7]
+
+
 def test_intent_redirection_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
     target = tmp_path.parent / "intent-redirection-outside.java"
     target.write_text('''class Outside {

@@ -94,7 +94,12 @@ class IntentRedirectionAuditor:
         return findings
 
     EXTRA_INTENT_EXTRACTION_PATTERN = re.compile(
-        r"(?:Intent\s+)?([a-zA-Z0-9_]+)\s*=\s*(?:[a-zA-Z0-9_().]+\.)?getParcelableExtra\s*\(\s*[\"'][^\"']+[\"']\s*(?:,\s*Intent\.class\s*)?\)"
+        r"(?:Intent\s+)?([a-zA-Z0-9_]+)(?:\s*:\s*(?:android\.content\.)?Intent)?\s*=\s*"
+        r"(?:(?:\(\s*(?:android\.content\.)?Intent\s*\)|\bas\s+(?:android\.content\.)?Intent)\s*)?"
+        r"(?:[a-zA-Z0-9_().]+\.)?getParcelableExtra"
+        r"(?:\s*<\s*(?:android\.content\.)?Intent\s*>)?"
+        r"\s*\(\s*[\"'][^\"']+[\"']\s*(?:,\s*(?:Intent\.class|Intent::class\.java)\s*)?\)"
+        r"(?:\s+as\s+(?:android\.content\.)?Intent)?"
     )
 
     START_ACTIVITY_FORWARD_PATTERN = re.compile(

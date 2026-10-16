@@ -119,6 +119,54 @@ def _mask_xml_comments(source: str) -> tuple[str, bool]:
     return "".join(chars), malformed
 
 
+def _mask_javascript_dart_comments(source: str) -> str:
+    """Blank JS/Dart comments while preserving quoted and template literals."""
+    chars = list(source)
+    index = 0
+    length = len(source)
+    while index < length:
+        if source.startswith("//", index):
+            end = index + 2
+            while end < length and source[end] not in "\r\n":
+                end += 1
+            for position in range(index, end):
+                chars[position] = " "
+            index = end
+            continue
+        if source.startswith("/*", index):
+            start = index
+            index += 2
+            depth = 1
+            while index < length and depth:
+                if source.startswith("/*", index):
+                    depth += 1
+                    index += 2
+                elif source.startswith("*/", index):
+                    depth -= 1
+                    index += 2
+                else:
+                    index += 1
+            for position in range(start, index):
+                if chars[position] not in "\r\n":
+                    chars[position] = " "
+            continue
+        if source[index] in {'"', "'", "`"}:
+            quote = source[index]
+            delimiter = quote * 3 if quote in {'"', "'"} and source.startswith(quote * 3, index) else quote
+            index += len(delimiter)
+            while index < length:
+                if source[index] == "\\":
+                    index += 2
+                elif source.startswith(delimiter, index):
+                    index += len(delimiter)
+                    break
+                else:
+                    index += 1
+            continue
+        index += 1
+    return "".join(chars)
+
+
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -141,7 +189,7 @@ class APIMapper:
         # Smali, XML/JSON resources, JS bundles, or Dart output. These are
         # inventory leads only; the HTTP method and reachability are unknown.
         self.route_literal_pattern = re.compile(
-            r'''["']((?:/)(?:api|graphql|v[0-9]+|auth|oauth|login|users?|account|payments?)(?:/[A-Za-z0-9._~%{}:-]+)*(?:\?[A-Za-z0-9._~%{}=&%-]*)?)["']''',
+            r'''["'`]((?:/)(?:api|graphql|v[0-9]+|auth|oauth|login|users?|account|payments?)(?:/[A-Za-z0-9._~%{}:$-]+)*(?:\?[A-Za-z0-9._~%{}=&%-]*)?)["'`]''',
             re.IGNORECASE,
         )
         self.graphql_pattern = re.compile(r'query\s*\{|mutation\s*\{')
@@ -152,7 +200,10 @@ class APIMapper:
     def _safe_route(value: str) -> str:
         """Keep route shape, but never retain query, fragment, or opaque path values."""
         try:
-            parsed = urlsplit(value[:8192])
+            bounded_value = value[:8192]
+            bounded_value = re.sub(r"\$\{[^{}]{1,128}\}|\$[A-Za-z_][A-Za-z0-9_]*",
+                                   "{id}", bounded_value)
+            parsed = urlsplit(bounded_value)
             origin = ""
             if parsed.scheme or parsed.netloc:
                 hostname = parsed.hostname
@@ -303,6 +354,8 @@ class APIMapper:
                 elif file_path.suffix.lower() == ".xml":
                     content, malformed_xml = _mask_xml_comments(content)
                     malformed_xml_comment_files += int(malformed_xml)
+                elif file_path.suffix.lower() in {".js", ".mjs", ".dart"}:
+                    content = _mask_javascript_dart_comments(content)
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
                 # parsed with a bounded quote-aware scanner to avoid repeated

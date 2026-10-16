@@ -334,6 +334,29 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_scans_js_dart_template_routes_not_comments(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "routes.js").write_text(
+        '// "/api/v1/commented"\n'
+        'const route = `/api/v1/users/${userId}`;\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "routes.dart").write_text(
+        '// "/api/v2/commented"\n'
+        "final route = '/api/v2/orders/$orderId';\n",
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    routes = {(endpoint["url"], endpoint["method"], endpoint["source_file"])
+              for endpoint in endpoints}
+    assert ("/api/v1/users/{id}", "UNKNOWN", "routes.js") in routes
+    assert ("/api/v2/orders/{id}", "UNKNOWN", "routes.dart") in routes
+    assert not any("commented" in route[0] for route in routes)
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_masks_xml_comments_but_scans_cdata_and_active_urls(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "strings.xml").write_text(

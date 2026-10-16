@@ -984,6 +984,23 @@ def test_smali_unmodeled_invoke_form_marks_register_flow_partial(tmp_path):
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_unknown_register_destination_form_marks_coverage_partial(tmp_path):
+    (tmp_path / "UnknownWrite.smali").write_text("""
+.class public Lcom/example/UnknownWrite;
+.super Ljava/lang/Object;
+.method public transform()V
+    .registers 3
+    unsupported-op v0, v1
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("unmodeled register-write form" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_call_graph_reflection_resolution():
     engine = SmaliCallGraphEngine()
 

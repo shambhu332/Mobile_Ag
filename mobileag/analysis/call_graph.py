@@ -960,6 +960,11 @@ class SmaliCallGraphEngine:
                     for source_register in source_registers:
                         arithmetic_traces.update(registers.get(source_register, ()))
                 write = write_re.match(text)
+                unknown_register_write = re.match(r"[A-Za-z][A-Za-z0-9/-]*\s+[vp]\d+\s*,", text)
+                if (unknown_register_write and not write and not array_put and not instance_put
+                        and not static_put and not fill_array_data
+                        and not text.startswith(("if-", "check-cast", "packed-switch", "sparse-switch"))):
+                    warn(f"unmodeled register-write form in {method.key} at line {line_no}")
                 if write:
                     registers.pop(write.group(1), None)
                     registers.pop(f"@array:{write.group(1)}", None)

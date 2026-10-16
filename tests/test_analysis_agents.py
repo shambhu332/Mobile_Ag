@@ -205,6 +205,20 @@ async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_method
     }
     assert next(endpoint for endpoint in endpoints if endpoint["url"] == "/api/v2/ignored")[
         "evidence_type"] == "route_literal"
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["unmodeled_retrofit_http_annotations"] == 1
+
+
+def test_api_mapper_bounds_malformed_retrofit_http_annotation_scanning(mock_router, tmp_path):
+    (tmp_path / "Malformed.java").write_text("@HTTP(" * 10_000, encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert endpoints == []
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limits_reached"] is True
+    assert mapper.coverage["oversized_or_unclosed_retrofit_http_annotations"] > 0
 
 
 @pytest.mark.asyncio

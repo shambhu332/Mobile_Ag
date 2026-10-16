@@ -20,13 +20,10 @@ class APIMapper:
         self.retrofit_pattern = re.compile(
             r'@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\(\s*"([^"]+)"\s*\)'
         )
-        # Retrofit's general @HTTP form can place its named arguments in
-        # either order. Only literal, standard method tokens and paths are
-        # accepted; this records declarations, not effective network calls.
-        self.retrofit_http_pattern = re.compile(
-            r'@HTTP\s*\((?=[^)]*?\bmethod\s*=\s*"([A-Z]+)")'
-            r'(?=[^)]*?\bpath\s*=\s*"([^"]+)")[^)]*\)', re.DOTALL
-        )
+        self.retrofit_http_start = re.compile(r"@HTTP\b")
+        self.retrofit_http_method = re.compile(r'\bmethod\s*=\s*"([A-Z]+)"')
+        self.retrofit_http_path = re.compile(r'\bpath\s*=\s*"([^"]+)"')
+        self.MAX_RETROFIT_HTTP_ANNOTATION_CHARS = 4096
         self.url_pattern = re.compile(
             r'https?://(?:\[[0-9A-Fa-f:.]+\]|[a-zA-Z0-9.-]+)'
             r'(?::\d+)?(?:/[a-zA-Z0-9._/?%&=+-]*)?', re.IGNORECASE
@@ -103,12 +100,85 @@ class APIMapper:
             line_number += content.count("\n", match.start(), match.end())
             offset = match.end()
 
+    def _retrofit_declarations(self, content: str, diagnostics: dict[str, int]):
+        """Yield literal Retrofit declarations with bounded @HTTP parsing.
+
+        The general annotation scanner advances past a bounded annotation span
+        instead of running a backtracking expression from every @HTTP marker.
+        This keeps malformed/decompiled source from causing quadratic scans.
+        """
+        for match, line_number in self._matches_with_line_numbers(self.retrofit_pattern, content):
+            method, path = match.groups()
+            yield method, path, line_number, False
+
+        cursor = 0
+        line_at_cursor = 1
+        content_length = len(content)
+        max_chars = self.MAX_RETROFIT_HTTP_ANNOTATION_CHARS
+        while True:
+            start_match = self.retrofit_http_start.search(content, cursor)
+            if start_match is None:
+                return
+            start = start_match.start()
+            start_line = line_at_cursor + content.count("\n", cursor, start)
+            position = start_match.end()
+            while position < content_length and content[position].isspace() and position - start <= 64:
+                position += 1
+            if position >= content_length or content[position] != "(":
+                new_cursor = start_match.end()
+                line_at_cursor += content.count("\n", cursor, new_cursor)
+                cursor = new_cursor
+                continue
+
+            body_start = position + 1
+            scan_limit = min(content_length, body_start + max_chars)
+            depth = 1
+            quote_char = ""
+            escaped = False
+            close = None
+            for index in range(body_start, scan_limit):
+                char = content[index]
+                if quote_char:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == quote_char:
+                        quote_char = ""
+                    continue
+                if char in {'"', "'"}:
+                    quote_char = char
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        close = index
+                        break
+
+            if close is None:
+                diagnostics["oversized_or_unclosed"] += 1
+                new_cursor = scan_limit
+            else:
+                body = content[body_start:close]
+                method_match = self.retrofit_http_method.search(body)
+                path_match = self.retrofit_http_path.search(body)
+                if method_match is None or path_match is None:
+                    diagnostics["unmodeled"] += 1
+                else:
+                    yield method_match.group(1), path_match.group(1), start_line, True
+                new_cursor = close + 1
+
+            line_at_cursor += content.count("\n", cursor, new_cursor)
+            cursor = new_cursor
+
     def _sync_map_apis(self, base_path: Path) -> tuple[list[dict], list[dict]]:
         """Synchronously scan source files for API definitions and URL references."""
         endpoints: list[dict] = []
         raw_findings: list[dict] = []
         seen_endpoint_urls: set[str] = set()
         deduplicated_endpoint_count = 0
+        http_diagnostics = {"unmodeled": 0, "oversized_or_unclosed": 0}
 
         inventory = SourceInventory()
         for file_path, data in inventory.read(
@@ -119,40 +189,42 @@ class APIMapper:
                 stem = file_path.stem
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
-                # handled separately because its named values may be reversed.
-                for pattern in (self.retrofit_pattern, self.retrofit_http_pattern):
-                    for match, line_number in self._matches_with_line_numbers(pattern, content):
-                        if len(endpoints) >= 5000:
-                            inventory.record_limit('endpoint_count')
-                            break
-                        method, path = match.groups()
-                        if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE",
-                                           "OPTIONS", "TRACE", "CONNECT"}:
-                            continue
-                        safe_path = self._safe_route(path)
-                        endpoints.append({
-                            "method": method,
-                            "url": safe_path,
-                            "class_name": stem,
-                            "source_file": rel_path,
-                            "line_number": line_number,
-                            # Header occurrences elsewhere in this class are not a
-                            # reliable endpoint-specific authorization signal.
-                            "requires_auth": None
-                        })
-                        seen_endpoint_urls.add(safe_path)
+                # parsed with a bounded quote-aware scanner to avoid repeated
+                # long regex searches on malformed inputs.
+                for method, path, line_number, is_http_annotation in self._retrofit_declarations(
+                        content, http_diagnostics):
+                    if len(endpoints) >= 5000:
+                        inventory.record_limit('endpoint_count')
+                        break
+                    if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE",
+                                       "OPTIONS", "TRACE", "CONNECT"}:
+                        if is_http_annotation:
+                            http_diagnostics["unmodeled"] += 1
+                        continue
+                    safe_path = self._safe_route(path)
+                    endpoints.append({
+                        "method": method,
+                        "url": safe_path,
+                        "class_name": stem,
+                        "source_file": rel_path,
+                        "line_number": line_number,
+                        # Header occurrences elsewhere in this class are not a
+                        # reliable endpoint-specific authorization signal.
+                        "requires_auth": None
+                    })
+                    seen_endpoint_urls.add(safe_path)
 
-                        if "admin" in path.lower() or "privilege" in path.lower():
-                            if len(raw_findings) < 500:
-                                raw_findings.append({
-                                    "type": "sensitive_route_name",
-                                    "path": safe_path,
-                                    "component": stem,
-                                    "file_path": rel_path,
-                                    "line_number": line_number
-                                })
-                            else:
-                                inventory.record_limit('finding_count')
+                    if "admin" in path.lower() or "privilege" in path.lower():
+                        if len(raw_findings) < 500:
+                            raw_findings.append({
+                                "type": "sensitive_route_name",
+                                "path": safe_path,
+                                "component": stem,
+                                "file_path": rel_path,
+                                "line_number": line_number
+                            })
+                        else:
+                            inventory.record_limit('finding_count')
 
                 # Route-shaped literals are useful in Java/Kotlin too, where
                 # they may be assembled outside Retrofit. Keep these as
@@ -218,7 +290,19 @@ class APIMapper:
         self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
                              candidate_count=len(raw_findings), endpoints_count=len(endpoints),
                              deduplicated_endpoint_count=deduplicated_endpoint_count,
+                             unmodeled_retrofit_http_annotations=http_diagnostics["unmodeled"],
+                             oversized_or_unclosed_retrofit_http_annotations=http_diagnostics[
+                                 "oversized_or_unclosed"],
                              limits={**inventory.coverage['limits'], 'endpoints':5000,'findings':500})
+        if http_diagnostics["unmodeled"]:
+            self.coverage["static_status"] = "partial"
+            self.coverage.setdefault("limitations", []).append(
+                "one or more Retrofit @HTTP declarations had non-literal or unsupported method/path values")
+        if http_diagnostics["oversized_or_unclosed"]:
+            self.coverage["static_status"] = "partial"
+            self.coverage["limits_reached"] = True
+            self.coverage.setdefault("limit_reasons", {})[
+                "retrofit_http_annotation_chars"] = http_diagnostics["oversized_or_unclosed"]
         return endpoints, raw_findings
 
     async def map_apis(self, decompiled_path: str) -> tuple[list[dict], list[Finding]]:

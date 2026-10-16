@@ -1471,7 +1471,7 @@ async def audit_dast_deeplinks(req: DeepLinkAuditRequest, request: Request) -> d
 
 @app.post("/api/dast/memory")
 async def audit_dast_memory(req: MemoryAuditRequest, request: Request) -> dict[str, Any]:
-    """Audit volatile process RAM for cleartext passwords and lingering bearer tokens (CWE-316)."""
+    """Review bounded memory-pattern category indicators; raw values are not collected."""
     require_current_session(request)
     def guard():
         from mobileag.web.policy import check_action

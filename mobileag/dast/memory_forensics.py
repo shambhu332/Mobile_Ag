@@ -1,70 +1,63 @@
-"""Volatile Process RAM & Memory Forensics Auditor for Android DAST.
+"""Bounded memory-pattern indicators for explicitly scoped Android research.
 
-Inspects live process memory (/proc/<pid>/mem, heap, and writable segments)
-on rooted emulators or devices to detect:
-1. Cleartext passwords and authentication tokens lingering in RAM (CWE-316)
-2. Decrypted JWT / OAuth bearer tokens retained in heap memory (CWE-316)
-3. Cryptographic private keys in un-zeroized memory buffers (CWE-316)
-4. Unmasked PII or credit card numbers in volatile memory (CWE-316)
+The root-shell scanner emits fixed category labels only; it does not return
+matched strings, read process environments, or establish ordinary-app access.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import shlex
 from typing import Any, Optional
 
 from mobileag.dast.adb_manager import ADBManager
-from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 logger = logging.getLogger(__name__)
 
-# Patterns for sensitive credentials retained in process RAM
-_MEMORY_SECRET_PATTERNS = [
-    (
-        "JWT Bearer Token",
-        re.compile(r"\b(?:Bearer\s+)?(eyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\b"),
-    ),
-    (
-        "Bearer Authentication Token",
-        re.compile(r"""(?i)\bBearer\s+([a-zA-Z0-9_\-\.+=/]{16,})\b"""),
-    ),
-    (
-        "Google API Key",
-        re.compile(r"\b(AIzaSy[0-9A-Za-z_-]{33})\b"),
-    ),
-    (
-        "AWS Access Key",
-        re.compile(r"\b(AKIA[0-9A-Z]{16})\b"),
-    ),
-    (
-        "Plaintext Password Parameter",
-        re.compile(r"""(?i)\b(password|passwd|auth_token|user_secret)\s*[:=]\s*["']?([^"'\s&]{6,})["']?"""),
-    ),
-    (
-        "Private Key Header",
-        re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),
-    ),
-]
+_MEMORY_INDICATOR_LABELS = (
+    "JWT Bearer Token",
+    "Bearer Authentication Token",
+    "Google API Key",
+    "AWS Access Key",
+    "Plaintext Password Parameter",
+    "Private Key Header",
+)
 
 
 class MemoryForensicsAuditor:
-    """Audits running process memory on rooted emulators for un-zeroized sensitive data."""
+    """Audits process memory through redacted category-only indicators."""
 
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
+    @staticmethod
+    def _check_scope_guard(guard) -> None:
+        if guard is None:
+            return
+        if not callable(guard):
+            raise PermissionError('Memory audit scope guard is invalid')
+        try:
+            allowed = guard()
+        except Exception as exc:
+            raise PermissionError('Memory audit scope guard denied access') from exc
+        if allowed is False:
+            raise PermissionError('Memory audit scope guard denied access')
+
     async def get_process_pid(self, serial: str, package_name: str, guard=None) -> Optional[int]:
         """Retrieve target package process PID on the device."""
-        if not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
+        if (not isinstance(serial, str)
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', serial)
+                or not isinstance(package_name, str)
+                or not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name)):
             raise ValueError('Invalid Android package name')
-        if guard: guard()
+        self._check_scope_guard(guard)
         code, stdout, _ = await self.adb._exec_cmd(
             ["-s", serial, "shell", "pidof", package_name],
             timeout=3.0,
         )
-        if guard: guard()
+        self._check_scope_guard(guard)
         if code == 0 and stdout:
             pids = stdout.decode("utf-8", errors="replace").strip().split()
             if pids and pids[0].isdigit():
@@ -72,11 +65,12 @@ class MemoryForensicsAuditor:
 
         # Fallback to ps -A and exact process-name comparison; never interpolate
         # a package name into grep regular-expression or shell syntax.
+        self._check_scope_guard(guard)
         code, stdout, _ = await self.adb._exec_cmd(
             ["-s", serial, "shell", "ps", "-A"],
             timeout=3.0,
         )
-        if guard: guard()
+        self._check_scope_guard(guard)
         if code == 0 and stdout:
             lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
             for line in lines:
@@ -86,31 +80,45 @@ class MemoryForensicsAuditor:
 
         return None
 
-    async def extract_memory_strings(
+    async def extract_memory_indicators(
         self,
         serial: str,
         pid: int,
         max_lines: int = 200,
         guard=None,
     ) -> list[str]:
-        """Extract memory string excerpts from process heap / memory mappings via root shell."""
-        # Query strings from process memory maps
-        cmd = f"su -c 'strings /proc/{pid}/mem 2>/dev/null | grep -E \"eyJ|Bearer|AIza|AKIA|password\" | head -n {max_lines}'"
-        if guard: guard()
-        code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd], timeout=6.0)
-        if guard: guard()
+        """Return fixed indicator labels only; never transfer matched strings or environ."""
+        if (not isinstance(serial, str)
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', serial)
+                or type(pid) is not int or not 1 <= pid <= 2_147_483_647
+                or type(max_lines) is not int or not 1 <= max_lines <= 200):
+            raise ValueError('Invalid bounded memory-indicator input')
 
-        if code == 0 and stdout:
-            return stdout.decode("utf-8", errors="replace").strip().splitlines()
-
-        # Fallback: check environ and cmdline
-        cmd_env = f"su -c 'cat /proc/{pid}/environ 2>/dev/null'"
-        _, out_env, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd_env], timeout=3.0)
-        if guard: guard()
-        if out_env:
-            return out_env.decode("utf-8", errors="replace").replace("\x00", "\n").splitlines()
-
-        return []
+        # AWK emits only fixed category labels. Matched memory strings remain
+        # in the on-device pipeline and are never returned to MobileAg.
+        awk_program = r'''
+/eyJ[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+/ { if (!seen["JWT Bearer Token"]++) print "JWT Bearer Token"; next }
+/[Bb]earer[[:space:]]+/ { if (!seen["Bearer Authentication Token"]++) print "Bearer Authentication Token"; next }
+/AIzaSy[0-9A-Za-z_-]+/ { if (!seen["Google API Key"]++) print "Google API Key"; next }
+/AKIA[0-9A-Z]+/ { if (!seen["AWS Access Key"]++) print "AWS Access Key"; next }
+tolower($0) ~ /(password|passwd|auth_token|user_secret)[[:space:]]*[:=]/ { if (!seen["Plaintext Password Parameter"]++) print "Plaintext Password Parameter"; next }
+/-----BEGIN ([A-Za-z]+ )?PRIVATE KEY-----/ { if (!seen["Private Key Header"]++) print "Private Key Header"; next }
+'''
+        pipeline = (
+            f"strings /proc/{pid}/mem 2>/dev/null | awk {shlex.quote(awk_program)} "
+            f"| head -n {max_lines}"
+        )
+        cmd = f"su -c {shlex.quote(pipeline)}"
+        self._check_scope_guard(guard)
+        code, stdout, _ = await self.adb._exec_cmd(
+            ["-s", serial, "shell", cmd], timeout=6.0, output_limit=8192,
+        )
+        self._check_scope_guard(guard)
+        if code != 0 or not stdout:
+            return []
+        allowed = set(_MEMORY_INDICATOR_LABELS)
+        return [line for line in stdout.decode("utf-8", errors="replace").splitlines()
+                if line in allowed]
 
     async def audit_process_memory(
         self,
@@ -124,57 +132,46 @@ class MemoryForensicsAuditor:
             logger.warning(f"Could not locate running process for package: {package_name}")
             return None, []
 
-        strings_dump = await self.extract_memory_strings(serial, pid, guard=guard)
+        indicators = set(await self.extract_memory_indicators(serial, pid, guard=guard))
         findings: list[Finding] = []
-
-        seen_categories: set[str] = set()
-
-        for line in strings_dump:
-            for cat, pattern in _MEMORY_SECRET_PATTERNS:
-                if cat in seen_categories:
-                    continue
-
-                m = pattern.search(line)
-                if m:
-                    seen_categories.add(cat)
-                    cwe = "CWE-316"
-                    score, vector = get_default_cvss_for_cwe(cwe)
-
-                    findings.append(Finding(
-                        title=f"Cleartext Secret in Volatile Memory: {cat}",
-                        description=(
-                            f"The running process (PID: `{pid}`) retains sensitive credentials or authentication "
-                            f"tokens in cleartext heap/volatile memory without active zeroization.\n\n"
-                            f"Discovered secret type: **{cat}**; the matched value is intentionally omitted.\n\n"
-                            "When sensitive data is stored in immutable objects like `java.lang.String`, "
-                            "the plaintext bytes remain in garbage collection pools indefinitely, exposing them "
-                            "to memory dumps, swap file extraction, and debugger inspection."
-                        ),
-                        severity=Severity.HIGH,
-                        confidence=0.95,
-                        cwe_id=cwe,
-                        cvss_score=score,
-                        cvss_vector=vector,
-                        owasp_masvs="MASVS-STORAGE-2",
-                        affected_component=f"PID:{pid}",
-                        file_path=f"/proc/{pid}/mem",
-                        line_number=1,
-                        code_snippet="[REDACTED memory excerpt]",
-                        detection_method="MemoryForensicsAuditor (Dynamic)",
-                        status=FindingStatus.UNVERIFIED,
-                        remediation=(
-                            "Store credentials and tokens in mutable `char[]` or `byte[]` arrays. "
-                            "Explicitly wipe memory buffers with `Arrays.fill(buffer, (byte) 0)` immediately after use."
-                        ),
-                    ))
+        for category in _MEMORY_INDICATOR_LABELS:
+            if category not in indicators:
+                continue
+            findings.append(Finding(
+                title=f"Sensitive-Memory Pattern Candidate: {category}",
+                description=(
+                    f"A fixed pattern category was observed by a root-shell scanner for process PID `{pid}`. "
+                    "MobileAg receives only this category label; the matched text/value is not returned or "
+                    "persisted. The marker does not establish secret validity, attacker access, a zeroization "
+                    "failure, or ordinary-app exploitability."
+                ),
+                severity=Severity.INFO,
+                confidence=0.4,
+                cwe_id="CWE-316",
+                cvss_score=0.0,
+                cvss_vector="",
+                owasp_masvs="MASVS-STORAGE-2",
+                affected_component=f"PID:{pid}",
+                file_path=f"/proc/{pid}/mem",
+                line_number=1,
+                code_snippet="[fixed pattern category only; raw value not collected]",
+                detection_method="MemoryForensicsAuditor (Bounded Dynamic Indicator)",
+                status=FindingStatus.UNVERIFIED,
+                remediation=(
+                    "Minimize sensitive-value lifetime and review platform-supported memory handling. "
+                    "Validate any indicator with controlled synthetic data; do not infer impact from this marker alone."
+                ),
+                metadata={"evidence_state": "pattern_indicator", "raw_value_collected": False,
+                          "ordinary_app_access": "not_established"},
+            ))
 
         return pid, findings
 
     async def run_memory_audit(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
         """Execute complete memory forensics pass and return structured summary."""
-        if guard: guard()
+        self._check_scope_guard(guard)
         pid, findings = await self.audit_process_memory(serial, package_name, guard)
-        if guard: guard()
+        self._check_scope_guard(guard)
         return {
             "package_name": package_name,
             "device_serial": serial,
@@ -182,4 +179,7 @@ class MemoryForensicsAuditor:
             "process_found": pid is not None,
             "memory_findings_count": len(findings),
             "findings": [f.to_dict() for f in findings],
+            "analysis_mode": "category_only_indicators",
+            "raw_memory_values_collected": False,
+            "ordinary_app_access_established": False,
         }

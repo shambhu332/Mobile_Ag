@@ -3,7 +3,7 @@
 - DeepLinkFuzzer (bounded redirect, file, and JavaScript-scheme review markers)
 - TaintEngine (inter-procedural static source-to-sink dataflow tracking)
 - UICrawler (UI hierarchy parsing, dialog handling, form filling)
-- MemoryForensicsAuditor (process memory scraping, CWE-316 detection)
+- MemoryForensicsAuditor (category-only memory indicators, CWE-316 review leads)
 - Associated FastAPI endpoints
 """
 
@@ -1196,14 +1196,16 @@ async def test_ui_crawler_crawl_flow():
 # =============================================================================
 @pytest.mark.asyncio
 async def test_memory_forensics_secret_detection():
+    from mobileag.reporting.finding import Severity
+
     mock_adb = ADBManager()
 
-    async def mock_exec(cmd, timeout=3.0):
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
         cmd_str = " ".join(cmd)
         if "pidof" in cmd_str:
             return (0, b"4567\n", b"")
-        if "strings" in cmd_str:
-            return (0, b"header\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.sec123\npassword=\"SuperSecretPass!\"\n", b"")
+        if "strings" in cmd_str and "awk" in cmd_str:
+            return (0, b"JWT Bearer Token\nPlaintext Password Parameter\n", b"")
         return (0, b"", b"")
 
     mock_adb._exec_cmd = mock_exec
@@ -1214,6 +1216,55 @@ async def test_memory_forensics_secret_detection():
     assert len(findings) >= 2
     cwes = {f.cwe_id for f in findings}
     assert "CWE-316" in cwes
+    serialized = str([finding.to_dict() for finding in findings])
+    assert "SuperSecretPass!" not in serialized
+    assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in serialized
+    assert all(f.severity == Severity.INFO and f.confidence == 0.4 for f in findings)
+    assert all(f.metadata["raw_value_collected"] is False for f in findings)
+
+
+@pytest.mark.asyncio
+async def test_memory_forensics_rejects_raw_output_and_never_reads_environment():
+    mock_adb = ADBManager()
+    commands = []
+
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
+        commands.append(" ".join(cmd))
+        # Simulate unexpected raw output; only fixed labels are accepted.
+        return (0, b"JWT Bearer Token\nBearer synthetic-raw-value\n", b"")
+
+    mock_adb._exec_cmd = mock_exec
+    auditor = MemoryForensicsAuditor(adb=mock_adb)
+    indicators = await auditor.extract_memory_indicators("synthetic-device", 1234)
+    assert indicators == ["JWT Bearer Token"]
+    assert len(commands) == 1
+    assert "awk" in commands[0]
+    assert "/proc/1234/mem" in commands[0]
+    assert "/proc/1234/environ" not in commands[0]
+    assert "cat " not in commands[0]
+
+
+@pytest.mark.asyncio
+async def test_memory_forensics_scope_denial_and_revocation_block_shell_commands():
+    mock_adb = ADBManager()
+    calls = []
+
+    async def mock_exec(cmd, timeout=3.0, output_limit=None):
+        calls.append(" ".join(cmd))
+        return (1, b"", b"")
+
+    mock_adb._exec_cmd = mock_exec
+    auditor = MemoryForensicsAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor.get_process_pid("synthetic-device", "com.test.app", guard=lambda: False)
+    assert calls == []
+
+    approvals = iter((True, False))
+    with pytest.raises(PermissionError):
+        await auditor.get_process_pid(
+            "synthetic-device", "com.test.app", guard=lambda: next(approvals),
+        )
+    assert len(calls) == 1
 
 
 # =============================================================================

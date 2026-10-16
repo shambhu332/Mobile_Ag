@@ -797,3 +797,18 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed**, 13 deselected), and the full suite passed (**1,150 passed**,
    70.18 s). All device access was mocked; no rooted or physical device was
    used. Existing deprecation/resource warnings remain.
+
+   The memory-forensics path now transfers and persists only six fixed
+   category labels, never matching memory strings or `/proc/<pid>/environ`
+   values. Explicit `False` or exception-based scope denial is enforced before
+   and after process lookup and the root-shell scan; invalid serial/PID/output
+   bounds are rejected, and unrecognized command output is discarded. Any
+   resulting marker is INFO/UNVERIFIED with `ordinary_app_access` explicitly
+   not established. Focused memory regressions passed (**4 passed**, 78
+   deselected); the full suite passed (**1,152 passed**, 72.20 s), and
+   `compileall` plus `git diff --check` passed. All ADB behavior was mocked;
+   the `su`/`strings`/AWK pipeline, Android utility compatibility, memory-scan
+   resource cost, and live-device behavior remain unvalidated. Legacy callers
+   that omit a guard remain supported, so callers must still supply an
+   explicit scope guard for authorized device use. Existing pytest-asyncio
+   deprecation and async-resource warnings remain.

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.api_endpoint_safety import safe_api_route
 
 
 @dataclass
@@ -169,13 +170,15 @@ class MachoBinaryParser:
             url_candidates += 1
             try:
                 u = match.group(0).decode("utf-8", errors="ignore")
-                if not u.endswith((".png", ".jpg", ".svg", ".plist")):
-                    if u not in endpoints and len(endpoints) >= self.MAX_API_ENDPOINTS:
+                safe_url = safe_api_route(u)
+                if (safe_url != "[REDACTED URL]"
+                        and not safe_url.endswith((".png", ".jpg", ".svg", ".plist"))):
+                    if safe_url not in endpoints and len(endpoints) >= self.MAX_API_ENDPOINTS:
                         result.candidate_output_truncated = True
                         if "API endpoint candidate limit reached" not in result.parse_errors:
                             result.parse_errors.append("API endpoint candidate limit reached")
                     else:
-                        endpoints.add(u)
+                        endpoints.add(safe_url)
             except Exception:
                 continue
 

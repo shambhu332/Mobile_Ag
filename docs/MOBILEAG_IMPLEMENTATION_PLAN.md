@@ -1448,3 +1448,12 @@ credential segment after it. Synthetic framework/API regressions passed (**137
 passed**); full pytest passed (**1,247 passed**, 60.92 s); compileall and
 `git diff --check` passed. These remain printable-string/route candidates, not
 framework decompilation, endpoint reachability, or proof of credential use.
+
+The same shared route sanitizer now covers iOS Mach-O embedded URL candidates,
+so route/query/userinfo minimization applies consistently across the analyzed
+Flutter, Hermes, IL2CPP, Mach-O, and static-source candidates. A synthetic Mach-O
+fixture verifies that a chained `/auth/token/<value>` path retains only the
+route markers and redacts the following value. Focused Mach-O tests passed (**15
+passed**); full pytest passed (**1,247 passed**, 60.12 s); compileall and
+`git diff --check` passed. This remains a bounded binary string candidate, not
+proof of an iOS network request or Swift control flow.

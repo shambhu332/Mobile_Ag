@@ -370,7 +370,9 @@ def test_macho_binary_parser():
 
         # Magic: 0xFEEDFACF (64-bit Mach-O) in little endian
         magic_bytes = struct.pack("<I", 0xFEEDFACF)
-        payload = b"\x00" * 30 + b"__swift5_types" + b"\x00" * 20 + b"CommonCrypto" + b"\x00" * 20 + b"https://ios.example.com/api"
+        payload = (b"\x00" * 30 + b"__swift5_types" + b"\x00" * 20 + b"CommonCrypto" + b"\x00" * 20
+                   + b"https://ios.example.com/api\x00"
+                   + b"https://ios.example.com/api/auth/token/synthetic-private-token")
 
         with open(bin_path, "wb") as f:
             f.write(magic_bytes + b"\x00" * 28 + payload)
@@ -384,6 +386,8 @@ def test_macho_binary_parser():
         assert "__swift5_types" not in res.swift_sections_detected
         assert "CommonCrypto" in res.crypto_frameworks
         assert "https://ios.example.com/api" in res.api_endpoints
+        assert "https://ios.example.com/api/auth/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
 
 
 def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tmp_path):

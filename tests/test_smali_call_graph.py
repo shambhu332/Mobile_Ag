@@ -1052,6 +1052,58 @@ def test_smali_primitive_conversion_preserves_intent_extra_taint(tmp_path):
     assert any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
 
 
+def test_smali_wide_conversion_clears_stale_high_register_taint(tmp_path):
+    (tmp_path / "WideConversion.smali").write_text("""
+.class public Lcom/example/WideConversion;
+.super Landroid/app/Activity;
+.method public onCreate()V
+    .registers 8
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "count"
+    const/4 v2, 0x0
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+    move-result v3
+    const/4 v4, 0x0
+    int-to-long v2, v4
+    invoke-static {v2, v3}, Ljava/lang/Long;->toString(J)Ljava/lang/String;
+    move-result-object v5
+    sget-object v6, Lcom/example/WideConversion;->web:Landroid/webkit/WebView;
+    invoke-virtual {v6, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert not any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+
+
+def test_smali_wide_move_clears_stale_high_register_taint(tmp_path):
+    (tmp_path / "WideMove.smali").write_text("""
+.class public Lcom/example/WideMove;
+.super Landroid/app/Activity;
+.method public onCreate()V
+    .registers 8
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "count"
+    const/4 v2, 0x0
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+    move-result v3
+    const-wide/16 v4, 0x0
+    move-wide v2, v4
+    invoke-static {v2, v3}, Ljava/lang/Long;->toString(J)Ljava/lang/String;
+    move-result-object v5
+    sget-object v6, Lcom/example/WideMove;->web:Landroid/webkit/WebView;
+    invoke-virtual {v6, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert not any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+
+
 def test_smali_unmodeled_call_with_tainted_argument_marks_coverage_partial(tmp_path):
     (tmp_path / "UnknownCall.smali").write_text("""
 .class public Lcom/example/UnknownCall;

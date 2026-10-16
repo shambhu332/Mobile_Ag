@@ -763,6 +763,17 @@ class SmaliCallGraphEngine:
             if message not in self.local_register_analysis_warnings:
                 self.local_register_analysis_warnings.append(message)
 
+        def clear_register_tracking(register: str) -> None:
+            registers.pop(register, None)
+            registers.pop(f"@array:{register}", None)
+            registers.pop(f"@builder:{register}", None)
+            registers.pop(f"@returned:{register}", None)
+
+        def clear_wide_high_word(register: str) -> None:
+            match = re.fullmatch(r"([vp])(\d+)", register)
+            if match:
+                clear_register_tracking(f"{match.group(1)}{int(match.group(2)) + 1}")
+
         for index, (_line, text) in enumerate(instructions):
             next_index = index + 1
             branch = re.match(r"goto(?:/\d+)?\s+(:[A-Za-z0-9_$.-]+)", text)
@@ -868,6 +879,8 @@ class SmaliCallGraphEngine:
                     registers[dest] = frozenset(traces)
                 else:
                     registers.pop(dest, None)
+                if text.startswith("sget-wide"):
+                    clear_wide_high_word(dest)
                 pending = frozenset()
             elif move_result:
                 dest = move_result.group(1)
@@ -887,13 +900,27 @@ class SmaliCallGraphEngine:
                     registers[f"@returned:{dest}"] = return_taints
                 if builder_taints:
                     registers[f"@builder:{dest}"] = builder_taints
+                if text.startswith("move-result-wide"):
+                    clear_wide_high_word(dest)
                 pending = frozenset()
             elif move_alias:
                 dest, src = move_alias.groups()
-                if src in registers:
-                    registers[dest] = registers[src]
+                wide_alias = text.startswith("move-wide")
+                source_traces = set(registers.get(src, ()))
+                if wide_alias:
+                    source_match = re.fullmatch(r"([vp])(\d+)", src)
+                    if source_match:
+                        source_traces.update(registers.get(
+                            f"{source_match.group(1)}{int(source_match.group(2)) + 1}", ()
+                        ))
+                    clear_register_tracking(dest)
+                    clear_wide_high_word(dest)
+                if source_traces:
+                    registers[dest] = frozenset(source_traces)
                 else:
                     registers.pop(dest, None)
+                if wide_alias:
+                    clear_wide_high_word(dest)
                 # Keep a bounded may-taint summary for array aliases separate
                 # from object-register taint (so passing an array itself to a
                 # sink does not imply its elements are tainted).
@@ -926,6 +953,8 @@ class SmaliCallGraphEngine:
                     registers[dest] = traces
                 else:
                     registers.pop(dest, None)
+                if text.startswith("aget-wide"):
+                    clear_wide_high_word(dest)
                 pending = frozenset()
             else:
                 pending = frozenset()
@@ -978,12 +1007,22 @@ class SmaliCallGraphEngine:
                     registers.pop(f"@builder:{unknown_dest}", None)
                     registers.pop(f"@returned:{unknown_dest}", None)
                 if write:
-                    registers.pop(write.group(1), None)
-                    registers.pop(f"@array:{write.group(1)}", None)
-                    registers.pop(f"@builder:{write.group(1)}", None)
-                    registers.pop(f"@returned:{write.group(1)}", None)
+                    destination = write.group(1)
+                    registers.pop(destination, None)
+                    registers.pop(f"@array:{destination}", None)
+                    registers.pop(f"@builder:{destination}", None)
+                    registers.pop(f"@returned:{destination}", None)
+                    opcode = text.split(None, 1)[0]
+                    wide_write = (
+                        opcode.startswith(("const-wide", "move-wide", "move-result-wide",
+                                           "iget-wide", "sget-wide", "aget-wide"))
+                        or re.match(r"(?:int|long|float|double)-to-(?:long|double)$", opcode)
+                        or re.match(r"(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-(?:long|double)(?:/2addr|/lit\d+)?$", opcode)
+                    )
+                    if wide_write:
+                        clear_wide_high_word(destination)
                     if arithmetic_traces:
-                        registers[write.group(1)] = frozenset(arithmetic_traces)
+                        registers[destination] = frozenset(arithmetic_traces)
 
                 if array_put:
                     value_register, array_register = array_put.groups()

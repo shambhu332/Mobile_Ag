@@ -386,6 +386,12 @@ coverage schema (`not_analyzed`, `proof_status=not_proven`, non-exhaustive)
 rather than omitting coverage. Synthetic tests cover these invalid-input cases;
 they do not establish APK framework-detection completeness.
 
+The decoded Android manifest ingestion path now reads only a no-follow regular
+file, enforces an 8 MiB XML input cap, and rejects DTD/entity declarations
+before ElementTree parsing. Synthetic tests cover the DTD, oversize, and final
+symlink cases. This does not harden every XML consumer or make extraction
+ancestor directories race-proof.
+
 ### Safety and completion boundary
 
 The blueprint's stealth/anti-detection daemon, TLS/certificate-pinning bypass,
@@ -516,6 +522,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
    On 2026-10-16, commit `8c2b02a` was validated locally in the pinned Python 3.14 environment: **1,030 passed** (40.28 s; one expected synthetic duplicate-ZIP-entry warning). This adds bounded-`scandir` regression coverage; compilation and `git diff --check` also passed. GitHub Actions run `38834136167` was queued/in progress when recorded, so no remote CI result is claimed here. These are synthetic/local checks, not device or live-target validation.
    Commit `95da9c2` then passed the full suite with **1,031 passed** (40.23 s; same expected warning); its focused framework-capability tests passed (6). Compilation and `git diff --check` passed. This adds missing-input coverage reporting only and does not claim complete framework identification or device validation.
    The FileProvider XML DTD/entity rejection batch passed its focused tests (6) and full suite (**1,033 passed**, 39.80 s; one expected synthetic duplicate-ZIP-entry warning); compilation and `git diff --check` passed. This confirms only rejection behavior on the tested synthetic declarations, not general XML parser safety or Android runtime exposure.
+   The decoded-manifest input hardening passed focused manifest/surface tests (58) and the full suite (**1,034 passed**, 39.87 s; same expected warning); compilation and `git diff --check` passed. Tests exercise DTD/entity, size-cap, and final-component symlink rejection on synthetic files only.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38774618068` completed successfully on commit `7a85d3a`: 900 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 902 passed and 1 warning (39.04 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

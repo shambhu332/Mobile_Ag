@@ -71,6 +71,29 @@ def test_manifest_parser(dummy_manifest):
     }
 
 
+def test_manifest_parser_rejects_dtds_oversized_inputs_and_symlinks(tmp_path):
+    parser = ManifestParser()
+    manifest = tmp_path / "AndroidManifest.xml"
+    manifest.write_text(
+        '<!DOCTYPE manifest [<!ENTITY pkg "synthetic.pkg">]>'
+        '<manifest package="&pkg;"><application /></manifest>', encoding="utf-8")
+    with pytest.raises(ValueError, match="DTD/entity"):
+        parser.parse(str(manifest))
+
+    parser.MAX_MANIFEST_XML_BYTES = 32
+    manifest.write_text('<manifest package="synthetic"><application /></manifest>', encoding="utf-8")
+    with pytest.raises(ValueError, match="size limit"):
+        parser.parse(str(manifest))
+
+    parser.MAX_MANIFEST_XML_BYTES = 8 * 1024 * 1024
+    target = tmp_path / "target.xml"
+    target.write_text('<manifest package="synthetic"><application /></manifest>', encoding="utf-8")
+    link = tmp_path / "manifest-link.xml"
+    link.symlink_to(target)
+    with pytest.raises(ValueError, match="safe regular file"):
+        parser.parse(str(link))
+
+
 def test_backup_rule_xml_inventory_is_bounded_and_does_not_publish_paths(tmp_path):
     res = tmp_path / "res" / "xml"
     res.mkdir(parents=True)

@@ -17,6 +17,7 @@ class ManifestParser:
     """
     
     ANDROID_NS = "http://schemas.android.com/apk/res/android"
+    MAX_MANIFEST_XML_BYTES = 8 * 1024 * 1024
 
     def __init__(self) -> None:
         pass
@@ -538,13 +539,29 @@ class ManifestParser:
         Returns:
             A dictionary containing structured manifest data.
         """
-        path = Path(manifest_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Manifest not found: {manifest_path}")
-
         try:
-            tree = ET.parse(path)
-            root = tree.getroot()
+            path = Path(manifest_path)
+        except (TypeError, ValueError) as e:
+            raise ValueError("Invalid manifest path") from e
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Manifest not found: {manifest_path}") from None
+        except OSError as e:
+            raise ValueError("Manifest is unavailable or not a safe regular file") from e
+        try:
+            with os.fdopen(fd, "rb") as stream:
+                file_info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(file_info.st_mode):
+                    raise ValueError("Manifest is not a regular file")
+                if file_info.st_size > self.MAX_MANIFEST_XML_BYTES:
+                    raise ValueError("Manifest exceeds XML size limit")
+                raw = stream.read(self.MAX_MANIFEST_XML_BYTES + 1)
+            if len(raw) > self.MAX_MANIFEST_XML_BYTES:
+                raise ValueError("Manifest exceeds XML size limit")
+            if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                raise ValueError("Manifest DTD/entity declarations are unsupported")
+            root = ET.fromstring(raw)
         except ET.ParseError as e:
             logger.error(f"Failed to parse manifest XML: {e}")
             raise ValueError(f"Invalid XML in manifest: {e}")

@@ -972,6 +972,15 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    focused serialization/privacy regressions passed (**39 passed**); this
    preserves migration compatibility without re-publishing hook payloads.
 
+   A follow-up Playwright run loaded local axe-core **4.10.3** and checked all
+   ten workspace sections at desktop and 320 px mobile widths against WCAG
+   2.0 A/AA and WCAG 2.1 AA rules; no violations were reported. The first run
+   hit a timing-sensitive immediate visibility assertion after graph-click
+   navigation; the harness now waits for the view's visible state, and the
+   repeat run passed. The report explicitly distinguishes `a11y_status=passed`
+   from `not_run` (rather than rendering an empty object as if it were tested).
+   This is a bounded automated check, not a complete WCAG conformance claim.
+
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.
    It confirmed no page errors, no XSS marker execution, no external requests,

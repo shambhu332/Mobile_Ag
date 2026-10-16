@@ -150,7 +150,7 @@ def main():
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
                     page.evaluate('handleGraphNodeClick({nodes:["scan::synthetic-finding"]})')
                     assert page.evaluate('selectedFindingId')=='synthetic-finding'
-                    assert page.locator('#view-findings').is_visible()
+                    page.locator('#view-findings').wait_for(state='visible')
                     page.evaluate('switchView("overview")')
                     wait_condition(page,'document.querySelector("#auto-ready-status").textContent.startsWith("Checked ")')
                     assert page.locator('#view-assessment #assessment-readiness').count()==1
@@ -663,7 +663,7 @@ def main():
                                   device_operations='Mocked and disabled; no real ADB/Frida commands',cloud_model_calls=0)
                     page.set_viewport_size({'width':1440,'height':1000})
                     page.locator('#workspace-navigation').wait_for(state='visible')
-                    result['a11y']={}
+                    result['a11y']={} if args.axe else 'not_run'
                     if args.axe:
                         page.evaluate(Path(args.axe).read_text())
                         for view in ['surface','findings','scans','agents','settings','dast','taint','api','automation','assessment']:
@@ -675,7 +675,7 @@ def main():
                     page.set_viewport_size({'width':320,'height':844})
                     result['small_screen_scrollwidth']=page.evaluate('document.documentElement.scrollWidth')
                     result['interface']['mobile_views']={}
-                    result['mobile_a11y']={}
+                    result['mobile_a11y']={} if args.axe else 'not_run'
                     page.locator('#workspace-navigation').wait_for(state='hidden')
                     assert page.locator('#workspace-menu-toggle').is_visible()
                     assert not page.locator('#workspace-navigation').is_visible()
@@ -709,6 +709,7 @@ def main():
                     assert page.locator('#view-assessment').is_visible()
                     assert page.locator('#workspace-title').bounding_box()['y'] < 500
                     result['interface']['mobile_menu_collapses_after_selection']=True
+                    result['a11y_status']='passed' if args.axe else 'not_run'
                     page.screenshot(path=str(out/'fixed-320px.png'))
                     (out/'browser-results.json').write_text(json.dumps(result,indent=2))
                     assert all(result['keyboard_connection'].values()) and result['reduced_motion_media']

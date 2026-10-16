@@ -509,9 +509,7 @@ when transaction or finding limits truncate processing, query parsing exceeds
 its field cap, or malformed/oversized URLs are unmodeled. The token audit API
 exposes this coverage rather than silently presenting a bounded result as
 complete.
-Recognized credential-like query keys or URL userinfo observed over HTTP also
-produce an unverified CWE-319 transport lead, even when no Authorization
-header is present; neither this nor the URL indicator proves server acceptance.
+Recognized credential-like query keys remain CWE-598 review candidates, but a CWE-319 cleartext transport lead requires a non-empty credential-like query value, URL userinfo, or an Authorization credential observed over HTTP. Blank token-shaped query parameters do not by themselves imply credential transmission; findings remain unverified and do not establish server acceptance.
 
 ### BOLA candidate extraction boundary
 
@@ -762,3 +760,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    the focused header test passed (1), and the full suite passed (**1,139
    passed**, 103.96 s). This checks the local bounded parser only.
 
+
+   Cleartext token findings now require a non-empty sensitive query value (or
+   another credential source such as Authorization/userinfo); an empty or
+   whitespace-only token-shaped query parameter retains its CWE-598 candidate
+   but does not imply credential transmission. Focused regressions passed
+   (**3 passed**, 70 deselected), and the full suite passed (**1,140 passed**,
+   91.07 s). Results remain unverified traffic indicators.

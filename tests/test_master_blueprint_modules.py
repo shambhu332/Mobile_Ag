@@ -1375,6 +1375,25 @@ def test_token_session_auditor_recognizes_credential_query_key_aliases():
     assert all("?" not in finding.affected_component for finding in leaks)
 
 
+def test_blank_sensitive_query_parameter_is_not_cleartext_credential_evidence():
+    from mobileag.dast.api_cataloger import CapturedRequest
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+
+    auditor = MobileTokenSessionAuditor()
+    blank_findings = auditor.audit_transactions([
+        CapturedRequest("GET", "http://api.example.invalid/path?access_token="),
+        CapturedRequest("GET", "http://api.example.invalid/path?session_id=%20"),
+    ])
+    assert len([finding for finding in blank_findings if finding.cwe_id == "CWE-598"]) == 2
+    assert not any(finding.cwe_id == "CWE-319" for finding in blank_findings)
+
+    nonempty_findings = auditor.audit_transactions([
+        CapturedRequest("GET", "http://api.example.invalid/path?refresh_token=synthetic-token-value"),
+    ])
+    assert {finding.cwe_id for finding in nonempty_findings} >= {"CWE-598", "CWE-319"}
+    assert auditor.last_coverage["status"] == "complete_for_supplied_input"
+
+
 def test_token_session_auditor_marks_query_credentials_on_cleartext_http():
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest

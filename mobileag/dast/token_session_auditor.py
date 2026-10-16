@@ -482,7 +482,7 @@ class MobileTokenSessionAuditor:
 
             # Parse URL credentials before classifying cleartext transport so
             # query-carried credentials are not missed when no auth header exists.
-            query_credential_present = False
+            query_credential_value_present = False
             try:
                 parsed = urlsplit(url)
             except ValueError:
@@ -507,7 +507,8 @@ class MobileTokenSessionAuditor:
                 query_parse_incomplete += 1
             for q_name, q_val in query_tuples:
                 if self._is_sensitive_query_key(q_name):
-                    query_credential_present = True
+                    if q_val.strip():
+                        query_credential_value_present = True
                     if len(findings) >= self.MAX_FINDINGS:
                         finding_cap_reached = True
                         break
@@ -521,14 +522,15 @@ class MobileTokenSessionAuditor:
                         status=FindingStatus.UNVERIFIED,
                         remediation="Pass authentication and session tokens in the HTTP Authorization header instead of the URL query string.",
                     ))
-                    if not token:
-                        token = q_val
+                    if not token and q_val.strip():
+                        token = q_val.strip()
             if finding_cap_reached:
                 break
 
-            # A sensitive query parameter is also a cleartext credential
-            # candidate when the transport is HTTP, regardless of its value.
-            if parsed.scheme.lower() == "http" and (token or query_credential_present or url_userinfo_present):
+            # A non-empty sensitive query value may be a credential sent over
+            # cleartext; a blank token-shaped parameter alone is not evidence
+            # that a credential value was transmitted.
+            if parsed.scheme.lower() == "http" and (token or query_credential_value_present or url_userinfo_present):
                 if len(findings) >= self.MAX_FINDINGS:
                     finding_cap_reached = True
                     break

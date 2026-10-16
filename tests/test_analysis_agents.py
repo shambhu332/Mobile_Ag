@@ -226,6 +226,16 @@ async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
     assert any("dev-api.example.com" in finding.title for finding in findings)
 
 
+def test_api_mapper_safe_route_strips_userinfo_and_encodes_control_characters():
+    safe = APIMapper._safe_route(
+        "https://researcher:synthetic-password@example.com/api/token/canary?auth_token=secret#frag"
+    )
+    assert safe == "https://example.com/api/token/{id}"
+    assert "researcher" not in safe and "synthetic-password" not in safe
+    assert "secret" not in safe and "frag" not in safe
+    assert "\n" not in APIMapper._safe_route("/api/line\nbreak")
+
+
 @pytest.mark.asyncio
 async def test_bounded_secret_scan_caps_candidates_and_reports_partial_coverage(mock_router):
     scanner = SecretScanner(mock_router)

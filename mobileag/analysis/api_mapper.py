@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
@@ -39,13 +39,15 @@ class APIMapper:
             origin = ""
             if parsed.scheme or parsed.netloc:
                 hostname = parsed.hostname
-                if hostname:
+                scheme = parsed.scheme.lower()
+                if hostname and (not scheme or scheme in {"http", "https"}):
+                    if not re.fullmatch(r"[A-Za-z0-9.:%-]+", hostname):
+                        return "[REDACTED URL]"
                     host = f"[{hostname}]" if ":" in hostname else hostname
                     try:
                         port = parsed.port
                     except ValueError:
                         return "[REDACTED URL]"
-                    scheme = parsed.scheme.lower()
                     origin = f"{scheme}://{host}" if scheme else f"//{host}"
                     if port is not None:
                         origin += f":{port}"
@@ -67,7 +69,7 @@ class APIMapper:
                     safe_segments.append("{id}")
                     redact_next = False
                     continue
-                safe_segments.append(segment)
+                safe_segments.append(quote(segment, safe="!$&'()*+,;=:@%{}._~-"))
                 redact_next = segment.lower() in sensitive_segments
             safe_path = "/".join(safe_segments) or "/"
             return f"{origin}{safe_path}"[:4096]

@@ -60,6 +60,25 @@ def test_dast_connect_endpoint(client):
     assert "status" in data
 
 
+def test_dast_connect_rechecks_policy_after_connect_attempt(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_connect_scope(host_port):
+        calls.append(host_port)
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "connect"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic ADB connect response"}
+
+    monkeypatch.setattr(web.adb_manager, "connect_device", revoke_connect_scope)
+    response = client.post("/api/dast/connect", json={"host_port": "127.0.0.1:5555"})
+    assert calls == ["127.0.0.1:5555"]
+    assert response.status_code == 403
+
+
 def test_dast_root_endpoint(client):
     response = client.post("/api/dast/root", json={"serial": "emulator-5554"})
     assert response.status_code == 200

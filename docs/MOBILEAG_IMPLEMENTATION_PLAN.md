@@ -913,3 +913,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    existing out-of-scope-device denial (**1 passed**); the full suite passed
    (**1,167 passed**, 69.35 s), with `compileall` and `git diff --check`
    passing. No root command ran on a device.
+
+   `/api/dast/connect` now rechecks the authenticated session, exact configured
+   host:port allowlist, and explicit `connect` action both before and after
+   `adb connect`. A synthetic route test revokes the action during the mocked
+   connection and confirms the result is denied. Focused connect-route tests
+   passed (**2 passed**, 27 deselected); the full suite passed (**1,168
+   passed**, 55.38 s), with `compileall` and `git diff --check` passing. No
+   device connection was attempted. Existing test-environment warnings remain.

@@ -17,7 +17,7 @@ from mobileag import __version__
 from mobileag.web.repository import ScanRepository, private_write
 from mobileag.web.jobs import isolated_analysis, CANCELLED, PROCESSES
 import uuid
-from mobileag.web.security import SecurityMiddleware, authorized, check_device
+from mobileag.web.security import SecurityMiddleware, authorized, check_device, configured_list
 from mobileag.security.archives import validate_archive, MAX_UPLOAD
 from mobileag.security.network import scoped_request
 from mobileag.security.privacy import redact
@@ -1311,9 +1311,18 @@ async def preview_frida_preset(script_type: Literal["crypto", "root_bypass", "un
 
 
 @app.post("/api/dast/connect")
-async def connect_dast_device(req: DeviceConnectRequest) -> dict[str, Any]:
+async def connect_dast_device(req: DeviceConnectRequest, request: Request) -> dict[str, Any]:
     """Connect to a local or remote emulator/device over TCP/IP."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (req.host_port not in configured_list("MOBILEAG_ALLOWED_CONNECT")
+                or not check_action(repository().get_policy(), "connect", req.model_dump())):
+            raise HTTPException(403, "ADB connection scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.connect_device(req.host_port)
+    guard()
     return res
 
 

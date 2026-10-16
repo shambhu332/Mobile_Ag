@@ -141,8 +141,10 @@ class FileProviderAuditor:
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
                         f"(name='{name}', path='{path_val}'). {entry.risk_reason}. "
-                        "When combined with grantUriPermissions=\"true\", this can allow unauthorized third-party apps "
-                        "to read or write sensitive private application sandbox files."
+                        "This XML candidate alone does not establish exposure. A recipient can access a file only if "
+                        "the effective provider implementation can construct/serve its URI and the app issues an "
+                        "applicable read or write URI grant (or exposes equivalent access); actual file scope and "
+                        "caller reachability require separate review."
                     ),
                     severity=("INFO" if has_parent_segment or
                               (tag in {"files-path", "cache-path"} and path_val in {".", ""})

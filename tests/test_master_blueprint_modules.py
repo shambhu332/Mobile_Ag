@@ -22,6 +22,8 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert len(result.findings) == 2  # root-path and external-path with "."
     assert any(f.metadata.get("tag") == "root-path" and f.severity == "HIGH" for f in result.findings)
     assert any(f.metadata.get("tag") == "external-path" and f.severity == "MEDIUM" for f in result.findings)
+    assert all("does not establish exposure" in finding.description for finding in result.findings)
+    assert all("unauthorized third-party apps" not in finding.description for finding in result.findings)
 
     # A root-relative subdirectory is not the whole filesystem and should not
     # inherit the broad-root finding solely because of its tag.

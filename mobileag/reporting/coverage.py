@@ -52,6 +52,7 @@ def review_surface_ledger(coverage: dict | None) -> dict:
     rows = {}
     for surface, paths in _SURFACE_ANALYZERS.items():
         records = [(path, _coverage_at_path(coverage, path)) for path in paths]
+        missing_paths = [path for path, record in records if record is None]
         records = [(path, record) for path, record in records if record is not None]
         statuses = [record.get('static_status') for _, record in records]
         if not records or all(status in (None, 'not_started', 'not_tested', 'not_selected') for status in statuses):
@@ -74,7 +75,7 @@ def review_surface_ledger(coverage: dict | None) -> dict:
                            if type(record.get('candidate_count')) is int and record['candidate_count'] > 0]
         evidence_state = ('not_applicable' if analysis_state == 'not_applicable' else
                           'candidate' if candidate_paths else 'not_tested')
-        gap_reasons = []
+        gap_reasons = [f'{path}: coverage not recorded' for path in missing_paths]
         if not records:
             gap_reasons.append('no analyzer mapped to this surface')
         else:
@@ -106,6 +107,7 @@ def review_surface_ledger(coverage: dict | None) -> dict:
             'independently_verified': False,
             'candidate_evidence_paths': candidate_paths,
             'mapped_coverage_paths': [path for path, _ in records],
+            'missing_coverage_paths': missing_paths,
             'static_statuses': statuses,
             'recorded_counts': {
                 path: {key: record[key] for key in ('component_count', 'exported_component_count', 'candidate_count',

@@ -402,6 +402,13 @@ audit; the existing no-follow, size-bounded file reader remains in force. A
 synthetic DTD fixture verifies that the config is not interpreted and coverage
 becomes partial. No Android platform behavior or live TLS policy was tested.
 
+The report review-surface ledger now distinguishes configured analyzer paths
+from paths absent in the scan record: absent mapped paths appear in
+`missing_coverage_paths` and as explicit `coverage not recorded` gap reasons.
+Synthetic coverage-ledger tests verify this for a partial WebView/deep-link
+surface. Existing `analysis_state` still describes only observed analyzer
+execution; it is not a completeness or security result.
+
 ### Safety and completion boundary
 
 The blueprint's stealth/anti-detection daemon, TLS/certificate-pinning bypass,
@@ -537,6 +544,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
    The Android automation snapshot DTD/entity guard passed its focused test (1), the automation suite (23), and the full suite (**1,036 passed**, 40.30 s; same expected warning); compilation and `git diff --check` passed. No device actions were run.
    Network Security Configuration DTD/entity rejection passed its focused suite (4) and the full suite (**1,037 passed**, 39.66 s; same expected warning); compilation and `git diff --check` passed. Coverage is explicitly partial on rejected input; no platform TLS behavior was exercised.
    The APK extractor's package-name manifest probe passed artifact-provenance tests (20) and the full suite (**1,038 passed**, 39.98 s; same expected warning); compilation and `git diff --check` passed. Synthetic tests cover DTD, final symlink, and reduced-size-cap rejection; no untrusted APK was processed in this validation.
+   The review-surface coverage ledger gap-reporting change passed `test_accuracy_foundations.py` (73 tests) and the full suite (**1,039 passed**, 40.51 s; same expected warning); compilation and `git diff --check` passed. It reports missing mapped coverage; it does not measure analyst or analyzer completeness.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38774618068` completed successfully on commit `7a85d3a`: 900 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 902 passed and 1 warning (39.04 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

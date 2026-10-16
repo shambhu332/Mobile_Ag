@@ -478,6 +478,21 @@ def test_review_surface_ledger_exposes_specific_analyzer_gap_and_limit_reasons()
     assert row['proof_status'] == 'not_proven'
 
 
+def test_review_surface_ledger_lists_missing_mapped_analyzers_explicitly():
+    row = review_surface_ledger({'android_surface': {'categories': {
+        'webview': {'static_status': 'analyzed_heuristically', 'candidate_count': 1},
+    }}})['surfaces']['webview_deep_links']
+
+    assert row['analysis_state'] == 'analyzed'
+    assert row['mapped_coverage_paths'] == ['android_surface.categories.webview']
+    assert row['missing_coverage_paths'] == [
+        'android_surface.categories.deep_links', 'taint.webview',
+    ]
+    assert 'android_surface.categories.deep_links: coverage not recorded' in row['gap_reasons']
+    assert 'taint.webview: coverage not recorded' in row['gap_reasons']
+    assert row['proof_status'] == 'not_proven'
+
+
 def test_review_ledger_maps_serialization_and_logging_as_bounded_static_only():
     ledger = review_surface_ledger({
         'manifest': {'static_status': 'completed', 'candidate_count': 1,

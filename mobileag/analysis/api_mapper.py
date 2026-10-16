@@ -90,6 +90,35 @@ def _mask_smali_comments(source: str) -> str:
     return "".join(chars)
 
 
+def _mask_xml_comments(source: str) -> tuple[str, bool]:
+    """Blank XML comments while preserving CDATA and source line offsets."""
+    chars = list(source)
+    index = 0
+    malformed = False
+    while index < len(source):
+        if source.startswith("<![CDATA[", index):
+            end = source.find("]]>", index + 9)
+            if end < 0:
+                malformed = True
+                break
+            index = end + 3
+            continue
+        if source.startswith("<!--", index):
+            end = source.find("-->", index + 4)
+            if end < 0:
+                end = len(source)
+                malformed = True
+            else:
+                end += 3
+            for position in range(index, end):
+                if chars[position] not in "\r\n":
+                    chars[position] = " "
+            index = end
+            continue
+        index += 1
+    return "".join(chars), malformed
+
+
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -258,6 +287,7 @@ class APIMapper:
         seen_endpoint_urls: set[str] = set()
         deduplicated_endpoint_count = 0
         http_diagnostics = {"unmodeled": 0, "oversized_or_unclosed": 0}
+        malformed_xml_comment_files = 0
 
         inventory = SourceInventory()
         for file_path, data in inventory.read(
@@ -270,6 +300,9 @@ class APIMapper:
                     content = _mask_java_kotlin_comments(content)
                 elif file_path.suffix.lower() == ".smali":
                     content = _mask_smali_comments(content)
+                elif file_path.suffix.lower() == ".xml":
+                    content, malformed_xml = _mask_xml_comments(content)
+                    malformed_xml_comment_files += int(malformed_xml)
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
                 # parsed with a bounded quote-aware scanner to avoid repeated
@@ -376,6 +409,7 @@ class APIMapper:
                              unmodeled_retrofit_http_annotations=http_diagnostics["unmodeled"],
                              oversized_or_unclosed_retrofit_http_annotations=http_diagnostics[
                                  "oversized_or_unclosed"],
+                             malformed_xml_comment_files=malformed_xml_comment_files,
                              limits={**inventory.coverage['limits'], 'endpoints':5000,'findings':500})
         if http_diagnostics["unmodeled"]:
             self.coverage["static_status"] = "partial"
@@ -386,6 +420,10 @@ class APIMapper:
             self.coverage["limits_reached"] = True
             self.coverage.setdefault("limit_reasons", {})[
                 "retrofit_http_annotation_chars"] = http_diagnostics["oversized_or_unclosed"]
+        if malformed_xml_comment_files:
+            self.coverage["static_status"] = "partial"
+            self.coverage.setdefault("limitations", []).append(
+                "one or more XML source files had an unclosed comment or CDATA section")
         return endpoints, raw_findings
 
     async def map_apis(self, decompiled_path: str) -> tuple[list[dict], list[Finding]]:

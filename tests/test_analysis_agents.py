@@ -334,6 +334,39 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_masks_xml_comments_but_scans_cdata_and_active_urls(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "strings.xml").write_text(
+        '<resources>\n'
+        '  <!-- "https://dev-api.example.com/v1/commented" "/api/v1/hidden" -->\n'
+        '  <string name="endpoint">"https://dev-api.example.com/v1/active"</string>\n'
+        '  <string name="route"><![CDATA["/api/v2/cdata"]]></string>\n'
+        '</resources>\n',
+        encoding="utf-8",
+    )
+
+    endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    assert "/api/v1/hidden" not in {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v2/cdata" in {endpoint["url"] for endpoint in endpoints}
+    staging = [finding for finding in findings if "Staging/Dev" in finding.title]
+    assert len(staging) == 1
+    assert staging[0].line_number == 3
+
+
+def test_api_mapper_reports_unclosed_xml_comment_as_partial(tmp_path, mock_router):
+    (tmp_path / "broken.xml").write_text('<!-- "/api/v1/hidden"', encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, findings = mapper._sync_map_apis(tmp_path)
+
+    assert endpoints == []
+    assert findings == []
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["malformed_xml_comment_files"] == 1
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_ignores_smali_comments_but_keeps_string_constants(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "Routes.smali").write_text(

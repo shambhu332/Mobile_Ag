@@ -812,3 +812,14 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    that omit a guard remain supported, so callers must still supply an
    explicit scope guard for authorized device use. Existing pytest-asyncio
    deprecation and async-resource warnings remain.
+
+   `DeepLinkFuzzer` now treats an explicit `False` scope-guard result as a
+   denial at every existing pre/post ADB checkpoint; exceptions continue to
+   fail closed, while guard omission remains compatible for legacy callers.
+   Synthetic tests prove denial prevents baseline collection or link launch
+   after baseline capture. Focused runtime/deep-link regressions passed (**7
+   passed**, 85 deselected); the full suite passed (**1,154 passed**, 72.29
+   s), with `compileall` and `git diff --check` passing. All ADB behavior was
+   mocked; no device was used, and this does not prove deep-link exploitability
+   or Android runtime behavior. Existing pytest-asyncio and async-resource
+   warnings remain.

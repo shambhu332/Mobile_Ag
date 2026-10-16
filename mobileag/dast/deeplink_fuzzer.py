@@ -30,6 +30,20 @@ class DeepLinkFuzzer:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
+    @staticmethod
+    def _check_scope_guard(guard) -> None:
+        """Fail closed when a supplied scope guard explicitly denies access."""
+        if guard is None:
+            return
+        if not callable(guard):
+            raise PermissionError("Deep-link scope guard is invalid")
+        try:
+            allowed = guard()
+        except Exception as exc:
+            raise PermissionError("Deep-link scope guard denied access") from exc
+        if allowed is False:
+            raise PermissionError("Deep-link scope guard denied access")
+
     def extract_deep_links_from_manifest(self, manifest_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract all registered schemes, hosts, and paths from manifest intent-filters."""
         components=manifest_data.get('components') or manifest_data.get('activities',[])
@@ -63,9 +77,9 @@ class DeepLinkFuzzer:
     ) -> tuple[int, str, list[str]]:
         """Execute a deep link intent on the device and monitor logcat output."""
 
-        if guard:guard()
+        self._check_scope_guard(guard)
         baseline=await self.adb.get_logcat_dump(serial,lines=100)
-        if guard:guard()
+        self._check_scope_guard(guard)
         # Build am start command
         cmd = ["-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", target_uri, "-p", package_name]
         if activity_name:
@@ -74,13 +88,13 @@ class DeepLinkFuzzer:
         code, stdout, stderr = await self.adb._exec_cmd(cmd, timeout=4.0)
         out_msg = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
 
-        if guard:guard()
+        self._check_scope_guard(guard)
         if code!=0 or "Error:" in out_msg:return code if code else -1,out_msg,[]
         # Let the activity process the intent
         await asyncio.sleep(1.0)
-        if guard:guard()
+        self._check_scope_guard(guard)
         logs = await self.adb.get_logcat_dump(serial, lines=100)
-        if guard:guard()
+        self._check_scope_guard(guard)
 
         return code, out_msg, new_lines(baseline,logs)
 

@@ -66,3 +66,42 @@ async def test_revocation_during_baseline_blocks_launch(monkeypatch):
         if not valid:raise PermissionError('synthetic revoked')
     with pytest.raises(PermissionError):await DeepLinkFuzzer(adb).exercise_deep_link('synthetic','org.example.fixture','fixture://route',guard=guard)
     adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_false_scope_guard_blocks_before_baseline():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    with pytest.raises(PermissionError):
+        await DeepLinkFuzzer(adb).exercise_deep_link(
+            'synthetic-serial', 'org.example.fixture', 'fixture://route',
+            guard=lambda: False,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scope_denial_after_baseline_blocks_deep_link_launch():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    adb = SimpleNamespace(
+        _exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock(return_value=[]),
+    )
+    checks = 0
+
+    def revoke_after_baseline():
+        nonlocal checks
+        checks += 1
+        return checks < 2
+
+    with pytest.raises(PermissionError):
+        await DeepLinkFuzzer(adb).exercise_deep_link(
+            'synthetic-serial', 'org.example.fixture', 'fixture://route',
+            guard=revoke_after_baseline,
+        )
+    adb.get_logcat_dump.assert_awaited_once()
+    adb._exec_cmd.assert_not_awaited()

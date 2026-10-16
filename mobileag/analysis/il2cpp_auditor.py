@@ -1,8 +1,9 @@
 """Bounded Unity IL2CPP metadata and binary indicators.
 
 The current structured parser validates version-29 string-literal ranges. Other
-versions use bounded printable-string heuristics; type/method reconstruction
-is not implemented, and class-looking strings remain lexical candidates.
+versions use bounded printable-string heuristics and are reported as partial;
+type/method reconstruction is not implemented, and class-looking strings
+remain lexical candidates.
 """
 from __future__ import annotations
 
@@ -198,6 +199,9 @@ class Il2CppAuditor:
             result.scan_errors.append("type_method_tables_partial")
         elif result.metadata_definitions_status == "invalid":
             result.scan_errors.append("type_method_tables_invalid")
+        if (result.metadata_tables_status == "unsupported_version"
+                or result.metadata_definitions_status == "unsupported_version"):
+            result.scan_errors.append("unsupported_metadata_version")
 
         if result.metadata_tables_status != "parsed":
             # Non-v29/invalid inputs retain the explicitly lexical fallback.

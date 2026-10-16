@@ -255,6 +255,23 @@ def test_il2cpp_v29_literal_table_rejects_out_of_bounds_sections(tmp_path):
     assert result.scan_status == "partial"
 
 
+def test_il2cpp_unsupported_metadata_version_marks_lexical_fallback_partial(tmp_path):
+    metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
+    metadata_dir.mkdir(parents=True)
+    data = bytearray(_il2cpp_v29_metadata(["AuthenticationManager"]))
+    struct.pack_into("<I", data, 4, 24)
+    (metadata_dir / "global-metadata.dat").write_bytes(data)
+
+    result = Il2CppAuditor().audit_package(tmp_path)
+
+    assert result.metadata_version == 24
+    assert result.metadata_tables_status == "unsupported_version"
+    assert result.metadata_definitions_status == "unsupported_version"
+    assert result.class_name_candidates == ["AuthenticationManager"]
+    assert "unsupported_metadata_version" in result.scan_errors
+    assert result.scan_status == "partial"
+
+
 def test_il2cpp_v29_type_table_reports_bad_method_ranges(tmp_path):
     metadata_dir = tmp_path / "assets/bin/Data/Managed/Metadata"
     metadata_dir.mkdir(parents=True)

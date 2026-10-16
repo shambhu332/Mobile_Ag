@@ -255,7 +255,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
 * **Objective**: Generate bounded, interoperable SBOM inventory documents; schema validity and coverage limits do not establish complete dependency inventory or supply-chain assurance.
-* **Current boundary**: CycloneDX JSON/XML and SPDX JSON writers enforce a 16 MiB serialized output cap and use private-mode temporary files with atomic replacement. A destination symlink is replaced rather than followed. This is local artifact handling; it does not establish complete package inventory or supply-chain assurance.
+* **Current boundary**: CycloneDX JSON/XML and SPDX JSON writers enforce a 16 MiB serialized output cap and use private-mode temporary files with atomic replacement. A destination symlink is replaced rather than followed. The generator rejects additions beyond 10,000 components, 5,000 vulnerabilities, 64 licenses per component, or 100 CWEs per vulnerability. This is bounded local artifact handling; it does not establish complete package inventory or supply-chain assurance.
 * **Target Files**:
   - `mobileag/analysis/sbom_generator.py` (New)
   - `mobileag/analysis/dependency_scanner.py` (Enhancement)
@@ -1206,3 +1206,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    full-suite and compile results follow. The schema fixtures remain offline
    validation evidence for synthetic documents, not assurance of SBOM
    completeness or third-party tool interoperability.
+
+   SBOM in-memory inventories are now explicitly capped at 10,000 components,
+   5,000 vulnerability records, 64 licenses per component, and 100 CWEs per
+   vulnerability. Exceeding a cap raises rather than silently dropping
+   inventory. Focused normative SBOM tests passed (**9 passed**); full-suite
+   and compile results follow. These item budgets do not establish that
+   upstream scanners inventory every dependency.

@@ -127,3 +127,26 @@ def test_sbom_writers_enforce_size_cap_before_destination_write(tmp_path, monkey
     with pytest.raises(ValueError, match="size limit"):
         getattr(_synthetic_generator(), method)(output)
     assert not output.exists()
+
+
+def test_sbom_inventory_additions_have_explicit_count_limits(monkeypatch):
+    generator = MobileSbomGenerator("Bounded", "1")
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_COMPONENTS", 1)
+    generator.add_component("one", "1", "pkg:generic/one")
+    with pytest.raises(ValueError, match="component inventory"):
+        generator.add_component("two", "1", "pkg:generic/two")
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_VULNERABILITIES", 1)
+    generator.add_vulnerability("CVE-2025-1", "pkg:generic/one")
+    with pytest.raises(ValueError, match="vulnerability inventory"):
+        generator.add_vulnerability("CVE-2025-2", "pkg:generic/one")
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_LICENSES_PER_COMPONENT", 1)
+    with pytest.raises(ValueError, match="licenses"):
+        MobileSbomGenerator("Bounded", "1").add_component(
+            "lib", None, "pkg:generic/lib", licenses=["MIT", "Apache-2.0"])
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_CWES_PER_VULNERABILITY", 1)
+    with pytest.raises(ValueError, match="CWE inventory"):
+        MobileSbomGenerator("Bounded", "1").add_vulnerability(
+            "CVE-2025-3", "pkg:generic/lib", cwe_ids=["CWE-79", "CWE-89"])

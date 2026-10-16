@@ -115,6 +115,11 @@ class SbomComponent:
 class MobileSbomGenerator:
     """Generates CycloneDX and SPDX SBOM representations."""
 
+    MAX_COMPONENTS = 10_000
+    MAX_VULNERABILITIES = 5_000
+    MAX_LICENSES_PER_COMPONENT = 64
+    MAX_CWES_PER_VULNERABILITY = 100
+
     COMPONENT_TYPES = {
         "application", "framework", "library", "container", "operating-system", "device",
         "firmware", "file", "machine-learning-model", "platform", "device-driver",
@@ -145,6 +150,8 @@ class MobileSbomGenerator:
         licenses: Optional[List[str]] = None,
     ) -> None:
         """Add a software dependency or native library component."""
+        if len(self.components) >= self.MAX_COMPONENTS:
+            raise ValueError("SBOM component inventory exceeds the item limit")
         self._validate_text(name, "component name", 1024)
         if version is not None:
             self._validate_text(version, "component version", 256)
@@ -152,11 +159,13 @@ class MobileSbomGenerator:
         if not isinstance(component_type, str) or component_type not in self.COMPONENT_TYPES:
             raise ValueError(f"Unsupported CycloneDX component type: {component_type!r}")
         if licenses is not None:
-            if not isinstance(licenses, list):
+            if not isinstance(licenses, list) or len(licenses) > self.MAX_LICENSES_PER_COMPONENT:
                 raise ValueError("SBOM licenses must be a list of identifiers")
             for license_id in licenses:
                 self._validate_text(license_id, "license identifier", 256)
         normalized_hashes: Dict[str, str] = {}
+        if hashes is not None and (not isinstance(hashes, dict) or len(hashes) > len(self.HASH_LENGTHS)):
+            raise ValueError("SBOM hash inventory exceeds the supported algorithm limit")
         for algorithm, digest in (hashes or {}).items():
             if not isinstance(algorithm, str) or not isinstance(digest, str):
                 raise ValueError("SBOM hash algorithms and digests must be strings")
@@ -197,6 +206,8 @@ class MobileSbomGenerator:
         cwe_ids: Optional[List[str]] = None,
     ) -> None:
         """Attach an OSV/CVE security advisory to an inventoried component."""
+        if len(self.vulnerabilities) >= self.MAX_VULNERABILITIES:
+            raise ValueError("SBOM vulnerability inventory exceeds the item limit")
         severity_aliases = {"moderate": "medium"}
         if (not isinstance(vuln_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", vuln_id)):
             raise ValueError("Invalid SBOM vulnerability identifier or package URL")
@@ -210,6 +221,9 @@ class MobileSbomGenerator:
         normalized_severity = severity_aliases.get(severity.strip().lower(), severity.strip().lower())
         if normalized_severity not in {"critical", "high", "medium", "low", "info", "none", "unknown"}:
             raise ValueError("Unsupported CycloneDX vulnerability severity")
+        if cwe_ids is not None and (not isinstance(cwe_ids, list)
+                                    or len(cwe_ids) > self.MAX_CWES_PER_VULNERABILITY):
+            raise ValueError("SBOM CWE inventory exceeds the item limit")
         normalized_cwes = []
         for cwe in cwe_ids or []:
             match = re.fullmatch(r"(?i)CWE-([1-9][0-9]*)", cwe) if isinstance(cwe, str) else None

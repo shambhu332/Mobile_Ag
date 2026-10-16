@@ -998,6 +998,22 @@ def test_openapi_catalog_redacts_short_and_percent_encoded_token_like_segments()
     assert MobileApiCataloger._path_template("/v1/users/Ab%31Cd%32Ef") == "/v1/users/{id1}"
 
 
+def test_openapi_catalog_redacts_digit_bearing_prefixed_resource_ids():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/users/usr_98472/orders/order_123"))
+    spec = catalog.export_openapi_json()
+    assert "/v1/users/{id1}/orders/{id2}" in spec["paths"]
+    encoded = json.dumps(spec)
+    assert "usr_98472" not in encoded and "order_123" not in encoded
+    # Hard negatives: ordinary route words without digits remain literal.
+    assert MobileApiCataloger._path_template("/v1/users/me") == "/v1/users/me"
+    assert MobileApiCataloger._path_template("/v1/orders/recent") == "/v1/orders/recent"
+
+
 def test_openapi_schema_redacts_dynamic_json_object_keys():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger

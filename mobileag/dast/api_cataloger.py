@@ -98,6 +98,10 @@ class MobileApiCataloger:
         # this privacy decision, never to construct the exported route.
         opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
         short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
+        prefixed_resource_id = re.compile(
+            r"(?i)^(?:usr|user|acc|account|ord|order|item|profile|invoice|document|id)[_-]"
+            r"(?=[A-Za-z0-9_-]{2,}$)(?=.*\d)[A-Za-z0-9_-]+$"
+        )
         email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
         segments = path.split("/")
         identifier_index = 0
@@ -108,6 +112,8 @@ class MobileApiCataloger:
                     or opaque_token_segment.fullmatch(decoded_segment)
                     or short_mixed_case_id.fullmatch(segment)
                     or short_mixed_case_id.fullmatch(decoded_segment)
+                    or prefixed_resource_id.fullmatch(segment)
+                    or prefixed_resource_id.fullmatch(decoded_segment)
                     or email_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"

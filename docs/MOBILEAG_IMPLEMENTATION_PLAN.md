@@ -1288,3 +1288,10 @@ analysis.
 Validation for the native-JNI coverage-ledger change: full pytest passed
 (**1,231 passed**, 59.84 s); compileall and `git diff --check` passed. Results
 are synthetic regression evidence, not native exploit or APK-wide coverage proof.
+
+A follow-up failure-path regression forces the native-JNI worker to raise and
+verifies the orchestrator records `static_status=incomplete` while preserving
+`proof_status=not_proven`. Focused coverage tests passed (**2 passed**); full
+pytest passed (**1,231 passed**, 61.51 s); compileall and `git diff --check`
+passed. The injected exception is synthetic; no real native scan failure was
+induced.

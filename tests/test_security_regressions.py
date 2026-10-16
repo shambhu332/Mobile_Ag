@@ -509,6 +509,10 @@ async def test_framework_probe_coverage_reaches_scan_state(tmp_path):
     assert state['coverage']['native_jni']['proof_status']=='not_proven'
     assert state['coverage']['native_jni']['jni_export_candidate_count']==1
     assert {ep['source_engine'] for ep in state['api_endpoints']} >= {'flutter','hermes'}
+    obj._native_jni_analyzer.audit_package_libraries=MagicMock(side_effect=RuntimeError('synthetic analyzer failure'))
+    await obj._run_analysis(state)
+    assert state['coverage']['native_jni']['static_status']=='incomplete'
+    assert state['coverage']['native_jni']['proof_status']=='not_proven'
 
 def test_framework_probe_coverage_marks_truncated_as_partial():
     from types import SimpleNamespace

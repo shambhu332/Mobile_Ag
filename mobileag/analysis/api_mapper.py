@@ -7,6 +7,7 @@ from urllib.parse import quote, unquote, urlsplit
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.graphql_candidates import GRAPHQL_OPERATION_PATTERN, mask_graphql_non_code
 
 logger = logging.getLogger(__name__)
 
@@ -167,61 +168,6 @@ def _mask_javascript_dart_comments(source: str) -> str:
     return "".join(chars)
 
 
-def _mask_graphql_non_code(source: str) -> tuple[str, bool]:
-    """Blank GraphQL comments and string values while preserving lines and operation syntax."""
-    chars = list(source)
-    index = 0
-    malformed_string = False
-
-    def blank(start: int, end: int) -> None:
-        for position in range(start, end):
-            if chars[position] not in "\r\n":
-                chars[position] = " "
-
-    while index < len(source):
-        if source[index] == "#":
-            end = index + 1
-            while end < len(source) and source[end] not in "\r\n":
-                end += 1
-            blank(index, end)
-            index = end
-            continue
-        if source.startswith('"""', index):
-            start = index
-            index += 3
-            while index < len(source):
-                if source.startswith('\\"""', index):
-                    index += 4
-                elif source.startswith('"""', index):
-                    index += 3
-                    break
-                else:
-                    index += 1
-            else:
-                malformed_string = True
-            blank(start, index)
-            continue
-        if source[index] == '"':
-            start = index
-            index += 1
-            closed = False
-            while index < len(source) and source[index] not in "\r\n":
-                if source[index] == "\\":
-                    index += 2
-                elif source[index] == '"':
-                    index += 1
-                    closed = True
-                    break
-                else:
-                    index += 1
-            if not closed:
-                malformed_string = True
-            blank(start, index)
-            continue
-        index += 1
-    return "".join(chars), malformed_string
-
-
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -247,9 +193,7 @@ class APIMapper:
             r'''["'`]((?:/)(?:api|graphql|v[0-9]+|auth|oauth|login|users?|account|payments?)(?:/[A-Za-z0-9._~%{}:$-]+)*(?:\?[A-Za-z0-9._~%{}=&%-]*)?)["'`]''',
             re.IGNORECASE,
         )
-        self.graphql_pattern = re.compile(
-            r"\b(query|mutation|subscription)\b(?:\s+([_A-Za-z][_0-9A-Za-z]{0,127}))?\s*(?=\(|\{)"
-        )
+        self.graphql_pattern = GRAPHQL_OPERATION_PATTERN
         self.MAX_GRAPHQL_OPERATION_CANDIDATES = 1000
         self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
                          "proof_status":"not_proven", "exhaustive":False}
@@ -424,7 +368,7 @@ class APIMapper:
                 elif file_path.suffix.lower() in {".js", ".mjs", ".dart"}:
                     content = _mask_javascript_dart_comments(content)
                 elif file_path.suffix.lower() in {".graphql", ".gql"}:
-                    content, malformed_graphql = _mask_graphql_non_code(content)
+                    content, malformed_graphql = mask_graphql_non_code(content)
                     malformed_graphql_string_files += int(malformed_graphql)
 
                 # Retain operation names as a separate lexical inventory. An

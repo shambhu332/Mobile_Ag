@@ -308,11 +308,11 @@ evidence.
 
 ## Comprehensive Implementation Schedule & Status
 
-> **Audit correction (refreshed 2026-10-16 at `a6c2b29`): this blueprint is not 100% complete.** The
+> **Audit correction (refreshed 2026-10-16 at `05aea27`): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
 > (57.51 s). The current checkout's full suite reports **1,238 passed**
-> (60.69 s) in the pinned Python 3.14 validation environment; `compileall`
+> (61.30 s) in the pinned Python 3.14 validation environment; `compileall`
 > and `git diff --check` also passed. These are primarily mocked/synthetic
 > regressions and do not establish actual APK/device coverage,
 > exploitability, completeness, or production readiness. The implementation
@@ -1372,3 +1372,15 @@ route inventory regression verifies this response shape (**2 focused tests**);
 full pytest passed (**1,238 passed**, 61.30 s); compileall and
 `git diff --check` passed. The response remains an unverified inventory, not a
 server contract or authorization verdict.
+
+Observed API capture now extracts bounded GraphQL operation type/name candidates
+from JSON `query` bodies and publishes only those names in an OpenAPI vendor
+extension; query/variable values are not copied into this metadata. Duplicate
+JSON members, malformed strings, and query/operation caps produce explicit
+coverage-gap counters. A shared lexical helper keeps standalone static GraphQL
+scanning and observed-operation extraction consistent. Synthetic export tests
+cover comment/description decoys, secret-value omission, duplicate-key rejection,
+and OpenAPI validation. Focused dynamic tests passed (**2 passed**) and focused
+static GraphQL tests passed (**4 passed**); full pytest passed (**1,240 passed**,
+61.84 s); compileall and `git diff --check` passed. These are operation-name
+observations only, not a GraphQL schema, server contract, or authorization result.

@@ -689,3 +689,48 @@ def test_mobile_api_cataloger():
     assert "/v1/auth/login" in spec["paths"]
     assert "post" in spec["paths"]["/v1/auth/login"]
 
+
+def test_mobile_api_cataloger_exports_graphql_operation_names_only():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        method="POST", url="https://api.example.test/graphql",
+        headers={"Content-Type": "application/json"},
+        body=json.dumps({
+            "query": ('# query HiddenByComment { viewer { id } }\n'
+                      '"""query HiddenByDescription { notOperation }"""\n'
+                      'query LoadProfile($id: ID!) { profile(id: $id) { id } }\n'
+                      'mutation UpdateProfile { updateProfile { id } }'),
+            "variables": {"access_token": "synthetic-secret-value"},
+        }),
+        response_status=200,
+    ))
+
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/graphql"]["post"]
+    candidates = operation["x-mobileag-graphql-operation-candidates"]
+    assert [(item["operation_type"], item["operation_name"]) for item in candidates] == [
+        ("query", "LoadProfile"), ("mutation", "UpdateProfile"),
+    ]
+    assert "synthetic-secret-value" not in json.dumps(spec)
+    assert "HiddenByComment" not in json.dumps(spec)
+    assert "HiddenByDescription" not in json.dumps(spec)
+    limits = spec["x-mobileag-capture-limits"]
+    assert limits["graphqlOperationCandidates"] == 2
+
+
+def test_mobile_api_cataloger_rejects_ambiguous_graphql_query_json():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        method="POST", url="https://api.example.test/graphql",
+        body='{"query":"query First { viewer { id } }","query":"query Second { viewer { id } }"}',
+        response_status=200,
+    ))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["post"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+

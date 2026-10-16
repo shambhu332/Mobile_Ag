@@ -1399,3 +1399,10 @@ are not copied into OpenAPI metadata. Synthetic tests verify operation-name
 export, raw-query omission, and duplicate-query rejection (**2 focused tests**);
 full pytest passed (**1,242 passed**, 62.06 s); compileall and
 `git diff --check` passed. This is capture-derived operation-name evidence only.
+
+GraphQL dynamic capture regressions now verify over-size documents set a
+coverage-gap counter and global candidate-cap overflow increments the omitted
+candidate count while keeping exports bounded. Focused GraphQL tests passed
+(**6 passed**); full pytest passed (**1,244 passed**, 60.55 s); compileall and
+`git diff --check` passed. These tests validate bounded candidate handling, not
+exhaustive GraphQL parsing or server-side behavior.

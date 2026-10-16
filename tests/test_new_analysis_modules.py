@@ -770,3 +770,38 @@ def test_mobile_api_cataloger_marks_repeated_graphql_get_query_ambiguous():
     assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["get"]
     assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
 
+
+def test_mobile_api_cataloger_marks_oversized_graphql_document_as_coverage_gap():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "POST", "https://api.example.test/graphql",
+        body='{"query":"' + (" " * (64 * 1024 + 1)) + '"}',
+    ))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["post"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+
+
+def test_mobile_api_cataloger_caps_graphql_candidates_and_counts_omissions(monkeypatch):
+    import json
+    from mobileag.dast import api_cataloger
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    monkeypatch.setattr(api_cataloger, "_MAX_GRAPHQL_OPERATION_CANDIDATES", 1)
+    catalog = MobileApiCataloger()
+    for path, name in (("first", "First"), ("second", "Second")):
+        catalog.ingest_request(CapturedRequest(
+            "POST", f"https://api.example.test/{path}",
+            body=json.dumps({"query": f"query {name} {{ viewer {{ id }} }}"}),
+        ))
+    spec = catalog.export_openapi_json()
+    assert sum(
+        len(operation.get("x-mobileag-graphql-operation-candidates", []))
+        for path in spec["paths"].values() for operation in path.values()
+    ) == 1
+    limits = spec["x-mobileag-capture-limits"]
+    assert limits["graphqlOperationCandidates"] == 1
+    assert limits["graphqlOperationCandidatesOmitted"] == 1
+

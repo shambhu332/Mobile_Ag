@@ -85,3 +85,32 @@ def test_sarif_export_replaces_symlink_atomically_with_private_file():
 def test_sarif_export_rejects_oversized_result_inventory():
     with pytest.raises(SarifImportError, match="inventory exceeds limits"):
         SARIFExporter.generate_sarif([{}] * 5001)
+
+
+def test_sarif_export_preflights_large_input_before_projection(monkeypatch):
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_BYTES", 1024)
+    with pytest.raises(SarifImportError, match="input exceeds"):
+        SARIFExporter.generate_sarif([{"description": "x" * 300}])
+
+
+def test_sarif_export_rejects_cyclic_input_before_projection():
+    finding = {}
+    finding["metadata"] = finding
+    with pytest.raises(SarifImportError, match="cycle"):
+        SARIFExporter.generate_sarif([finding])
+
+
+def test_sarif_preflight_enforces_node_and_nesting_budgets(monkeypatch):
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_NODES", 4)
+    with pytest.raises(SarifImportError, match="complexity"):
+        SARIFExporter._preflight_input([{"a": [1, 2]}])
+
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_NODES", 100)
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_DEPTH", 2)
+    with pytest.raises(SarifImportError, match="complexity"):
+        SARIFExporter._preflight_input([[[["deep"]]]])
+
+
+def test_sarif_preflight_allows_shared_acyclic_input():
+    shared = {"synthetic": "value"}
+    SARIFExporter._preflight_input([shared, shared])

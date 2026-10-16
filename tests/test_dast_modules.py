@@ -28,6 +28,22 @@ async def test_adb_manager_device_enumeration():
     assert isinstance(devices, list)
 
 
+@pytest.mark.asyncio
+async def test_adb_root_action_requires_sync_scope_guard():
+    mgr = ADBManager()
+    mgr._exec_cmd = AsyncMock(side_effect=AssertionError("Unapproved root action"))
+
+    with pytest.raises(PermissionError, match="explicit scope guard"):
+        await mgr.restart_root("synthetic-device")
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await mgr.restart_root("synthetic-device", guard=async_allow)
+    mgr._exec_cmd.assert_not_awaited()
+
+
 def test_logcat_auditor_sensitive_token_leak():
     auditor = LogcatAuditor()
     log_sample = [
@@ -94,6 +110,7 @@ async def test_intent_fuzzer_crash_capture():
         serial="emulator-5554",
         package_name="com.target.app",
         component_name="com.target.app.VulnActivity",
+        guard=lambda: None,
     )
 
     assert res["crashed"] is True
@@ -117,7 +134,9 @@ async def test_storage_auditor_shared_preferences():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_shared_preferences(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_shared_preferences(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-312"
     assert "user_session.xml" in findings[0].title
@@ -134,8 +153,17 @@ async def test_storage_auditor_honors_scope_denial_before_shell(monkeypatch):
 
     mock_adb._exec_cmd = forbidden_exec
     auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError, match="required"):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic")
     with pytest.raises(PermissionError):
         await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=lambda: False)
+    assert calls == []
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=async_allow)
     assert calls == []
 
 
@@ -173,7 +201,9 @@ async def test_storage_auditor_sqlite_databases():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_sqlite_databases(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_sqlite_databases(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-312"
     assert "app_accounts.db" in findings[0].title
@@ -191,11 +221,15 @@ async def test_storage_auditor_cache_and_audit_all():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_cache_leakage(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_cache_leakage(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-524"
 
-    res = await auditor.audit_all_storage(serial="emulator-5554", package_name="com.test.app")
+    res = await auditor.audit_all_storage(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert res["total_storage_findings"] == 1
     assert res["cache_findings"] == 1
 
@@ -220,6 +254,7 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
         serial="emulator-5554",
         package_name="com.test.app",
         authorities=["com.test.app.provider"],
+        guard=lambda: None,
     )
 
     assert len(results) == 1
@@ -227,6 +262,34 @@ async def test_provider_auditor_scoped_shell_observation(monkeypatch):
     assert findings[0].cwe_id == "CWE-926"
     assert findings[0].cvss_score == 0
     assert "sec123" not in str(findings[0].to_dict())
+
+
+@pytest.mark.asyncio
+async def test_provider_auditor_requires_synchronous_scope_guard(monkeypatch):
+    import json
+    from unittest.mock import AsyncMock
+    from mobileag.dast.provider_auditor import ProviderAuditor
+
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "synthetic-device")
+    uri = "content://com.test.app.provider/fixtures/synthetic"
+    monkeypatch.setenv("MOBILEAG_PROVIDER_FIXTURES", json.dumps([{
+        "package_name": "com.test.app", "uri": uri,
+    }]))
+    adb = ADBManager()
+    adb._exec_cmd = AsyncMock(side_effect=AssertionError("Unapproved provider query"))
+    auditor = ProviderAuditor(adb=adb)
+
+    with pytest.raises(PermissionError, match="required"):
+        await auditor.audit_provider_uri("synthetic-device", "com.test.app", uri)
+
+    async def async_guard():
+        return False
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor.audit_provider_uri(
+            "synthetic-device", "com.test.app", uri, guard=async_guard,
+        )
+    adb._exec_cmd.assert_not_awaited()
 
 
 @pytest.mark.asyncio

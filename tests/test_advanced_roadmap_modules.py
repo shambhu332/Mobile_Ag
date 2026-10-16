@@ -101,7 +101,10 @@ def test_hermes_bytecode_analyzer():
         # Create mock Hermes bundle with 0x1F480120 magic header and version 84
         magic_bytes = struct.pack("<Q", 0x1F480120)
         version_bytes = struct.pack("<I", 84)
-        payload = b"https://api.example.com/mobile/v1" + b"\x00" * 20 + b'apiKey: "abcdef0123456789abcdef"'
+        payload = (b"https://api.example.com/mobile/v1" + b"\x00" * 20
+                   + b"https://api.example.com/mobile/token/synthetic-private-token" + b"\x00"
+                   + b"https://api.example.com/auth/token/synthetic-string-secret?access_token=query-secret" + b"\x00"
+                   + b'apiKey: "abcdef0123456789abcdef"')
 
         with open(bundle_path, "wb") as f:
             f.write(magic_bytes + version_bytes + b"\x00" * 16 + payload)
@@ -112,6 +115,10 @@ def test_hermes_bytecode_analyzer():
         assert res.is_hermes is True
         assert res.bytecode_version == 84
         assert "https://api.example.com/mobile/v1" in res.api_endpoints
+        assert "https://api.example.com/mobile/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
+        assert "synthetic-string-secret" not in repr(res.extracted_strings)
+        assert "query-secret" not in repr(res.extracted_strings)
         assert len(res.secrets) >= 1
         assert all(secret == {"name": "embedded credential", "value_redacted": True}
                    for secret in res.secrets)
@@ -180,6 +187,7 @@ def test_il2cpp_auditor():
         meta_file = os.path.join(meta_dir, "global-metadata.dat")
         content = _il2cpp_v29_metadata([
             "https://game-api.unity.com/v1", "AuthenticationManager",
+            "https://game-api.unity.com/v1/auth/%74oken/synthetic-private-token",
             'apiKey: "synthetic-unity-secret-123"',
         ], types=[{"name": "AuthenticationManager", "namespace": "sample",
                    "fields": ["sessionToken"],
@@ -194,8 +202,10 @@ def test_il2cpp_auditor():
         assert res.is_il2cpp is True
         assert res.metadata_version == 29
         assert res.metadata_tables_status == "parsed"
-        assert res.metadata_string_literals_count == 3
+        assert res.metadata_string_literals_count == 4
         assert "https://game-api.unity.com/v1" in res.api_endpoints
+        assert "https://game-api.unity.com/v1/auth/%74oken/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
         assert res.metadata_definitions_status == "parsed"
         assert res.reconstructed_classes == ["sample.AuthenticationManager"]
         assert res.reconstructed_methods == [{
@@ -363,7 +373,9 @@ def test_macho_binary_parser():
 
         # Magic: 0xFEEDFACF (64-bit Mach-O) in little endian
         magic_bytes = struct.pack("<I", 0xFEEDFACF)
-        payload = b"\x00" * 30 + b"__swift5_types" + b"\x00" * 20 + b"CommonCrypto" + b"\x00" * 20 + b"https://ios.example.com/api"
+        payload = (b"\x00" * 30 + b"__swift5_types" + b"\x00" * 20 + b"CommonCrypto" + b"\x00" * 20
+                   + b"https://ios.example.com/api\x00"
+                   + b"https://ios.example.com/api/auth/token/synthetic-private-token")
 
         with open(bin_path, "wb") as f:
             f.write(magic_bytes + b"\x00" * 28 + payload)
@@ -377,12 +389,15 @@ def test_macho_binary_parser():
         assert "__swift5_types" not in res.swift_sections_detected
         assert "CommonCrypto" in res.crypto_frameworks
         assert "https://ios.example.com/api" in res.api_endpoints
+        assert "https://ios.example.com/api/auth/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
 
 
 def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tmp_path):
     import struct
 
-    strings = b"https://api.example.test/v1\0"
+    strings = (b"https://api.example.test/v1\0"
+               b"https://api.example.test/auth/token/synthetic-cstring-secret\0")
     dylib_name = b"/System/Library/Frameworks/Security.framework/Security\0"
     dylib_size = (24 + len(dylib_name) + 7) & ~7
     dylib = struct.pack("<IIIIII", 0x0C, dylib_size, 24, 0, 0, 0) + dylib_name
@@ -406,6 +421,8 @@ def test_macho_parser_reads_bounded_load_commands_swift_sections_and_cstrings(tm
     assert "/System/Library/Frameworks/Security.framework/Security" in result.imported_dylibs
     assert "__swift5_types" in result.swift_sections_detected
     assert "https://api.example.test/v1" in result.cstring_samples
+    assert "https://api.example.test/auth/token/{id}" in result.cstring_samples
+    assert "synthetic-cstring-secret" not in repr(result.cstring_samples)
 
 
 def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path):
@@ -508,12 +525,13 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     struct.pack_into("<i", type_blob, 20, field_offset - (body_offset + 20))
     field_name = b"displayName\0"
     field_blob = bytearray(struct.pack("<iiHHI", 0, 0, 0, 12, 1))
-    field_blob.extend(struct.pack("<Iii", 0, 0, 4))
+    field_blob.extend(struct.pack("<Iii", 6, 20, 4))  # var + artificial field
     field_blob.extend(field_name)
+    field_type_blob = b"$sSiD\0"  # Relative target is outside __swift5_fieldmd.
 
     segment = struct.pack("<II16sQQQQiiII", 0x19, 232, b"__TEXT", 0x1000,
-                          len(type_blob) + len(field_blob), body_offset,
-                          len(type_blob) + len(field_blob), 7, 5, 2, 0)
+                          len(type_blob) + len(field_blob) + len(field_type_blob), body_offset,
+                          len(type_blob) + len(field_blob) + len(field_type_blob), 7, 5, 2, 0)
     types_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_types", b"__TEXT",
                                 0x2000, 4, body_offset, 0, 0, 0, 0, 0, 0, 0)
     fields_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_fieldmd", b"__TEXT",
@@ -521,10 +539,17 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     command = segment + types_section + fields_section
     header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
     binary = tmp_path / "SwiftFields"
-    binary.write_bytes(header + command + type_blob + field_blob)
+    binary.write_bytes(header + command + type_blob + field_blob + field_type_blob)
     result = MachoBinaryParser().parse_binary(binary)
     assert result.swift_type_metadata_status == "parsed"
     assert result.swift_type_field_candidates == [{"type_name": "Example", "field_names": ["displayName"]}]
+    assert result.swift_field_type_candidates == [{
+        "type_name": "Example", "field_name": "displayName", "mangled_type_name": "$sSiD",
+    }]
+    assert result.swift_field_metadata_candidates == [{
+        "type_name": "Example", "field_name": "displayName",
+        "is_indirect_case": False, "is_var": True, "is_artificial": True,
+    }]
 
     malformed = bytearray(binary.read_bytes())
     struct.pack_into("<H", malformed, field_offset + 10, 11)  # unsupported record stride
@@ -533,6 +558,25 @@ def test_macho_parser_reads_bounded_swift_field_names(tmp_path):
     malformed_result = MachoBinaryParser().parse_binary(malformed_path)
     assert malformed_result.swift_type_metadata_status == "partial"
     assert malformed_result.swift_type_field_candidates == []
+    assert malformed_result.swift_field_type_candidates == []
+    assert malformed_result.swift_field_metadata_candidates == []
+
+    symbolic = bytearray(binary.read_bytes())
+    type_offset = field_offset + len(field_blob)
+    symbolic[type_offset:type_offset + len(field_type_blob)] = b"$sFoo\x01abcd\0"
+    symbolic_path = tmp_path / "SwiftFieldsSymbolic"
+    symbolic_path.write_bytes(symbolic)
+    symbolic_result = MachoBinaryParser().parse_binary(symbolic_path)
+    assert symbolic_result.swift_type_metadata_status == "partial"
+    assert symbolic_result.swift_field_type_candidates == []
+
+    out_of_bounds = bytearray(binary.read_bytes())
+    struct.pack_into("<i", out_of_bounds, field_offset + 20, 0x7FFFFFFF)
+    out_of_bounds_path = tmp_path / "SwiftFieldsTypeOutOfBounds"
+    out_of_bounds_path.write_bytes(out_of_bounds)
+    out_of_bounds_result = MachoBinaryParser().parse_binary(out_of_bounds_path)
+    assert out_of_bounds_result.swift_type_metadata_status == "partial"
+    assert out_of_bounds_result.swift_field_type_candidates == []
 
 
 def test_macho_parser_inventories_direct_swift_protocol_descriptors(tmp_path):
@@ -555,6 +599,39 @@ def test_macho_parser_inventories_direct_swift_protocol_descriptors(tmp_path):
     result = MachoBinaryParser().parse_binary(binary)
     assert result.swift_protocol_metadata_status == "parsed"
     assert result.swift_protocol_name_candidates == ["Displayable"]
+
+
+def test_macho_parser_inventories_direct_swift_conformance_name_pairs(tmp_path):
+    section_offset = 32 + 152
+    metadata = bytearray(56)
+    struct.pack_into("<i", metadata, 0, 4)  # section entry -> conformance record
+    struct.pack_into("<ii", metadata, 4, 16, 32)  # direct protocol and type descriptor refs
+    struct.pack_into("<I", metadata, 20, 3)  # protocol context descriptor
+    struct.pack_into("<i", metadata, 28, 28)  # protocol name relative to descriptor+8
+    struct.pack_into("<I", metadata, 40, 17)  # struct context descriptor
+    struct.pack_into("<i", metadata, 48, 19)  # type name relative to descriptor+8
+    # Store distinct names after both descriptors.
+    metadata[56:67] = b"Renderable\0"
+    metadata[67:73] = b"Shape\0"
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
+                          len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
+    proto_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_proto", b"__TEXT",
+                                0x2000, 4, section_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + proto_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftConformance"
+    binary.write_bytes(header + command + metadata)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_conformance_metadata_status == "parsed"
+    assert result.swift_conformance_candidates == [{"type_name": "Shape", "protocol_name": "Renderable"}]
+
+    malformed = bytearray(binary.read_bytes())
+    struct.pack_into("<i", malformed, section_offset + 4, 17)  # tagged/indirect protocol reference
+    malformed_path = tmp_path / "SwiftConformanceTagged"
+    malformed_path.write_bytes(malformed)
+    rejected = MachoBinaryParser().parse_binary(malformed_path)
+    assert rejected.swift_conformance_metadata_status == "partial"
+    assert rejected.swift_conformance_candidates == []
 
 
 def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):
@@ -819,7 +896,7 @@ def test_privacy_manifest_auditor():
             "NSPrivacyAccessedAPITypes": [
                 {
                     "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
-                    "NSPrivacyAccessedAPITypeReasons": ["CA92.1"],
+                    "NSPrivacyAccessedAPITypeReasons": ["CA92.1", "CA92.2"],
                 }
             ],
         }
@@ -834,6 +911,10 @@ def test_privacy_manifest_auditor():
         assert res.tracking_enabled is True
         assert "analytics.thirdparty.com" in res.tracking_domains
         assert "NSPrivacyAccessedAPITypeUserDefaults" in res.declared_api_categories
+        assert res.declared_api_reasons == [
+            {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "CA92.1"},
+            {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "CA92.2"},
+        ]
         assert res.parse_status == "parsed"
         assert res.manifest_count == 1
         assert res.manifests[0]["path"] == "PrivacyInfo.xcprivacy"
@@ -858,7 +939,8 @@ def test_ios_privacy_manifest_audit_reports_partial_parse_and_keeps_bundle_resul
     assert result.manifest_paths == ["Frameworks/Example.framework/PrivacyInfo.xcprivacy",
                                     "PrivacyInfo.xcprivacy"]
     assert result.manifests == [{"path": "PrivacyInfo.xcprivacy", "tracking_enabled": True,
-                                 "tracking_domains": [], "declared_api_categories": []}]
+                                 "tracking_domains": [], "declared_api_categories": [],
+                                 "declared_api_reasons": []}]
     assert result.tracking_enabled is True
     assert result.errors == ["manifest_parse_error"]
 
@@ -876,6 +958,112 @@ def test_ios_privacy_manifest_inventory_is_entry_bounded(tmp_path):
     assert result.parse_status == "partial"
     assert result.manifest_count == 0
     assert "scan_limit_reached" in result.errors
+
+
+def test_ios_privacy_manifest_enforces_aggregate_bytes_and_reports_coverage(tmp_path):
+    root = tmp_path / "app"
+    first = root / "A.framework" / "PrivacyInfo.xcprivacy"
+    second = root / "B.framework" / "PrivacyInfo.xcprivacy"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    payload = plistlib.dumps({"NSPrivacyTracking": False, "NSPrivacyTrackingDomains": [],
+                              "NSPrivacyAccessedAPITypes": []})
+    first.write_bytes(payload)
+    second.write_bytes(payload)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_MANIFEST_TOTAL_BYTES = len(payload) + 1
+
+    result = auditor.audit_ios_privacy_manifest(root)
+
+    assert result.manifest_bytes_scanned == len(payload)
+    assert result.manifest_count == 2
+    assert len(result.manifests) == 1
+    assert result.parse_status == "partial"
+    assert "manifest_total_byte_limit" in result.errors
+
+
+def test_ios_privacy_manifest_caps_domain_category_and_error_outputs(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": ["one.example", "x" * 254,
+                                         "two.example", "three.example", "four.example"],
+            "NSPrivacyAccessedAPITypes": [
+                {"NSPrivacyAccessedAPIType": "Category0"},
+                {"NSPrivacyAccessedAPIType": "x" * 257},
+                {"NSPrivacyAccessedAPIType": "Category1"},
+                {"NSPrivacyAccessedAPIType": "Category2"},
+            ],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_TRACKING_DOMAINS = 3
+    auditor.MAX_TRACKING_DOMAINS_PER_MANIFEST = 3
+    auditor.MAX_API_CATEGORIES = 2
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert result.parse_status == "partial"
+    assert result.tracking_domains == ["one.example", "two.example"]
+    assert len(result.declared_api_categories) == 2
+    assert len(result.manifests[0]["tracking_domains"]) == 2
+    assert len(result.errors) <= auditor.MAX_ERROR_CODES
+    assert "tracking_domain_limit_reached" in result.errors
+    assert "api_category_limit_reached" in result.errors
+    assert "invalid_tracking_domains" in result.errors
+
+
+def test_ios_privacy_manifest_retains_bounded_reason_codes_without_validating_them(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": [],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.1", "x" * 65, "SYNTHETIC.2"],
+            }],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_API_REASONS_PER_CATEGORY = 3
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert result.parse_status == "partial"
+    assert result.declared_api_reasons == [
+        {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.1"},
+        {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.2"},
+    ]
+    assert "invalid_api_reason_codes" in result.errors
+
+
+def test_ios_privacy_manifest_bounds_each_manifest_summary(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": [f"host{index}.example" for index in range(5)],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "Category0",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.0", "SYNTHETIC.1", "SYNTHETIC.2"],
+            }] + [{
+                "NSPrivacyAccessedAPIType": f"Category{index}",
+                "NSPrivacyAccessedAPITypeReasons": [f"SYNTHETIC.{index}"],
+            } for index in range(1, 5)],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_TRACKING_DOMAINS_PER_MANIFEST = 2
+    auditor.MAX_API_CATEGORIES_PER_MANIFEST = 2
+    auditor.MAX_API_REASON_CODES_PER_MANIFEST = 2
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert len(result.manifests[0]["tracking_domains"]) == 2
+    assert len(result.manifests[0]["declared_api_categories"]) == 2
+    assert len(result.manifests[0]["declared_api_reasons"]) == 2
+    assert {"tracking_domain_limit_reached", "api_category_limit_reached",
+            "api_reason_limit_reached"} <= set(result.errors)
+    assert result.parse_status == "partial"
 
 
 def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():
@@ -972,6 +1160,43 @@ def test_android_data_safety_uses_permission_elements_not_comments_or_substrings
           <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION_EXTRA"/>
         </manifest>'''
         assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir) == []
+
+
+def test_android_data_safety_ignores_sdk_names_in_java_kotlin_comments_and_literals():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.kt"
+        source.write_text(
+            '// com.google.firebase.analytics.FirebaseAnalytics\n'
+            '/* com.facebook.android */\n'
+            'val example = "com.google.firebase.analytics.FirebaseAnalytics"\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        ) == []
+
+
+def test_android_data_safety_ignores_nested_permission_examples_and_non_manifest_roots():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.java"
+        source.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        nested = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <application><meta-data><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/></meta-data></application>
+        </manifest>'''
+        auditor = PrivacyManifestAuditor()
+        assert auditor.audit_android_data_safety_discrepancies(nested, tmp_dir) == []
+        not_manifest = '''<example xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </example>'''
+        coverage = {}
+        assert auditor.audit_android_data_safety_discrepancies(
+            not_manifest, tmp_dir, _coverage_out=coverage,
+        ) == []
+        assert coverage["manifest_parse"] == "invalid"
+        assert "manifest_root_invalid" in coverage["errors"]
 
 
 def test_android_data_safety_rejects_manifest_dtd_and_entity_declarations():

@@ -10,7 +10,9 @@ Identifies and actively exercises deep links, custom schemes, and intent filters
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import re
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from mobileag.security.privacy import redact
@@ -27,6 +29,12 @@ logger = logging.getLogger(__name__)
 class DeepLinkFuzzer:
     """Fuzzes Android custom schemes and app deep links for logic and injection vulnerabilities."""
 
+    MAX_DEEP_LINKS = 30
+    MAX_URI_CHARS = 8192
+    MAX_TOTAL_INPUT_CHARS = 256 * 1024
+    _SERIAL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+    _PACKAGE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\Z")
+
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
@@ -39,6 +47,11 @@ class DeepLinkFuzzer:
             allowed = guard()
         except Exception as exc:
             raise PermissionError("Deep-link scope guard denied access") from exc
+        if inspect.isawaitable(allowed):
+            close = getattr(allowed, "close", None)
+            if callable(close):
+                close()
+            raise PermissionError("Deep-link scope guard must be synchronous")
         if allowed is False:
             raise PermissionError("Deep-link scope guard denied access")
 
@@ -49,9 +62,17 @@ class DeepLinkFuzzer:
 
     def generate_fuzz_payloads(self, base_uri: str, package_name: str) -> list[dict[str, str]]:
         """Generate bounded synthetic diagnostic markers, not exploit proofs."""
-        parts=urlsplit(base_uri)
-        if not parts.scheme or len(base_uri)>8192:raise ValueError('An exact bounded URI scheme is required')
-        original=parse_qsl(parts.query,keep_blank_values=True,max_num_fields=100)
+        if (not isinstance(base_uri, str) or not base_uri or len(base_uri) > self.MAX_URI_CHARS
+                or "\x00" in base_uri or not isinstance(package_name, str)
+                or not self._PACKAGE_RE.fullmatch(package_name)):
+            raise ValueError('An exact bounded URI and package name are required')
+        try:
+            parts=urlsplit(base_uri)
+            original=parse_qsl(parts.query,keep_blank_values=True,max_num_fields=100)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Deep-link URI is malformed or exceeds query limits') from exc
+        if not parts.scheme or any(ord(char) < 0x20 or ord(char) == 0x7f for char in base_uri):
+            raise ValueError('An exact bounded URI scheme is required')
         def uri(key,value):
             query=[(k,v) for k,v in original if k!=key]+[(key,value)]
             return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
@@ -75,8 +96,17 @@ class DeepLinkFuzzer:
     ) -> tuple[int, str, list[str]]:
         """Execute a deep link intent on the device and monitor logcat output."""
 
+        if (not isinstance(serial, str) or not self._SERIAL_RE.fullmatch(serial)
+                or not isinstance(package_name, str) or not self._PACKAGE_RE.fullmatch(package_name)
+                or not isinstance(target_uri, str) or not target_uri
+                or len(target_uri) > self.MAX_URI_CHARS or "\x00" in target_uri
+                or any(ord(char) < 0x20 or ord(char) == 0x7f for char in target_uri)
+                or not isinstance(activity_name, str) or len(activity_name) > 512
+                or any(ord(char) < 0x20 or ord(char) == 0x7f for char in activity_name)):
+            raise ValueError("Deep-link execution input is invalid or exceeds limits")
+
         self._check_scope_guard(guard)
-        baseline=await self.adb.get_logcat_dump(serial,lines=100)
+        baseline=await self.adb.get_logcat_dump(serial,lines=100,guard=lambda:self._check_scope_guard(guard))
         self._check_scope_guard(guard)
         # Build am start command
         cmd = ["-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", target_uri, "-p", package_name]
@@ -91,7 +121,7 @@ class DeepLinkFuzzer:
         # Let the activity process the intent
         await asyncio.sleep(1.0)
         self._check_scope_guard(guard)
-        logs = await self.adb.get_logcat_dump(serial, lines=100)
+        logs = await self.adb.get_logcat_dump(serial, lines=100, guard=lambda:self._check_scope_guard(guard))
         self._check_scope_guard(guard)
 
         return code, out_msg, new_lines(baseline,logs)
@@ -104,6 +134,18 @@ class DeepLinkFuzzer:
         guard=None,
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
         """Execute the full deep link fuzzing matrix across discovered schemes."""
+        if (not isinstance(serial, str) or not self._SERIAL_RE.fullmatch(serial)
+                or not isinstance(package_name, str) or not self._PACKAGE_RE.fullmatch(package_name)
+                or not isinstance(deep_links, (list, tuple))
+                or len(deep_links) > self.MAX_DEEP_LINKS):
+            raise ValueError("Deep-link fuzz input is invalid or exceeds limits")
+        if (any(not isinstance(uri, str) or not uri or len(uri) > self.MAX_URI_CHARS
+                for uri in deep_links)
+                or sum(len(uri) for uri in deep_links) > self.MAX_TOTAL_INPUT_CHARS):
+            raise ValueError("Deep-link fuzz input is invalid or exceeds limits")
+        # Validate and precompute every payload before any device access, so a
+        # malformed later entry cannot leave a partially executed batch.
+        payload_batches = [self.generate_fuzz_payloads(uri, package_name) for uri in deep_links]
         results: list[dict[str, Any]] = []
         def evidence_uri(value):
             parsed=urlsplit(value)
@@ -111,8 +153,7 @@ class DeepLinkFuzzer:
                 urlencode([(key,"[REDACTED]") for key,_ in parse_qsl(parsed.query,keep_blank_values=True,max_num_fields=100)]),"")))
         findings: list[Finding] = []
 
-        for link_uri in deep_links:
-            payloads = self.generate_fuzz_payloads(link_uri, package_name)
+        for link_uri, payloads in zip(deep_links, payload_batches):
 
             for item in payloads:
                 test_uri = item["uri"]

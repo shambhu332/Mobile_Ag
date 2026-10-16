@@ -98,6 +98,52 @@ def test_isolated_worker_tree_measurement_counts_regular_file_bytes(tmp_path):
 
     assert _measure_tree(root) == (5, 2)
 
+
+def test_isolated_worker_result_writer_replaces_link_atomically(tmp_path):
+    from mobileag.core import isolated_worker
+
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"preserve":true}', encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.symlink_to(victim)
+
+    isolated_worker._write_result(result, {"ok": True})
+
+    assert victim.read_text(encoding="utf-8") == '{"preserve":true}'
+    assert not result.is_symlink()
+    assert json.loads(result.read_text(encoding="utf-8")) == {"ok": True}
+    assert result.stat().st_mode & 0o077 == 0
+
+
+def test_isolated_worker_result_writer_rejects_oversize_without_replacing(tmp_path, monkeypatch):
+    from mobileag.core import isolated_worker
+
+    result = tmp_path / "result.json"
+    result.write_text('{"old":true}', encoding="utf-8")
+    monkeypatch.setattr(isolated_worker, "MAX_RESULT_BYTES", 8)
+
+    with pytest.raises(ValueError, match="size limit"):
+        isolated_worker._write_result(result, {"too_big": "payload"})
+
+    assert result.read_text(encoding="utf-8") == '{"old":true}'
+    assert list(tmp_path.glob(".result.json.*.tmp")) == []
+
+
+def test_host_worker_result_reader_rejects_symlinks_and_oversize(tmp_path, monkeypatch):
+    jobs = importlib.import_module("mobileag.web.jobs")
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"should_not_read":true}', encoding="utf-8")
+    link = tmp_path / "result.json"
+    link.symlink_to(victim)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        jobs._read_worker_result(link)
+
+    regular = tmp_path / "regular.json"
+    regular.write_text('{"data":"too large"}', encoding="utf-8")
+    monkeypatch.setattr(jobs, "MAX_RESULT_BYTES", 8)
+    with pytest.raises(RuntimeError, match="oversized"):
+        jobs._read_worker_result(regular)
+
 def test_retention_confirm_revision_original_and_tombstone(client):
     document=scan();web.repository().save(document)
     original=web.UPLOAD_DIR/'original.apk';original.write_bytes(b'preserve')
@@ -256,7 +302,66 @@ async def test_launch_rejects_zero_exit_android_error():
     from unittest.mock import AsyncMock
     manager = ADBManager()
     manager._exec_cmd = AsyncMock(return_value=(0, b'Error type 3\nError: Activity class does not exist.', b''))
-    assert (await manager.launch_activity('owned-device', 'org.example/.Main'))['status'] == 'failed'
+    assert (await manager.launch_activity('owned-device', 'org.example/.Main', guard=lambda: True))['status'] == 'failed'
+
+@pytest.mark.asyncio
+async def test_adb_install_and_launch_fail_closed_without_sync_scope_guard(tmp_path):
+    from mobileag.dast.adb_manager import ADBManager
+    from unittest.mock import AsyncMock
+    apk=tmp_path/'fixture.apk';apk.write_bytes(b'synthetic')
+    manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'Success',b''))
+    with pytest.raises(PermissionError):await manager.install_apk('owned-device',apk)
+    with pytest.raises(PermissionError):await manager.launch_activity('owned-device','org.example/.Main')
+    async def async_guard():return True
+    with pytest.raises(PermissionError):await manager.launch_activity('owned-device','org.example/.Main',guard=async_guard)
+    manager._exec_cmd.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_adb_connect_shell_and_screenshot_fail_closed_without_guard():
+    from mobileag.dast.adb_manager import ADBManager
+    from unittest.mock import AsyncMock
+    manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'output',b''))
+    with pytest.raises(PermissionError):await manager.connect_device('127.0.0.1:5555')
+    with pytest.raises(PermissionError):await manager.execute_shell('owned-device','echo test')
+    with pytest.raises(PermissionError):await manager.capture_screenshot('owned-device')
+    with pytest.raises(ValueError):await manager.connect_device('127.0.0.1:65536',guard=lambda: True)
+    manager._exec_cmd.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_logcat_and_pid_helpers_fail_closed_without_scope_guard():
+    from mobileag.dast.adb_manager import ADBManager
+    from unittest.mock import AsyncMock
+    manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'1234',b''))
+    with pytest.raises(PermissionError):await manager.get_logcat_dump('owned-device')
+    with pytest.raises(PermissionError):await manager.get_process_pids('owned-device','org.example.app')
+    with pytest.raises(PermissionError):await manager.clear_logcat('owned-device')
+    manager._exec_cmd.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_android_driver_device_commands_require_scope_guard():
+    from mobileag.dast.adb_manager import ADBManager
+    from mobileag.automation.android import AndroidDriver
+    from unittest.mock import AsyncMock
+    adb=ADBManager();adb._exec_cmd=AsyncMock(return_value=(0,b'',b''))
+    driver=AndroidDriver(adb,'owned-device','org.example.app')
+    for operation in (driver.snapshot(),driver.metadata(),driver.act('back')):
+        with pytest.raises(PermissionError):await operation
+    adb._exec_cmd.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_android_driver_stops_after_scope_revocation_between_shell_commands():
+    from mobileag.dast.adb_manager import ADBManager
+    from mobileag.automation.android import AndroidDriver
+    from unittest.mock import AsyncMock
+    adb=ADBManager();adb._exec_cmd=AsyncMock(return_value=(0,b'focused window org.example.app/.Main',b''))
+    driver=AndroidDriver(adb,'owned-device','org.example.app');checks=0
+    def revoke_after_foreground_command():
+        nonlocal checks
+        checks+=1
+        if checks>=4:raise PermissionError('synthetic scope revoked')
+    with pytest.raises(PermissionError):await driver.snapshot(guard=revoke_after_foreground_command)
+    assert adb._exec_cmd.await_count==1
+    assert 'uiautomator' not in adb._exec_cmd.await_args.args[0]
 
 def test_dependency_constraints_have_no_local_artifact_references():
     from pathlib import Path

@@ -177,7 +177,19 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     worker=Orchestrator(Settings(_env_file=None,offline=True,enable_deep_taint=False))
     for target,method in [(worker._manifest_auditor,'audit'),(worker._secret_scanner,'scan'),(worker._code_reviewer,'review'),(worker._native_analyzer,'analyze'),(worker._dependency_scanner,'scan'),(worker._nsc_auditor,'audit_directory_async'),(worker._bin_protection,'audit_directory_async'),(worker._rn_scanner,'scan_directory_async')]:
         monkeypatch.setattr(target,method,AsyncMock(return_value=[]))
+    worker._dependency_scanner.coverage={'static_status':'partial','lookup_status':'skipped_offline'}
+    worker._nsc_auditor.coverage={'static_status':'partial'}
+    worker._api_mapper.coverage={'static_status':'partial'}
+    worker._native_analyzer.coverage={'static_status':'partial'}
+    worker._bin_protection.coverage={'static_status':'partial'}
+    worker._rn_scanner.coverage={'static_status':'partial'}
+    worker._intent_redirection_auditor.coverage={'static_status':'partial'}
+    worker._pending_intent_auditor.coverage={'static_status':'partial'}
+    worker._fileprovider_auditor.coverage={'static_status':'partial'}
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
+    monkeypatch.setattr(worker._intent_redirection_auditor,'audit_directory',lambda _:[])
+    monkeypatch.setattr(worker._pending_intent_auditor,'audit_directory',lambda *args,**kwargs:[])
+    monkeypatch.setattr(worker._fileprovider_auditor,'audit_resource_directory',lambda _:[])
     monkeypatch.setattr(worker._flutter_engine, 'analyze_package_directory', lambda _: SimpleNamespace(
         is_flutter_app=True, api_endpoints=['https://api.fixture.invalid/v1/flutter']))
     monkeypatch.setattr(worker._hermes_analyzer, 'audit_package_bundles', lambda _: [SimpleNamespace(
@@ -187,8 +199,12 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
         metadata_definitions_status='parsed', reconstructed_classes=['Fixture'],
         reconstructed_methods=[{'name': 'reviewOnly'}],
         api_endpoints=['https://api.fixture.invalid/v1/il2cpp'], scan_status='complete'))
-    monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',lambda _:[])
-    (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
+    def partial_call_graph(_):
+        worker._call_graph_engine.coverage={'static_status':'partial','runtime_status':'not_tested',
+                                            'proof_status':'not_proven','exhaustive':False}
+        return []
+    monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',partial_call_graph)
+    (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true); Cipher.getInstance("AES/GCM/NoPadding");}}')
     state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
     result=await worker._run_analysis(state)
     assert result['coverage']['engines']['taint']=='skipped_disabled'
@@ -196,6 +212,15 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['manifest']['static_status']=='completed'
     assert result['coverage']['manifest']['exhaustive'] is False
     assert result['coverage']['manifest']['runtime_status']=='not_tested'
+    assert result['coverage']['engines']['smali_call_graph']=='partial'
+    assert result['coverage']['engines']['dependencies']=='partial'
+    assert result['coverage']['engines']['nsc']=='partial'
+    assert result['coverage']['engines']['crypto_metadata']=='analyzed_heuristically'
+    assert result['crypto_api_inventory'][0]['algorithm']=='AES/GCM/NoPadding'
+    assert result['coverage']['dependencies']['lookup_status']=='skipped_offline'
+    for engine in ('api_mapping','native','binary_protection','react_native',
+                   'intent_redirection','pending_intent','fileprovider'):
+        assert result['coverage']['engines'][engine]=='partial', (engine, result['coverage'].get(engine))
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
     assert result['il2cpp_analysis']['reconstructed_classes']==['Fixture']
     assert result['il2cpp_analysis']['reconstructed_methods']==[{'name':'reviewOnly'}]

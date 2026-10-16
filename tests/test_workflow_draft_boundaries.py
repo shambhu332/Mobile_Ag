@@ -63,6 +63,59 @@ async def test_api_query_secrets_never_copied_to_evidence():
 
 
 @pytest.mark.asyncio
+async def test_api_query_detector_recognizes_namespaced_credential_keys():
+    tester = APISecurityTester()
+    findings = await tester.test_endpoint(
+        'https://fixture.invalid/item?X-Refresh-Token=synthetic-refresh&client_secret=synthetic-secret'
+    )
+    assert len(findings) == 1
+    assert tester.observations['url_structure_status'] == 'analyzed'
+    serialized = json.dumps(findings[0].model_dump(mode='json'))
+    assert 'synthetic-refresh' not in serialized
+    assert 'synthetic-secret' not in serialized
+
+
+@pytest.mark.asyncio
+async def test_api_query_detector_fails_closed_on_malformed_or_over_limit_input(monkeypatch):
+    tester = APISecurityTester()
+    assert await tester.test_endpoint('https://[malformed/item?token=synthetic') == []
+    assert tester.observations['url_structure_status'] == 'incomplete_input'
+
+
+@pytest.mark.asyncio
+async def test_static_api_url_review_reports_invalid_and_omitted_endpoint_coverage(monkeypatch):
+    tester = APISecurityTester()
+    findings = await tester.analyze_endpoints_static([
+        {'url': 'https://fixture.invalid/path?client_secret=synthetic-secret'},
+        {'url': 'https://[malformed/path?token=synthetic'},
+        None,
+    ])
+    assert len(findings) == 1
+    coverage = tester.observations['static_url_review_coverage']
+    assert coverage == {
+        'status': 'partial', 'endpoints_received': 3, 'endpoints_analyzed': 3,
+        'endpoints_omitted': 0, 'invalid_endpoint_records': 1, 'incomplete_urls': 1,
+        'findings_count': 1, 'endpoint_limit': APISecurityTester.MAX_ENDPOINTS,
+    }
+    assert 'synthetic-secret' not in json.dumps(findings[0].model_dump(mode='json'))
+
+    monkeypatch.setattr(APISecurityTester, 'MAX_ENDPOINTS', 1)
+    findings = await tester.analyze_endpoints_static([
+        {'url': 'https://fixture.invalid/a'}, {'url': 'https://fixture.invalid/b'},
+    ])
+    coverage = tester.observations['static_url_review_coverage']
+    assert coverage['status'] == 'partial'
+    assert coverage['endpoints_analyzed'] == 1
+    assert coverage['endpoints_omitted'] == 1
+
+    monkeypatch.setattr(APISecurityTester, 'MAX_QUERY_FIELDS', 1)
+    assert await tester.test_endpoint(
+        'https://fixture.invalid/item?ordinary=1&token=synthetic'
+    ) == []
+    assert tester.observations['url_structure_status'] == 'incomplete_input'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('method,args', [
     ('test_endpoint', ['https://fixture.invalid']),
     ('check_rate_limiting', ['https://fixture.invalid']),
@@ -102,3 +155,57 @@ def test_checklist_is_explicitly_planning_not_execution():
     checklist = PentestChecklist()
     assert checklist.progress()['completed'] == 0
     assert 'Planning reference only' in checklist.to_markdown()
+
+
+def test_checklist_state_save_replaces_symlink_atomically_with_private_file(tmp_path):
+    import os
+    from mobileag.reporting.pentest_checklist import PentestChecklist
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "checklist.json"
+    output.symlink_to(victim)
+
+    PentestChecklist().save(output)
+
+    assert not output.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_checklist_state_loader_rejects_symlinks_and_oversized_files(tmp_path, monkeypatch):
+    import mobileag.reporting.pentest_checklist as checklist_module
+
+    checklist = checklist_module.PentestChecklist()
+    item = checklist.items[0]
+    original_status = item.status
+    target = tmp_path / "state.json"
+    target.write_text('[{"id":"' + item.id + '","status":"completed"}]')
+    link = tmp_path / "linked-state.json"
+    link.symlink_to(target)
+
+    checklist.load_state(link)
+    assert item.status == original_status
+
+    monkeypatch.setattr(checklist_module, "_MAX_CHECKLIST_STATE_BYTES", 8)
+    checklist.load_state(target)
+    assert item.status == original_status
+
+    monkeypatch.undo()
+    second = checklist.items[1]
+    target.write_text(json.dumps([
+        {"id": item.id, "status": "completed"},
+        {"id": second.id, "status": "invalid-state"},
+    ]))
+    checklist.load_state(target)
+    assert item.status == original_status  # Invalid later row must not partially apply earlier state.
+
+
+def test_checklist_state_save_rejects_oversized_output_before_replace(tmp_path, monkeypatch):
+    import mobileag.reporting.pentest_checklist as checklist_module
+
+    output = tmp_path / "state.json"
+    monkeypatch.setattr(checklist_module, "_MAX_CHECKLIST_STATE_BYTES", 1)
+    with pytest.raises(ValueError, match="output size limit"):
+        checklist_module.PentestChecklist().save(output)
+    assert not output.exists()

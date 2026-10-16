@@ -422,6 +422,47 @@ def test_report_errors_cannot_produce_gap_free_assessment():
     assert report['assessment_coverage'] == 'partial'
 
 
+def test_report_exports_bounded_il2cpp_metadata_as_static_candidates(monkeypatch):
+    engine = ReportEngine()
+    prepared = engine._prepare_data({
+        'scan_id': 'unity-fixture', 'coverage': {},
+        'il2cpp_analysis': {
+            'scan_status': 'partial', 'metadata_version': 29,
+            'metadata_tables_status': 'parsed', 'metadata_definitions_status': 'partial',
+            'type_definitions_count': 1, 'method_definitions_count': 2,
+            'reconstructed_classes': ['fixture.GameManager'],
+            'reconstructed_fields': [{'declaring_type': 'fixture.GameManager', 'field_name': 'state'}],
+            'reconstructed_methods': [{'declaring_type': 'fixture.GameManager',
+                                       'method_name': 'load', 'parameter_count': 0,
+                                       'parameter_names': []}],
+            'candidate_output_truncated': True,
+        },
+    })
+
+    assert prepared['il2cpp_analysis']['reconstructed_classes'] == ['fixture.GameManager']
+    markdown = engine._coverage_markdown(prepared)
+    assert 'Bounded Unity IL2CPP metadata candidates' in markdown
+    assert 'fixture.GameManager' in markdown
+    assert 'method bodies, and runtime reachability are not reconstructed' in markdown
+    assert '"proof_status": "not_proven"' in markdown
+
+    import weasyprint
+    rendered = {}
+
+    class SyntheticHTML:
+        def __init__(self, *, string, url_fetcher):
+            rendered['html'] = string
+            rendered['url_fetcher'] = url_fetcher
+
+        def write_pdf(self):
+            return b'%PDF-synthetic'
+
+    monkeypatch.setattr(weasyprint, 'HTML', SyntheticHTML)
+    assert engine._generate_pdf(prepared) == b'%PDF-synthetic'
+    assert 'Bounded Unity IL2CPP metadata candidates' in rendered['html']
+    assert 'Runtime: not tested; proof: not proven' in rendered['html']
+
+
 def test_review_surface_ledger_maps_only_recorded_analyzers_and_fails_closed():
     ledger = review_surface_ledger({
         'manifest': {'static_status': 'completed', 'runtime_status': 'not_tested',
@@ -857,3 +898,30 @@ def test_runtime_device_observation_not_equated_to_artifact_or_login_proof():
     assert row['declared_authentication_state'] == 'logged_in'
     assert row['authentication_status'] == 'not_verified'
     assert row['runtime_artifact_binding'] == 'not_verified'
+
+
+def test_professional_report_output_atomically_replaces_symlink_with_private_file(tmp_path):
+    import os
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "report.md"
+    output.symlink_to(victim)
+
+    report = ProfessionalReportExporter().generate_report([], output_path=output)
+
+    assert not output.is_symlink()
+    assert output.read_text() == report
+    assert victim.read_text() == "unchanged"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_professional_report_output_cap_fails_before_write(tmp_path, monkeypatch):
+    import mobileag.reporting.professional_report as professional_report
+
+    output = tmp_path / "oversized.md"
+    monkeypatch.setattr(professional_report, "_MAX_PROFESSIONAL_REPORT_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        professional_report.ProfessionalReportExporter().generate_report([], output_path=output)
+    assert not output.exists()

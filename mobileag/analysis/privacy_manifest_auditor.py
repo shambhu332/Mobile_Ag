@@ -20,15 +20,57 @@ from typing import Any, Dict, List, Set
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 
+def _mask_java_kotlin_comments_and_strings(source: str) -> str:
+    """Blank Java/Kotlin comments and string/char literals, preserving offsets."""
+    chars = list(source)
+
+    def blank(start: int, end: int) -> None:
+        for pos in range(start, end):
+            if chars[pos] not in "\r\n":
+                chars[pos] = " "
+
+    index = 0
+    while index < len(source):
+        if source.startswith("//", index):
+            end = index + 2
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            blank(index, end)
+            index = end
+        elif source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            end = len(source) if end < 0 else end + 2
+            blank(index, end)
+            index = end
+        elif source[index] in {'"', "'"}:
+            quote = source[index]
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                elif source[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+            blank(index, min(end, len(source)))
+            index = end
+        else:
+            index += 1
+    return "".join(chars)
+
+
 @dataclass
 class PrivacyManifestResult:
     has_privacy_manifest: bool = False
     tracking_enabled: bool = False
     tracking_domains: List[str] = field(default_factory=list)
     declared_api_categories: List[str] = field(default_factory=list)
+    declared_api_reasons: List[Dict[str, object]] = field(default_factory=list)
     undeclared_api_findings: List[Finding] = field(default_factory=list)
     parse_status: str = "absent"
     manifest_count: int = 0
+    manifest_bytes_scanned: int = 0
     manifest_paths: List[str] = field(default_factory=list)
     manifests: List[Dict[str, object]] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
@@ -57,6 +99,18 @@ class PrivacyManifestAuditor:
     MAX_MANIFESTS = 128
     MAX_TREE_ENTRIES = 50_000
     MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+    MAX_MANIFEST_TOTAL_BYTES = 16 * 1024 * 1024
+    MAX_TRACKING_DOMAINS = 2_048
+    MAX_TRACKING_DOMAINS_PER_MANIFEST = 256
+    MAX_TRACKING_DOMAIN_CHARS = 253
+    MAX_API_CATEGORIES = 512
+    MAX_API_CATEGORIES_PER_MANIFEST = 128
+    MAX_API_CATEGORY_CHARS = 256
+    MAX_API_REASON_CODES = 2_048
+    MAX_API_REASON_CODES_PER_MANIFEST = 128
+    MAX_API_REASONS_PER_CATEGORY = 32
+    MAX_API_REASON_CHARS = 64
+    MAX_ERROR_CODES = 64
     MAX_ANDROID_SOURCE_FILES = 5_000
     MAX_ANDROID_SOURCE_BYTES = 2 * 1024 * 1024
     MAX_ANDROID_TOTAL_SOURCE_BYTES = 32 * 1024 * 1024
@@ -73,9 +127,21 @@ class PrivacyManifestAuditor:
         """
         base = explicit_scan_root(app_dir)
         result = PrivacyManifestResult()
+        error_codes: set[str] = set()
+
+        def record_error(code: str) -> None:
+            if code in error_codes:
+                return
+            if len(result.errors) >= self.MAX_ERROR_CODES - 1:
+                code = "error_code_limit_reached"
+                if code in error_codes:
+                    return
+            error_codes.add(code)
+            result.errors.append(code)
+
         if base is None or base.is_symlink() or not base.is_dir():
             result.parse_status = "invalid"
-            result.errors.append("invalid_scan_root")
+            record_error("invalid_scan_root")
             return result
 
         candidates: list[Path] = []
@@ -94,21 +160,22 @@ class PrivacyManifestAuditor:
         if inventory.coverage["limits_reached"]:
             tree_limited = True
         if inventory.coverage["source_file_skip_reasons"].get("symlink_entry"):
-            result.errors.append("symlink_entry_skipped")
+            record_error("symlink_entry_skipped")
         if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
-            result.errors.append("directory_scan_error")
+            record_error("directory_scan_error")
 
         candidates.sort(key=lambda path: path.relative_to(base).as_posix())
         result.manifest_count = len(candidates)
         result.has_privacy_manifest = bool(candidates)
         result.manifest_paths = [path.relative_to(base).as_posix() for path in candidates]
         if tree_limited:
-            result.errors.append("scan_limit_reached")
+            record_error("scan_limit_reached")
 
         parsed_count = 0
         malformed_count = 0
         domains: set[str] = set()
         categories: set[str] = set()
+        api_reasons: set[tuple[str, str]] = set()
         tracking_flags: list[bool] = []
         for manifest_file in candidates:
             try:
@@ -119,24 +186,35 @@ class PrivacyManifestAuditor:
                         raise ValueError("manifest_not_regular")
                     if details.st_size > self.MAX_MANIFEST_BYTES:
                         raise ValueError("manifest_too_large")
-                    raw = stream.read(self.MAX_MANIFEST_BYTES + 1)
-                if len(raw) > self.MAX_MANIFEST_BYTES:
-                    raise ValueError("manifest_too_large")
+                    remaining = self.MAX_MANIFEST_TOTAL_BYTES - result.manifest_bytes_scanned
+                    if details.st_size > remaining:
+                        record_error("manifest_total_byte_limit")
+                        tree_limited = True
+                        break
+                    read_limit = min(self.MAX_MANIFEST_BYTES, remaining)
+                    raw = stream.read(read_limit + 1)
+                    result.manifest_bytes_scanned += min(len(raw), read_limit)
+                if len(raw) > read_limit:
+                    raise ValueError("manifest_total_byte_limit" if read_limit < self.MAX_MANIFEST_BYTES
+                                     else "manifest_too_large")
                 data = plistlib.loads(raw)
             except ValueError as exc:
                 malformed_count += 1
                 error_code = str(exc)
-                result.errors.append(error_code if error_code in {"manifest_not_regular", "manifest_too_large"}
-                                     else "manifest_parse_error")
+                if error_code == "manifest_total_byte_limit":
+                    tree_limited = True
+                record_error(error_code if error_code in {"manifest_not_regular", "manifest_too_large"}
+                             else error_code if error_code == "manifest_total_byte_limit"
+                             else "manifest_parse_error")
                 continue
             except Exception:
                 malformed_count += 1
-                result.errors.append("manifest_parse_error")
+                record_error("manifest_parse_error")
                 continue
 
             if not isinstance(data, dict):
                 malformed_count += 1
-                result.errors.append("manifest_root_not_dictionary")
+                record_error("manifest_root_not_dictionary")
                 continue
             parsed_count += 1
 
@@ -145,34 +223,88 @@ class PrivacyManifestAuditor:
                 tracking_flags.append(tracking)
             else:
                 malformed_count += 1
-                result.errors.append("invalid_tracking_value")
+                record_error("invalid_tracking_value")
 
             manifest_domains = data.get("NSPrivacyTrackingDomains", [])
-            if isinstance(manifest_domains, list) and all(isinstance(domain, str) for domain in manifest_domains):
-                domains.update(manifest_domains)
+            safe_domains: list[str] = []
+            if isinstance(manifest_domains, list):
+                for index, domain in enumerate(manifest_domains):
+                    if index >= self.MAX_TRACKING_DOMAINS_PER_MANIFEST:
+                        record_error("tracking_domain_limit_reached")
+                        break
+                    if (not isinstance(domain, str) or not domain
+                            or len(domain) > self.MAX_TRACKING_DOMAIN_CHARS
+                            or any(ord(char) < 0x20 or ord(char) == 0x7f for char in domain)):
+                        malformed_count += 1
+                        record_error("invalid_tracking_domains")
+                        continue
+                    if domain not in domains and len(domains) >= self.MAX_TRACKING_DOMAINS:
+                        record_error("tracking_domain_limit_reached")
+                        break
+                    domains.add(domain)
+                    if domain not in safe_domains:
+                        safe_domains.append(domain)
             else:
                 malformed_count += 1
-                result.errors.append("invalid_tracking_domains")
+                record_error("invalid_tracking_domains")
 
             api_types = data.get("NSPrivacyAccessedAPITypes", [])
             local_categories: set[str] = set()
+            local_api_reasons: set[tuple[str, str]] = set()
             if isinstance(api_types, list):
-                for entry in api_types:
+                for index, entry in enumerate(api_types):
+                    if index >= self.MAX_API_CATEGORIES_PER_MANIFEST:
+                        record_error("api_category_limit_reached")
+                        break
                     if not isinstance(entry, dict) or not isinstance(entry.get("NSPrivacyAccessedAPIType"), str):
                         malformed_count += 1
-                        result.errors.append("invalid_api_type_entry")
+                        record_error("invalid_api_type_entry")
                         continue
-                    local_categories.add(entry["NSPrivacyAccessedAPIType"])
-                    categories.add(entry["NSPrivacyAccessedAPIType"])
+                    category = entry["NSPrivacyAccessedAPIType"]
+                    if (not category or len(category) > self.MAX_API_CATEGORY_CHARS
+                            or any(ord(char) < 0x20 or ord(char) == 0x7f for char in category)):
+                        malformed_count += 1
+                        record_error("invalid_api_type_entry")
+                        continue
+                    if category not in categories and len(categories) >= self.MAX_API_CATEGORIES:
+                        record_error("api_category_limit_reached")
+                        break
+                    local_categories.add(category)
+                    categories.add(category)
+                    reasons = entry.get("NSPrivacyAccessedAPITypeReasons", [])
+                    if not isinstance(reasons, list):
+                        malformed_count += 1
+                        record_error("invalid_api_reason_codes")
+                        continue
+                    for reason_index, reason in enumerate(reasons):
+                        if (reason_index >= self.MAX_API_REASONS_PER_CATEGORY
+                                or len(local_api_reasons) >= self.MAX_API_REASON_CODES_PER_MANIFEST):
+                            record_error("api_reason_limit_reached")
+                            break
+                        if (not isinstance(reason, str) or not reason
+                                or len(reason) > self.MAX_API_REASON_CHARS
+                                or any(ord(char) < 0x20 or ord(char) == 0x7f for char in reason)):
+                            malformed_count += 1
+                            record_error("invalid_api_reason_codes")
+                            continue
+                        identity = (category, reason)
+                        if identity not in api_reasons and len(api_reasons) >= self.MAX_API_REASON_CODES:
+                            record_error("api_reason_limit_reached")
+                            break
+                        api_reasons.add(identity)
+                        local_api_reasons.add(identity)
             else:
                 malformed_count += 1
-                result.errors.append("invalid_api_types")
+                record_error("invalid_api_types")
             result.manifests.append({
                 "path": manifest_file.relative_to(base).as_posix(),
                 "tracking_enabled": tracking if isinstance(tracking, bool) else None,
-                "tracking_domains": sorted(manifest_domains) if isinstance(manifest_domains, list)
-                                    and all(isinstance(domain, str) for domain in manifest_domains) else [],
+                "tracking_domains": sorted(safe_domains),
                 "declared_api_categories": sorted(local_categories),
+                "declared_api_reasons": [
+                    {"category": category, "reason_code": reason}
+                    for category, reason in sorted(local_api_reasons)
+                ],
             })
 
         # True means at least one manifest declared tracking; it is not a
@@ -180,7 +312,11 @@ class PrivacyManifestAuditor:
         result.tracking_enabled = any(tracking_flags)
         result.tracking_domains = sorted(domains)
         result.declared_api_categories = sorted(categories)
-        result.errors = sorted(set(result.errors))
+        result.declared_api_reasons = [
+            {"category": category, "reason_code": reason}
+            for category, reason in sorted(api_reasons)
+        ]
+        result.errors = sorted(error_codes)
         if not candidates:
             result.parse_status = "partial" if result.errors else "absent"
         elif parsed_count == 0:
@@ -369,7 +505,12 @@ class PrivacyManifestAuditor:
         else:
             try:
                 root = ET.fromstring(manifest_content)
-                for element in root.iter():
+                if root.tag.rsplit("}", 1)[-1] != "manifest":
+                    raise ValueError("unexpected manifest root")
+                # Android permission declarations are direct children of the
+                # <manifest> root. Descendant searches can mistake examples or
+                # unrelated nested metadata for effective app permissions.
+                for element in root:
                     tag_name = element.tag.rsplit("}", 1)[-1]
                     if tag_name not in {"uses-permission", "uses-permission-sdk-23"}:
                         continue
@@ -381,6 +522,9 @@ class PrivacyManifestAuditor:
             except ET.ParseError:
                 coverage["manifest_parse"] = "invalid"
                 coverage["errors"].append("manifest_parse_error")
+            except ValueError:
+                coverage["manifest_parse"] = "invalid"
+                coverage["errors"].append("manifest_root_invalid")
         has_location = bool(permissions & {
             "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
         })
@@ -419,7 +563,9 @@ class PrivacyManifestAuditor:
                     total_bytes += len(raw)
                     coverage["bytes_read"] = total_bytes
                     coverage["files_read"] += 1
-                    text = raw.decode("utf-8", errors="ignore")
+                    text = _mask_java_kotlin_comments_and_strings(
+                        raw.decode("utf-8", errors="ignore")
+                    )
                     for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
                         if package in text:
                             detected_trackers.add(description)

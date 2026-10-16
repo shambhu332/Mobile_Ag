@@ -7,6 +7,7 @@ matched strings, read process environments, or establish ordinary-app access.
 from __future__ import annotations
 
 import logging
+import inspect
 import re
 import shlex
 from typing import Any, Optional
@@ -34,14 +35,14 @@ class MemoryForensicsAuditor:
 
     @staticmethod
     def _check_scope_guard(guard) -> None:
-        if guard is None:
-            return
         if not callable(guard):
-            raise PermissionError('Memory audit scope guard is invalid')
-        try:
-            allowed = guard()
-        except Exception as exc:
-            raise PermissionError('Memory audit scope guard denied access') from exc
+            raise PermissionError('Memory audit scope guard is required')
+        allowed = guard()
+        if inspect.isawaitable(allowed):
+            close = getattr(allowed, 'close', None)
+            if callable(close):
+                close()
+            raise PermissionError('Memory audit scope guard must be synchronous')
         if allowed is False:
             raise PermissionError('Memory audit scope guard denied access')
 

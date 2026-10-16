@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.api_endpoint_safety import safe_api_route, sanitize_candidate_text
 
 
 @dataclass
@@ -37,9 +38,13 @@ class MachoAnalysisResult:
     symbol_names: List[str] = field(default_factory=list)
     swift_type_name_candidates: List[str] = field(default_factory=list)
     swift_type_field_candidates: List[Dict[str, object]] = field(default_factory=list)
+    swift_field_type_candidates: List[Dict[str, str]] = field(default_factory=list)
+    swift_field_metadata_candidates: List[Dict[str, object]] = field(default_factory=list)
     swift_type_metadata_status: str = "not_attempted"
     swift_protocol_name_candidates: List[str] = field(default_factory=list)
     swift_protocol_metadata_status: str = "not_attempted"
+    swift_conformance_candidates: List[Dict[str, str]] = field(default_factory=list)
+    swift_conformance_metadata_status: str = "not_attempted"
     binary_truncated: bool = False
     candidate_output_truncated: bool = False
 
@@ -169,13 +174,15 @@ class MachoBinaryParser:
             url_candidates += 1
             try:
                 u = match.group(0).decode("utf-8", errors="ignore")
-                if not u.endswith((".png", ".jpg", ".svg", ".plist")):
-                    if u not in endpoints and len(endpoints) >= self.MAX_API_ENDPOINTS:
+                safe_url = safe_api_route(u)
+                if (safe_url != "[REDACTED URL]"
+                        and not safe_url.endswith((".png", ".jpg", ".svg", ".plist"))):
+                    if safe_url not in endpoints and len(endpoints) >= self.MAX_API_ENDPOINTS:
                         result.candidate_output_truncated = True
                         if "API endpoint candidate limit reached" not in result.parse_errors:
                             result.parse_errors.append("API endpoint candidate limit reached")
                     else:
-                        endpoints.add(u)
+                        endpoints.add(safe_url)
             except Exception:
                 continue
 
@@ -260,13 +267,24 @@ class MachoBinaryParser:
             for fields in slice_result.swift_type_field_candidates:
                 if fields not in result.swift_type_field_candidates and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append(fields)
+            for field_type in slice_result.swift_field_type_candidates:
+                if field_type not in result.swift_field_type_candidates and len(result.swift_field_type_candidates) < 1000:
+                    result.swift_field_type_candidates.append(field_type)
+            for field_metadata in slice_result.swift_field_metadata_candidates:
+                if field_metadata not in result.swift_field_metadata_candidates and len(result.swift_field_metadata_candidates) < 1000:
+                    result.swift_field_metadata_candidates.append(field_metadata)
             for name in slice_result.swift_protocol_name_candidates:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
+            for item in slice_result.swift_conformance_candidates:
+                if item not in result.swift_conformance_candidates and len(result.swift_conformance_candidates) < 1000:
+                    result.swift_conformance_candidates.append(item)
             if slice_result.swift_protocol_metadata_status != "not_attempted":
                 result.swift_protocol_metadata_status = "parsed" if result.swift_protocol_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_protocol_metadata_status == "parsed" else "partial"
             if slice_result.swift_type_metadata_status != "not_attempted":
                 result.swift_type_metadata_status = "parsed" if result.swift_type_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_type_metadata_status == "parsed" else "partial"
+            if slice_result.swift_conformance_metadata_status != "not_attempted":
+                result.swift_conformance_metadata_status = "parsed" if result.swift_conformance_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_conformance_metadata_status == "parsed" else "partial"
             result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
         result.parse_status = "complete" if statuses and all(status == "not_attempted" for status in statuses) else (
             "complete" if statuses and all(status == "complete" for status in statuses) else "partial"
@@ -331,6 +349,7 @@ class MachoBinaryParser:
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
         self._extract_swift_protocol_names(data, result, endian)
+        self._extract_swift_conformances(data, result, endian)
 
     def _extract_swift_type_names(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
         """Inventory bounded Swift nominal type names; this is not type reconstruction."""
@@ -393,6 +412,9 @@ class MachoBinaryParser:
                 field_sections = [s for s in result.sections if s.get("name") == "__swift5_fieldmd"]
                 field_section = next((s for s in field_sections
                                       if isinstance(s.get("offset"), int) and isinstance(s.get("size"), int)
+                                      and 0 <= s["offset"] <= len(data)
+                                      and 0 <= s["size"] <= len(data) - s["offset"]
+                                      and s["size"] >= 16
                                       and s["offset"] <= field_descriptor <= s["offset"] + s["size"] - 16), None)
                 if field_section is None:
                     result.swift_type_metadata_status = "partial"
@@ -434,6 +456,54 @@ class MachoBinaryParser:
                         result.swift_type_metadata_status = "partial"
                         continue
                     field_names.append(field_name)
+                    field_flags = struct.unpack_from(endian + "I", data, record)[0]
+                    field_metadata_candidate = {
+                        "type_name": candidate,
+                        "field_name": field_name,
+                        "is_indirect_case": bool(field_flags & 0x1),
+                        "is_var": bool(field_flags & 0x2),
+                        "is_artificial": bool(field_flags & 0x4),
+                    }
+                    if field_metadata_candidate not in result.swift_field_metadata_candidates:
+                        if len(result.swift_field_metadata_candidates) < 1000:
+                            result.swift_field_metadata_candidates.append(field_metadata_candidate)
+                        else:
+                            result.swift_type_metadata_status = "partial"
+                    type_relative = struct.unpack_from(endian + "i", data, record + 4)[0]
+                    if type_relative == 0:
+                        continue
+                    type_offset = record + 4 + type_relative
+                    if type_offset < 0 or type_offset >= len(data):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    type_end = data.find(b"\0", type_offset, min(len(data), type_offset + 256))
+                    if type_end < 0:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    raw_type = data[type_offset:type_end]
+                    # Keep only simple textual mangled names; symbolic references contain
+                    # embedded binary payloads and need a dedicated ABI-aware parser.
+                    if not raw_type.startswith((b"$s", b"$S", b"$e", b"_T")):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    try:
+                        mangled_type = raw_type.decode("ascii", errors="strict")
+                    except UnicodeDecodeError:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    if any(ord(char) < 0x21 or ord(char) > 0x7e for char in mangled_type):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    field_type_candidate = {
+                        "type_name": candidate,
+                        "field_name": field_name,
+                        "mangled_type_name": mangled_type,
+                    }
+                    if field_type_candidate not in result.swift_field_type_candidates:
+                        if len(result.swift_field_type_candidates) < 1000:
+                            result.swift_field_type_candidates.append(field_type_candidate)
+                        else:
+                            result.swift_type_metadata_status = "partial"
                 if field_names and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append({"type_name": candidate, "field_names": field_names})
 
@@ -487,6 +557,73 @@ class MachoBinaryParser:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
 
+    def _extract_swift_conformances(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
+        """Inventory direct Swift nominal-type/protocol conformance name pairs only."""
+        sections = [s for s in result.sections if s.get("name") == "__swift5_proto"]
+        if not sections:
+            return
+        result.swift_conformance_metadata_status = "parsed"
+        examined = 0
+
+        def descriptor_name(offset: int, expected_kinds: set[int]) -> Optional[str]:
+            if offset < 0 or offset > len(data) - 12:
+                return None
+            flags = struct.unpack_from(endian + "I", data, offset)[0]
+            if (flags & 0x1f) not in expected_kinds:
+                return None
+            rel = struct.unpack_from(endian + "i", data, offset + 8)[0]
+            name_offset = offset + 8 + rel
+            if name_offset < 0 or name_offset >= len(data):
+                return None
+            end = data.find(b"\0", name_offset, min(len(data), name_offset + 256))
+            if end < 0:
+                return None
+            try:
+                name = data[name_offset:end].decode("utf-8", errors="strict")
+            except UnicodeDecodeError:
+                return None
+            if not name or any(ord(char) < 0x20 or ord(char) == 0x7f for char in name):
+                return None
+            return name
+
+        for section in sections:
+            offset, size = section.get("offset"), section.get("size")
+            if (not isinstance(offset, int) or not isinstance(size, int) or size % 4
+                    or size > 4 * 10000 or offset < 0 or offset > len(data)
+                    or size > len(data) - offset):
+                result.swift_conformance_metadata_status = "partial"
+                continue
+            for entry in range(offset, offset + size, 4):
+                examined += 1
+                if examined > 10000:
+                    result.swift_conformance_metadata_status = "partial"
+                    return
+                relative = struct.unpack_from(endian + "i", data, entry)[0]
+                if relative & 1:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                record = entry + relative
+                if record < 0 or record > len(data) - 16:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                protocol_relative, type_relative = struct.unpack_from(endian + "ii", data, record)
+                # Low tag bits mark indirection/ObjC forms; follow only untagged direct references.
+                if protocol_relative & 3 or type_relative & 3:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                protocol = descriptor_name(record + protocol_relative, {3})
+                type_name = descriptor_name(record + 4 + type_relative, {16, 17, 18})
+                if protocol is None or type_name is None:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                candidate = {"type_name": type_name, "protocol_name": protocol}
+                if candidate in result.swift_conformance_candidates:
+                    continue
+                if len(result.swift_conformance_candidates) < 1000:
+                    result.swift_conformance_candidates.append(candidate)
+                else:
+                    result.swift_conformance_metadata_status = "partial"
+
     def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:
         if command_size < 56:
@@ -523,7 +660,7 @@ class MachoBinaryParser:
                 continue
             raw = data[offset:offset + size]
             for value in re.findall(rb"[\x20-\x7e]{4,}", raw):
-                sample = value.decode("ascii", errors="replace")
+                sample = sanitize_candidate_text(value.decode("ascii", errors="replace"))
                 if sample not in result.cstring_samples:
                     result.cstring_samples.append(sample)
                     if len(result.cstring_samples) >= 1000:
@@ -630,6 +767,7 @@ class MachoBinaryParser:
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
         self._extract_swift_protocol_names(data, result, endian)
+        self._extract_swift_conformances(data, result, endian)
 
     def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:

@@ -3,9 +3,7 @@
 import html
 import json
 import logging
-import os
 import re
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,6 +16,7 @@ from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import preflight_bounded_structure, write_private_artifact
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,11 @@ class ReportEngine:
 
     MAX_PDF_HTML_CHARS = 16 * 1024 * 1024
     MAX_PDF_BYTES = 64 * 1024 * 1024
+    MAX_REPORT_INPUT_BYTES = 16 * 1024 * 1024
+    MAX_REPORT_INPUT_NODES = 200_000
+    MAX_REPORT_INPUT_DEPTH = 64
+    MAX_REPORT_FINDINGS = 5_000
+    MAX_JSON_MARKDOWN_BYTES = 32 * 1024 * 1024
 
     @staticmethod
     def _safe_scan_id(scan_id: object) -> str:
@@ -38,21 +42,9 @@ class ReportEngine:
         return scan_id
 
     @staticmethod
-    def _atomic_private_write(path: Path, content: bytes) -> None:
-        """Replace a report artifact without following an existing symlink."""
-        fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, path)
-        except Exception:
-            try:
-                os.unlink(temporary_path)
-            except OSError:
-                pass
-            raise
+    def _atomic_private_write(path: Path, content: bytes, max_bytes: int = 64 * 1024 * 1024) -> None:
+        """Replace a report through a pinned no-follow directory descriptor."""
+        write_private_artifact(path, content, max_bytes)
 
     def __init__(self):
         self._env: Optional[Environment] = None
@@ -82,14 +74,15 @@ class ReportEngine:
         # Save JSON
         json_path = output_dir / f"report_{scan_id}.json"
         self._atomic_private_write(
-            json_path, json.dumps(report_data, indent=2).encode("utf-8")
+            json_path, json.dumps(report_data, indent=2).encode("utf-8"),
+            self.MAX_JSON_MARKDOWN_BYTES,
         )
         logger.info("Saved JSON report to %s", json_path)
         
         # Save Markdown
         md_path = output_dir / f"report_{scan_id}.md"
         md_content = self._generate_markdown(report_data)
-        self._atomic_private_write(md_path, md_content.encode("utf-8"))
+        self._atomic_private_write(md_path, md_content.encode("utf-8"), self.MAX_JSON_MARKDOWN_BYTES)
         logger.info("Saved Markdown report to %s", md_path)
 
         pdf_path = output_dir / f"report_{scan_id}.pdf"
@@ -133,6 +126,18 @@ class ReportEngine:
             f"<li>Total findings: {self._pdf_text(stats.get('total', len(findings)))}</li></ul>",
             "<h2>Coverage and proof boundaries</h2><p>Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven.</p>",
         ])
+        il2cpp = data.get("il2cpp_analysis", {})
+        if isinstance(il2cpp, dict) and il2cpp:
+            blocks.extend([
+                "<h2>Bounded Unity IL2CPP metadata candidates</h2>",
+                "<p>Parsed metadata names are static candidates; method/type signatures, bodies, and runtime reachability are not reconstructed.</p><ul>",
+                f"<li>Scan status: {self._pdf_text(il2cpp.get('scan_status', 'not_recorded'))}</li>",
+                f"<li>Metadata version: {self._pdf_text(il2cpp.get('metadata_version', 'not_recorded'))}</li>",
+                f"<li>Type definitions: {self._pdf_text(il2cpp.get('type_definitions_count', 0))}</li>",
+                f"<li>Method definitions: {self._pdf_text(il2cpp.get('method_definitions_count', 0))}</li>",
+                f"<li>Candidate output truncated: {self._pdf_text(il2cpp.get('candidate_output_truncated', False))}</li>",
+                "<li>Runtime: not tested; proof: not proven</li></ul>",
+            ])
         coverage_gaps = data.get("coverage_gaps", [])
         if isinstance(coverage_gaps, list) and coverage_gaps:
             blocks.append("<ul>" + "".join(f"<li>{self._pdf_text(item)}</li>" for item in coverage_gaps) + "</ul>")
@@ -166,6 +171,14 @@ class ReportEngine:
 
     def _prepare_data(self, state: ScanState) -> dict:
         """Extract and format data for reporting."""
+        preflight_bounded_structure(
+            state, max_bytes=self.MAX_REPORT_INPUT_BYTES,
+            max_nodes=self.MAX_REPORT_INPUT_NODES,
+            max_depth=self.MAX_REPORT_INPUT_DEPTH,
+            label="Report input",
+        )
+        if len(state.get("filtered_findings", [])) > self.MAX_REPORT_FINDINGS:
+            raise ValueError("Report finding inventory exceeds limits")
         findings = [
             f for f in state.get("filtered_findings", [])
             if f.get("status") not in {FindingStatus.FALSE_POSITIVE.value, FindingStatus.DUPLICATE.value}
@@ -262,6 +275,9 @@ class ReportEngine:
             "stats": stats,
             "findings": findings,
             "api_endpoints": state.get("api_endpoints", []),
+            "crypto_api_inventory": state.get("crypto_api_inventory", []),
+            "il2cpp_analysis": state.get("il2cpp_analysis", {}),
+            "il2cpp_analysis": state.get("il2cpp_analysis", {}),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
             "review_surface_ledger": review_surface_ledger(state.get("coverage", {})),
@@ -344,6 +360,30 @@ class ReportEngine:
     @staticmethod
     def _coverage_markdown(data):
         rows=['\n## Coverage and proof boundaries\n', 'Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven by the tool.']
+        il2cpp = data.get('il2cpp_analysis', {})
+        if isinstance(il2cpp, dict) and il2cpp:
+            rows.append('\n### Bounded Unity IL2CPP metadata candidates\n')
+            rows.append('The following parsed metadata names are static candidates only; signatures, types, method bodies, and runtime reachability are not reconstructed.\n')
+            rows.append('```json\n')
+            rows.append(ReportEngine._report_json({
+                'scan_status': il2cpp.get('scan_status', 'not_recorded'),
+                'metadata_version': il2cpp.get('metadata_version'),
+                'metadata_tables_status': il2cpp.get('metadata_tables_status', 'not_recorded'),
+                'metadata_definitions_status': il2cpp.get('metadata_definitions_status', 'not_recorded'),
+                'type_definitions_count': il2cpp.get('type_definitions_count', 0),
+                'method_definitions_count': il2cpp.get('method_definitions_count', 0),
+                'classes': il2cpp.get('reconstructed_classes', [])[:50]
+                if isinstance(il2cpp.get('reconstructed_classes'), list) else [],
+                'fields': il2cpp.get('reconstructed_fields', [])[:100]
+                if isinstance(il2cpp.get('reconstructed_fields'), list) else [],
+                'methods': il2cpp.get('reconstructed_methods', [])[:100]
+                if isinstance(il2cpp.get('reconstructed_methods'), list) else [],
+                'candidate_output_truncated': bool(il2cpp.get('candidate_output_truncated', False)),
+                'runtime_status': il2cpp.get('runtime_status', 'not_tested'),
+                'proof_status': il2cpp.get('proof_status', 'not_proven'),
+                'exhaustive': False,
+            }))
+            rows.append('\n```\n')
         ledger = data.get('review_surface_ledger', {})
         if ledger:
             rows.append('\n### Review-surface ledger\n')

@@ -100,6 +100,7 @@ def test_aab_cli_writes_offline_new_file_and_never_overwrites(tmp_path):
 
     result = runner.invoke(main, ["inventory-aab", "--input", str(artifact), "--output", str(output)])
     assert result.exit_code == 0, result.output
+    assert output.stat().st_mode & 0o077 == 0
     saved = json.loads(output.read_text())
     assert saved["analysis_state"] == "input_inventory_only_not_analyzed"
     assert "no manifest protobuf decoding" in result.output.lower()

@@ -115,21 +115,48 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
         archive.writestr(app + "PrivacyInfo.xcprivacy", plistlib.dumps({
             "NSPrivacyTracking": False,
             "NSPrivacyTrackingDomains": [],
-            "NSPrivacyAccessedAPITypes": [],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.1"],
+            }],
         }))
         archive.writestr(app + "PrivacyFixture", struct.pack(
             "<IIIIIIII", MH_MAGIC_64, 0, 0, 2, 0, 0, MH_PIE, 0) + b"\x00" * 80)
 
     synthetic_parse = MachoAnalysisResult(
         is_macho=True, parse_status="parsed", symbol_names=["_stat"],
+        swift_conformance_metadata_status="parsed",
+        swift_conformance_candidates=[{"type_name": "Shape", "protocol_name": "Renderable"}],
+        swift_field_type_candidates=[{
+            "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
+        }],
+        swift_field_metadata_candidates=[{
+            "type_name": "Shape", "field_name": "size",
+            "is_indirect_case": False, "is_var": True, "is_artificial": False,
+        }],
     )
     monkeypatch.setattr(MachoBinaryParser, "parse_binary", lambda _self, _path: synthetic_parse)
 
     report = IOSSecurityAnalyzer().audit_ipa(ipa_path, extract_dir)
 
+    assert report["swift_metadata"]["swift_conformance_metadata_status"] == "parsed"
+    assert report["swift_metadata"]["swift_conformance_candidates"] == [
+        {"type_name": "Shape", "protocol_name": "Renderable"},
+    ]
+    assert report["swift_metadata"]["swift_field_type_candidates"] == [{
+        "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
+    }]
+    assert report["swift_metadata"]["swift_field_metadata_candidates"] == [{
+        "type_name": "Shape", "field_name": "size",
+        "is_indirect_case": False, "is_var": True, "is_artificial": False,
+    }]
+
     review = report["privacy_manifest"]["binary_api_symbol_review"]
     assert report["coverage"]["privacy_api_symbol_review"] == "analyzed_heuristically"
     assert review["manifest_state"] == "parsed"
+    assert report["privacy_manifest"]["declared_api_reasons"] == [{
+        "category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.1",
+    }]
     assert review["undeclared_review_candidates"] == [{
         "category": "NSPrivacyAccessedAPITypeFileTimestamp", "symbol_markers": ["stat"],
     }]

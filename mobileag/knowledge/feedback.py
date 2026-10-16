@@ -4,12 +4,19 @@ Self-learning feedback loop to adjust model confidences based on historical verd
 
 import json
 import logging
+from pathlib import Path
 from typing import Dict, Any
 
 from mobileag.knowledge.qdrant_store import PatternMemory
 from mobileag.knowledge.neo4j_graph import AttackGraph
+from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import private_artifact_stream
 
 logger = logging.getLogger(__name__)
+
+_MAX_TRAINING_EXPORT_ROWS = 10_000
+_MAX_TRAINING_EXPORT_PAGES = 100
+_MAX_TRAINING_EXPORT_BYTES = 16 * 1024 * 1024
 
 class FeedbackEngine:
     """Manages the feedback loop by utilizing Qdrant memory and Neo4j graph data."""
@@ -86,7 +93,7 @@ class FeedbackEngine:
             logger.error(f"Failed to get pattern stats: {e}")
             return {}
 
-    async def export_training_data(self, output_path: str) -> None:
+    async def export_training_data(self, output_path: str | Path) -> None:
         """
         Exports labeled data for future model fine-tuning (JSON lines format).
         """
@@ -95,22 +102,33 @@ class FeedbackEngine:
             return
 
         try:
-            with open(output_path, 'w') as f:
-                offset = None
-                while True:
-                    scroll_result = await self.qdrant.client.scroll(
+            output = Path(output_path)
+            rows = 0
+            total_bytes = 0
+            offset = None
+            with private_artifact_stream(output) as stream:
+                for _page in range(_MAX_TRAINING_EXPORT_PAGES):
+                    points, offset = await self.qdrant.client.scroll(
                         collection_name=self.qdrant.collection_name,
                         limit=100,
-                        offset=offset
+                        offset=offset,
                     )
-                    points, offset = scroll_result
-                    
-                    for p in points:
-                        if p.payload.get("is_true_positive") is not None:
-                            f.write(json.dumps(p.payload) + '\n')
-                            
+                    for point in points:
+                        payload = getattr(point, "payload", None)
+                        if not isinstance(payload, dict) or payload.get("is_true_positive") is None:
+                            continue
+                        row = json.dumps(redact(payload), ensure_ascii=True, allow_nan=False,
+                                         separators=(",", ":")).encode("utf-8") + b"\n"
+                        rows += 1
+                        total_bytes += len(row)
+                        if rows > _MAX_TRAINING_EXPORT_ROWS or total_bytes > _MAX_TRAINING_EXPORT_BYTES:
+                            raise ValueError("Training data export exceeds its output limits")
+                        stream.write(row)
                     if offset is None:
                         break
-            logger.info(f"Exported training data to {output_path}")
+                else:
+                    if offset is not None:
+                        raise ValueError("Training data export exceeds its page limit")
+            logger.info("Exported %d redacted training records to %s", rows, output)
         except Exception as e:
             logger.error(f"Failed to export training data: {e}")

@@ -68,6 +68,9 @@ def test_paginated_scan_summary_excludes_findings(client):
 @pytest.mark.parametrize('transaction',[
     {'url':[]}, {'url':'https://example.invalid','request_headers':[]},
     {'url':'https://example.invalid','request_headers':{'X':123}},
+    {'url':'https://example.invalid','request_headers':{'X' * 257:'ok'}},
+    {'url':'https://example.invalid','request_headers':{'X':'v' * 8193}},
+    {'url':'https://example.invalid','response_headers':{'X':'v' * 8193}},
     {'url':'https://example.invalid','response_status':700},
 ])
 def test_nested_capture_validation(client,transaction):
@@ -205,6 +208,95 @@ def test_private_snapshot_and_database_permissions(tmp_path):
     path=tmp_path/'metadata'/'original.json';private_write(path,fixture_scan())
     assert repo.path.stat().st_mode & 0o777 == 0o600
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_scan_repository_rejects_oversized_document_without_replacing_record(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    original = fixture_scan()
+    repo.save(original)
+    monkeypatch.setattr(repository, "MAX_SCAN_DOCUMENT_BYTES", 512)
+    oversized = fixture_scan()
+    oversized["revision"] = 1
+    oversized["extra"] = "synthetic" * 200
+
+    with pytest.raises(ValueError, match="Scan document exceeds the storage size limit"):
+        repo.save(oversized)
+
+    assert repo.get("scan_one") == original
+    assert original.get("revision") == 0
+
+
+def test_private_dashboard_snapshot_is_bounded_and_preserves_previous_file(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    path = tmp_path / "scan" / "dashboard.json"
+    private_write(path, fixture_scan())
+    previous = path.read_bytes()
+    monkeypatch.setattr(repository, "MAX_DASHBOARD_SNAPSHOT_BYTES", 128)
+
+    with pytest.raises(ValueError, match="Dashboard snapshot exceeds the storage size limit"):
+        private_write(path, {"scan_id": "synthetic", "data": "x" * 200})
+
+    assert path.read_bytes() == previous
+    assert list(path.parent.glob(".dashboard.json-" + "*")) == []
+
+
+def test_scan_repository_rejects_cycles_before_serialization(tmp_path):
+    repo = ScanRepository(tmp_path / "metadata")
+    document = fixture_scan()
+    document["cycle"] = document
+
+    with pytest.raises(ValueError, match="Scan document contains a cycle"):
+        repo.save(document)
+
+    assert repo.get("scan_one") is None
+
+
+def test_repository_settings_and_scope_policy_are_bounded(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    repo.save_settings({"offline": True})
+    repo.save_policy({"methods": ["GET"]})
+
+    monkeypatch.setattr(repository, "MAX_SETTINGS_BYTES", 16)
+    with pytest.raises(ValueError, match="Settings exceeds the storage size limit"):
+        repo.save_settings({"oversized": "x" * 64})
+    assert repo.get_settings() == {"offline": True}
+
+    monkeypatch.setattr(repository, "MAX_POLICY_BYTES", 16)
+    with pytest.raises(ValueError, match="Scope policy exceeds the storage size limit"):
+        repo.save_policy({"origins": ["https://example.invalid/" * 8]})
+    assert repo.get_policy() == {"methods": ["GET"]}
+
+    cyclic = {}
+    cyclic["self"] = cyclic
+    with pytest.raises(ValueError, match="Scope policy contains a cycle"):
+        repo.save_policy(cyclic)
+
+
+def test_triage_rejects_post_update_scan_overflow_transactionally(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    original = fixture_scan()
+    repo.save(original)
+    monkeypatch.setattr(repository, "MAX_SCAN_DOCUMENT_BYTES", 512)
+
+    with pytest.raises(ValueError, match="Scan document exceeds the storage size limit"):
+        repo.triage("scan_one", "same-rule", "FALSE_POSITIVE", "x" * 200, 0)
+
+    assert repo.get("scan_one") == original
+    assert repo.history("scan_one") == []
+
+
+def test_test_plan_repository_rejects_cycles_before_serialization(tmp_path):
+    repo = ScanRepository(tmp_path / "metadata")
+    cyclic = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(ValueError, match="Test plan contains a cycle"):
+        repo.save_test_plan("scan_one", cyclic, None)
+
+    assert repo.get_test_plan("scan_one") is None
 
 
 def test_scan_records_original_hash_and_effective_policy(client):

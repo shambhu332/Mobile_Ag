@@ -51,7 +51,7 @@ async def test_adb_logcat_requests_attributable_threadtime_format():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'10-08 12:00:00.000 1234 1234 E App: safe', b''))
-    await adb.get_logcat_dump('emulator-5554', filter_pkg='org.example.fixture', lines=7)
+    await adb.get_logcat_dump('emulator-5554', filter_pkg='org.example.fixture', lines=7, guard=lambda: True)
     command = adb._exec_cmd.await_args.args[0]
     assert command[command.index('logcat') + 1:command.index('logcat') + 3] == ['-v', 'threadtime']
 
@@ -63,7 +63,7 @@ async def test_adb_install_defaults_are_non_granting_and_non_replacing(tmp_path)
     apk.write_bytes(b'synthetic')
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'Success', b''))
-    await adb.install_apk('emulator-5554', apk)
+    await adb.install_apk('emulator-5554', apk, guard=lambda: True)
     command = adb._exec_cmd.await_args.args[0]
     assert command[:3] == ['-s', 'emulator-5554', 'install']
     assert '-g' not in command and '-r' not in command
@@ -74,10 +74,10 @@ async def test_adb_target_logcat_uses_validated_exact_pid():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'10-08 12:00:00.000 1234 1234 E App: safe', b''))
-    await adb.get_logcat_dump('emulator-5554', pid=1234)
+    await adb.get_logcat_dump('emulator-5554', pid=1234, guard=lambda: True)
     assert '--pid=1234' in adb._exec_cmd.await_args.args[0]
     with pytest.raises(ValueError):
-        await adb.get_logcat_dump('emulator-5554', pid=-1)
+        await adb.get_logcat_dump('emulator-5554', pid=-1, guard=lambda: True)
 
 
 @pytest.mark.asyncio
@@ -85,9 +85,9 @@ async def test_process_pid_lookup_is_exact_and_bounded():
     from mobileag.dast.adb_manager import ADBManager
     adb = ADBManager()
     adb._exec_cmd = AsyncMock(return_value=(0, b'1234 2345 1234 invalid', b''))
-    assert await adb.get_process_pids('emulator-5554', 'org.example.fixture') == [1234, 2345]
+    assert await adb.get_process_pids('emulator-5554', 'org.example.fixture', guard=lambda: True) == [1234, 2345]
     with pytest.raises(ValueError):
-        await adb.get_process_pids('emulator-5554', 'org.example;id')
+        await adb.get_process_pids('emulator-5554', 'org.example;id', guard=lambda: True)
 
 
 def test_escaped_json_credential_redaction_preserves_json():
@@ -147,7 +147,9 @@ async def test_intent_crash_requires_fresh_target_evidence(monkeypatch, scenario
     after = [FATAL, TARGET.replace('org.example.fixture', 'org.other.fixture')] if scenario == 'other_process' else [FATAL, TARGET]
     adb = SimpleNamespace(_exec_cmd=AsyncMock(return_value=(1 if scenario == 'launch_failed' else 0, b'synthetic launch', b'')),
                           get_logcat_dump=AsyncMock(side_effect=[before, after]))
-    result = await IntentFuzzer(adb=adb).exercise_component('synthetic', 'org.example.fixture', '.Entry')
+    result = await IntentFuzzer(adb=adb).exercise_component(
+        'synthetic', 'org.example.fixture', '.Entry', guard=lambda: None,
+    )
     assert result['crashed'] is (scenario == 'new_target')
     if result['findings']:
         assert all(f.cvss_score == 0 and f.status.value == 'UNVERIFIED' for f in result['findings'])
@@ -175,6 +177,21 @@ async def test_intent_explicit_false_scope_denial_blocks_baseline():
     with pytest.raises(PermissionError):
         await IntentFuzzer(adb=adb).exercise_component(
             'synthetic', 'org.example.fixture', '.Entry', guard=lambda: False,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_intent_async_scope_guard_fails_closed_before_baseline():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+
+    async def async_deny():
+        return False
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await IntentFuzzer(adb=adb).exercise_component(
+            'synthetic', 'org.example.fixture', '.Entry', guard=async_deny,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()

@@ -132,8 +132,9 @@ class AutomationService:
             start=time.monotonic()
             try:
                 driver=self.driver_factory(req.serial,req.package_name)
-                snapshot=await driver.snapshot()
-                if hasattr(driver,'metadata'):doc['device_metadata']=await driver.metadata()
+                observe_guard=lambda:self.guard(doc,token)
+                snapshot=await driver.snapshot(guard=observe_guard)
+                if hasattr(driver,'metadata'):doc['device_metadata']=await driver.metadata(guard=observe_guard)
                 else:doc['device_metadata']={'coverage':'synthetic adapter; build/root/version not observed'}
                 self.guard(doc,token);self.map_screen(doc,snapshot)
                 doc.update(status='awaiting_review',reason='Review exact controls/cases before execution')
@@ -148,7 +149,7 @@ class AutomationService:
         if doc['revision']!=revision or doc['status'] in {'running','discovering'} or doc['serial'] in self.busy:raise Conflict('Run changed or device busy')
         self.guard(doc,token);self.busy.add(doc['serial'])
         try:
-            snapshot=await self.driver_factory(doc['serial'],doc['package_name']).snapshot()
+            snapshot=await self.driver_factory(doc['serial'],doc['package_name']).snapshot(guard=lambda:self.guard(doc,token))
             self.guard(doc,token);self.map_screen(doc,snapshot);doc.update(status='awaiting_review',reason='New snapshot; review exact actions')
             self.persist(doc);return doc
         finally:self.busy.discard(doc['serial'])
@@ -168,26 +169,27 @@ class AutomationService:
         stack=[];used={s['action_id'] for s in doc['steps']};api_done={r['test_id'] for r in doc['results'] if r.get('executed')}
         try:
             driver=self.driver_factory(doc['serial'],doc['package_name'])
+            execute_guard=lambda:self.guard(doc,token,True)
             async with asyncio.timeout(self.wall_seconds):
                 while len(doc['steps'])<doc['max_steps']:
-                    self.guard(doc,token,True)
+                    execute_guard()
                     if self.store().get(doc['id']).get('cancel_requested'):doc['status']='cancelled';return
-                    snapshot=await driver.snapshot();self.guard(doc,token,True);self.map_screen(doc,snapshot)
+                    snapshot=await driver.snapshot(guard=execute_guard);execute_guard();self.map_screen(doc,snapshot)
                     choices=[a for a in doc['actions'] if a['id'] in req.approved_action_ids and a['id'] not in used and a['screen']==snapshot['id'] and not a['blocked_reason']]
                     if not choices:
                         if stack and req.allow_back:
-                            before=snapshot['id'];start=time.monotonic();await driver.act('back');after=await driver.snapshot();self.guard(doc,token,True)
+                            before=snapshot['id'];start=time.monotonic();await driver.act('back',guard=execute_guard);after=await driver.snapshot(guard=execute_guard);execute_guard()
                             self.map_screen(doc,after);stack.pop()
                             doc['steps'].append({'action_id':'back_'+str(len(doc['steps'])),'action':'back','from':before,'to':after['id'],'at':stamp(),'elapsed_ms':round((time.monotonic()-start)*1000,2)})
                             self.persist(doc);continue
                         break
                     a=choices[0]
                     # Re-resolve immediately against a fresh in-scope snapshot. No guessing.
-                    fresh=await driver.snapshot();self.guard(doc,token,True)
+                    fresh=await driver.snapshot(guard=execute_guard);execute_guard()
                     if fresh['id']!=snapshot['id']:raise PermissionError('Screen changed before input; review again')
                     matches=[e for e in fresh['elements'] if e['locator']==a['locator'] and e['class']==a['class']]
                     if len(matches)!=1 or matches[0]['dangerous'] or matches[0]['editable'] or not matches[0]['enabled'] or not matches[0]['bounds'] or not matches[0]['clickable' if a['action']=='tap' else 'scrollable']:raise PermissionError('Locator became unsafe or ambiguous')
-                    before=snapshot['id'];start=time.monotonic();await driver.act(a['action'],matches[0]);after=await driver.snapshot();self.guard(doc,token,True)
+                    before=snapshot['id'];start=time.monotonic();await driver.act(a['action'],matches[0],guard=execute_guard);after=await driver.snapshot(guard=execute_guard);execute_guard()
                     self.map_screen(doc,after);used.add(a['id'])
                     step={'action_id':a['id'],'action':a['action'],'from':before,'to':after['id'],'at':stamp(),'elapsed_ms':round((time.monotonic()-start)*1000,2),
                           'locator_changed':matches[0]['bounds']!=a['original_bounds'],'locator_confidence':1.0,'healing':'same unique approved locator and class; position re-resolved' if matches[0]['bounds']!=a['original_bounds'] else None}

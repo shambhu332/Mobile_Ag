@@ -6,6 +6,7 @@ the provider contract and synthetic control data.
 """
 from __future__ import annotations
 
+import inspect
 import shutil
 import re
 import shlex
@@ -217,14 +218,22 @@ class ContentProviderFuzzer:
 
     @staticmethod
     def _has_explicit_scope(serial, guard) -> bool:
-        return bool(isinstance(serial, str) and serial.strip() and callable(guard))
+        return bool(isinstance(serial, str) and
+                    re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", serial) and
+                    callable(guard))
 
     @staticmethod
     def _scope_allows(guard) -> bool:
         try:
             # Preserve exception-based guards (where returning normally means
             # allowed), but honor explicit boolean denial from scope policies.
-            return guard() is not False
+            result = guard()
+            if inspect.isawaitable(result):
+                close = getattr(result, "close", None)
+                if callable(close):
+                    close()
+                return False
+            return result is not False
         except Exception:
             return False
 

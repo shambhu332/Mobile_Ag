@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import shutil
@@ -173,9 +174,14 @@ class ADBManager:
 
         return False
 
-    async def connect_device(self, host_port: str) -> dict[str, Any]:
+    async def connect_device(self, host_port: str, guard=None) -> dict[str, Any]:
         """Connect to a remote or local emulator/device via TCP (e.g. 127.0.0.1:5555)."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r'(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\]):[0-9]{1,5}', host_port) or int(host_port.rsplit(':', 1)[1]) > 65535:
+            raise ValueError('Invalid ADB connect host/port')
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(["connect", host_port], timeout=4.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         success = "connected to" in out_str.lower() or "already connected" in out_str.lower()
         return {"status": "success" if success else "failed", "output": out_str}
@@ -183,9 +189,17 @@ class ADBManager:
     async def restart_root(self, serial: str, guard=None) -> dict[str, Any]:
         """Restart adbd with root permissions on target device."""
         def check_scope():
-            if guard is None:
-                return
-            if not callable(guard) or guard() is False:
+            if not callable(guard):
+                raise PermissionError("ADB root action requires an explicit scope guard")
+            # Let scope-denial exceptions propagate unchanged (for example, a
+            # web route's HTTP 403); any exception still stops before ADB.
+            approved = guard()
+            if inspect.isawaitable(approved):
+                close = getattr(approved, "close", None)
+                if callable(close):
+                    close()
+                raise PermissionError("ADB root action scope guard must be synchronous")
+            if approved is False:
                 raise PermissionError("ADB root action scope is unavailable or revoked")
 
         check_scope()
@@ -200,8 +214,23 @@ class ADBManager:
             "is_rooted": is_root,
         }
 
-    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = False, replace: bool = False) -> dict[str, Any]:
+    @staticmethod
+    def _check_mutation_guard(guard) -> None:
+        """Require a synchronous, current authorization check before device mutation."""
+        if not callable(guard):
+            raise PermissionError("ADB device mutation requires an explicit scope guard")
+        approved = guard()
+        if inspect.isawaitable(approved):
+            close = getattr(approved, "close", None)
+            if callable(close):
+                close()
+            raise PermissionError("ADB mutation scope guard must be synchronous")
+        if approved is False:
+            raise PermissionError("ADB mutation scope is unavailable or revoked")
+
+    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = False, replace: bool = False, guard=None) -> dict[str, Any]:
         """Install an APK onto the target device, optionally auto-granting permissions."""
+        self._check_mutation_guard(guard)
         apk_p = Path(apk_path).resolve()
         if not apk_p.exists():
             return {"status": "error", "message": f"APK not found: {apk_p}"}
@@ -213,7 +242,9 @@ class ADBManager:
             cmd.append("-g")
         cmd.append(str(apk_p))
 
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd, timeout=30.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         success = code == 0 and "Success" in out_str
         return {
@@ -222,10 +253,13 @@ class ADBManager:
             "apk": apk_p.name
         }
 
-    async def launch_activity(self, serial: str, component: str) -> dict[str, Any]:
+    async def launch_activity(self, serial: str, component: str, guard=None) -> dict[str, Any]:
         """Launch an activity component (e.g. 'com.app/.MainActivity') via am start."""
+        self._check_mutation_guard(guard)
         cmd = ["-s", serial, "shell", "am", "start", "-W", "-n", component]
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd, timeout=15.0)
+        self._check_mutation_guard(guard)
         output = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {
             "status": "success" if code == 0 and not any(marker in output for marker in ("Error:", "Error type", "Exception", "Status: timeout")) else "failed",
@@ -234,8 +268,9 @@ class ADBManager:
         }
 
     async def get_logcat_dump(self, serial: str, filter_pkg: Optional[str] = None, lines: int = 300,
-                              pid: Optional[int] = None) -> list[str]:
+                              pid: Optional[int] = None, guard=None) -> list[str]:
         """Retrieve the recent logcat buffer."""
+        self._check_mutation_guard(guard)
         # The auditor requires PID/TID attribution. Android's default brief format
         # omits the structured fields and silently defeats target-process checks.
         cmd = ["-s", serial, "logcat", "-v", "threadtime", "-d", "-t", str(lines)]
@@ -243,7 +278,9 @@ class ADBManager:
             if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
                 raise ValueError('A positive process ID is required')
             cmd.append(f'--pid={pid}')
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(cmd, timeout=3.0)
+        self._check_mutation_guard(guard)
         if code != 0:
             return []
 
@@ -253,32 +290,39 @@ class ADBManager:
         # Callers must attribute threadtime records to exact Process/PID records.
         return raw_lines
 
-    async def get_process_pids(self, serial: str, package_name: str) -> list[int]:
+    async def get_process_pids(self, serial: str, package_name: str, guard=None) -> list[int]:
         """Return bounded numeric PIDs for an exact validated Android package."""
+        self._check_mutation_guard(guard)
         if not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
             raise ValueError('Invalid Android package name')
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(['-s', serial, 'shell', 'pidof', package_name], timeout=3.0)
+        self._check_mutation_guard(guard)
         if code != 0:
             return []
         return list(dict.fromkeys(int(token) for token in stdout.decode('ascii', errors='ignore').split()
                                   if token.isdecimal() and 0 < int(token) < 2**31))[:8]
 
     async def clear_logcat(self, serial: str) -> bool:
-        """Clear the device logcat buffer."""
-        code, _, _ = await self._exec_cmd(["-s", serial, "logcat", "-c"], timeout=3.0)
-        return code == 0
+        """Retired: preserve device log evidence; no command is issued."""
+        raise PermissionError("Device-wide logcat clearing is disabled to preserve assessment evidence")
 
-    async def capture_screenshot(self, serial: str) -> Optional[bytes]:
+    async def capture_screenshot(self, serial: str, guard=None) -> Optional[bytes]:
         """Capture device screenshot and return PNG bytes."""
+        self._check_mutation_guard(guard)
         code, stdout, _ = await self._exec_cmd(["-s", serial, "exec-out", "screencap", "-p"], timeout=5.0)
+        self._check_mutation_guard(guard)
         if code == 0 and stdout.startswith(b"\x89PNG"):
             return stdout
         return None
 
-    async def execute_shell(self, serial: str, command: str) -> dict[str, Any]:
+    async def execute_shell(self, serial: str, command: str, guard=None) -> dict[str, Any]:
         """Execute an arbitrary adb shell command on target device."""
+        self._check_mutation_guard(guard)
         cmd_parts = ["-s", serial, "shell", str(command)]
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd_parts, timeout=10.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {
             "status": "success" if code == 0 else "failed",

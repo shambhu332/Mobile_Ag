@@ -10,8 +10,6 @@ Enables seamless enterprise CI/CD integration:
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -20,6 +18,7 @@ from mobileag.reporting.coverage import review_surface_ledger
 from mobileag import __version__
 from mobileag.security.privacy import redact
 from mobileag.reporting.sarif_importer import MAX_BYTES, MAX_RESULTS, MAX_RULES, SarifImportError, validate_sarif_document
+from mobileag.reporting.artifact_writer import preflight_bounded_structure, write_private_artifact
 
 
 class SARIFExporter:
@@ -28,6 +27,21 @@ class SARIFExporter:
     SCHEMA_URI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
     TOOL_NAME = "MobileAg Enterprise AppSec Scanner"
     TOOL_VERSION = __version__
+    MAX_INPUT_BYTES = MAX_BYTES * 2
+    MAX_INPUT_NODES = 100_000
+    MAX_INPUT_DEPTH = 64
+
+    @classmethod
+    def _preflight_input(cls, value: Any) -> None:
+        """Bound caller-owned SARIF inputs before deep copies/redaction/schema work."""
+        try:
+            preflight_bounded_structure(
+                value, max_bytes=cls.MAX_INPUT_BYTES,
+                max_nodes=cls.MAX_INPUT_NODES, max_depth=cls.MAX_INPUT_DEPTH,
+                label="SARIF input",
+            )
+        except ValueError as exc:
+            raise SarifImportError(str(exc)) from None
 
     @classmethod
     def severity_to_sarif_level(cls, severity: Severity | str) -> str:
@@ -51,6 +65,7 @@ class SARIFExporter:
         """Convert findings into a compliant SARIF v2.1.0 JSON report dictionary."""
         if len(findings) > MAX_RESULTS:
             raise SarifImportError("SARIF result inventory exceeds limits")
+        cls._preflight_input((findings, target_name, scan_id, artifact, coverage))
         rules_map: dict[str, dict[str, Any]] = {}
         results: list[dict[str, Any]] = []
 
@@ -194,21 +209,7 @@ class SARIFExporter:
         """Generate and save SARIF JSON report to disk."""
         sarif_data = cls.generate_sarif(findings, target_name, scan_id, artifact, coverage)
         out_p = Path(output_path)
-        out_p.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(sarif_data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
         if len(payload) > MAX_BYTES:
             raise SarifImportError("SARIF output exceeds the report size limit")
-        fd, temp_name = tempfile.mkstemp(prefix=f".{out_p.name}.", suffix=".tmp", dir=out_p.parent)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, out_p)
-        except Exception:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
-        return out_p
+        return write_private_artifact(out_p, payload, MAX_BYTES)

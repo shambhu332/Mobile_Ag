@@ -117,6 +117,7 @@ def test_mobsf_cli_is_offline_new_file_only_and_never_overwrites(tmp_path):
     output=tmp_path/"projection.json"
     result=CliRunner().invoke(main,["import-mobsf-json","--input",str(source),"--output",str(output)])
     assert result.exit_code==0,result.output
+    assert output.stat().st_mode & 0o077 == 0
     projection=json.loads(output.read_text())
     assert projection["source_trust"]=="untrusted_external_results"
     output.write_text("preserve")

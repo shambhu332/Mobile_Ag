@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import json
 import ipaddress
-import os
 import re
-import tempfile
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, unquote, urlparse
 
+from mobileag.analysis.graphql_candidates import extract_graphql_operation_candidates
 from openapi_spec_validator import validate as validate_openapi_spec
+from mobileag.reporting.artifact_writer import write_private_artifact
 
 
 _DYNAMIC_JSON_KEY_PATTERNS = (
@@ -31,8 +32,12 @@ _MAX_QUERY_NAME_LENGTH = 256
 _MAX_CAPTURE_REQUESTS = 10000
 _MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+_MAX_HAR_OUTPUT_BYTES = 64 * 1024 * 1024
 _MAX_ENDPOINTS = 10000
 _MAX_OPENAPI_BYTES = 16 * 1024 * 1024
+_MAX_GRAPHQL_QUERY_CHARS = 64 * 1024
+_MAX_GRAPHQL_OPERATIONS_PER_REQUEST = 100
+_MAX_GRAPHQL_OPERATION_CANDIDATES = 1000
 _SUPPORTED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
 _SAFE_MIME_TYPES = {
     "application/json", "application/xml", "application/x-www-form-urlencoded",
@@ -90,6 +95,67 @@ class MobileApiCataloger:
         self.omitted_requests = 0
         self.unmodeled_requests = 0
         self.invalid_urls = 0
+        self.graphql_operation_candidates_omitted = 0
+        self.graphql_operation_coverage_gaps = 0
+        self._graphql_operation_keys: set[tuple[str, str, str | None]] = set()
+
+    @staticmethod
+    def _graphql_operations_from_document(query: Any) -> tuple[list[dict[str, str | None]], str | None]:
+        """Extract only GraphQL operation names from a bounded document string."""
+        if not isinstance(query, str) or not query:
+            return [], None
+        if len(query) > _MAX_GRAPHQL_QUERY_CHARS:
+            return [], "query_size_limit"
+        candidates, malformed_string, truncated = extract_graphql_operation_candidates(
+            query, max_candidates=_MAX_GRAPHQL_OPERATIONS_PER_REQUEST,
+        )
+        if malformed_string:
+            return candidates, "malformed_graphql_string"
+        if truncated:
+            return candidates, "operation_count_limit"
+        return candidates, None
+
+    @staticmethod
+    def _graphql_operations_from_body(body: Optional[str]) -> tuple[list[dict[str, str | None]], str | None]:
+        """Extract GraphQL operation names from a bounded JSON request body."""
+        if not isinstance(body, str) or not body or not body.lstrip().startswith("{"):
+            return [], None
+        try:
+            parsed_body = json.loads(body, object_pairs_hook=MobileApiCataloger._reject_duplicate_json_members)
+        except (ValueError, TypeError, RecursionError):
+            return [], "ambiguous_or_invalid_json"
+        if not isinstance(parsed_body, dict) or not isinstance(parsed_body.get("query"), str):
+            return [], None
+        return MobileApiCataloger._graphql_operations_from_document(parsed_body["query"])
+
+    @staticmethod
+    def _reject_duplicate_json_members(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON object member")
+            result[key] = value
+        return result
+
+    def _merge_graphql_operation_candidates(self, endpoint_key: str, entry: dict[str, Any],
+                                            candidates: list[dict[str, str | None]]) -> None:
+        retained = entry.setdefault("graphql_operation_candidates", [])
+        retained_keys = {(item["operation_type"], item.get("operation_name")) for item in retained}
+        for item in candidates:
+            identity = (endpoint_key, item["operation_type"], item.get("operation_name"))
+            local_identity = (item["operation_type"], item.get("operation_name"))
+            if local_identity in retained_keys or identity in self._graphql_operation_keys:
+                continue
+            if len(self._graphql_operation_keys) >= _MAX_GRAPHQL_OPERATION_CANDIDATES:
+                self.graphql_operation_candidates_omitted += 1
+                continue
+            retained.append({
+                "operation_type": item["operation_type"],
+                "operation_name": item.get("operation_name"),
+                "evidence_type": "observed_graphql_operation_candidate",
+            })
+            retained_keys.add(local_identity)
+            self._graphql_operation_keys.add(identity)
 
     @staticmethod
     def _path_template(path: str) -> str:
@@ -131,7 +197,7 @@ class MobileApiCataloger:
         if isinstance(value, dict):
             properties = {}
             redacted_dynamic_keys = False
-            for key, item in list(value.items())[:100]:
+            for key, item in islice(value.items(), 100):
                 if isinstance(key, str) and len(key) <= 128:
                     if _looks_like_dynamic_json_key(key):
                         redacted_dynamic_keys = True
@@ -237,6 +303,25 @@ class MobileApiCataloger:
             self.unmodeled_requests += 1
             self.omitted_requests += 1
             return
+        # Retain an owned snapshot: callers may reuse/mutate capture objects
+        # after ingestion, which would otherwise bypass the accounting bounds
+        # and alter later HAR exports.
+        try:
+            req = CapturedRequest(
+                method=req.method, url=req.url, headers=dict(req.headers),
+                query_params=dict(req.query_params), body=req.body,
+                response_status=req.response_status, response_body=req.response_body,
+                response_headers=dict(req.response_headers),
+            )
+        except (TypeError, ValueError, RuntimeError):
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        capture_size = self._estimate_capture_size(req)
+        if capture_size is None:
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
         normalized_method = req.method.upper()
         if normalized_method not in _SUPPORTED_METHODS:
             self.unmodeled_requests += 1
@@ -302,6 +387,20 @@ class MobileApiCataloger:
         query_names.update(name for name, _ in parsed_query)
         query_signature = tuple(sorted(query_names))
         key = f"{method}:{server_url}:{path}:{json.dumps(query_signature)}"
+        graphql_operations, body_issue = self._graphql_operations_from_body(req.body)
+        if body_issue:
+            self.graphql_operation_coverage_gaps += 1
+        query_values = [value for name, value in parsed_query if name.casefold() == "query"]
+        if not query_values:
+            query_values = [value for name, value in req.query_params.items()
+                            if isinstance(name, str) and name.casefold() == "query"]
+        if len(query_values) > 1:
+            self.graphql_operation_coverage_gaps += 1
+        elif query_values:
+            query_operations, query_issue = self._graphql_operations_from_document(query_values[0])
+            graphql_operations.extend(query_operations)
+            if query_issue:
+                self.graphql_operation_coverage_gaps += 1
         if len(self.endpoints) >= _MAX_ENDPOINTS and key not in self.endpoints:
             self.unmodeled_requests += 1
             return
@@ -316,7 +415,9 @@ class MobileApiCataloger:
                 "has_body": req.body is not None,
                 "request_schema": self._parse_json_schema(req.body),
                 "response_schemas": {str(req.response_status): self._parse_json_schema(req.response_body)},
+                "graphql_operation_candidates": [],
             }
+            self._merge_graphql_operation_candidates(key, self.endpoints[key], graphql_operations)
         else:
             entry = self.endpoints[key]
             if req.response_status not in entry["sample_statuses"]:
@@ -329,6 +430,7 @@ class MobileApiCataloger:
             status = str(req.response_status)
             entry.setdefault("response_schemas", {})[status] = self._merge_schemas(
                 entry.get("response_schemas", {}).get(status), self._parse_json_schema(req.response_body))
+            self._merge_graphql_operation_candidates(key, entry, graphql_operations)
 
     def export_openapi_json(self) -> Dict[str, Any]:
         """Convert cataloged endpoints into an OpenAPI 3.0 schema dictionary."""
@@ -363,6 +465,9 @@ class MobileApiCataloger:
                 "responses": {},
                 "x-mobileag-inferred-from-capture": True,
             }
+            graphql_candidates = entry.get("graphql_operation_candidates", [])
+            if graphql_candidates:
+                operation["x-mobileag-graphql-operation-candidates"] = list(graphql_candidates)
             for status in entry["sample_statuses"]:
                 response: Dict[str, Any] = {"description": f"Observed response HTTP {status}"}
                 schema = entry.get("response_schemas", {}).get(str(status))
@@ -404,15 +509,28 @@ class MobileApiCataloger:
                 servers.update(item["url"] for item in operation.get("servers", []))
                 if servers:
                     existing["servers"] = [{"url": server} for server in sorted(servers)]
+                prior_graphql = existing.get("x-mobileag-graphql-operation-candidates", [])
+                merged_graphql = {(item["operation_type"], item.get("operation_name")): item
+                                  for item in prior_graphql if isinstance(item, dict)}
+                for item in operation.get("x-mobileag-graphql-operation-candidates", []):
+                    merged_graphql.setdefault((item["operation_type"], item.get("operation_name")), item)
+                if merged_graphql:
+                    existing["x-mobileag-graphql-operation-candidates"] = [
+                        merged_graphql[identity] for identity in sorted(merged_graphql, key=str)
+                    ][: _MAX_GRAPHQL_OPERATION_CANDIDATES]
 
         document = {
             "openapi": "3.0.0",
             "info": {
                 "title": self.title,
                 "version": self.version,
-                "description": "Auto-generated by MobileAg Dynamic Traffic Auditor",
+                "description": (
+                    "Auto-generated from bounded observed captures. This inventory is not a complete backend contract "
+                    "and does not establish server authorization or vulnerability proof."
+                ),
             },
             "paths": paths,
+            "x-mobileag-proof-state": "not_proven",
             "x-mobileag-capture-limits": {
                 "maxRequests": _MAX_CAPTURE_REQUESTS,
                 "maxRequestBytes": _MAX_CAPTURE_REQUEST_BYTES,
@@ -421,6 +539,9 @@ class MobileApiCataloger:
                 "omittedRequests": self.omitted_requests,
                 "unmodeledRequests": self.unmodeled_requests,
                 "invalidURLs": self.invalid_urls,
+                "graphqlOperationCandidates": len(self._graphql_operation_keys),
+                "graphqlOperationCandidatesOmitted": self.graphql_operation_candidates_omitted,
+                "graphqlOperationCoverageGaps": self.graphql_operation_coverage_gaps,
             },
         }
         # Do not silently emit a document that fails the normative OpenAPI
@@ -436,21 +557,7 @@ class MobileApiCataloger:
         if len(payload) > _MAX_OPENAPI_BYTES:
             raise ValueError("OpenAPI output exceeds the report size limit")
         out_path = Path(output_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, out_path)
-        except Exception:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
-        return out_path
+        return write_private_artifact(out_path, payload, _MAX_OPENAPI_BYTES)
 
     def export_har_json(self) -> Dict[str, Any]:
         """Convert captured HTTP transactions into HAR 1.2 format."""
@@ -530,9 +637,12 @@ class MobileApiCataloger:
             }
         }
 
-    def save_har(self, output_path: str) -> None:
-        """Save captured traffic to HAR 1.2 JSON file."""
+    def save_har(self, output_path: str | Path) -> None:
+        """Save bounded HAR traffic through private atomic replacement."""
         data = self.export_har_json()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        payload = json.dumps(data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        if len(payload) > _MAX_HAR_OUTPUT_BYTES:
+            raise ValueError("HAR output exceeds the report size limit")
+        out_path = Path(output_path)
+        write_private_artifact(out_path, payload, _MAX_HAR_OUTPUT_BYTES)
 

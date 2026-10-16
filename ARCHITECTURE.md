@@ -23,6 +23,7 @@ flowchart TD
         A --> RN[React Native & Hermes Scanner]
         A --> T[Taint Candidate Analysis]
         A --> CG[Smali Call-Graph Heuristics]
+        A --> CRYPTO[Crypto API Metadata Inventory]
     end
 
     subgraph DAST ["3. Separately scoped dynamic actions"]
@@ -34,7 +35,7 @@ flowchart TD
     end
 
     subgraph Review ["4. Candidate review and evidence"]
-        F & G & H & I & J & K & NSC & RN & T & CG --> RAW[UNVERIFIED static candidates]
+        F & G & H & I & J & K & NSC & RN & T & CG & CRYPTO --> RAW[UNVERIFIED static candidates]
         RAW --> P[Optional heuristic review-priority signals]
         P --> HUMAN[Human validation / structured evidence]
     end
@@ -62,6 +63,7 @@ Mobile_Ag/
 │   ├── analysis/            # Security Analysis Modules (SAST)
 │   │   ├── api_mapper.py
 │   │   ├── binary_protection_auditor.py
+│   │   ├── crypto_api_auditor.py
 │   │   ├── code_reviewer.py
 │   │   ├── dependency_scanner.py
 │   │   ├── manifest_auditor.py

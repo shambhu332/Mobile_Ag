@@ -16,7 +16,7 @@ _SURFACE_ANALYZERS = {
     'webview_deep_links': ('android_surface.categories.webview', 'android_surface.categories.deep_links',
                            'taint.webview'),
     'network_api_authentication': ('auth_session', 'api_mapping'),
-    'cryptography_native': ('nsc', 'native'),
+    'cryptography_native': ('crypto_metadata', 'nsc', 'native'),
 }
 
 _SURFACE_GAPS = {
@@ -28,7 +28,7 @@ _SURFACE_GAPS = {
     'storage_backup_logging': 'backup rules, lexical log sites and sensitive-identifier preference-write leads are inventoried only; data sensitivity, encryption, effective backup behavior and accessibility are not validated',
     'webview_deep_links': 'bounded lexical/manifest and modeled taint-sink review; effective origin, caller reachability, bridge behavior and runtime flow remain unproven',
     'network_api_authentication': 'endpoint/session inventory does not establish authentication or server authorization behavior',
-    'cryptography_native': 'configuration/byte-string indicators do not establish cryptographic use or native call reachability',
+    'cryptography_native': 'literal Java/Kotlin factory calls and TLS/native indicators do not establish key safety, full API use, or runtime call reachability',
 }
 
 

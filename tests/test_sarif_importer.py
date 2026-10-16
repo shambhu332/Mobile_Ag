@@ -94,7 +94,16 @@ def test_cli_import_is_offline_and_never_overwrites_output(tmp_path):
     result = runner.invoke(main, ["import-sarif", "--input", str(source), "--output", str(output)])
     assert result.exit_code == 0, result.output
     assert json.loads(output.read_text())["findings"][0]["status"] == "UNVERIFIED"
+    assert output.stat().st_mode & 0o077 == 0
     output.write_text("preserve me")
     result = runner.invoke(main, ["import-sarif", "--input", str(source), "--output", str(output)])
     assert result.exit_code != 0
     assert output.read_text() == "preserve me"
+
+    victim = tmp_path / "victim.json"
+    victim.write_text("preserve target")
+    linked_output = tmp_path / "linked.json"
+    linked_output.symlink_to(victim)
+    result = runner.invoke(main, ["import-sarif", "--input", str(source), "--output", str(linked_output)])
+    assert result.exit_code != 0
+    assert victim.read_text() == "preserve target"

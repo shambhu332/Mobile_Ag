@@ -977,6 +977,29 @@ def test_taint_coverage_counts_transitive_same_file_summaries(tmp_path):
     assert reported["same_file_parameter_summary"]["transitive_summaries"] >= 1
 
 
+def test_taint_symbol_resolver_propagates_partial_inventory_coverage(tmp_path):
+    source=tmp_path/'Handler.java'
+    source.write_text('package synthetic; class Handler {}',encoding='utf-8')
+    outside=tmp_path.parent/(tmp_path.name+'-Outside.java')
+    outside.write_text('package hidden; class Outside {}',encoding='utf-8')
+    (tmp_path/'Linked.java').symlink_to(outside)
+    engine=TaintEngine();engine._java_ast.available=False
+    engine.analyze_directory(str(tmp_path))
+    symbols=engine.coverage['symbol_resolver']
+    assert symbols['indexed_classes']==1
+    assert symbols['indexed_files']==1
+    assert symbols['static_status']=='partial'
+    assert symbols['coverage']['source_file_skip_reasons']['symlink_entry']==1
+
+
+def test_taint_symbol_resolver_never_calls_heuristic_indexing_completed(tmp_path):
+    (tmp_path/'Handler.java').write_text('package synthetic; class Handler {}',encoding='utf-8')
+    engine=TaintEngine();engine._java_ast.available=False
+    engine.analyze_directory(str(tmp_path))
+    assert engine.coverage['symbol_resolver']['static_status']=='analyzed_heuristically'
+    assert engine.coverage['symbol_resolver']['coverage']['exhaustive'] is False
+
+
 def test_taint_parameter_summary_budget_is_reported_as_partial(tmp_path, monkeypatch):
     import mobileag.analysis.taint_engine as taint_module
     monkeypatch.setattr(taint_module, "MAX_PARAMETER_SINK_SUMMARIES", 1)
@@ -1213,7 +1236,9 @@ async def test_memory_forensics_secret_detection():
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
 
-    pid, findings = await auditor.audit_process_memory("emulator-5554", "com.test.app")
+    pid, findings = await auditor.audit_process_memory(
+        "emulator-5554", "com.test.app", guard=lambda: None,
+    )
     assert pid == 4567
     assert len(findings) >= 2
     cwes = {f.cwe_id for f in findings}
@@ -1237,7 +1262,9 @@ async def test_memory_forensics_rejects_raw_output_and_never_reads_environment()
 
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
-    indicators = await auditor.extract_memory_indicators("synthetic-device", 1234)
+    indicators = await auditor.extract_memory_indicators(
+        "synthetic-device", 1234, guard=lambda: None,
+    )
     assert indicators == ["JWT Bearer Token"]
     assert len(commands) == 1
     assert "awk" in commands[0]
@@ -1257,6 +1284,17 @@ async def test_memory_forensics_scope_denial_and_revocation_block_shell_commands
 
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError, match="required"):
+        await auditor.get_process_pid("synthetic-device", "com.test.app")
+    assert calls == []
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor.get_process_pid("synthetic-device", "com.test.app", guard=async_allow)
+    assert calls == []
+
     with pytest.raises(PermissionError):
         await auditor.get_process_pid("synthetic-device", "com.test.app", guard=lambda: False)
     assert calls == []

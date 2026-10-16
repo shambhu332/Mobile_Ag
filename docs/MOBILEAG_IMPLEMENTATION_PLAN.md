@@ -143,7 +143,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 3.3 Cryptographic API metadata review (no key/plaintext harvesting)
 * **Objective**: Record bounded cryptographic-use metadata for an authorized synthetic test case.
-* **Safe scope**: If separately approved, record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Prefer static API/configuration analysis; require output redaction and retention limits for any runtime metadata. This does not establish key entropy, data confidentiality, or cryptographic correctness.
+* **Safe scope**: If separately approved, runtime review may record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Static support now inventories bounded Java/Kotlin literal `getInstance` calls and exact adjacent Smali `const-string`-register calls for selected platform crypto APIs, retaining only allowlisted algorithm/mode names, counts, and relative source locations; output has no code snippets or key material. Non-adjacent/interprocedural Smali constants, native, dynamic algorithm resolution, imports/type identity, key-size inference, runtime observation, and algorithm quality/usage correctness remain unsupported. Unmodeled observed factory calls mark static coverage partial. This static inventory is a review lead, not evidence of reachable crypto calls, key safety, data confidentiality, or cryptographic correctness.
 
 ---
 
@@ -164,7 +164,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      adb shell am start -W -a android.intent.action.VIEW -d "<payload>"
      ```
   4. Correlate with `logcat` dumps, WebView navigation events, and process crash logs to verify vulnerability execution.
-* **Execution gate**: Direct `DeepLinkFuzzer` calls require an explicit callable just-in-time scope guard as well as an explicit serial; missing, false, or raising guards block before device access. Runtime observations remain `not_proven` and do not establish exploitability.
+* **Execution gate**: Direct `DeepLinkFuzzer` calls require an explicit callable just-in-time scope guard as well as an explicit serial; missing, false, or raising guards block before device access. Runtime observations remain `not_proven` and do not establish exploitability. Web DAST fuzz/provider/deep-link request models now cap serial/package/path lengths, activity/URI/authority items, and targeted-extra key/count/value sizes. Synthetic request validation under an exact fake device/package policy rejects over-limit fuzz, provider, and deep-link inputs before any ADB call; this is not a live-device or authorization-effectiveness test.
 
 ### 4.2 ContentProvider Fuzzer & Traversal Tester
 * **Objective**: Test exported ContentProviders for directory traversal and SQL injection vulnerabilities.
@@ -182,7 +182,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. Orchestrator persistence accepts only bounded unique Markdown filenames and writes at most 500 guides, each capped at 1 MiB, using private atomic replacement. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
 
 ---
 
@@ -190,7 +190,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
 * **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
-* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. This does not establish hosted ingestion or a complete backend contract.
+* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. HAR export is capped at 64 MiB and uses private-mode atomic replacement. Retained HAR requests are owned snapshots, so caller mutation after ingestion cannot bypass the recorded retention budget or rewrite later exports. JSON-object shape inference visits at most 100 properties without first materializing the full item sequence. Raw capture values remain in bounded process memory by design and are redacted on export. This does not establish hosted ingestion or a complete backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
@@ -255,6 +255,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
 * **Objective**: Generate bounded, interoperable SBOM inventory documents; schema validity and coverage limits do not establish complete dependency inventory or supply-chain assurance.
+* **Current boundary**: CycloneDX JSON/XML and SPDX JSON writers enforce a 16 MiB serialized output cap and use private-mode temporary files with atomic replacement. A destination symlink is replaced rather than followed. The generator rejects additions beyond 10,000 components, 5,000 vulnerabilities, 64 licenses per component, or 100 CWEs per vulnerability. This is bounded local artifact handling; it does not establish complete package inventory or supply-chain assurance.
 * **Target Files**:
   - `mobileag/analysis/sbom_generator.py` (New)
   - `mobileag/analysis/dependency_scanner.py` (Enhancement)
@@ -284,7 +285,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/web/app.py` (Enhancement)
   - `mobileag/web/static/telemetry.js` (Enhancement)
-* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
+* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. A pending subscriber slot remains reserved during awaited scan validation and transfers to the active set without an intervening await, preserving the 32-connection cap during concurrent setup. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed. Broadcast events now receive a bounded preflight (128 KiB estimated input, 20,000 nodes, depth 32) and a 256 KiB serialized-output cap before fan-out; invalid or oversized events are replaced with a fixed omission notice that preserves a syntactically valid scan ID for subscription routing. Synthetic tests cover oversized and cyclic messages while preserving per-scan isolation. This bounds each event, not aggregate throughput, queueing, or delivery guarantees.
 
 ### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
 * **Objective**: Visualize currently modeled component/finding/API-candidate associations; do not label co-occurrence as data flow or an exploit chain.
@@ -301,18 +302,19 @@ evidence.
 
 ### 9.3 Evidence-limited JSON, Markdown, and PDF report artifacts
 * **Objective**: Persist researcher-readable reports without converting unverified candidates into confirmed impact.
-* **Current boundary**: `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
+* **Current boundary**: Orchestrator scan IDs are constrained to bounded path-safe names, and the per-scan output directory must not be a symlink or resolve outside the selected root. `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. CLI-generated JSON/Markdown reports use heuristic redaction and bounded private atomic writes. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. The feedback training-data export is capped by rows/pages/bytes, redacts payloads, and publishes via private atomic replacement; failed exports preserve the previous destination. The standalone SARIF, CycloneDX/SPDX, OpenAPI/HAR, and feedback-training writers have also been reviewed: their bounded outputs use private temporary files and atomic replacement, with synthetic tests confirming destination-symlink replacement does not modify the link target. The shared artifact writer now walks parent components with no-follow directory opens, then creates and replaces files relative to the pinned parent directory descriptor. ReportEngine, professional Markdown, SARIF, CycloneDX/SPDX, OpenAPI/HAR, CLI, scan-state/PoC-guide, checklist-state, and streaming feedback-training exports use this path; synthetic tests verify a parent rename after descriptor acquisition cannot redirect publication into a replacement directory. This does not establish confinement to a universal trusted output root, detect a directory substitution that occurs before that component is opened, or cover writers outside the shared helper. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
 
 ---
 
 ## Comprehensive Implementation Schedule & Status
 
-> **Audit correction (refreshed 2026-10-15): this blueprint is not 100% complete.** The
+> **Audit correction (refreshed 2026-10-16 at `1a26ee9`): this blueprint is not 100% complete.** The
 > `[COMPLETED]` labels and the old “zero false-positive / fail-closed” claims
 > below were not supported by the existence of files or unit tests. At baseline commit `728a007`, `python -m pytest -q` reported **892 passed**
-> (57.51 s). After bounded native ELF SBOM inventory, the full suite in the
-> pinned Python 3.14 validation environment reports **902 passed** (39.04 s).
-> These are primarily mocked/synthetic regressions and do not establish device coverage,
+> (57.51 s). The checkout at `1a26ee9` reports **1,317 passed**
+> (63.35 s) in the pinned Python 3.14 validation environment; `compileall`
+> and `git diff --check` also passed. These are primarily mocked/synthetic
+> regressions and do not establish actual APK/device coverage,
 > exploitability, completeness, or production readiness. The implementation
 > names below indicate bounded prototypes unless the capability is separately
 > demonstrated and measured. Do not use the original status tree as a release
@@ -323,15 +325,15 @@ evidence.
 | Blueprint area | Checkout evidence | Status / remaining work |
 |---|---|---|
 | Static call graph and taint | `call_graph.py`, `symbol_resolver.py`, `taint_engine.py`; synthetic tests include `test_smali_call_graph.py` and `test_smali_register_flow_benchmark.py` | **Partial.** Heuristic bounded analysis; no claim of arbitrary cross-language, whole-program or lifecycle-complete tracing. Smali source/sink recognition matches exact owner + method names; WebView sinks include `loadUrl`, `loadData`, `loadDataWithBaseURL`, and `postUrl`. Local may-flow propagates taint through supported exact-signature invocation arguments into static/instance callee parameter registers (including wide parameter slots), with source/sink file and line evidence. Intent extra/data/metadata accessors (`getStringExtra()`/typed extras/`getExtras()`, `getData()`/`getDataString()`/`getScheme()`/`getAction()`/`getType()`/`getClipData()`), Bundle/Uri getters, Cursor value getters (`getString`, `getBlob`, and primitive value accessors), and bounded ClipData item/URI getters derive taint only when their receiver already carries taint, avoiding unconditional source treatment for arbitrary internal objects; `Uri.toString()` preserves the taint. External-content candidates now require a tainted URI passed to selected `ContentResolver` open methods or a tainted path passed through a bounded `File(String)`/`File.toPath()` conversion to selected file-stream constructors / `Files.readString` / `Files.readAllBytes` / `Files.newInputStream` / `Files.newBufferedReader` (with `Paths.get` preserving taint); taint propagates through a bounded set of stream/reader constructors and scalar/array `read`, `readLine`, `readAllBytes`, and selected Scanner methods. Synthetic regressions exercise URI → ContentResolver → reader → `readLine` and a char-array `read` → array load → StringBuilder → WebView sink. This models a candidate read from a selected path/URI input, not proof that the path resolves to content accessible to the app, that a URI is reachable or granted, that returned bytes are attacker-controlled, or that the source is authentic; platform API availability is also unresolved. Bounded array-element taint tracks `filled-new-array` elements and `aput`/`aget` through register aliases, but does not distinguish indexes or prove array/object identity. `fill-array-data` clears the destination register's tracked element-taint summary because its static payload replaces contents, but alias/object identity effects remain unresolved and register-flow coverage is marked partial. Primitive register moves, supported numeric conversions, and supported arithmetic operators (including `rsub-int/lit8`) preserve taint as a conservative may-flow; wide writes clear both destination words, and wide moves merge taint from either source word; untainted arithmetic and constant writes including `const-method-type`/`const-method-handle` clear stale register taint. Supported String transformations plus bounded StringBuilder/StringBuffer constructor, mutator, and toString operations preserve taint through local object-register aliases; builder identity across fields and calls is unresolved. Exact static-field reads/writes and bounded method-return summaries propagate tainted register values between exact methods, but not callee heap side effects; instance-field reads clear overwritten register taint and mark coverage partial to avoid stale-value false positives, and instance-field writes also mark partial coverage because field-value propagation and heap identity remain unmodeled. A limited set of exact Android callback signatures (`onNewIntent`, `onReceive`, `onStartCommand`, `onHandleIntent`, `onActivityResult`, `onBind`, and `onUnbind`) seeds the incoming `Intent` parameter for derived accessors only when the parsed superclass chain reaches the expected Android callback base; synthetic negative controls now verify a same-named callback on a non-Android class and a normal helper `Intent` parameter are not treated as lifecycle roots. This does not prove component registration, export state, caller privileges, or runtime reachability. Public `@JavascriptInterface` annotated method parameters are seeded as untrusted-source candidates, but annotation presence does not establish WebView bridge registration, enabled JavaScript, target API behavior, frame origin, loaded content, or reachability. This is not full interprocedural taint: instance fields and heap side effects, virtual dispatch/overrides, unsupported invoke forms such as `invoke-custom`/`invoke-polymorphic` (which mark coverage partial but do not propagate return taint), unrecognized destination-shaped register writes (which clear stale destination taint, mark coverage partial, and do not assume operand propagation), tainted arguments passed to calls without a local implementation or modeled summary mark coverage partial (their return/heap effects are not propagated), sanitizers, exception semantics, platform reachability and authorization are unresolved; budgets and skipped methods are exposed. The synthetic local-register evaluator now also covers a provider Cursor flow, NIO path reads, and hard-negative untainted URI/path controls; it still measures only public individual CWE/sink-line cases (including duplicate CWEs and conditional branches), not blind or independent accuracy, cross-file accuracy, APK recall, or field false-positive rates. Packed/sparse switch payload target resolution has synthetic positive coverage; malformed and over-limit payloads now have regressions confirming partial coverage is reported rather than silently accepted. Register-flow diagnostics retain at most 100 warning samples and expose total observed warning events plus whether samples were truncated; this improves visibility but is not comprehensive Smali opcode/syntax coverage. Independent corpora remain open. |
-| IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. FileProvider XML scanning now uses bounded no-symlink inventory reads (5,000 entries, 2 MiB/file, 32 MiB total), filters to `res/xml*`, avoids duplicate recursive/direct matches, exposes coverage, reports parse/size/root-shape errors, and rejects DTD/entity declarations before XML parsing. Direct FileProvider XML parsing uses a 4 KiB-chunked pull parser with depth capped at 64, clears completed child subtrees, caps modeled path entries at 5,000 and each retained `name`/`path` attribute at 256 characters, and clears accumulated candidates if malformed trailing XML is found. Entry/attribute overflow yields `partial` coverage (`xml_path_entry_limit` or `xml_path_attribute_limit`) rather than silently treating omitted configuration as clean; the complete input string is still bounded at 1 Mi characters. Broad `external-media-path` roots (`.` or empty) are included as unverified configuration review candidates. Empty/`.` `files-path` and `cache-path` roots (including equivalent slash/dot spellings) are also recorded as INFO candidates because they map entire app-internal directories; no grant or external access is inferred. A literal `..` path segment now emits an INFO, unverified FileProvider configuration review candidate; it does not establish canonicalized root escape, a URI grant, or caller access. FileProvider analyzer descriptions require separate evidence of a served URI, effective grant, and caller reachability rather than implying unauthorized access from XML alone. Intent-redirection lexical scans now use the same file/entry/total bounds, skip symlinks, expose partial coverage, and reject forward-in-time extraction matches; method scope and component reachability remain unresolved, so findings are review candidates only. PendingIntent Java/Kotlin scans now use bounded no-symlink reads with coverage surfaced in the scan and receive the parsed target SDK. Missing mutability on target API 31+ is reported as an INFO compatibility lead (expected Android 12+ creation failure if executed), not a CWE-927 exploit claim; unknown/older targets retain a bounded mutability review candidate. Token distribution, receiver capability, and runtime path still require review. Task-affinity inventory now resolves an alias to exactly one parsed activity using canonicalized component names; it inherits affinity and launch mode from that target per Android's alias semantics and emits an INFO lead only for an exported alias with a literal non-default effective affinity. Missing/ambiguous targets withhold effective alias values and findings. This is not a StrandHogg exploit verdict or a blanket `singleTask` recommendation. Deep-link mutation generation now bounds input/query count, percent-encodes payloads while preserving other parameters, and the ADB launcher quotes each remote-shell argument; execution still requires an explicit serial and just-in-time scope guard. Launcher stdout/stderr are drained with a 4 KiB retained prefix per stream and are not persisted in results; observed byte count/truncation is exposed. The helper does not collect logcat/crash tombstones or establish exploitability, and generic activity-manager errors are not labeled crashes. Provider fuzz probes now require an explicit serial and per-command scope guard; an explicit boolean `False` or guard exception blocks the command (normal return values including `None` retain exception-based guard compatibility). The separate approved-fixture `ProviderAuditor` also honors boolean denial before and after its shell query, so post-action revocation withholds findings. They validate authority/package/projection input, issue read-only SQL probe cases against both selection and projection fields, and quote remote shell arguments; they drain stdout/stderr concurrently while retaining at most 4 KiB per stream, expose observed byte counts/truncation, and omit raw provider output from result records. Neither these probes nor the other candidate analyzers establish runtime exploitability; FileProvider binary resources are not decoded. |
-| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter binary reads now have both per-file and 32 MiB aggregate byte budgets; printable-string iteration is capped at 100,000 per binary and distinct endpoint/route/secret-marker output is capped, with explicit truncation errors. Flutter binary and asset discovery, and IL2CPP library discovery, use the bounded no-symlink `SourceInventory` instead of unbounded `os.walk` directory materialization; Flutter applies one shared tree-entry cap across library and asset inventory and rejects symlinked parent paths. Truncation, scan status, byte counts, and errors are exposed. Flutter still scans only bounded printable strings, not Dart snapshot structures. URLs from Flutter, Hermes, and IL2CPP are propagated as UNKNOWN-method embedded-string candidates; the orchestrator does not infer an HTTP method or callability from a URL string. Hermes bundle reads now use one bounded no-follow read, cap printable-string iteration and retained strings/endpoints, redact credential-like values in returned samples, and mark the scan partial with explicit errors when input or candidate output is truncated; `function_count` remains unknown rather than a misleading zero. The Hermes pass is still printable-string extraction, not a structured Hermes string-table parser or bytecode decompiler. IL2CPP now validates the version-29 global-metadata header ranges and bounded string-literal records (8-byte records, bounded literal sizes/count/UTF-8 reads), and extracts URL/secret-marker/class-name candidates from those parsed literals without retaining raw literal values. Unsupported metadata versions retain a bounded printable-string fallback and explicitly report `scan_status=partial` with `unsupported_metadata_version`; this does not decode those versions or establish coverage beyond lexical candidates. Malformed v29 tables yield partial coverage. Tree and metadata reads, literal/candidate iteration, and endpoint/class outputs are bounded, and symlink paths are skipped. A bounded v29 type/member-table pass now resolves class namespaces/names, field names, method names, and parameter names/counts into review-only records. It does not resolve field/return/parameter types, generic constructs, native method bodies, or emit a complete `dump.cs`; names are metadata candidates, not source reconstruction. The orchestrator now retains bounded structured IL2CPP metadata summaries in scan state and API responses, with explicit static-candidate, non-exhaustive, runtime-not-tested, and not-proven labels; analysis errors are reflected as incomplete coverage. Other versions and format variants remain unsupported or unverified, and no independent corpus establishes format coverage. Credential-like matches emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction or Hermes control-flow decompilation is implemented; the IL2CPP parser does not produce a complete C# symbol dump or method/type signatures. |
-| iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Partial structural parser and bounded Swift name/field inventory.** The bounded thin 32/64-bit passes validate header/load-command and `LC_SEGMENT`/`LC_SEGMENT_64` section bounds, inventory dylib load commands and bounded `LC_SYMTAB` names, recognize Swift section names from actual section records, and extract capped printable strings only from parsed `__cstring` file ranges. A bounded `__swift5_types` pass resolves direct relative entries for class/struct/enum context descriptors and emits valid UTF-8 nominal type-name candidates. A bounded `__swift5_protos` pass now resolves direct protocol descriptor entries and emits protocol-name candidates; relative-indirectable entries remain partial and are not dereferenced. When direct field metadata is present, the parser validates the `__swift5_fieldmd` section/record bounds and returns UTF-8 field-name candidates grouped by type; it does not resolve field types or reconstruct declarations. Malformed ranges and unresolved names produce partial status. This is not full metadata/type/field/protocol reconstruction; protocol conformances from `__swift5_proto`, requirement signatures, and associated-type semantics remain unparsed. Parse status/errors and section/import/symbol/Swift type/field/protocol inventories are exposed with the iOS analysis summary; legacy whole-file Swift section-name, URL, and framework strings remain lexical candidates distinct from parsed section/import evidence. Fat/FAT64 architecture tables now receive bounded slice-count/range and table-vs-slice CPU agreement validation. Mach-O input is opened as a no-follow regular file and a truncated read forces partial status for thin and fat files; lexical URL enumeration and returned endpoint candidates are capped with explicit partial status. Complete `__TEXT`/cstring coverage above the 15 MiB input cap and robust independent malformed-corpus validation remain incomplete. Synthetic fixtures prove only these specific cases, not universal Mach-O compatibility.
+| IPC / FileProvider | `manifest_auditor.py`, `intent_redirection_auditor.py`, `pending_intent_auditor.py`, `fileprovider_auditor.py` | **Implemented as candidate analyzers.** Findings require component reachability, effective platform permission/grant behavior, and caller-controlled input validation; manifest patterns alone are not exploits. FileProvider XML scanning now uses bounded no-symlink inventory reads (5,000 entries, 2 MiB/file, 32 MiB total), filters to `res/xml*`, avoids duplicate recursive/direct matches, exposes coverage, reports parse/size/root-shape errors, and rejects DTD/entity declarations before XML parsing. Direct FileProvider XML parsing uses a 4 KiB-chunked pull parser with depth capped at 64, clears completed child subtrees, caps modeled path entries at 5,000 and each retained `name`/`path` attribute at 256 characters, and clears accumulated candidates if malformed trailing XML is found. Entry/attribute overflow yields `partial` coverage (`xml_path_entry_limit` or `xml_path_attribute_limit`) rather than silently treating omitted configuration as clean; the complete input string is still bounded at 1 Mi characters. Broad `external-media-path` roots (`.` or empty) are included as unverified configuration review candidates. Empty/`.` `files-path` and `cache-path` roots (including equivalent slash/dot spellings) are also recorded as INFO candidates because they map entire app-internal directories; no grant or external access is inferred. A literal `..` path segment now emits an INFO, unverified FileProvider configuration review candidate; it does not establish canonicalized root escape, a URI grant, or caller access. FileProvider analyzer descriptions require separate evidence of a served URI, effective grant, and caller reachability rather than implying unauthorized access from XML alone. Intent-redirection lexical scans now use the same file/entry/total bounds, skip symlinks, expose partial coverage, recognize bounded Java casts and Kotlin typed/generic Parcelable extraction forms, reject forward-in-time extraction matches, and invalidate a tracked Parcelable value after a later assignment to that variable; same-line event ordering is bounded, exact local identifier copies preserve an extracted-Intent candidate, and unsupported/compound assignments invalidate the destination; field aliases and object/heap identity are not modeled. A shared bounded lexical method-span extractor now prevents joining source/sink variables across recognized methods, and comment/string-masked code tokens prevent comment or quoted-text lookalikes from seeding extraction or sink matches. Unrecognized method syntax, nested constructs, component reachability, and control-flow validation remain unresolved; findings are still review candidates only. PendingIntent Java/Kotlin scans now use bounded no-symlink reads with coverage surfaced in the scan and receive the parsed target SDK. Their final flag argument is checked against bounded Java `final int` / Kotlin `const val` aliases and known platform mutability bit values in restricted integer/bitwise expressions; unknown/dynamic expressions or over-complex numeric expressions produce an unresolved-flags INFO lead rather than a guessed missing-mutability conclusion. Missing mutability on target API 31+ is reported as an INFO compatibility lead (expected Android 12+ creation failure if executed), not a CWE-927 exploit claim; unknown/older targets retain a bounded mutability review candidate. Token distribution, receiver capability, and runtime path still require review. Task-affinity inventory now resolves an alias to exactly one parsed activity using canonicalized component names; it inherits affinity and launch mode from that target per Android's alias semantics and emits an INFO lead only for an exported alias with a literal non-default effective affinity. Missing/ambiguous targets withhold effective alias values and findings. This is not a StrandHogg exploit verdict or a blanket `singleTask` recommendation. Deep-link mutation generation now bounds input/query count, percent-encodes payloads while preserving other parameters, and the ADB launcher quotes each remote-shell argument; execution still requires an explicit serial and just-in-time scope guard. Launcher stdout/stderr are drained with a 4 KiB retained prefix per stream and are not persisted in results; observed byte count/truncation is exposed. The helper does not collect logcat/crash tombstones or establish exploitability, and generic activity-manager errors are not labeled crashes. Provider fuzz probes now require an explicit serial and per-command scope guard; an explicit boolean `False` or guard exception blocks the command (normal return values including `None` retain exception-based guard compatibility). The separate approved-fixture `ProviderAuditor` requires a synchronous per-query scope guard and honors boolean denial before and after its shell query; absent, asynchronous, false, or raising guards block/withhold findings. They validate authority/package/projection input, issue read-only SQL probe cases against both selection and projection fields, and quote remote shell arguments; they drain stdout/stderr concurrently while retaining at most 4 KiB per stream, expose observed byte counts/truncation, and omit raw provider output from result records. Neither these probes nor the other candidate analyzers establish runtime exploitability; FileProvider binary resources are not decoded. |
+| Flutter / Hermes / IL2CPP | `flutter_engine.py`, `hermes_analyzer.py`, `il2cpp_auditor.py` | **Partial string/metadata probes, not decompilers.** Flutter binary reads now have both per-file and 32 MiB aggregate byte budgets; printable-string iteration is capped at 100,000 per binary and distinct endpoint/route/secret-marker output is capped, with explicit truncation errors. Flutter binary and asset discovery, and IL2CPP library discovery, use the bounded no-symlink `SourceInventory` instead of unbounded `os.walk` directory materialization; Flutter applies one shared tree-entry cap across library and asset inventory and rejects symlinked parent paths. Truncation, scan status, byte counts, and errors are exposed. Flutter still scans only bounded printable strings, not Dart snapshot structures. URLs from Flutter, Hermes, and IL2CPP are propagated as UNKNOWN-method embedded-string candidates; the orchestrator does not infer an HTTP method or callability from a URL string. Hermes bundle reads now use one bounded no-follow read, cap printable-string iteration and retained strings/endpoints, redact credential-like values in returned samples, and mark the scan partial with explicit errors when input or candidate output is truncated; `function_count` remains unknown rather than a misleading zero. The Hermes pass is still printable-string extraction, not a structured Hermes string-table parser or bytecode decompiler. IL2CPP now validates the version-29 global-metadata header ranges and bounded string-literal records (8-byte records, bounded literal sizes/count/UTF-8 reads), and extracts URL/secret-marker/class-name candidates from those parsed literals without retaining raw literal values. Unsupported metadata versions retain a bounded printable-string fallback and explicitly report `scan_status=partial` with `unsupported_metadata_version`; this does not decode those versions or establish coverage beyond lexical candidates. Malformed v29 tables yield partial coverage. Tree and metadata reads, literal/candidate iteration, and endpoint/class outputs are bounded, and symlink paths are skipped. A bounded v29 type/member-table pass now resolves class namespaces/names, field names, method names, and parameter names/counts into review-only records. It does not resolve field/return/parameter types, generic constructs, native method bodies, or emit a complete `dump.cs`; names are metadata candidates, not source reconstruction. The orchestrator retains bounded structured IL2CPP metadata summaries in scan state and API responses, with explicit static-candidate, non-exhaustive, runtime-not-tested, and not-proven labels; JSON and Markdown reports now include bounded candidate names; PDF includes status/count metadata and its proof boundaries; analysis errors are reflected as incomplete coverage. Flutter/Hermes results now also populate the scan-state coverage ledger, including candidate counts, truncation/errors, explicit heuristic/non-exhaustive boundaries, and incomplete status on engine failure; an empty Hermes bundle inventory is reported as not applicable, not as a completed decompilation. Other versions and format variants remain unsupported or unverified, and no independent corpus establishes format coverage. Credential-like matches emit redacted review markers rather than raw/candidate values. No Dart snapshot reconstruction or Hermes control-flow decompilation is implemented; the IL2CPP parser does not produce a complete C# symbol dump or method/type signatures. |
+| iOS Mach-O / Swift | `macho_parser.py`, `ios_analyzer.py` | **Partial structural parser and bounded Swift metadata candidate inventory.** The bounded thin 32/64-bit passes validate header/load-command and `LC_SEGMENT`/`LC_SEGMENT_64` section bounds, inventory dylib load commands and bounded `LC_SYMTAB` names, recognize Swift section names from actual section records, and extract capped printable strings only from parsed `__cstring` file ranges. A bounded `__swift5_types` pass resolves direct relative entries for class/struct/enum context descriptors and emits valid UTF-8 nominal type-name candidates. A bounded `__swift5_protos` pass resolves direct protocol descriptor entries and emits protocol-name candidates; relative-indirectable entries remain partial and are not dereferenced. When direct field metadata is present, the parser validates the `__swift5_fieldmd` section/record bounds and returns UTF-8 field-name candidates grouped by type, plus bounded field-record flag candidates (`is_var`, `is_indirect_case`, and `is_artificial`). It also returns field-type **mangled-name candidates** only when the relative target is an in-file, bounded printable ASCII string with a known mangling prefix; it does not interpret symbolic references or demangle/resolve types, and it does not reconstruct declarations. A bounded `__swift5_proto` pass emits type/protocol name-pair candidates only for direct, untagged protocol and nominal-type descriptor references; indirect/tagged forms and unresolved descriptors are partial and are not followed. It does not parse witness tables, conformance flags, generic requirements, conditional conformances, or associated-type semantics. Parse status/errors and section/import/symbol/Swift type/field/protocol/conformance inventories are exposed with the iOS analysis summary; legacy whole-file Swift section-name, URL, and framework strings remain lexical candidates distinct from parsed section/import evidence. Fat/FAT64 architecture tables now receive bounded slice-count/range and table-vs-slice CPU agreement validation. Mach-O input is opened as a no-follow regular file and a truncated read forces partial status for thin and fat files; lexical URL enumeration and returned endpoint candidates are capped with explicit partial status. Complete `__TEXT`/cstring coverage above the 15 MiB input cap and robust independent malformed-corpus validation remain incomplete. Synthetic fixtures prove only these specific cases, not universal Mach-O compatibility.
 | Frida stealth, TLS bypass, crypto harvesting | `dast/frida_stealth.py`, `unpinning_engine.py`, `crypto_harvester.py`, `generators/frida_generator.py` | **Retired in the safe profile.** Hook/template generators and their ready-to-run payloads are removed; compatibility entry points refuse generation. The scan orchestrator no longer generates or writes Frida scripts. Crypto fixture parsing retains only bounded operation/algorithm labels and discards key, IV, plaintext, and payload fields. This does not implement authorized visible runtime instrumentation; that remains a separately reviewed external/device gate. |
 | IPC / dynamic verification / PoC synthesis | `deeplink_intent_fuzzer.py`, `provider_fuzzer.py`, `verification_loop.py`, `generators/poc_apk_synthesizer.py` | **Prototype / not proof-grade.** Provider probes report read/query success and SQL errors as observations, not vulnerability verdicts. PoC generation requires a CONFIRMED lifecycle state plus active structured analyst-attested evidence bound to the exact target package; this is not independent verification. Unverified, malformed, inactive, cross-package, and unsupported interpolated component/authority/affinity/URI/finding-ID values fail closed. Generated commands/source remain review artifacts with `execution_authorized=false`; no generated PoC is executed. The former free-form `adb shell` path has been replaced by one deep-link-only dispatch observation requiring a CWE-601 candidate, explicit serial, just-in-time exact package/serial guard returning `True`, operator approval, synthetic-data confirmation, and bounded custom-scheme URI/timeout. The output is only an Activity Manager dispatch observation (`verified=false`); it cannot change finding status or establish impact. Other probe types remain disabled. Target package type/length and Kotlin-interpolated component syntax now fail closed; independent confirmation and proof-grade generation remain open. The dashboard defers generation until the researcher opens that finding’s PoC tab; the read-only loopback navigator allows only the matching bounded GET route. |
-| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. The offline `/api/dast/traffic/audit` endpoint optionally compares supplied captured transactions with typed static endpoint declarations; it sends no requests and reports `not_requested` when declarations are absent. Traffic-audit findings normalize identifier-shaped paths and omit URL userinfo/query values rather than copying captured URLs into evidence. Shadow-API review normalizes numeric/UUID/email/token-shaped route IDs, supports method-specific declarations and canonical origin matching (including omission of default HTTP/HTTPS ports), and omits userinfo, query values, and raw ID-shaped path values; declarations supplied as path-only strings are origin/method wildcards. Static `APIMapper` blanks Java/Kotlin comments, Smali `#` comments, XML comments (preserving CDATA), and JS/Dart line/block comments while retaining string literals and line offsets; JS/Dart route-template interpolations are normalized to `{id}`, and unclosed XML comments/CDATA mark coverage partial, then extracts Retrofit verb/path declarations (including HEAD/OPTIONS and literal Retrofit `@HTTP` method/path pairs), route-literal endpoint candidates across Java/Kotlin as well as resource/bundle sources, and URL review leads with relative source-file and 1-based line evidence; route-only candidates retain `method=UNKNOWN`, and unknown/custom Retrofit method tokens are never guessed (their literal path may still appear as a route-only candidate); the general `@HTTP` annotation parser is quote-aware and capped at 4 KiB, with unsupported or oversized declarations reflected in partial-coverage diagnostics. Route output strips URL userinfo, drops query/fragment values, percent-encodes path controls, and templates obvious numeric, UUID, email, opaque mixed, and recognized digit-bearing typed-prefix path IDs; Empty/missing API-mapping roots return `not_analyzed` rather than resolving `Path("")` to the process working directory. Retrofit, route-literal, and URL matches are iterated lazily, endpoint de-duplication uses normalized redacted routes, and reaching the finding cap marks coverage partial. This best-effort redaction does not guarantee removal of arbitrary secrets. These remain unverified leads because static endpoint extraction may be incomplete. BOLA candidate extraction is offline-only and bounds URLs to 8,192 characters, query metadata to 100 fields, and candidate values to 256 characters; malformed authorities and over-limit query sets fail closed. TrafficAuditor caps sensitive-query parsing at 256 fields and emits an explicit incomplete-coverage lead rather than treating an over-limit URL as a clean CWE-598 review. The evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. Result records omit raw resource IDs, credentials, and endpoint query/fragment data, template recognized identifier path segments, and retain only a digest rather than the response body; response hashing and canary comparison are capped at 1 MiB of text and explicitly mark truncated/invalid input. An offline dual-session observation comparator now requires the same supplied canary in successful A and B responses, but does not verify account identity, request equivalence, ownership, or server authorization. It remains an evaluator, not a replay system; no network requests are performed. JWT parsing is bounded and claim findings are explicitly unverified; `exp`/`iat` are exposed only for exact int/float values that are finite and within the supported epoch range (booleans, NaN/infinities, and out-of-range numbers are omitted while claim presence remains distinct). Per-transaction request headers are capped at 100 entries; malformed, over-limit, oversized Authorization values, or duplicate case-insensitive Authorization fields mark coverage partial, and raw header values are not copied into coverage. The auditor inspects at most the first bounded authorization value when duplicates exist, so the status remains partial rather than implying all credentials were reviewed. Output omits raw tokens and arbitrary header/claim values, retains only algorithm/lifecycle/claim-name indicators, and sanitizes endpoint URLs. An opt-in offline verifier now supports HS256/HS384/HS512 only with an explicitly supplied local key and constant-time comparison; asymmetric algorithms, key discovery, server acceptance, and key entropy/strength beyond JWA's minimum byte length are not assessed. The verifier is not automatically applied to captured traffic. Logout/reuse is only a same-token, status-sequence observation, not proof a protected resource was authorized. OpenAPI grouping preserves canonical per-origin servers, omits userinfo/default ports, and brackets IPv6 literals for valid server URLs. Static URL review recognizes bracketed IPv6 authorities, case-insensitive schemes, and escaped slash separators in serialized source strings, emitting only unverified literal-use candidates; it does not test network reachability or effective cleartext policy. Captured route paths replace numeric, canonical UUID, and email-shaped segments, long mixed alphanumeric token-shaped segments, shorter (8-23 character) mixed-case alphanumeric segments, and recognized typed prefixes (such as `usr_`, `order_`, or `id-`) followed by a digit-bearing identifier with required string path parameters; percent-encoded ASCII is decoded only for this redaction decision. This bounded privacy-first heuristic may parametrize legitimate route slugs, while unrecognized prefixes, short lowercase IDs, malformed encodings, or other encodings may remain unmodeled; it is not a guarantee that arbitrary secrets are removed. JSON shape inference omits value-like object keys (UUIDs, long tokens/IDs, numeric IDs, and email-shaped keys) and marks that redaction; property values are never exported. Query-key signatures are deduplicated separately and merged as observed parameters, without exporting observed path/query values in the OpenAPI document. Generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. Malformed authorities/ports, overlong URLs, and unsupported schemes are excluded from OpenAPI endpoint modeling and counted under `invalidURLs`/`unmodeledRequests`; query metadata is parsed centrally and capped at 100 fields with 256-character names; traffic-catalog adapters do not expand query strings before the cap, and over-limit captures are counted as unmodeled instead of producing partial query signatures. Cataloger HAR retention is separately capped at 10,000 transactions, 2 MiB per transaction, and 16 MiB estimated aggregate; over-budget transactions are omitted while bounded endpoint modeling continues when inputs permit, and the capture estimates/omission counts are exposed. JSON shape inference also rejects bodies over a 1 Mi-character cap before decoding. Bounded HAR export still redacts captured values. HTTPS capture and dual-session replay remain open. |
+| API catalog / BOLA / token review | `api_cataloger.py`, `bola_fuzzer.py`, `token_session_auditor.py`, scoped capture/export endpoints | **Partial.** Catalog/schema inference and token heuristics do not establish server-side authorization flaws. Captured, redacted HTTP traffic can be exported as observed OpenAPI/HAR inventory; export routes are session-authenticated and separate from device-action middleware. The offline `/api/dast/traffic/audit` endpoint optionally compares supplied captured transactions with typed static endpoint declarations; it sends no requests and reports `not_requested` when declarations are absent. Traffic-audit findings normalize identifier-shaped paths and omit URL userinfo/query values rather than copying captured URLs into evidence. Shadow-API review normalizes numeric/UUID/email/token-shaped route IDs, supports method-specific declarations and canonical origin matching (including omission of default HTTP/HTTPS ports), and omits userinfo, query values, and raw ID-shaped path values; declarations supplied as path-only strings are origin/method wildcards. Static `APIMapper` blanks Java/Kotlin comments, Smali `#` comments, XML comments (preserving CDATA), and JS/Dart line/block comments while retaining string literals and line offsets; JS/Dart route-template interpolations are normalized to `{id}`, and unclosed XML comments/CDATA mark coverage partial, then extracts Retrofit verb/path declarations (including HEAD/OPTIONS and literal Retrofit `@HTTP` method/path pairs), route-literal endpoint candidates across Java/Kotlin as well as resource/bundle sources, and URL review leads with relative source-file and 1-based line evidence; route-only candidates retain `method=UNKNOWN`, and unknown/custom Retrofit method tokens are never guessed (their literal path may still appear as a route-only candidate); the general `@HTTP` annotation parser is quote-aware and capped at 4 KiB, with unsupported or oversized declarations reflected in partial-coverage diagnostics. Route output strips URL userinfo, drops query/fragment values, percent-encodes path controls, and templates obvious numeric, UUID, email, opaque mixed, and recognized digit-bearing typed-prefix path IDs; Empty/missing API-mapping roots return `not_analyzed` rather than resolving `Path("")` to the process working directory. Retrofit, route-literal, and URL matches are iterated lazily, endpoint de-duplication uses normalized redacted routes, and reaching the finding cap marks coverage partial. This best-effort redaction does not guarantee removal of arbitrary secrets. These remain unverified leads because static endpoint extraction may be incomplete. BOLA candidate extraction is offline-only and bounds URLs to 8,192 characters, query metadata to 100 fields, and candidate values to 256 characters; malformed authorities and over-limit query sets fail closed. TrafficAuditor caps sensitive-query parsing at 256 fields and emits an explicit incomplete-coverage lead rather than treating an over-limit URL as a clean CWE-598 review. The evaluator requires an explicit researcher-provided account-A marker; generic HTTP 200 is inconclusive. Result records omit raw resource IDs, credentials, and endpoint query/fragment data, template recognized identifier path segments, and retain only a digest rather than the response body; response hashing and canary comparison are capped at 1 MiB of text and explicitly mark truncated/invalid input. An offline dual-session observation comparator now requires the same supplied canary in successful A and B responses, but does not verify account identity, request equivalence, ownership, or server authorization. It remains an evaluator, not a replay system; no network requests are performed. JWT parsing is bounded and claim findings are explicitly unverified; `exp`/`iat` are exposed only for exact int/float values that are finite and within the supported epoch range (booleans, NaN/infinities, and out-of-range numbers are omitted while claim presence remains distinct). Per-transaction request headers are capped at 100 entries; malformed, over-limit, oversized Authorization values, or duplicate case-insensitive Authorization fields mark coverage partial, and raw header values are not copied into coverage. The auditor inspects at most the first bounded authorization value when duplicates exist, so the status remains partial rather than implying all credentials were reviewed. Output omits raw tokens and arbitrary header/claim values, retains only algorithm/lifecycle/claim-name indicators, and sanitizes endpoint URLs. An opt-in offline verifier now supports HS256/HS384/HS512 only with an explicitly supplied local key and constant-time comparison; asymmetric algorithms, key discovery, server acceptance, and key entropy/strength beyond JWA's minimum byte length are not assessed. The verifier is not automatically applied to captured traffic. Logout/reuse is only a same-token, status-sequence observation, not proof a protected resource was authorized. OpenAPI grouping preserves canonical per-origin servers, omits userinfo/default ports, and brackets IPv6 literals for valid server URLs. Static URL review recognizes bracketed IPv6 authorities, case-insensitive schemes, and escaped slash separators in serialized source strings, emitting only unverified literal-use candidates; it does not test network reachability or effective cleartext policy. Captured route paths replace numeric, canonical UUID, and email-shaped segments, long mixed alphanumeric token-shaped segments, shorter (8-23 character) mixed-case alphanumeric segments, and recognized typed prefixes (such as `usr_`, `order_`, or `id-`) followed by a digit-bearing identifier with required string path parameters; percent-encoded ASCII is decoded only for this redaction decision. This bounded privacy-first heuristic may parametrize legitimate route slugs, while unrecognized prefixes, short lowercase IDs, malformed encodings, or other encodings may remain unmodeled; it is not a guarantee that arbitrary secrets are removed. JSON shape inference omits value-like object keys (UUIDs, long tokens/IDs, numeric IDs, and email-shaped keys) and marks that redaction; property values are never exported. Query-key signatures are deduplicated separately and merged as observed parameters, without exporting observed path/query values in the OpenAPI document. Generated documents are validated locally with pinned `openapi-spec-validator` 0.9.0. Malformed authorities/ports, overlong URLs, and unsupported schemes are excluded from OpenAPI endpoint modeling and counted under `invalidURLs`/`unmodeledRequests`; query metadata is parsed centrally and capped at 100 fields with 256-character names; BOLA offline candidate extraction recognizes bounded delimited/camel-case identifier keys and an explicit set of compact names (`userid`, `accountid`, `orderid`, `itemid`, `profileid`, `invoiceid`, `documentid`) without generic substring matches; traffic-catalog adapters do not expand query strings before the cap, and over-limit captures are counted as unmodeled instead of producing partial query signatures. Cataloger HAR retention is separately capped at 10,000 transactions, 2 MiB per transaction, and 16 MiB estimated aggregate; over-budget transactions are omitted while bounded endpoint modeling continues when inputs permit, and the capture estimates/omission counts are exposed. JSON shape inference also rejects bodies over a 1 Mi-character cap before decoding. Bounded HAR export still redacts captured values. HTTPS capture and dual-session replay remain open. |
 | RASP / resilience | `rasp_resilience_auditor.py` | **Bounded Smali string/name inventory only.** The API inventories all discovered canonical `smali` / `smali_classesN` roots under a shared entry/file/byte budget and exposes root-discovery and analysis coverage; ambiguous roots, multiple extraction bases, symlinks, or truncated discovery fail closed. Aggregate and per-vector scores/pass states are withheld (`null`); control-flow assessment is explicitly unknown rather than inferred from obfuscation, and string entropy is not treated as proof of encryption. Candidate strings do not establish reachable/effective defenses. No MASVS conformance or runtime resistance is demonstrated. |
 | Smart UI crawler | `smart_crawler.py`, `ui_crawler.py` | **Safety correction made in this revision.** No hard-coded credentials. Permission/consent prompts always stop at `WAIT`; researcher-supplied test credential entry, form submission, exploratory taps, and repeated-state `BACK` navigation each require explicit opt-in. Runtime UI observation now requires an explicit serial, validated package name, and just-in-time scope guard; the background DAST workflow propagates that guard. Legacy tap/text helpers are inert and issue no ADB commands; the observer only returns planned-action review data. Both crawler hierarchy parsers cap input at 2 Mi characters and reject more than 5,000 nodes; DTD/entity declarations are rejected, and over-limit/malformed input produces no partial action candidates. The separate Android automation snapshot parser caps encoded input at 1 MiB and now also rejects DTD/entity declarations before parsing. These are bounded parser behaviors, not assurances of safe or accurate UI interpretation. |
-| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Dependency scans inventory bounded ELF `ET_DYN` `.so` candidates by path, SHA-256, class and machine; native release versions and vulnerability advisories are not inferred. Native-library tree discovery uses the shared bounded no-symlink inventory, so directory entries are capped before traversal results are sorted/materialized. iOS privacy-manifest candidates and Android Java/Kotlin/Smali source paths also use bounded no-symlink `SourceInventory` traversal; Android source reads retain per-file and aggregate byte caps, and coverage reports entry/file/read limits and skipped symlinks. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy manifests are parsed across the app/framework tree, report parse/shape errors and per-manifest declarations, and avoid coercing malformed tracking values to true. Android Data Safety review is included in the orchestrator, reads the extracted manifest through a bounded no-follow regular-file read, rejects DTD/entity declarations, and parses actual permission XML elements (rather than substring matches). Its manifest/source coverage is retained in scan coverage even when no finding is emitted. Bounded symbol-to-manifest cross-checks cover the main executable and up to 32 direct `Frameworks/*.framework/<FrameworkName>` executables (15 MiB each, 64 MiB aggregate) under a 50,000-entry traversal budget; each framework is compared only with manifests in its own bundle, and findings remain informational, unverified candidates. Framework traversal/parse/manifest limits are surfaced in separate coverage. Objective-C message dispatch, versioned/nonstandard framework binary layouts, and binaries outside the recognized direct framework layout remain outside this pass. These are static indicators only: they do not prove API reachability, manifest completeness, SDK execution/data sharing, or any Play Console declaration or privacy compliance. HAR recognized credential fields are redacted before export. |
+| SBOM / privacy | `sbom_generator.py`, `dependency_scanner.py`, `privacy_manifest_auditor.py` | **Partial.** Bounded Maven/npm inventory and opt-in OSV lookup are implemented in `dependency_scanner.py`; lookup is blocked in offline mode and results remain unverified. Dependency scans inventory bounded ELF `ET_DYN` `.so` candidates by path, SHA-256, class and machine; native release versions and vulnerability advisories are not inferred. Native-library tree discovery uses the shared bounded no-symlink inventory, so directory entries are capped before traversal results are sorted/materialized. iOS privacy-manifest candidates and Android Java/Kotlin/Smali source paths also use bounded no-symlink `SourceInventory` traversal; Android source reads retain per-file and aggregate byte caps, and coverage reports entry/file/read limits and skipped symlinks. Pinned CycloneDX 1.5 JSON/XSD (including its SPDX and JSF dependencies) and SPDX 2.3 JSON schemas validate populated synthetic JSON/XML output offline in regression tests. The normative XSD test exposed and fixed an XML element-order defect when component hashes/licenses were present. iOS privacy manifests are parsed across the app/framework tree, report parse/shape errors and per-manifest declarations, and avoid coercing malformed tracking values to true. Android Data Safety review is included in the orchestrator, reads the extracted manifest through a bounded no-follow regular-file read, rejects DTD/entity declarations, and parses only direct-child permission XML elements under an actual `<manifest>` root (rather than nested examples, unrelated roots, or substring matches). Java/Kotlin SDK-name inventory masks comments and string/character literals before matching, so documentation/examples do not create tracker candidates. Its manifest/source coverage is retained in scan coverage even when no finding is emitted. Bounded symbol-to-manifest cross-checks cover the main executable and up to 32 direct `Frameworks/*.framework/<FrameworkName>` executables (15 MiB each, 64 MiB aggregate) under a 50,000-entry traversal budget; each framework is compared only with manifests in its own bundle, and findings remain informational, unverified candidates. Framework traversal/parse/manifest limits are surfaced in separate coverage. Objective-C message dispatch, versioned/nonstandard framework binary layouts, and binaries outside the recognized direct framework layout remain outside this pass. These are static indicators only: they do not prove API reachability, manifest completeness, SDK execution/data sharing, or any Play Console declaration or privacy compliance. HAR recognized credential fields are redacted before export. |
 | Telemetry / graph / exports | `web/app.py`, `knowledge/neo4j_graph.py`, reporting modules | **Partial.** Session-authenticated `/ws/scans/{scan_id}/telemetry` is implemented with subscription isolation; `/ws/telemetry` remains the authenticated legacy aggregate stream. Graph writes now namespace component, finding, and endpoint uniqueness keys by scan and type while preserving display labels, preventing new writes from merging equal entities across scans under the existing global constraints. Finding CWE access now uses the model's actual `cwe_id` field. Synthetic tests verify distinct keys and display values with a mocked Neo4j session, not live database isolation. Existing graph records are not migrated; rebuild/cleanup is needed before assuming historical separation. HAR exports redact recognized credential fields in request/response headers, URL, query, and bodies; namespaced fields ending in credential suffixes such as `_session_id`, `_refresh_token`, and `_client_secret` are redacted while lookalikes such as `tokenizer` remain visible. Synthetic regressions cover both response-header export and hard negatives; arbitrary secrets in fields not recognized by the heuristic remain a privacy limitation. Captured response headers are retained through the in-memory capture-to-HAR path and included after redaction; synthetic regressions verify both retained benign metadata and omitted Set-Cookie values. This does not preserve every raw capture field or establish production export behavior. Synthetic browser navigation verifies all eleven dashboard sections, explicit PoC retrieval, and axe checks at desktop/mobile viewports; test-plan legend contrast was corrected. This scoped browser check is not a complete WCAG claim. Neo4j vulnerability nodes now carry the original finding ID separately from their scan-scoped storage key, and graph clicks resolve through that identity to the finding evidence panel; a synthetic browser regression covers this cross-ID path. Neo4j and embedded graph vulnerability nodes now retain an allowlisted finding lifecycle status and proof label, surfaced in hover metadata; missing legacy node labels remain unknown until records are rewritten. New API inventory edges use `HAS_API_CANDIDATE` rather than `CALLS_API`; both new and legacy endpoint edges export as `endpoint_candidate`. Legacy endpoint records without a recognized evidence type fail closed to `method=UNKNOWN`, `evidence_type=legacy_endpoint_candidate`, and `proof_status=not_proven`; URL strings are not rendered as verified calls. Historical Neo4j relationship types are read as candidates, not migrated. ReportEngine now writes JSON, Markdown, and PDF report artifacts with path-safe scan IDs and private atomic replacement; escaped PDF text and a deny-all resource fetcher prevent report fields from becoming active HTML or triggering network/file fetches. Bounded oversized PDF generation fails explicitly rather than implying a complete report. The graph still does not demonstrate complete data flow, explicit URI-grant/network/data-flow edges, or validated vulnerable paths. The legacy attack-chain helper now returns no paths rather than treating app-level component/finding co-occurrence as a chain; production-scale telemetry, OpenAPI conformance, and release readiness also remain unestablished. |
 
 Framework-detection missing-input behavior is also fail-explicit: an empty,
@@ -379,6 +381,24 @@ deterministic but does not validate IPA signing or app runtime behavior. Focused
 IPA tests passed (**3 passed**); the full suite passed (**1,086 passed**, 40.27
 s; one expected synthetic duplicate-ZIP-member warning). `compileall` and
 `git diff --check` passed.
+
+Per-manifest output now has separate caps for tracking domains, declared API
+categories, and API reason-code pairs, in addition to package-wide caps. This
+prevents repeated declarations across up to 128 manifests from multiplying the
+retained output beyond the intended inventory bounds. Synthetic regressions
+cover per-manifest truncation and explicit partial status (**8 focused privacy
+tests**); the related privacy/IPA suites passed (**58 passed**); full pytest
+passed (**1,251 passed**, 60.25 s); compileall and `git diff --check` passed.
+
+The offline API query-string indicator now shares normalized credential-key
+recognition with the token-session auditor (including namespaced suffixes),
+caps URL/query parsing, validates malformed authorities, and labels rejected or
+over-limit inputs `incomplete_input` instead of silently treating them as a
+clean review. Findings still omit query values and remain unverified CWE-598
+review leads. The focused workflow boundary suite passed (**20 passed**); full
+pytest passed (**1,253 passed**, 60.60 s); compileall and `git diff --check`
+passed. This does not establish that a query value is a credential or that any
+server uses it.
 
 Legacy dashboard snapshot import is now bounded by tree-entry, per-file, and
 aggregate-byte budgets; it considers only direct scan-child `dashboard.json`
@@ -675,7 +695,7 @@ inventory does not inspect native code, prove runtime control flow, or score
 defense effectiveness.
 
 ```
-Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
+Timeline & Execution Inventory [audited 2026-10-16; NOT COMPLETE]
 ├── Phase 1: Static Engine & Frameworks [PARTIAL; bounded analyzers exist]
 ├── Phase 2: Dynamic Engine & Frida [SAFE PROFILE DISABLES HOOK EXECUTION; authorized runtime validation NOT DONE]
 ├── Phase 3: IPC Fuzzing & API [PROTOTYPES EXIST; confirmed exploitation NOT DONE]
@@ -1175,3 +1195,814 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    Focused catalog/OpenAPI validation passed (**17 passed**); full-suite and
    compile results follow. This is local artifact handling only, not live
    capture, backend-contract completeness, or hosted validator integration.
+
+   API capture retention now snapshots request fields after bounded validation
+   instead of storing caller-owned mutable objects. Regression coverage mutates
+   the original request and its maps after ingestion, then verifies the stored
+   HAR/model remains the bounded original. Focused capture tests passed (**19
+   passed**); full-suite and compile results follow. Raw observed values remain
+   in process memory until object disposal and still require controlled data
+   handling; the snapshot does not establish confidentiality or live capture.
+
+   JSON request/response schema inference now iterates at most its 100-property
+   sample directly instead of first allocating a list of every object member.
+   A 10,000-property synthetic mapping verifies the visit cap and explicit
+   truncation marker. Focused validation follows; this reduces intermediate
+   allocation but does not establish complete schema inference.
+
+   WebSocket setup now holds its pending-capacity reservation through awaited
+   scan validation and transfers that slot to the active subscriber list
+   without yielding, closing a concurrent-handshake over-admission race. A
+   synthetic async interleaving with 31 occupied slots verifies the second
+   handshake is rejected and the first activates at the cap. Focused WebSocket
+   tests passed (**3 passed**); full-suite and compile results follow. This is
+   local concurrency regression evidence, not production load testing.
+
+   CycloneDX JSON/XML and SPDX JSON output now share a 16 MiB cap and private
+   atomic replacement helper. Synthetic tests cover symlink replacement,
+   private file permissions, and fail-before-write behavior for all three
+   formats. Focused normative-schema and writer tests passed (**11 passed**);
+   full-suite and compile results follow. The schema fixtures remain offline
+   validation evidence for synthetic documents, not assurance of SBOM
+   completeness or third-party tool interoperability.
+
+   SBOM in-memory inventories are now explicitly capped at 10,000 components,
+   5,000 vulnerability records, 64 licenses per component, and 100 CWEs per
+   vulnerability. Exceeding a cap raises rather than silently dropping
+   inventory. Focused normative SBOM tests passed (**9 passed**); full-suite
+   and compile results follow. These item budgets do not establish that
+   upstream scanners inventory every dependency.
+
+   The legacy `ProfessionalReportExporter` Markdown path now enforces a 16 MiB
+   output cap and uses private-mode atomic replacement rather than following a
+   pre-existing symlink. Synthetic tests cover both conditions. Focused report
+   writer tests passed (**2 passed**); full-suite and compile results follow.
+   Other legacy file writers remain subject to separate review.
+
+   Pentest checklist state persistence now uses a 1 MiB cap, private atomic
+   replacement on save, and no-follow regular-file reads on load. Parsed rows
+   are validated before any checklist item is mutated, preventing partial
+   state application on malformed later entries. Focused checklist tests
+   passed (**4 passed**); full-suite and compile results follow. This covers
+   local planning-state persistence only; the checklist remains a planning
+   reference and does not authorize or execute tests.
+
+   HAR persistence now caps serialized output at 64 MiB and uses private-mode
+   atomic replacement instead of writing through an existing destination
+   symlink. Synthetic tests cover successful redacted serialization, symlink
+   replacement, file mode, and fail-before-write size rejection. Focused HAR
+   tests passed (**11 passed**); full-suite and compile results follow. This
+   validates local export handling only, not completeness of captured traffic.
+
+   The Orchestrator now validates caller-supplied scan IDs before path
+   construction and refuses a per-scan directory that is a symlink or resolves
+   outside the selected output root. Synthetic tests cover safe creation,
+   traversal-shaped IDs, and a planted directory symlink without touching its
+   target. Focused path tests passed; full-suite and compile results follow.
+   This narrows path escape risk but does not make concurrent directory changes
+   race-free.
+
+   Scan `state.json` and generated review-only PoC guides now use private,
+   atomic, bounded writes. Guide output is limited to 500 entries / 1 MiB each;
+   filenames must be unique and match a path-safe Markdown pattern. Tests cover
+   symlink replacement, mode, oversize rejection, traversal names, and duplicate
+   names. Focused Orchestrator artifact regressions passed (**5 passed**); full
+   suite and compile results follow. This hardens persistence only; generated
+   guides remain unverified review plans and are never executed here.
+
+   CLI JSON/Markdown output paths now use a shared 32 MiB private atomic writer;
+   CLI finding exports apply the existing heuristic redactor before serialization.
+   Unit regressions cover symlink replacement, private mode, oversize failure,
+   byte payloads, and an end-to-end synthetic taint CLI export with a redacted
+   credential. Focused tests passed (**4 passed**); full-suite and compile
+   results follow. Heuristic redaction can miss unrecognized secrets, and this
+   does not establish report completeness.
+
+   Feedback training-data export now redacts each Qdrant payload, caps traversal
+   at 100 pages / 10,000 labeled rows and 16 MiB, and writes through a private
+   temporary file before atomic replacement. Synthetic async tests verify
+   credential redaction, destination-symlink replacement, row/page-cap failure
+   preservation, and temporary-file cleanup. Focused tests passed (**3
+   passed**); full-suite and compile results follow. This does not establish
+   training-data suitability or remove secrets missed by heuristic redaction.
+
+   Flutter and Hermes analyzer outputs now reach the Orchestrator coverage
+   ledger instead of being omitted. The ledger records bounded candidate
+   counts, scan statuses, truncation/errors, and explicit non-exhaustive,
+   runtime-not-tested, not-proven limitations; analyzer exceptions become
+   incomplete coverage. Synthetic integration tests cover candidate
+   propagation and truncated output (**3 focused tests passed**). Full pytest
+   passed (**1,231 passed**, 62.37 s); compileall and `git diff --check` passed.
+   This repairs coverage reporting only: neither probe is a framework
+   decompiler, and the tests do not establish APK recall or runtime behavior.
+
+Native JNI analyzer coverage is now copied into the orchestrator ledger with
+inventory limits/skips, per-library statuses, candidate counts, and explicit
+non-reachability/runtime-proof limitations. Analyzer exceptions become
+incomplete coverage; no native library in a valid extraction is not applicable.
+Synthetic propagation checks pass (**3 focused tests passed**). Full suite and
+compile results follow; this adds reporting only, not Java-to-native call-flow
+analysis.
+
+Validation for the native-JNI coverage-ledger change: full pytest passed
+(**1,231 passed**, 59.84 s); compileall and `git diff --check` passed. Results
+are synthetic regression evidence, not native exploit or APK-wide coverage proof.
+
+A follow-up failure-path regression forces the native-JNI worker to raise and
+verifies the orchestrator records `static_status=incomplete` while preserving
+`proof_status=not_proven`. Focused coverage tests passed (**2 passed**); full
+pytest passed (**1,231 passed**, 61.51 s); compileall and `git diff --check`
+passed. The injected exception is synthetic; no real native scan failure was
+induced.
+
+The Orchestrator engine summary now mirrors the Smali call-graph analyzer's
+reported `static_status` instead of unconditionally labeling any non-throwing
+run `completed_heuristically`. A synthetic partial-coverage integration case
+passed with `tests/test_android_surface_coverage.py` (**34 passed**); full pytest
+passed (**1,231 passed**, 61.16 s); compileall and `git diff --check` passed.
+This makes the summary agree with analyzer coverage, not a claim of complete
+call-graph or taint coverage.
+
+The Orchestrator now synchronizes each successful analyzer's engine summary
+with that analyzer's `static_status` when present (Android surface retains its
+category-level WebView summary). This prevents partial scans from appearing
+fully completed and distinguishes an offline-blocked OSV lookup from the local
+dependency inventory: engine status reflects inventory coverage while
+`lookup_status` remains `skipped_offline`. Synthetic tests cover partial
+Dependency and Network Security Config statuses. Focused tests passed (**34
+passed**); full pytest passed (**1,231 passed**, 60.15 s); compileall and
+`git diff --check` passed. This validates summary consistency on fixtures, not
+real APK coverage.
+
+Expanded the engine-summary regression to cover partial API mapping, native
+inventory, binary-protection, React Native, intent-redirection, PendingIntent,
+FileProvider, dependency, and Network Security Config statuses. The focused
+Orchestrator coverage file passed (**34 passed**); full pytest passed
+(**1,231 passed**, 60.20 s); compileall and `git diff --check` passed. These
+are controlled analyzer fixtures and do not establish real APK recall.
+
+Flutter/Hermes empty-result coverage now distinguishes a valid resource tree
+with no matching framework artifacts (`not_applicable`) from an invalid or
+missing scan root (`incomplete`). The orchestrator passes root validity into
+coverage aggregation, and synthetic regressions cover both outcomes. Focused
+coverage tests passed (**3 passed**); full pytest passed (**1,232 passed**,
+60.73 s); compileall and `git diff --check` passed. This fixes empty-result
+status reporting only; it does not add framework format detection or analysis.
+
+The per-scan API inventory endpoint now reports every returned route as an
+unverified candidate instead of counting only records with a `VULNERABLE`
+label (which could yield zero for a non-empty inventory). Non-list persisted
+values fail closed to an empty inventory. Synthetic route coverage passed
+(**2 focused tests**); full pytest passed (**1,233 passed**, 61.07 s);
+compileall and `git diff --check` passed. `vulnerable_count` remains zero because
+this inventory endpoint does not establish backend authorization proof.
+
+IL2CPP coverage now distinguishes a complete scan with no Unity IL2CPP artifacts
+(`not_applicable`) from an analyzed IL2CPP candidate (`analyzed_heuristically`),
+invalid roots (`incomplete`), and truncation/errors (`partial`). The Orchestrator
+also retains the bounded candidate count and scan errors. Synthetic status
+regressions passed; full pytest passed (**1,234 passed**, 60.05 s); compileall
+and `git diff --check` passed. This remains a version-limited metadata/string
+probe, not C# decompilation or APK-wide coverage.
+
+Static API mapping now records bounded GraphQL `query`/`mutation`/`subscription`
+operation-name candidates with source path and line, separately from URL/route
+candidates. It does not invent an HTTP path or treat an operation name as a
+server endpoint. Comments are excluded; a 1,000-item cap marks coverage partial.
+Synthetic positive, comment-negative, location, and cap regressions passed
+(**2 focused tests**); full pytest passed (**1,236 passed**, 61.42 s); compileall
+and `git diff --check` passed. This lexical inventory does not establish an
+operation's execution, server schema, or authorization behavior.
+
+GraphQL operation inventory now also reads bounded standalone `.graphql` and
+`.gql` files. Their comments and quoted values are blanked before operation
+matching while preserving line locations; unterminated strings mark static
+coverage partial. Synthetic tests cover named operations, comment/description
+negative controls, no fabricated HTTP endpoints, and malformed-input status.
+Focused GraphQL tests passed (**4 passed**); full pytest passed (**1,238
+passed**, 60.69 s); compileall and `git diff --check` passed. This remains a
+bounded lexical candidate pass, not a GraphQL parser or server schema analysis.
+
+The authenticated per-scan API inventory response now exposes the bounded static
+GraphQL operation candidates and their count alongside route candidates, so
+these lexical findings are accessible without mislabeling them as URLs. The
+route inventory regression verifies this response shape (**2 focused tests**);
+full pytest passed (**1,238 passed**, 61.30 s); compileall and
+`git diff --check` passed. The response remains an unverified inventory, not a
+server contract or authorization verdict.
+
+Observed API capture now extracts bounded GraphQL operation type/name candidates
+from JSON `query` bodies and publishes only those names in an OpenAPI vendor
+extension; query/variable values are not copied into this metadata. Duplicate
+JSON members, malformed strings, and query/operation caps produce explicit
+coverage-gap counters. A shared lexical helper keeps standalone static GraphQL
+scanning and observed-operation extraction consistent. Synthetic export tests
+cover comment/description decoys, secret-value omission, duplicate-key rejection,
+and OpenAPI validation. Focused dynamic tests passed (**2 passed**) and focused
+static GraphQL tests passed (**4 passed**); full pytest passed (**1,240 passed**,
+61.84 s); compileall and `git diff --check` passed. These are operation-name
+observations only, not a GraphQL schema, server contract, or authorization result.
+
+Direct `MobileApiCataloger.export_openapi_json()` output now carries a root
+`x-mobileag-proof-state: not_proven` marker and explanatory text that captured
+routes are not a complete backend contract or authorization proof; this boundary
+no longer depends on using only the HTTP export route. Focused catalog tests
+passed (**3 passed**); full pytest passed (**1,240 passed**, 61.24 s); compileall
+and `git diff --check` passed. This is evidence labeling, not server validation.
+
+Observed GraphQL operation extraction now also handles GET requests whose URL
+query has a single `query` parameter. Repeated query parameters are treated as
+ambiguous and mark a coverage gap; decoded query documents and variable values
+are not copied into OpenAPI metadata. Synthetic tests verify operation-name
+export, raw-query omission, and duplicate-query rejection (**2 focused tests**);
+full pytest passed (**1,242 passed**, 62.06 s); compileall and
+`git diff --check` passed. This is capture-derived operation-name evidence only.
+
+GraphQL dynamic capture regressions now verify over-size documents set a
+coverage-gap counter and global candidate-cap overflow increments the omitted
+candidate count while keeping exports bounded. Focused GraphQL tests passed
+(**6 passed**); full pytest passed (**1,244 passed**, 60.55 s); compileall and
+`git diff --check` passed. These tests validate bounded candidate handling, not
+exhaustive GraphQL parsing or server-side behavior.
+
+The shared GraphQL lexical inventory now accepts operation declarations only
+at document brace-depth zero, avoiding false operation candidates from fields
+named `query`, `mutation`, or `subscription` inside a selection set. Focused
+static/dynamic GraphQL tests passed (**11 passed**); full pytest passed
+(**1,245 passed**, 61.00 s); compileall and `git diff --check` passed. The
+scanner remains lexical and does not validate the complete GraphQL grammar.
+
+Opt-in OSV batch processing now counts unexpected task-level exceptions as
+failed advisory lookups before deriving `lookup_status`; `gather()` continues
+to isolate peer requests, but those failures can no longer leave coverage
+incorrectly marked `completed`. A synthetic task-failure regression and the OSV
+suite passed (**8 passed**); full pytest passed (**1,246 passed**, 62.26 s);
+compileall and `git diff --check` passed. This validates reporting for the
+injected failure path, not OSV availability, advisory freshness, or package
+inventory completeness.
+
+Best-effort URL export redaction now removes userinfo even when the URL has a
+username but no password (a case not caught by the prior credential-pattern
+fallback), while retaining a valid userinfo-free IPv6 authority. Synthetic
+privacy-export tests passed (**28 passed**); full pytest passed (**1,247
+passed**, 61.72 s); compileall and `git diff --check` passed. This is a targeted
+redaction improvement, not a guarantee against arbitrary secrets embedded in
+unknown URL components or non-URL text.
+
+Static API route normalization now recognizes percent-encoded sensitive path
+markers (for example, `%74oken`) before redacting the following path value.
+This closes an encoding variant that previously bypassed the path-marker
+comparison. The focused API-mapper/depth regressions passed (**77 passed**);
+full pytest passed (**1,247 passed**, 61.61 s); compileall and
+`git diff --check` passed. Route normalization remains heuristic and does not
+guarantee detection of every secret-bearing path convention.
+
+The bounded route sanitizer is now shared by the static API mapper and Flutter,
+Hermes, and IL2CPP embedded-URL candidate inventories. In addition to removing
+queries/userinfo and redacting opaque values, it preserves chained sensitive
+markers (such as `/auth/token/`) until the following value is redacted; this
+prevents a marker itself from being replaced while accidentally exposing the
+credential segment after it. Synthetic framework/API regressions passed (**137
+passed**); full pytest passed (**1,247 passed**, 60.92 s); compileall and
+`git diff --check` passed. These remain printable-string/route candidates, not
+framework decompilation, endpoint reachability, or proof of credential use.
+
+The same shared route sanitizer now covers iOS Mach-O embedded URL candidates,
+so route/query/userinfo minimization applies consistently across the analyzed
+Flutter, Hermes, IL2CPP, Mach-O, and static-source candidates. A synthetic Mach-O
+fixture verifies that a chained `/auth/token/<value>` path retains only the
+route markers and redacts the following value. Focused Mach-O tests passed (**15
+passed**); full pytest passed (**1,247 passed**, 60.12 s); compileall and
+`git diff --check` passed. This remains a bounded binary string candidate, not
+proof of an iOS network request or Swift control flow.
+
+Retained Hermes printable-string samples and Mach-O `__cstring` samples now
+pass through shared candidate-text minimization: embedded URLs lose query,
+fragment, userinfo, and recognized sensitive/opaque path values, and known
+credential patterns are redacted before storage in the result object. Synthetic
+Hermes/Mach-O fixtures verify that values in both token paths and URL queries do
+not survive in retained samples. The roadmap module suite passed (**46
+passed**); full pytest passed (**1,247 passed**, 60.31 s); compileall and
+`git diff --check` passed. This minimizes known candidates but cannot guarantee
+redaction of arbitrary application secrets in binary strings.
+
+Token-session finding context URLs now use the same shared route sanitizer as
+static and framework endpoint candidates. This aligns handling of encoded and
+chained credential path markers and removes URL userinfo before endpoint
+context is retained. Focused token/JWT tests passed (**17 passed**); full pytest
+passed (**1,247 passed**, 60.52 s); compileall and `git diff --check` passed.
+This is evidence minimization only; token parsing and server-side session
+acceptance remain separate, bounded review tasks.
+
+iOS `PrivacyInfo.xcprivacy` inventory now enforces a 16 MiB aggregate read
+budget in addition to the per-file/tree caps, and bounds retained tracking
+domains, API categories, and distinct error codes. Over-limit or malformed list
+entries are recorded as partial coverage instead of being silently exposed as
+complete declarations. Synthetic tests cover aggregate-byte truncation, output
+caps, invalid oversized values, and normal manifest parsing. The full privacy /
+road-map module file passed (**48 passed**); full pytest passed (**1,249
+passed**, 60.56 s); compileall and `git diff --check` passed. This is bounded
+declaration inventory, not Apple compliance or runtime API-use proof.
+
+The iOS manifest parser now also retains bounded
+`NSPrivacyAccessedAPITypeReasons` codes per declared API category and exposes
+them in the IPA report, while flagging malformed/oversized entries as partial.
+It records the supplied values only; it does not validate them against Apple's
+current allowed-reason catalog or infer compliance. Focused privacy-manifest
+tests passed (**7 passed**) and the IPA propagation test passed (**1 passed**);
+full pytest passed (**1,250 passed**, 60.54 s); compileall and
+`git diff --check` passed.
+
+Static API URL inventory now caps processing at 1,000 endpoint records and reports
+received, analyzed, omitted, invalid-record, and incomplete-URL counts. Empty
+input is explicitly `not_analyzed`; malformed or over-limit input is `partial`,
+not a clean result. Synthetic boundary tests passed (**21 passed** in
+`test_workflow_draft_boundaries.py`). This is bounded URL-structure triage only;
+it does not test API authorization, authentication, or rate limiting.
+
+SARIF export now performs an iterative, cycle-aware preflight over findings and
+caller-supplied artifact/coverage metadata before deep-copying, redacting, or
+schema-validating it. Input character/byte estimate, node count, and nesting
+depth are capped; cyclic or over-budget inputs fail with non-echoing errors.
+Focused SARIF exporter tests passed (**5 passed**). This protects the export
+boundary against oversized/cyclic caller data but does not validate upstream
+capture completeness or all legacy report writers.
+
+SARIF preflight regressions now also exercise explicit node/depth exhaustion
+and shared acyclic object references (accepted rather than misclassified as a
+cycle). Focused SARIF tests passed (**7 passed**); full pytest passed (**1,258
+passed**, 60.40 s); compileall and `git diff --check` passed. The repeated-object
+case is an in-memory synthetic regression, not an external SARIF interoperability
+claim.
+
+The isolated worker's final `result.json` transfer is now capped at 16 MiB,
+written through private atomic replacement, and replaced rather than followed if
+the destination is a symlink. The host reads only a no-follow regular file with
+a bounded descriptor-based read and rejects oversized, malformed, or non-object
+results. Synthetic tests cover output overflow (preserving the prior file),
+symlink replacement/rejection, and private mode. Focused worker/session tests
+passed (**24 passed**); full pytest passed (**1,261 passed**, 61.33 s);
+compileall and `git diff --check` passed. This hardens the worker result boundary,
+not the completeness or correctness of the worker's analysis.
+
+Professional Markdown report generation now shares a cycle-aware input preflight
+with SARIF export, caps finding count at 5,000 and pre-render caller data at an
+8 MiB estimated input budget (100,000 nodes / depth 64), before redaction or
+normalization. Oversized, cyclic, and excessive finding inventories fail
+explicitly. Focused report-export tests passed (**10 passed**, including SARIF
+regressions); full pytest passed (**1,264 passed**, 61.26 s); compileall and
+`git diff --check` passed. Output-size enforcement remains in place; other legacy
+export writers still need separate review.
+
+`ReportEngine` now preflights the full scan-state structure before copying or
+rendering report data (16 MiB estimated input, 200,000 nodes, depth 64, and at
+most 5,000 findings). JSON and Markdown artifact writes also enforce a 32 MiB
+cap before atomic replacement; oversized output preserves any existing file.
+Focused report-boundary and rendering tests passed (**39 passed**); full pytest
+passed (**1,266 passed**, 61.23 s); compileall and `git diff --check` passed.
+This is bounded local report generation, not an assurance of report completeness
+or compatibility with every external renderer.
+
+`ReportEngine` input/output bounds are implemented; review found CLI import and
+inventory commands still created caller-selected JSON files with ordinary
+umask-based permissions. Those new-file-only CLI paths remain a separate export
+hardening item. Do not interpret the report-engine limits as covering all report
+or inventory writers.
+
+CLI SARIF/MobSF import projections and AAB inventories now create output files
+exclusively with mode `0600` and enforce the shared artifact size cap. Existing
+files and symlink targets are preserved/rejected rather than overwritten; tests
+verify private permissions, collision handling, and synthetic link protection.
+Focused export/import tests passed (**29 passed**); full pytest passed (**1,267
+passed**, 62.15 s); compileall and `git diff --check` passed. AAB output is
+inventory-only and remains non-analysis evidence.
+
+Dashboard scan persistence now preflights JSON structure (32 MiB estimated input,
+250,000 nodes, depth 64), enforces a 64 MiB serialized document cap before the
+SQLite write, and leaves an existing scan untouched on rejection. Legacy
+`dashboard.json` snapshots use the same preflight and a bounded atomic write;
+failed size checks preserve the prior snapshot. Synthetic tests cover cycles,
+oversized documents, non-mutation, and atomic preservation. Focused repository
+regressions passed (**27 passed**); full pytest passed (**1,270 passed**, 61.73
+s); compileall and `git diff --check` passed. SQLite remains local single-user
+metadata, not a tenant-isolated or externally authorized service.
+
+SQLite settings and scope-policy writes now reject non-object, cyclic, deeply
+nested, over-complex, or oversized configuration data before transaction work.
+Serialized caps are 4 KiB for settings and 256 KiB for policy; rejected updates
+preserve prior values. Focused repository tests passed (**28 passed**); full
+pytest passed (**1,271 passed**, 62.12 s); compileall and `git diff --check`
+passed. The web API still relies on its own schema and authorization checks;
+repository caps are defense in depth, not a scope grant.
+
+Triage and manual test-plan repository mutations now also enforce these
+persistence boundaries: triage rejects malformed identifiers/verdicts and
+oversized notes, then verifies the updated scan still fits before issuing the
+SQL update; overflow rolls back both scan and decision history. Test-plan
+objects are preflighted for cycles/depth/complexity before redaction and JSON
+serialization. Synthetic persistence and guided-assessment tests passed (**68
+passed**); full pytest passed (**1,273 passed**, 61.59 s); compileall and
+`git diff --check` passed. This does not change analyst-attestation semantics or
+authorize test-plan execution.
+
+Focused telemetry regressions passed (`test_security_regressions.py`: **56
+passed**); full pytest passed (**1,274 passed**, 62.01 s); compileall and
+`git diff --check` passed. This verifies mocked message bounding and routing,
+not production network throughput or runtime event-loss behavior.
+
+Focused DAST request/safety regressions passed (`test_security_regressions.py`:
+**64 passed**); full pytest passed (**1,282 passed**, 62.31 s); compileall and
+`git diff --check` passed. No device command, install, provider query, or
+network request was performed for this batch.
+
+The remaining device-operation request models now also bound serials,
+package names, APK paths, component names, deep-link URIs, and ADB connect
+host/port text before route handlers run. Synthetic validation regressions
+cover all affected models. Focused security/API tests passed (**106 passed**);
+full pytest passed (**1,291 passed**, 63.40 s); compileall and
+`git diff --check` passed. This validates request-shape rejection only; it
+does not grant device access, validate the ADB destination, or exercise a
+device/target.
+
+The manual API replay and offline API-fuzz request models now bound URL,
+method, headers, bodies, status, and replay timeout values. A synthetic
+oversized replay request returns 422 before the scoped network-request helper
+is called; focused API/security regressions passed (**147 passed**), full
+pytest passed (**1,302 passed**, 61.76 s), and compileall plus
+`git diff --check` passed. This is bounded request validation, not live API
+authorization, a replay test, or proof of server-side access control.
+
+Caller-supplied captured-traffic request and response header maps now bound
+each field name (1-256 characters) and value (up to 8 KiB), in addition to
+the existing per-map entry cap. Synthetic API regressions reject oversized
+names/values before traffic analysis; focused traffic/API tests passed (**66
+passed**), full pytest passed (**1,294 passed**, 62.51 s), and compileall plus
+`git diff --check` passed. This is input-size validation only; traffic remains
+synthetic and no target requests are generated.
+
+The synthetic traffic-audit endpoint now preflights the aggregate caller-owned
+structure (2 MiB conservative string-size estimate, 100,000 nodes, depth 8)
+before Pydantic field construction and analysis, complementing per-field and
+collection limits. An oversized aggregate accepted by the 1 MiB web request
+gate is rejected with 422 and never reaches `TrafficAuditor`; focused API/
+security tests passed (**148 passed**), full pytest passed (**1,303 passed**,
+62.77 s), and compileall plus `git diff --check` passed. This protects local
+offline processing only; it does not add captured data or make live requests.
+
+Direct deep-link execution now rejects invalid serial/package/URI/activity
+inputs, caps a batch at 30 links and 256 KiB total URI text, and prevalidates
+all mutations before any device access. A scope guard that returns an
+awaitable fails closed rather than being treated as approval. Synthetic
+negative controls verified that malformed later links, over-limit batches,
+oversized URIs, and async guards issue no ADB or logcat calls. Focused
+deep-link/runtime/API tests passed (**213 passed**); full pytest passed
+(**1,306 passed**, 63.96 s); compileall and `git diff --check` passed. No
+device was selected or contacted; runtime vulnerability proof remains open.
+
+Provider shell diagnostics now fail closed unless given a synchronous per-query
+scope guard; async guards are rejected rather than treated as approval, and
+serials are syntax/length bounded. The approved-fixture auditor also requires
+the guard and rechecks it after each query. Synthetic controls confirm missing
+or async authorization does not invoke ADB, while existing fixture tests retain
+positive/read-only coverage. Focused provider suites passed (**132 passed**);
+full pytest passed (**1,308 passed**, 61.91 s); compileall and
+`git diff --check` passed. No device or provider was queried; the observations
+remain shell-diagnostic candidates, not ordinary-app access proof.
+
+Direct IntentFuzzer component launches, deep-link ADB launches, and `adb root`
+restart now require synchronous scope guards; missing guards cannot authorize
+them and awaitable guards fail closed. Synthetic negative controls confirmed
+no baseline/logcat, ADB launch, or root command occurs for absent/asynchronous
+approval; existing root-revocation route regression confirms HTTP denial still
+propagates and prevents follow-up root verification. Focused intent/root/
+DeepLinkIntentFuzzer tests passed (**159 passed**); full pytest passed
+(**1,310 passed**, 62.55 s); compileall and `git diff --check` passed. No
+physical/emulated device was contacted; root-shell observations are not
+ordinary-app authorization proof.
+
+Storage and memory ADB auditors now require synchronous scope guards at their
+command boundaries; async guards fail closed. The read-only UI observer also
+rejects async guards and returns a blocked crawl result without issuing
+commands. Synthetic controls cover missing/asynchronous storage and memory
+authorization and UI observation. Focused storage/memory/UI tests passed
+(**152 passed**); full pytest passed (**1,311 passed**, 62.23 s); compileall
+and `git diff --check` passed. These are fail-closed mock regressions only;
+no storage, process memory, or UI hierarchy was read from a device.
+
+Direct APK installation and activity-launch helpers now also require a
+synchronous scope guard at their ADB command boundary, with rechecks before
+and after dispatch. Web routes and guided assessment execution pass guards
+bound to current session and policy state; missing/asynchronous guards fail
+closed. Focused helper/workflow regressions passed (**85 passed**); full pytest
+passed (**1,312 passed**, 63.74 s), compileall and `git diff --check` passed.
+No device was contacted. This establishes mocked authorization-boundary
+behavior, not target-device execution or vulnerability proof.
+
+Direct ADB connect, arbitrary shell, and screenshot helpers now require
+synchronous scoped guards and recheck authorization around dispatch; connect
+also validates host/port syntax and range. Web routes pass their live session/
+policy guards. Missing guards and an invalid port are covered by synthetic
+no-command tests. Focused route/helper tests passed (**59 passed**); full pytest
+passed (**1,313 passed**, 64.63 s), compileall and `git diff --check` passed.
+No device or network endpoint was contacted; shell behavior and screenshot
+contents were not dynamically assessed.
+
+Direct process-PID and logcat helpers now require synchronous per-command
+guards, rechecked around shell dispatch; the web log endpoint and intent/deep-
+link fuzzers pass their current scope guard. Synthetic controls confirm absent
+guards cannot issue PID/logcat commands, while the existing scope-revocation
+route test still withholds captured output. Focused DAST/helper tests passed
+(**164 passed**); full pytest passed (**1,314 passed**, 64.04 s), compileall
+and `git diff --check` passed. No device log or process metadata was read.
+
+The researcher-guided Android driver now requires the same synchronous scope
+guard on metadata, foreground checks, hierarchy snapshots, launch, tap/swipe,
+and back commands. The automation engine supplies guards bound to the current
+session, run scope, and execute/cancel state at the driver boundary; temporary
+hierarchy cleanup is skipped after revocation rather than issuing another
+command. Synthetic adapters now exercise these call boundaries. Focused
+automation/session/driver tests passed (**102 passed**), with an additional
+guard-specific smoke test passing (**24 passed** with the automation suite).
+The full pytest suite passed (**1,315 passed**, 64.87 s), compileall and
+`git diff --check` passed. No device was accessed; these synthetic assertions
+do not establish UI behavior or ordinary-app exploitability on Android. The
+standalone browser regression also completed successfully in Chromium 155 with
+the synthetic ADB/UI adapter; it reported zero executed XSS markers and zero
+requests outside loopback. Its accessibility checks remain explicitly
+`not_run` and its provider inference is mocked, not live.
+
+The low-level `clear_logcat` helper is now retired consistently with its
+disabled web route: direct calls raise before any ADB command, preserving
+original device log evidence. A synthetic no-command regression covers the
+helper; no device log buffer was cleared.
+
+An additional driver regression revokes scope between the foreground check
+and hierarchy dump and confirms the second shell command is not issued. The
+focused revocation/guard checks passed (**2 passed**); full pytest passed
+(**1,316 passed**, 63.26 s). Compilation and `git diff --check` also passed;
+this remains synthetic authorization-boundary evidence, not device behavior.
+
+Corrected the `bola_fuzzer.py` module header, which inaccurately claimed to
+replay account-A requests using account-B credentials. The implemented module
+only extracts offline identifier candidates and compares researcher-supplied
+observations; it sends no requests and cannot verify ownership or authorization.
+A regression checks the canary result remains an unverified candidate without
+retaining the response body or request headers. Focused BOLA tests passed (**9
+passed**); full pytest passed (**1,316 passed**, 63.71 s), compileall and
+`git diff --check` passed. Neither this documentation correction nor the
+offline test establishes live BOLA behavior.
+
+Report artifact review also confirmed that the ReportEngine's atomic writer
+replaces a report-file symlink without modifying its target and leaves the
+replacement private (`0600`); a regression now locks that behavior in. The
+focused ReportEngine/SARIF/professional-report artifact checks passed (**6
+passed**); full pytest passed (**1,317 passed**, 63.35 s), compileall and
+`git diff --check` passed. Parent-directory race resistance and every
+non-report export path remain separate review items. The test used only a
+temporary synthetic fixture.
+
+The cross-exporter symlink regressions for ReportEngine, professional Markdown,
+SARIF, CycloneDX/SPDX, OpenAPI/HAR, and feedback-training output were rerun
+together (**9 passed**). They verify file-entry replacement/private modes on
+synthetic paths only; no parent-directory race or production filesystem claim
+is made.
+
+The Java/Kotlin symbol-index coverage previously labeled any nonempty index as
+`completed`, even when its bounded source inventory had skipped files or
+reached a limit. Coverage now propagates the resolver's actual heuristic,
+partial, or not-analyzed status plus bounded inventory diagnostics. Synthetic
+tests verify that a skipped symlink yields `partial` and a normal index reports
+`analyzed_heuristically`, never `completed`. Focused taint coverage tests
+passed (**3 passed**); full pytest passed (**1,319 passed**, 63.72 s),
+compileall and `git diff --check` passed. This corrects coverage reporting
+only; it does not establish cross-file taint accuracy.
+
+The shared artifact writer now publishes through a pinned parent-directory
+file descriptor: it walks the requested directory components with no-follow
+opens, creates private temporary files relative to that descriptor, then uses a
+directory-relative atomic replacement. ReportEngine, professional Markdown,
+SARIF, SBOM, OpenAPI/HAR, CLI reports, orchestrator scan state/PoC guides,
+checklist state, bounded streaming feedback export, dashboard snapshots, and
+isolated-worker results now share that implementation. Synthetic regressions verify parent-symlink rejection and that
+renaming/replacing a parent after it has been opened does not redirect the
+publication into the replacement; destination-symlink replacement, private
+modes, caps, and failed streaming-export preservation remain covered. Focused
+export/state tests passed (**67 passed**); full pytest passed (**1,321 passed**,
+53.94 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This does not prove confinement to a trusted root or
+detect an actual-directory substitution that races before that component is
+opened; standalone writers outside the shared helper and cross-platform support
+for descriptor-relative operations remain review items.
+
+
+The follow-up extended the same writer to bounded isolated-worker result JSON
+and redacted dashboard snapshots. This removes two remaining path-based
+temporary-file publishers while preserving worker streaming/caps and dashboard
+redaction/size validation. Focused worker, repository, and presentation tests
+passed (**71 passed**); the full suite passed (**1,321 passed**, 53.78 s; one
+expected duplicate-ZIP-member warning), and compilation plus `git diff --check`
+passed. Parent-root confinement and non-shared state writers remain explicitly
+unproven.
+
+The review-only exclusive artifact creation path now also opens the parent
+component-by-component without following symlinks, then uses an exclusive
+file-descriptor-relative create. Its target is not overwritten; synthetic
+regression covers a symlinked parent and existing-file refusal. Focused
+artifact-writer tests passed (**14 passed**); the full suite passed (**1,322 passed**,
+54.45 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This does not add confinement to an operator-selected
+root.
+
+The bounded static cryptography metadata inventory now runs in the scan pipeline
+and appears in JSON/Markdown/PDF source report data with its coverage entry. It
+accepts only a fixed set of conventional Java/Kotlin crypto factory API names
+and exact adjacent Smali constant-register calls, with allowlisted
+algorithm/mode strings; arbitrary literals, snippets, keys, IVs,
+and plaintext are not retained. Unresolved calls are counted without exporting
+their literal values and force partial coverage. The cryptography/native review-surface ledger
+now includes this analyzer while leaving missing stages, runtime behavior, and
+proof state explicit. Synthetic positive, dynamic-value, comment, symlink-root,
+and skipped-source cases passed with the orchestrator/ledger regressions
+(**114 focused tests passed**); full pytest passed (**1,326 passed**, 53.86 s;
+one expected duplicate-ZIP-member warning). `compileall` and `git diff --check`
+passed. This is not runtime crypto instrumentation, key-size inference, a
+cryptographic-quality verdict, or proof of API reachability.
+
+A crypto factory call that is observed but cannot be assigned an allowlisted
+literal algorithm/mode (including dynamic or unsupported literals) now makes
+that analyzer's static status `partial` instead of a clean heuristic pass. The
+coverage retains only the bounded count, not the unrecognized value. A positive
+static-only control and dynamic/unrecognized negatives passed with the crypto
+pipeline regressions (**115 focused tests passed**); full pytest passed
+(**1,327 passed**, 54.51 s; one expected duplicate-ZIP-member warning).
+`compileall` and `git diff --check` passed.
+
+The crypto metadata inventory now also handles an exact Smali `const-string`
+register passed directly to a supported `getInstance(String)` invocation. It
+clears that bounded value on any intervening instruction, method boundary, or
+label; values from unsupported overloads, unknown algorithms, or non-adjacent
+flows are counted without copying their literal contents and make coverage
+partial. Synthetic direct-call, stale-register negative, comment, and allowlist
+cases passed (**116 focused tests**); full pytest passed (**1,328 passed**,
+54.05 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This remains a bounded local heuristic, not general
+Smali dataflow or API reachability.
+
+
+The report pipeline previously omitted the structured IL2CPP metadata candidate
+summary already retained by the orchestrator. JSON reports now include the
+bounded `il2cpp_analysis` object; Markdown renders capped class/field/method
+name candidates as a redacted JSON code block, and PDF reports include escaped
+status/version/count metadata with explicit non-reconstruction and proof
+boundaries. A synthetic report regression checks all three representations;
+focused report/IL2CPP integration tests passed (**141 passed**) and full pytest
+passed (**1,329 passed**, 54.50 s; one expected duplicate-ZIP-member warning).
+`compileall` and `git diff --check` passed. This does not reconstruct signatures,
+resolve metadata formats beyond parser support, or establish callability.
+
+
+The crypto metadata inventory now exposes when its per-record source-location
+sample cap is reached and marks static status partial instead of silently
+returning incomplete provenance. A synthetic over-cap case verifies the call
+count is retained, only the configured location sample is emitted, and the
+truncation state is visible. The focused crypto/scan integration suite passed
+(**41 passed**); full-suite validation follows.
+The location-sample truncation batch passed the full suite (**1,330 passed**,
+54.03 s; one expected duplicate-ZIP-member warning); `compileall` and
+`git diff --check` passed. No target/device runtime evidence was produced.
+
+The bounded Swift metadata work now covers direct `__swift5_proto` records
+that resolve to direct protocol and nominal-type descriptors. It publishes
+static type/protocol name-pair candidates through the iOS report; tagged or
+indirect references and unresolved descriptors are not followed and set
+partial status. Witness-table interpretation, generic/conditional conformance
+semantics, and full Swift reconstruction remain out of scope for this parser
+increment. Direct-record and tagged-reference synthetic cases passed with the
+Mach-O/iOS pipeline suite (**59 passed**); full pytest passed (**1,331 passed**,
+54.68 s; one expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`. No real IPA or device runtime evidence was produced.
+
+Added an iOS pipeline regression that asserts the Swift conformance status and
+candidate pairs survive into the serialized `swift_metadata` report object,
+rather than only being present on the parser result. The focused pipeline test
+passed (**1 passed**); full pytest passed again (**1,331 passed**, 54.69 s; one
+expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`.
+
+The numeric flag evaluator now also caps expression bytes, token count,
+parenthesis depth, AST recursion, and allowed operator/node types. Inputs beyond
+those bounds produce an unresolved-flags lead rather than escaping analysis or
+being mislabeled as flags-free. A deep-unary-expression regression verifies the
+fail-closed path; focused tests passed (**7 passed**); the containing analysis
+and security suites passed (**159 passed**); full pytest passed (**1,339
+passed**, 52.69 s; one expected duplicate-ZIP-member warning), as did
+`compileall` and `git diff --check`.
+
+The bounded Swift field inventory now also emits field-type mangled-name
+candidates when the relative target is in-file, NUL-terminated, printable
+ASCII, and has a recognized mangling prefix. It does not demangle names or
+interpret binary symbolic references; those forms and malformed targets set
+partial status. The candidate is exposed in the iOS report, and tests cover a
+type name outside the `__swift5_fieldmd` section, a symbolic-reference-shaped
+negative, and an out-of-bounds target. The focused Mach-O/iOS suite passed
+(**59 passed**); full pytest passed (**1,331 passed**, 54.91 s; one expected
+duplicate-ZIP-member warning), as did `compileall` and `git diff --check`.
+
+Field-record flags are now surfaced separately with each validated field-name
+candidate (`is_var`, `is_indirect_case`, `is_artificial`) and propagated into
+the iOS report. This is descriptive metadata only, not source-level declaration
+reconstruction. Synthetic coverage exercises the flag decoding and malformed
+record rejection. The focused Mach-O/iOS suite passed (**59 passed**); full
+pytest passed (**1,331 passed**, 54.04 s; one expected duplicate-ZIP-member
+warning), as did `compileall` and `git diff --check`.
+
+Intent-redirection lexical candidates now expire when the same variable is
+reassigned before a launch sink, including bounded source/sink ordering on one
+line. This reduces stale-register-style false positives but does not resolve
+method scope, aliasing, compound assignment, validation, or runtime reachability.
+The focused intent-redirection tests passed (**4 passed**); full validation
+also passed: **1,332 passed** (55.43 s; one expected duplicate-ZIP-member
+warning), with `compileall` and `git diff --check` successful.
+
+The bounded extraction recognizer now also covers an explicit Java `Intent`
+cast and Kotlin typed/generic `getParcelableExtra<Intent>` forms while retaining
+the same unresolved method-scope and reachability boundaries. Positive tests
+for both syntax forms passed with the intent-redirection regressions (**5
+passed**); full pytest passed (**1,333 passed**, 54.85 s; one expected
+duplicate-ZIP-member warning), as did `compileall` and `git diff --check`.
+
+Intent-redirection candidates are now evaluated only within recognized bounded
+lexical method spans, using the shared comment/string-masking and balanced-body
+helper; this prevents same-named source/sink variables in separate methods
+from being joined. The spans remain heuristic and do not establish overloads,
+control flow, aliases, reachability, or validation. Focused tests passed (**6
+intent-redirection checks**; the containing analysis/security suites passed
+**154 tests**); full pytest passed (**1,334 passed**, 52.52 s; one expected
+duplicate-ZIP-member warning), as did `compileall` and `git diff --check`.
+
+The same lexical Intent review now uses comment/string-masked code tokens for
+assignment and sink matching and verifies that apparent Parcelable extraction
+syntax also exists in code, not only in a comment or quoted example. A focused
+negative fixture covers both kinds of lookalike. The containing analysis and
+security suites passed (**155 passed**); full pytest passed (**1,335 passed**,
+53.29 s; one expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`.
+
+The lexical Intent pass now preserves candidates through exact local identifier
+copies and invalidates a destination for unsupported assignments, while
+retaining method-local scoping and event order. This is not heap/field alias
+analysis. A positive direct-copy case and a hard negative after a trusted-value
+overwrite pass the focused regressions (**8 passed**). The containing analysis
+and security suites passed (**156 passed**); full pytest passed (**1,336
+passed**, 52.61 s; one expected duplicate-ZIP-member warning), as did
+`compileall` and `git diff --check`.
+
+PendingIntent mutability review now resolves bounded Java `final int` and Kotlin
+`const val` chains made only of literals, operators, and flag constants.
+Unknown or dynamic flags produce an explicit unresolved review lead rather
+than being described as definitely missing mutability. Static aliases that
+resolve to `FLAG_IMMUTABLE` are not reported as mutable/missing. The focused
+PendingIntent tests passed (**5 passed**); the containing analysis and security
+suites passed (**157 passed**); full pytest passed (**1,337 passed**, 52.33 s;
+one expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`.
+
+PendingIntent flag review additionally recognizes the documented numeric
+`FLAG_IMMUTABLE`/`FLAG_MUTABLE` bit values in restricted literal/constant
+integer and bitwise expressions; Python AST evaluation is limited to a fixed
+operator/node allowlist and never executes input. Synthetic cases cover direct
+hex/decimal values, an aliased numeric OR expression, and both bits together.
+Focused tests passed (**6 passed**); the containing analysis/security suites
+passed (**158 passed**); full pytest passed (**1,338 passed**, 52.46 s; one
+expected duplicate-ZIP-member warning), as did `compileall` and
+`git diff --check`.
+
+Android Data Safety permission extraction now accepts only direct-child permission
+nodes under an actual `<manifest>` root. Nested examples and unrelated XML roots
+no longer produce permission indicators; malformed roots are recorded as invalid
+coverage. This narrows static review candidates only and does not assess Play
+Console disclosures or prove SDK execution/data sharing. Focused Data Safety tests
+passed (**8 passed**); full pytest passed (**1,340 passed**, 62.97 s; expected
+duplicate-ZIP-member warning). `compileall` and `git diff --check` passed. The
+initial shell interpreter lacked the declared `packageurl-python` dependency;
+the full suite was rerun successfully in a temporary venv with that pinned
+package added, without modifying project dependencies.
+
+
+Android Data Safety SDK-name matching now masks Java/Kotlin comments and
+string/character literals before searching for known package markers. A negative
+fixture covers comment and string lookalikes; actual source markers still remain
+static fingerprint candidates, not proof of SDK execution or data sharing. Focused
+Data Safety tests passed (**9 passed**); full pytest passed (**1,341 passed**,
+62.20 s; expected duplicate-ZIP-member warning). `compileall` and
+`git diff --check` passed. The full suite used the temporary test venv noted above
+for the missing pinned `packageurl-python` dependency.
+
+
+Offline BOLA candidate extraction now recognizes common compact query ID keys
+(`userid`, `accountid`, and related resource forms) alongside existing delimited
+and camel-case forms, while retaining the hard-negative substring filter. This is
+input inventory only: it sends no requests and proves neither object ownership
+nor authorization behavior. Focused BOLA extraction tests passed (**5 passed**); full pytest passed (**1,342
+passed**, 62.17 s; expected duplicate-ZIP-member warning). `compileall` and
+`git diff --check` passed using the temporary test venv noted above.

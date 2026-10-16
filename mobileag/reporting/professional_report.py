@@ -26,11 +26,17 @@ from typing import Any, Optional, Sequence
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import write_private_artifact
 from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
+from mobileag.reporting.artifact_writer import preflight_bounded_structure
 
 logger = logging.getLogger(__name__)
+
+_MAX_PROFESSIONAL_REPORT_BYTES = 16 * 1024 * 1024
+_MAX_PROFESSIONAL_FINDINGS = 5_000
+_MAX_PROFESSIONAL_INPUT_BYTES = 8 * 1024 * 1024
 
 
 class ProfessionalReportExporter:
@@ -74,6 +80,15 @@ class ProfessionalReportExporter:
 
         Returns the Markdown text.
         """
+        if len(findings) > _MAX_PROFESSIONAL_FINDINGS:
+            raise ValueError("Professional report finding inventory exceeds limits")
+        preflight_bounded_structure(
+            (findings, scan_metadata, attack_surface,
+             (self.app_name, self.package_name, self.version, self.tester_name,
+              self.engagement_type)),
+            max_bytes=_MAX_PROFESSIONAL_INPUT_BYTES,
+            max_nodes=100_000, max_depth=64, label="Professional report input",
+        )
         scan_metadata = redact(scan_metadata or {})
         attack_surface = redact(attack_surface or {})
 
@@ -125,8 +140,10 @@ class ProfessionalReportExporter:
 
         if output_path:
             p = Path(output_path)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(report, encoding="utf-8")
+            payload = report.encode("utf-8")
+            if len(payload) > _MAX_PROFESSIONAL_REPORT_BYTES:
+                raise ValueError("Professional report exceeds the output size limit")
+            write_private_artifact(p, payload, _MAX_PROFESSIONAL_REPORT_BYTES)
             logger.info("Professional report written to %s", p)
 
         return report

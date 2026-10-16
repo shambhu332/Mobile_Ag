@@ -108,11 +108,69 @@ def test_pending_intent_review_uses_parsed_target_sdk_without_claiming_exploitab
     assert len(current_target) == len(legacy_target) == len(unknown_target) == 1
     assert current_target[0].severity == Severity.INFO
     assert current_target[0].cwe_id == "CWE-Unknown"
-    assert current_target[0].metadata == {"target_sdk": 35, "review_kind": "compatibility_lead"}
+    assert current_target[0].metadata == {
+        "target_sdk": 35, "review_kind": "compatibility_lead",
+        "flags_resolution": "literal_or_constant",
+    }
     assert "not evidence that a mutable token was created or exploitable" in current_target[0].description
     assert legacy_target[0].cwe_id == "CWE-927"
     assert legacy_target[0].metadata["target_sdk"] == 30
     assert unknown_target[0].metadata["target_sdk"] is None
+
+
+def test_pending_intent_auditor_resolves_bounded_flag_aliases_and_withholds_unknowns(tmp_path):
+    java = tmp_path / "Flags.java"
+    java.write_text('''class Flags {
+        private static final int BASE = PendingIntent.FLAG_IMMUTABLE;
+        private static final int IMMUTABLE = BASE | 0;
+        void create() {
+            PendingIntent.getActivity(ctx, 0, intent, IMMUTABLE);
+            int dynamic = chooseFlags();
+            PendingIntent.getBroadcast(ctx, 0, intent, dynamic);
+        }
+    }''')
+    findings = PendingIntentAuditor().audit_file(java, target_sdk=35)
+    assert len(findings) == 1
+    assert findings[0].id.startswith("PENDING_INTENT_FLAGS_UNRESOLVED_")
+    assert findings[0].metadata["review_kind"] == "flags_unresolved"
+    assert findings[0].cwe_id == "CWE-Unknown"
+
+    kotlin = tmp_path / "Flags.kt"
+    kotlin.write_text('''class Flags {
+        companion object {
+            const val IMMUTABLE: Int = PendingIntent.FLAG_IMMUTABLE
+        }
+        fun create() {
+            PendingIntent.getBroadcast(ctx, 0, intent, IMMUTABLE)
+        }
+    }''')
+    assert PendingIntentAuditor().audit_file(kotlin) == []
+
+
+def test_pending_intent_auditor_decodes_numeric_mutability_bits(tmp_path):
+    path = tmp_path / "NumericFlags.java"
+    path.write_text('''class NumericFlags {
+        private static final int IMMUTABLE = 0x04000000 | 0x08000000;
+        void create() {
+            PendingIntent.getActivity(ctx, 0, intent, IMMUTABLE);
+            PendingIntent.getBroadcast(ctx, 0, intent, 33554432);
+            PendingIntent.getService(ctx, 0, intent, 0x06000000);
+        }
+    }''')
+    findings = PendingIntentAuditor().audit_file(path)
+    assert len(findings) == 2
+    assert findings[0].id.startswith("PENDING_INTENT_EXPLICIT_MUTABLE_")
+    assert findings[1].id.startswith("PENDING_INTENT_CONFLICTING_FLAGS_")
+
+
+def test_pending_intent_auditor_bounds_numeric_expression_parsing(tmp_path):
+    path = tmp_path / "DeepFlags.java"
+    deep = "~" * 80 + "0"
+    path.write_text(f"PendingIntent.getActivity(ctx, 0, intent, {deep});")
+    findings = PendingIntentAuditor().audit_file(path)
+    assert len(findings) == 1
+    assert findings[0].id.startswith("PENDING_INTENT_FLAGS_UNRESOLVED_")
+    assert findings[0].metadata["flags_resolution"] == "not_resolved"
 
 
 def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
@@ -161,7 +219,8 @@ def test_intent_redirection_auditor():
         assert "INTENT_REDIRECTION" in findings[0].id
         assert findings[0].cwe_id == "CWE-926"
         assert findings[0].severity == "INFO"
-        assert findings[0].metadata["method_scope"] == "not_resolved"
+        assert findings[0].metadata["method_scope"] == "bounded_lexical"
+        assert findings[0].metadata["method_name"] == "onCreate"
         assert "does not resolve" in findings[0].description
         assert auditor.coverage["static_status"] == "analyzed_heuristically"
 
@@ -176,6 +235,94 @@ def test_intent_redirection_does_not_match_launch_before_later_extraction(tmp_pa
     auditor = IntentRedirectionAuditor()
     assert auditor.audit_file(source) == []
     assert auditor.audit_file(tmp_path / "missing.java") == []
+
+
+def test_intent_redirection_does_not_join_sources_and_sinks_across_methods(tmp_path):
+    source = tmp_path / "SeparateMethods.java"
+    source.write_text('''class Proxy {
+        void extract() {
+            Intent target = getIntent().getParcelableExtra("nested");
+        }
+        void launch() {
+            startActivity(target);
+        }
+    }''')
+
+    assert IntentRedirectionAuditor().audit_file(source) == []
+
+
+def test_intent_redirection_ignores_comment_and_string_lookalikes(tmp_path):
+    source = tmp_path / "LexicalLookalikes.java"
+    source.write_text('''class Proxy {
+        void open() {
+            // Intent next = getIntent().getParcelableExtra("nested");
+            String example = "Intent next = getIntent().getParcelableExtra(\\"x\\"); startActivity(next);";
+            // startActivity(next);
+        }
+    }''')
+
+    assert IntentRedirectionAuditor().audit_file(source) == []
+
+
+def test_intent_redirection_tracks_only_direct_local_alias_copies(tmp_path):
+    source = tmp_path / "LocalAlias.java"
+    source.write_text('''class Proxy {
+        void directAlias() {
+            Intent target = getIntent().getParcelableExtra("nested");
+            Intent forwarded = target;
+            startActivity(forwarded);
+        }
+        void aliasAfterTrustedOverwrite() {
+            Intent target = getIntent().getParcelableExtra("nested");
+            target = new Intent();
+            Intent forwarded = target;
+            startActivity(forwarded);
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+    assert findings[0].metadata["alias_analysis"] == "direct_local_copy_only"
+
+
+def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):
+    source = tmp_path / "Reassignment.java"
+    source.write_text('''class Proxy {
+        void trustedReplacement() {
+            Intent next = getIntent().getParcelableExtra("nested");
+            next = new Intent();
+            startActivity(next);
+        }
+        void laterUntrustedValue() {
+            Intent next = new Intent();
+            next = getIntent().getParcelableExtra("nested");
+            startActivity(next);
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 1
+    assert findings[0].line_number == 10
+    assert findings[0].metadata["reassignment_analysis"] == "linewise_bounded"
+
+
+def test_intent_redirection_recognizes_bounded_typed_parcelable_forms(tmp_path):
+    source = tmp_path / "TypedParcelable.java"
+    source.write_text('''class Proxy {
+        void javaCast() {
+            Intent target = (Intent) getIntent().getParcelableExtra("nested");
+            startActivity(target);
+        }
+        fun kotlinGeneric() {
+            val other: Intent = intent.getParcelableExtra<Intent>("nested")
+            startActivity(other)
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 2
+    assert [finding.metadata["source_line"] for finding in findings] == [3, 7]
 
 
 def test_intent_redirection_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
@@ -202,6 +349,7 @@ def test_flutter_engine_analyzer():
 
         # Simulate libapp.so with embedded strings
         dummy_content = (b"\x00" * 100 + b"https://api.example.com/v1/auth" + b"\x00" * 50
+                         + b"https://api.example.com/v1/auth/token/synthetic-private-token" + b"\x00"
                          + b"/dashboard" + b"\x00" + b'apiKey: "synthetic-secret-value-123"')
         with open(os.path.join(lib_dir, "libapp.so"), "wb") as f:
             f.write(dummy_content)
@@ -212,6 +360,8 @@ def test_flutter_engine_analyzer():
         assert res.is_flutter_app is True
         assert res.libapp_present is True
         assert "https://api.example.com/v1/auth" in res.api_endpoints
+        assert "https://api.example.com/v1/auth/token/{id}" in res.api_endpoints
+        assert "synthetic-private-token" not in repr(res.api_endpoints)
         assert "/dashboard" in res.named_routes
         assert res.potential_secrets == [{"name": "embedded credential", "value_redacted": True}]
         assert "synthetic-secret-value-123" not in repr(res.potential_secrets)
@@ -661,6 +811,14 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     ).status == "BLOCKED_SCOPE"
     assert len(called) == 3
 
+    async def async_allow():
+        return True
+
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=async_allow
+    ).status == "BLOCKED_SCOPE"
+    assert len(called) == 3
+
 
 def test_mobile_api_cataloger():
     from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
@@ -684,8 +842,135 @@ def test_mobile_api_cataloger():
 
     spec = cataloger.export_openapi_json()
     assert spec["openapi"] == "3.0.0"
+    assert spec["x-mobileag-proof-state"] == "not_proven"
+    assert "not a complete backend contract" in spec["info"]["description"]
     assert "/v1/users" in spec["paths"]
     assert "get" in spec["paths"]["/v1/users"]
     assert "/v1/auth/login" in spec["paths"]
     assert "post" in spec["paths"]["/v1/auth/login"]
+
+
+def test_mobile_api_cataloger_exports_graphql_operation_names_only():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        method="POST", url="https://api.example.test/graphql",
+        headers={"Content-Type": "application/json"},
+        body=json.dumps({
+            "query": ('# query HiddenByComment { viewer { id } }\n'
+                      '"""query HiddenByDescription { notOperation }"""\n'
+                      'query LoadProfile($id: ID!) { profile(id: $id) { id } }\n'
+                      'mutation UpdateProfile { updateProfile { id } }'),
+            "variables": {"access_token": "synthetic-secret-value"},
+        }),
+        response_status=200,
+    ))
+
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/graphql"]["post"]
+    candidates = operation["x-mobileag-graphql-operation-candidates"]
+    assert [(item["operation_type"], item["operation_name"]) for item in candidates] == [
+        ("query", "LoadProfile"), ("mutation", "UpdateProfile"),
+    ]
+    assert "synthetic-secret-value" not in json.dumps(spec)
+    assert "HiddenByComment" not in json.dumps(spec)
+    assert "HiddenByDescription" not in json.dumps(spec)
+    limits = spec["x-mobileag-capture-limits"]
+    assert limits["graphqlOperationCandidates"] == 2
+
+
+def test_mobile_api_cataloger_rejects_ambiguous_graphql_query_json():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        method="POST", url="https://api.example.test/graphql",
+        body='{"query":"query First { viewer { id } }","query":"query Second { viewer { id } }"}',
+        response_status=200,
+    ))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["post"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+
+
+def test_mobile_api_cataloger_extracts_graphql_get_query_without_retaining_values():
+    import json
+    from urllib.parse import urlencode
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    query = 'query LoadProfile($id: ID!) { profile(id: $id) { id } }'
+    url = "https://api.example.test/graphql?" + urlencode({"query": query})
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", url))
+
+    spec = catalog.export_openapi_json()
+    operation = spec["paths"]["/graphql"]["get"]
+    assert operation["x-mobileag-graphql-operation-candidates"] == [{
+        "operation_type": "query", "operation_name": "LoadProfile",
+        "evidence_type": "observed_graphql_operation_candidate",
+    }]
+    serialized = json.dumps(spec)
+    assert query not in serialized
+    assert "$id" not in serialized
+
+
+def test_mobile_api_cataloger_marks_repeated_graphql_get_query_ambiguous():
+    from urllib.parse import urlencode
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    query = urlencode([("query", "query First { viewer { id } }"),
+                       ("query", "query Second { viewer { id } }")])
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest("GET", "https://api.example.test/graphql?" + query))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["get"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+
+
+def test_mobile_api_cataloger_marks_oversized_graphql_document_as_coverage_gap():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "POST", "https://api.example.test/graphql",
+        body='{"query":"' + (" " * (64 * 1024 + 1)) + '"}',
+    ))
+    spec = catalog.export_openapi_json()
+    assert "x-mobileag-graphql-operation-candidates" not in spec["paths"]["/graphql"]["post"]
+    assert spec["x-mobileag-capture-limits"]["graphqlOperationCoverageGaps"] == 1
+
+
+def test_graphql_operation_candidates_ignore_operation_keyword_fields():
+    from mobileag.analysis.graphql_candidates import extract_graphql_operation_candidates
+
+    candidates, malformed, truncated = extract_graphql_operation_candidates(
+        "query Load { query { value } mutation { value } subscription { value } }"
+    )
+    assert candidates == [{"operation_type": "query", "operation_name": "Load"}]
+    assert malformed is False
+    assert truncated is False
+
+
+def test_mobile_api_cataloger_caps_graphql_candidates_and_counts_omissions(monkeypatch):
+    import json
+    from mobileag.dast import api_cataloger
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    monkeypatch.setattr(api_cataloger, "_MAX_GRAPHQL_OPERATION_CANDIDATES", 1)
+    catalog = MobileApiCataloger()
+    for path, name in (("first", "First"), ("second", "Second")):
+        catalog.ingest_request(CapturedRequest(
+            "POST", f"https://api.example.test/{path}",
+            body=json.dumps({"query": f"query {name} {{ viewer {{ id }} }}"}),
+        ))
+    spec = catalog.export_openapi_json()
+    assert sum(
+        len(operation.get("x-mobileag-graphql-operation-candidates", []))
+        for path in spec["paths"].values() for operation in path.values()
+    ) == 1
+    limits = spec["x-mobileag-capture-limits"]
+    assert limits["graphqlOperationCandidates"] == 1
+    assert limits["graphqlOperationCandidatesOmitted"] == 1
 

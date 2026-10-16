@@ -25,7 +25,7 @@ from mobileag.reporting.validation import ConfirmationEvidence, EvidenceError
 from mobileag.assessments.test_plan import TestPlanInput as TestPlanRequest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Literal
+from typing import Annotated, Any, Optional, Literal
 
 from contextlib import asynccontextmanager
 
@@ -60,7 +60,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import httpx
 
 from config.settings import get_settings
@@ -90,6 +90,7 @@ from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.reporting.evidence_contract import prepare_scan, prepare_observation
 from mobileag.reporting.sarif_exporter import SARIFExporter
+from mobileag.reporting.artifact_writer import preflight_bounded_structure
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,9 @@ RUNTIME_SETTINGS: dict[str, Any] = {}
 # =============================================================================
 # WebSocket Real-Time Telemetry Manager
 # =============================================================================
+MAX_TELEMETRY_EVENT_BYTES = 256 * 1024
+
+
 class ConnectionManager:
     """Manages real-time WebSocket subscriber connections for telemetry streaming."""
 
@@ -188,16 +192,41 @@ class ConnectionManager:
             logger.info("WebSocket subscriber disconnected (%d remaining)", len(self.active_connections))
 
     async def broadcast(self, message: dict[str, Any]) -> None:
+        if not self.active_connections:
+            return
+        try:
+            if not isinstance(message, dict):
+                raise ValueError("Telemetry event must be an object")
+            preflight_bounded_structure(
+                message, max_bytes=128 * 1024, max_nodes=20_000,
+                max_depth=32, label="Telemetry event",
+            )
+            safe_message = redact(message)
+            encoded = json.dumps(safe_message, ensure_ascii=True, allow_nan=False,
+                                 separators=(",", ":")).encode("utf-8")
+            if len(encoded) > MAX_TELEMETRY_EVENT_BYTES:
+                raise ValueError("Telemetry event exceeds output size limit")
+            safe_message = json.loads(encoded)
+        except (TypeError, ValueError, RecursionError):
+            scan_id = message.get("scan_id") if isinstance(message, dict) else None
+            if not isinstance(scan_id, str) or len(scan_id) > 128 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scan_id):
+                scan_id = None
+            safe_message = {
+                "type": "telemetry_omitted",
+                "reason": "invalid_or_over_budget_event",
+                "message": "Telemetry event omitted by the bounded local stream.",
+                **({"scan_id": scan_id} if scan_id else {}),
+            }
         for connection in list(self.active_connections):
             try:
                 subscribed_scan = self.subscriptions.get(connection)
-                if subscribed_scan is not None and message.get("scan_id") != subscribed_scan:
+                if subscribed_scan is not None and safe_message.get("scan_id") != subscribed_scan:
                     continue
                 if time.monotonic() >= app.state.session_deadline or not authorized(self.sessions.get(connection),app.state.auth_token):
                     await connection.close(code=1008)
                     self.disconnect(connection)
                     continue
-                await asyncio.wait_for(connection.send_json(redact(message)), timeout=2)
+                await asyncio.wait_for(connection.send_json(safe_message), timeout=2)
             except Exception:
                 self.disconnect(connection)
 
@@ -222,26 +251,34 @@ async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) ->
         await websocket.close(code=1013)
         return
     manager.pending += 1
+    reservation_held = True
     try:
-        await websocket.accept()
-        auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
-        if time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict) or not authorized(auth.get("token"), app.state.auth_token):
-            await websocket.close(code=1008)
-            return
-    except Exception:
-        await websocket.close(code=1008)
-        return
-    finally:
-        manager.pending -= 1
-    if scan_id is not None:
         try:
-            await get_scan_details(scan_id)
-        except HTTPException:
+            await websocket.accept()
+            auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            if (time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict)
+                    or not authorized(auth.get("token"), app.state.auth_token)):
+                await websocket.close(code=1008)
+                return
+        except Exception:
             await websocket.close(code=1008)
             return
-    manager.active_connections.append(websocket)
-    manager.sessions[websocket] = auth["token"]
-    manager.subscriptions[websocket] = scan_id
+        if scan_id is not None:
+            try:
+                await get_scan_details(scan_id)
+            except HTTPException:
+                await websocket.close(code=1008)
+                return
+        manager.active_connections.append(websocket)
+        manager.sessions[websocket] = auth["token"]
+        manager.subscriptions[websocket] = scan_id
+        # Transfer the slot from pending to active without an await between
+        # operations, so concurrent handshakes cannot exceed the cap.
+        manager.pending -= 1
+        reservation_held = False
+    finally:
+        if reservation_held:
+            manager.pending -= 1
     try:
         await websocket.send_json({
             "type": "connection_established",
@@ -571,14 +608,23 @@ async def get_scan_sarif(scan_id: str) -> dict[str, Any]:
 async def get_scan_apis(scan_id: str) -> dict[str, Any]:
     """Retrieve all discovered REST & GraphQL API endpoints for the specified scan."""
     scan = await get_scan_details(scan_id)
-    apis = scan.get("api_endpoints", [])
+    raw_apis = scan.get("api_endpoints", [])
+    apis = raw_apis if isinstance(raw_apis, list) else []
+    coverage = scan.get("coverage", {})
+    api_mapping_coverage = coverage.get("api_mapping", {}) if isinstance(coverage, dict) else {}
+    raw_graphql_operations = (api_mapping_coverage.get("graphql_operation_candidates", [])
+                              if isinstance(api_mapping_coverage, dict) else [])
+    graphql_operations = ([item for item in raw_graphql_operations if isinstance(item, dict)][:1000]
+                          if isinstance(raw_graphql_operations, list) else [])
 
     return {
         "scan_id": scan_id,
         "endpoints": apis,
         "total": len(apis),
         "vulnerable_count": 0,
-        "candidate_count": len([e for e in apis if e.get("status") == "VULNERABLE"]),
+        "candidate_count": len(apis),
+        "graphql_operations": graphql_operations,
+        "graphql_operation_candidate_count": len(graphql_operations),
         "assessment": "Discovered routes are unverified; no server authorization proof",
     }
 
@@ -1099,75 +1145,89 @@ async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
 # =============================================================================
 # DAST (Dynamic Application Security Testing) Endpoints
 # =============================================================================
+BoundedDeviceSerial = Annotated[str, Field(min_length=1, max_length=128)]
+BoundedPackageName = Annotated[str, Field(min_length=3, max_length=256)]
+BoundedActivityName = Annotated[str, Field(min_length=1, max_length=512)]
+BoundedDeepLink = Annotated[str, Field(min_length=1, max_length=8192)]
+BoundedProviderAuthority = Annotated[str, Field(min_length=1, max_length=256)]
+BoundedExtraName = Annotated[str, Field(min_length=1, max_length=256)]
+BoundedExtraValue = Annotated[str, Field(max_length=256)]
+BoundedExtraValues = Annotated[list[BoundedExtraValue], Field(max_length=20)]
+BoundedHttpHeaders = Annotated[
+    dict[Annotated[str, Field(min_length=1, max_length=256)], Annotated[str, Field(max_length=8192)]],
+    Field(max_length=100),
+]
+
+
 class DeviceConnectRequest(BaseModel):
-    host_port: str = "127.0.0.1:5555"
+    host_port: str = Field(default="127.0.0.1:5555", min_length=1, max_length=255)
 
 
 class DeviceActionRequest(BaseModel):
-    serial: str
+    serial: BoundedDeviceSerial
 
 
 class InstallApkRequest(BaseModel):
-    serial: str
-    apk_path: str
+    serial: BoundedDeviceSerial
+    apk_path: str = Field(min_length=1, max_length=4096)
     grant_permissions: bool = False
 
 
 class LaunchActivityRequest(BaseModel):
-    serial: str
-    component: str
+    serial: BoundedDeviceSerial
+    component: BoundedActivityName
 
 
 class DispatchDeeplinkRequest(BaseModel):
-    serial: str
-    package_name: str
-    uri: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    uri: BoundedDeepLink
 
 
 class StorageAuditRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
 
 
 class ProviderAuditRequest(BaseModel):
-    serial: str
-    package_name: str
-    authorities: list[str] = Field(max_length=30)
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    authorities: list[BoundedProviderAuthority] = Field(max_length=30)
 
 
 class DastFuzzRequest(BaseModel):
-    serial: str
-    package_name: str
-    apk_path: Optional[str] = None
-    activities: Optional[list[str]] = Field(default=None,max_length=30)
-    deeplinks: Optional[list[str]] = Field(default=None,max_length=30)
-    authorities: Optional[list[str]] = Field(default=None,max_length=30)
-    targeted_extras: Optional[dict[str, list[str]]] = None
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    apk_path: Optional[Annotated[str, Field(max_length=4096)]] = None
+    activities: Optional[list[BoundedActivityName]] = Field(default=None,max_length=30)
+    deeplinks: Optional[list[BoundedDeepLink]] = Field(default=None,max_length=30)
+    authorities: Optional[list[BoundedProviderAuthority]] = Field(default=None,max_length=30)
+    targeted_extras: Optional[dict[BoundedExtraName, BoundedExtraValues]] = Field(default=None, max_length=30)
     audit_storage: bool = True
     audit_memory: bool = False
     crawl_ui: bool = False
 
 
 class DeepLinkAuditRequest(BaseModel):
-    serial: str
-    package_name: str
-    deep_links: list[str] = Field(max_length=30)
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    deep_links: list[BoundedDeepLink] = Field(max_length=30)
 
 
 class MemoryAuditRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
 
 
 class UICrawlRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
     max_steps: int = Field(default=5, ge=1, le=20)
 
 
 class FridaDeployRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
     script_type: Literal["unpinning", "crypto", "root_bypass", "all", "unified"] = "unpinning"  # "unpinning", "crypto", "root_bypass", "unified"
 
 
@@ -1180,9 +1240,11 @@ class CapturedTransaction(BaseModel):
     model_config = {'extra': 'forbid'}
     url: str = Field(max_length=8192)
     method: Literal['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'] = 'GET'
-    request_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    request_headers: dict[Annotated[str, Field(min_length=1, max_length=256)],
+                          Annotated[str, Field(max_length=8192)]] = Field(default_factory=dict, max_length=100)
     response_status: int = Field(default=200, ge=100, le=599)
-    response_headers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    response_headers: dict[Annotated[str, Field(min_length=1, max_length=256)],
+                           Annotated[str, Field(max_length=8192)]] = Field(default_factory=dict, max_length=100)
     request_body: Optional[str] = Field(default=None, max_length=262144)
     response_body: Optional[str] = Field(default=None, max_length=262144)
 
@@ -1196,6 +1258,15 @@ class TrafficAuditRequest(BaseModel):
     transactions: list[CapturedTransaction] = Field(default_factory=list, max_length=100)
     declared_endpoints: list[str | DeclaredApiEndpoint] = Field(default_factory=list, max_length=1000)
 
+    @model_validator(mode="before")
+    @classmethod
+    def bound_aggregate_input(cls, value):
+        preflight_bounded_structure(
+            value, max_bytes=2 * 1024 * 1024, max_nodes=100_000,
+            max_depth=8, label="Traffic audit request",
+        )
+        return value
+
 
 
 class ExecuteAdbRequest(BaseModel):
@@ -1204,21 +1275,21 @@ class ExecuteAdbRequest(BaseModel):
 
 
 class ApiTestRequest(BaseModel):
-    url: str
-    method: str = "GET"
-    headers: Optional[dict[str, str]] = None
-    body: Optional[str] = None
-    timeout: float = 4.0
+    url: str = Field(min_length=1, max_length=8192)
+    method: str = Field(default="GET", min_length=1, max_length=16)
+    headers: Optional[BoundedHttpHeaders] = None
+    body: Optional[str] = Field(default=None, max_length=262144)
+    timeout: float = Field(default=4.0, ge=0.1, le=30.0)
 
 
 class ApiFuzzRequest(BaseModel):
-    url: str
-    method: str = "GET"
-    headers: Optional[dict[str, str]] = None
-    body: Optional[str] = None
-    response_status: int = 200
-    response_headers: Optional[dict[str, str]] = None
-    response_body: Optional[str] = None
+    url: str = Field(min_length=1, max_length=8192)
+    method: str = Field(default="GET", min_length=1, max_length=16)
+    headers: Optional[BoundedHttpHeaders] = None
+    body: Optional[str] = Field(default=None, max_length=262144)
+    response_status: int = Field(default=200, ge=100, le=599)
+    response_headers: Optional[BoundedHttpHeaders] = None
+    response_body: Optional[str] = Field(default=None, max_length=262144)
 
 
 
@@ -1318,7 +1389,7 @@ async def connect_dast_device(req: DeviceConnectRequest, request: Request) -> di
             raise HTTPException(403, "ADB connection scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.connect_device(req.host_port)
+    res = await adb_manager.connect_device(req.host_port, guard=guard)
     guard()
     return res
 
@@ -1359,7 +1430,7 @@ async def install_dast_apk(req: InstallApkRequest, request: Request) -> dict[str
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     guard()
-    res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions)
+    res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions, guard=guard)
     guard()
     return res
 
@@ -1375,7 +1446,7 @@ async def launch_dast_activity(req: LaunchActivityRequest, request: Request) -> 
             raise HTTPException(403, "Activity launch scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.launch_activity(req.serial, req.component)
+    res = await adb_manager.launch_activity(req.serial, req.component, guard=guard)
     guard()
     return res
 
@@ -1415,7 +1486,7 @@ async def execute_adb_command(req: ExecuteAdbRequest, request: Request) -> dict[
             raise HTTPException(403, "Device-wide shell scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.execute_shell(req.serial, req.command)
+    res = await adb_manager.execute_shell(req.serial, req.command, guard=guard)
     guard()
     return res
 
@@ -1437,11 +1508,11 @@ async def get_dast_logcat(serial: str, request: Request, package_name: Optional[
     # PID filtering happens at logcat collection time, so stale Process markers
     # cannot cause the shared buffer to expose a different process reusing a PID.
     guard()
-    pids = await adb_manager.get_process_pids(serial, package_name)
+    pids = await adb_manager.get_process_pids(serial, package_name, guard=guard)
     raw_lines = []
     for pid in pids:
         guard()
-        raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid))
+        raw_lines.extend(await adb_manager.get_logcat_dump(serial=serial, lines=lines, pid=pid, guard=guard))
         guard()
     guard()
     findings = logcat_auditor.audit_lines(raw_lines, package_name=package_name, process_pids=pids)
@@ -1471,7 +1542,7 @@ async def capture_dast_screenshot(req: DeviceActionRequest, request: Request) ->
             raise HTTPException(403, "Screenshot scope is unavailable or revoked")
 
     guard()
-    png_bytes = await adb_manager.capture_screenshot(req.serial)
+    png_bytes = await adb_manager.capture_screenshot(req.serial, guard=guard)
     guard()
     if png_bytes:
         import base64
@@ -1813,7 +1884,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False)
+        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False, guard=guard)
 
     # Activity intent fuzzing (with targeted extras if provided)
     acts = req.activities or []

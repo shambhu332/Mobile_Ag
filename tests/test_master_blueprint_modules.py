@@ -64,6 +64,55 @@ def test_openapi_export_size_cap_fails_before_destination_write(tmp_path, monkey
     assert not output.exists()
 
 
+def test_api_catalog_retains_bounded_owned_request_snapshot():
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    request = CapturedRequest(
+        "POST", "https://api.example.test/v1/profile", headers={"X-Test": "before"},
+        query_params={"page": "1"}, body='{"name":"before"}',
+        response_body='{"status":"before"}', response_headers={"X-Response": "before"},
+    )
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(request)
+
+    request.method = "DELETE"
+    request.url = "https://attacker.invalid/changed"
+    request.headers["X-Test"] = "after"
+    request.query_params["page"] = "changed"
+    request.body = "after"
+    request.response_body = "after"
+    request.response_headers["X-Response"] = "after"
+
+    captured = catalog.captured_requests[0]
+    assert captured.method == "POST"
+    assert captured.url == "https://api.example.test/v1/profile"
+    assert captured.headers == {"X-Test": "before"}
+    assert captured.query_params == {"page": "1"}
+    assert captured.body == '{"name":"before"}'
+    assert captured.response_body == '{"status":"before"}'
+    assert captured.response_headers == {"X-Response": "before"}
+    assert catalog.export_har_json()["log"]["entries"][0]["request"]["method"] == "POST"
+
+
+def test_api_json_schema_samples_large_objects_without_materializing_all_items():
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    class BoundedIterationDict(dict):
+        visited = 0
+
+        def items(self):
+            for item in super().items():
+                self.visited += 1
+                yield item
+
+    value = BoundedIterationDict((f"key-{index}", "sample") for index in range(10_000))
+    schema = MobileApiCataloger._json_schema(value)
+
+    assert len(schema["properties"]) == 100
+    assert schema["x-mobileag-truncated-properties"] is True
+    assert value.visited == 100
+
+
 def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     result = FileProviderAuditor().audit_xml_content(
         '<paths><files-path name="reports" path="reports/../" />'
@@ -356,12 +405,45 @@ def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
     assert len(guard_calls) == len(traversal) + len(sql)
 
 
+def test_provider_fuzzer_fails_closed_for_async_scope_guard(monkeypatch):
+    import subprocess
+    from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+
+    def forbidden_process(*args, **kwargs):
+        raise AssertionError("async scope approval must not launch ADB")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden_process)
+
+    async def async_allow():
+        return True
+
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device",
+        guard=async_allow, synthetic_data_confirmed=True,
+    )
+    sql = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device",
+        guard=async_allow, synthetic_data_confirmed=True,
+    )
+    assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
+    assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
+
+
 def test_bola_fuzzer_candidate_extraction_and_discrepancy():
     fuzzer = BolaFuzzer()
     url = "https://api.example.com/v1/users/usr_98472/orders?account_id=acc_1122"
     candidates = fuzzer.extract_resource_candidates(url)
     assert "usr_98472" in candidates
     assert "acc_1122" in candidates
+    result=fuzzer.evaluate_response_discrepancy(
+        endpoint=url,method="GET",resource_id="usr_98472",status_code=200,
+        response_body='{"owner":"mobileag-test-owner-marker"}',
+        user_a_marker="mobileag-test-owner-marker",
+    )
+    assert result.candidate_observed is True
+    assert result.is_vulnerable is False and result.proof_status=='not_proven'
+    assert result.response_body_preview=='' and result.request_headers=={}
 
 
 def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls():
@@ -406,6 +488,15 @@ def test_bola_candidate_query_keys_use_identifier_tokens_not_substrings():
     )
 
     assert candidates == ["item_123", "order_456"]
+
+
+def test_bola_candidate_query_keys_support_compact_identifier_names():
+    candidates = BolaFuzzer().extract_resource_candidates(
+        "https://api.example.test/v1/resources?userid=user_123&accountid=acct_456"
+        "&grid=blue&orderidentifier=order_789"
+    )
+
+    assert candidates == ["user_123", "acct_456"]
 
 
 def test_bola_result_redacts_short_credentials_in_sensitive_path_segments():
@@ -1284,6 +1375,35 @@ def test_har_exporter(tmp_path):
     assert loaded["log"]["version"] == "1.2"
 
 
+def test_har_save_replaces_symlink_atomically_with_private_file(tmp_path):
+    import json
+    import os
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "traffic.har"
+    output.symlink_to(victim)
+
+    MobileApiCataloger().save_har(output)
+
+    assert not output.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert json.loads(output.read_text())["log"]["version"] == "1.2"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_har_save_enforces_output_cap_before_destination_write(tmp_path, monkeypatch):
+    import pytest
+    import mobileag.dast.api_cataloger as api_cataloger
+
+    output = tmp_path / "oversized.har"
+    monkeypatch.setattr(api_cataloger, "_MAX_HAR_OUTPUT_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        api_cataloger.MobileApiCataloger().save_har(output)
+    assert not output.exists()
+
+
 def test_har_exporter_redacts_auth_fields_in_url_and_bodies():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
@@ -1396,7 +1516,11 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     assert "supersecretpassword" not in json.dumps(decoded)
     assert auditor._safe_context_url(
         "https://api.example.test/reset/abCDef01234567890123456789012345?x=secret#frag") == (
-            "https://api.example.test/reset/[REDACTED]")
+            "https://api.example.test/reset/{id}")
+    encoded_context = auditor._safe_context_url(
+        "https://synthetic-user@api.example.test/auth/%74oken/short-secret?access_token=hidden")
+    assert encoded_context == "https://api.example.test/auth/%74oken/{id}"
+    assert "synthetic-user" not in encoded_context and "short-secret" not in encoded_context
 
     # 2. Low entropy token
     low_ent_findings = auditor.audit_token("aaaaaaaaaaaaaaaa")

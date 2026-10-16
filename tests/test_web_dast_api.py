@@ -83,7 +83,7 @@ def test_dast_connect_rechecks_policy_after_connect_attempt(client, monkeypatch)
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_connect_scope(host_port):
+    async def revoke_connect_scope(host_port, guard=None):
         calls.append(host_port)
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "connect"]
@@ -101,7 +101,7 @@ def test_dast_screenshot_withholds_image_after_policy_revocation(client, monkeyp
 
     web = importlib.import_module("mobileag.web.app")
 
-    async def revoke_screenshot_scope(serial):
+    async def revoke_screenshot_scope(serial, guard=None):
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "screenshot"]
         web.repository().save_policy(policy)
@@ -142,7 +142,7 @@ def test_dast_logcat_withholds_result_after_scope_revocation(client, monkeypatch
     web = importlib.import_module("mobileag.web.app")
     web.adb_manager.get_process_pids = AsyncMock(return_value=[4242])
 
-    async def revoke_during_log_read(*, serial, lines, pid):
+    async def revoke_during_log_read(*, serial, lines, pid, guard=None):
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "logcat"]
         web.repository().save_policy(policy)
@@ -384,7 +384,7 @@ def test_dast_execute_adb_rechecks_scope_after_command(client, monkeypatch):
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_shell_scope(serial, command):
+    async def revoke_shell_scope(serial, command, guard=None):
         calls.append((serial, command))
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "execute_adb"]
@@ -458,7 +458,7 @@ def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch)
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_launch_scope(serial, component):
+    async def revoke_launch_scope(serial, component, guard=None):
         calls.append((serial, component))
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "launch"]
@@ -482,6 +482,32 @@ def test_copilot_requires_real_scan(client):
 def test_get_scan_apis_endpoint(client):
     # No fabricated demo targets/endpoints in live mode.
     assert client.get('/api/scans/scan_meesho_demo/apis').status_code == 404
+
+
+def test_get_scan_apis_counts_all_routes_as_unverified_candidates(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    endpoints = [
+        {"method": "GET", "url": "/v1/profile", "evidence_type": "route_literal"},
+        {"method": "UNKNOWN", "url": "https://api.example.test/v1/items/{id}",
+         "evidence_type": "embedded_url_candidate"},
+    ]
+    graphql_operations = [{"operation_type": "query", "operation_name": "LoadProfile",
+                           "source_file": "Api.kt", "line_number": 12,
+                           "evidence_type": "graphql_operation_string_candidate"}]
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
+        "api_endpoints": endpoints,
+        "coverage": {"api_mapping": {"graphql_operation_candidates": graphql_operations}},
+    }))
+
+    response = client.get("/api/scans/synthetic-api-candidates/apis")
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["candidate_count"] == 2
+    assert response.json()["vulnerable_count"] == 0
+    assert response.json()["graphql_operation_candidate_count"] == 1
+    assert response.json()["graphql_operations"] == graphql_operations
+    assert "unverified" in response.json()["assessment"]
 
 
 def test_api_test_replay_endpoint(client):

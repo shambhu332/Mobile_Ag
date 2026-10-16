@@ -4,8 +4,10 @@ import asyncio
 import logging
 import uuid
 import json
+import re
 from mobileag.security.privacy import redact
 from mobileag.reporting.report_engine import ReportEngine
+from mobileag.reporting.artifact_writer import write_private_artifact
 from pathlib import Path
 from typing import Optional, Any
 
@@ -48,8 +50,100 @@ from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 from mobileag.analysis.fileprovider_auditor import FileProviderAuditor
+from mobileag.analysis.crypto_api_auditor import CryptoApiMetadataAuditor
+
+
+_MAX_SCAN_STATE_BYTES = 64 * 1024 * 1024
+_MAX_POC_GUIDE_BYTES = 1024 * 1024
+_MAX_POC_GUIDES = 500
 
 logger = logging.getLogger(__name__)
+
+
+def _framework_probe_coverage(kind: str, results: Any, root_valid: bool) -> dict[str, Any]:
+    """Summarize bounded Flutter/Hermes string probes without implying completeness."""
+    items = results if isinstance(results, list) else [results]
+    items = [item for item in items if item is not None]
+    errors = [str(error)[:200] for item in items
+              for error in (getattr(item, "scan_errors", []) or [])[:20]]
+    status_values = [getattr(item, "scan_status", "unknown") for item in items]
+    truncated = any(bool(getattr(item, attr, False)) for item in items for attr in
+                    ("binary_truncated", "asset_inventory_truncated", "candidate_output_truncated",
+                     "scan_truncated"))
+    scanned = all(status == "complete" for status in status_values) if items else True
+    active = any(bool(getattr(item, "is_flutter_app" if kind == "flutter" else "is_hermes", False))
+                 for item in items)
+    endpoints = sum(len(getattr(item, "api_endpoints", []) or []) for item in items)
+    routes = sum(len(getattr(item, "named_routes", []) or []) for item in items)
+    assets = sum(len(getattr(item, "bundled_assets", []) or []) for item in items)
+    secrets = sum(len(getattr(item, "potential_secrets" if kind == "flutter" else "secrets", []) or [])
+                  for item in items)
+    static_status = ("partial" if not scanned or truncated or errors else
+                     "incomplete" if not items and not root_valid else
+                     "analyzed_heuristically" if active else "not_applicable")
+    limitations = ["bounded printable-string/metadata probe only; no semantic framework decompilation",
+                   "endpoint strings are candidates; HTTP method, reachability, and runtime behavior are unknown",
+                   "runtime validation not performed; no exploit proof"]
+    if kind == "flutter":
+        limitations.append("Dart snapshot reconstruction, route-table parsing, and call-flow analysis are not implemented")
+    else:
+        limitations.append("Hermes bytecode disassembly, function/control-flow parsing, and source reconstruction are not implemented")
+    return {"static_status": static_status, "runtime_status": "not_tested", "proof_status": "not_proven",
+            "exhaustive": False, "scan_root_valid": bool(root_valid),
+            "analysis_kind": "bounded_printable_string_candidates",
+            "scan_statuses": status_values, "candidate_count": endpoints + routes + assets + secrets,
+            "endpoint_candidate_count": endpoints, "route_candidate_count": routes,
+            "asset_candidate_count": assets, "secret_marker_candidate_count": secrets,
+            "candidate_output_truncated": truncated, "scan_errors": errors, "limitations": limitations}
+
+
+def _native_jni_coverage(results: Any, inventory: Any, root_valid: bool) -> dict[str, Any]:
+    """Aggregate bounded ELF/JNI inventory without implying call reachability."""
+    items = results if isinstance(results, list) else []
+    inventory = inventory if isinstance(inventory, dict) else {}
+    statuses = [getattr(item, "scan_status", "unknown") for item in items]
+    errors = [str(error)[:200] for item in items
+              for error in (getattr(item, "scan_errors", []) or [])[:20]]
+    limited = bool(inventory.get("limits_reached") or inventory.get("source_files_skipped")) or any(
+        status not in {"analyzed_heuristically"} for status in statuses)
+    status = ("partial" if limited or errors else "analyzed_heuristically" if items else
+              "not_applicable" if root_valid else "incomplete")
+    return {**inventory, "static_status": status, "runtime_status": "not_tested", "proof_status": "not_proven",
+            "exhaustive": False, "library_count": len(items), "library_scan_statuses": statuses,
+            "jni_export_candidate_count": sum(len(getattr(item, "jni_export_name_candidates", []) or []) for item in items),
+            "dangerous_symbol_string_candidate_count": sum(len(getattr(item, "dangerous_symbol_string_candidates", []) or []) for item in items),
+            "imported_symbol_candidate_count": sum(len(getattr(item, "imported_dangerous_symbols", []) or []) for item in items),
+            "scan_errors": errors,
+            "limitations": ["bounded ELF/JNI name and symbol inventory; no Java-to-native call-flow resolution",
+                            "imported symbols and printable strings are review candidates, not proof of a reachable call",
+                            "runtime validation not performed; no exploit proof"]}
+
+
+def _il2cpp_probe_coverage(result: Any) -> dict[str, Any]:
+    """Report Unity IL2CPP probe state without calling an absent framework analyzed."""
+    scan_status = getattr(result, "scan_status", "unknown")
+    detected = bool(getattr(result, "is_il2cpp", False))
+    errors = [str(error)[:200] for error in (getattr(result, "scan_errors", []) or [])[:20]]
+    truncated = bool(getattr(result, "metadata_truncated", False)
+                     or getattr(result, "candidate_output_truncated", False))
+    if scan_status == "invalid" or scan_status in {"not_started", "unknown"}:
+        static_status = "incomplete"
+    elif scan_status != "complete" or truncated or errors:
+        static_status = "partial"
+    else:
+        static_status = "analyzed_heuristically" if detected else "not_applicable"
+    return {
+        "static_status": static_status, "runtime_status": "not_tested", "proof_status": "not_proven",
+        "exhaustive": False, "analysis_kind": "bounded_il2cpp_metadata_candidates",
+        "scan_status": scan_status, "is_il2cpp": detected, "metadata_truncated": bool(getattr(result, "metadata_truncated", False)),
+        "candidate_output_truncated": bool(getattr(result, "candidate_output_truncated", False)),
+        "candidate_count": len(getattr(result, "reconstructed_classes", []) or [])
+        + len(getattr(result, "reconstructed_fields", []) or [])
+        + len(getattr(result, "reconstructed_methods", []) or []),
+        "scan_errors": errors,
+        "limitations": ["bounded metadata names and embedded strings are review candidates, not source reconstruction",
+                        "runtime behavior, call reachability, and exploitability are not tested"],
+    }
 
 
 class Orchestrator:
@@ -99,6 +193,7 @@ class Orchestrator:
         self._privacy_manifest_auditor = PrivacyManifestAuditor()
         self._rasp_auditor = RaspResilienceAuditor()
         self._fileprovider_auditor = FileProviderAuditor()
+        self._crypto_api_auditor = CryptoApiMetadataAuditor()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -109,6 +204,64 @@ class Orchestrator:
 
         # Generators
         self._poc_generator = PoCGenerator(self._router)
+
+    @staticmethod
+    def _prepare_scan_output(output_dir: str | Path, requested_scan_id: str | None) -> tuple[str, Path]:
+        """Create a path-safe scan directory beneath the caller-selected root."""
+        scan_id = requested_scan_id or str(uuid.uuid4())[:8]
+        if (not isinstance(scan_id, str) or len(scan_id) > 128
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scan_id)):
+            raise ValueError("Invalid scan identifier for output directory")
+        root = Path(output_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        resolved_root = root.resolve()
+        output_path = root / scan_id
+        if output_path.is_symlink():
+            raise ValueError("Scan output directory must not be a symlink")
+        output_path.mkdir(parents=True, exist_ok=True)
+        resolved_output = output_path.resolve()
+        if not resolved_output.is_relative_to(resolved_root):
+            raise ValueError("Scan output directory escapes the selected output root")
+        return scan_id, output_path
+
+    @staticmethod
+    def _write_private_artifact(path: Path, payload: bytes, max_bytes: int) -> None:
+        """Persist a bounded scan artifact through the shared safe writer."""
+        try:
+            write_private_artifact(path, payload, max_bytes)
+        except ValueError as exc:
+            if "size limit" in str(exc):
+                raise ValueError("Scan artifact exceeds its output size limit") from exc
+            raise
+
+    @classmethod
+    def _save_poc_guides(cls, output: Path, guides: Any) -> None:
+        """Validate and privately persist a bounded set of review-only guides."""
+        poc_dir = output / "poc_guides"
+        poc_dir.mkdir(exist_ok=True)
+        if not isinstance(guides, list) or len(guides) > _MAX_POC_GUIDES:
+            raise ValueError("Generated PoC guide inventory exceeds the output limit")
+        prepared_guides = []
+        seen_filenames: set[str] = set()
+        for item in guides:
+            if not isinstance(item, dict):
+                raise ValueError("Generated PoC guide entry is invalid")
+            filename = item.get("filename")
+            guide = item.get("poc_guide")
+            if (not isinstance(filename, str) or len(filename) > 128
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,123}\.md", filename)
+                    or not isinstance(guide, str)):
+                raise ValueError("Generated PoC guide fields are invalid")
+            if filename in seen_filenames:
+                raise ValueError("Generated PoC guide filenames must be unique")
+            seen_filenames.add(filename)
+            content = redact(guide).encode("utf-8")
+            if len(content) > _MAX_POC_GUIDE_BYTES:
+                raise ValueError("Generated PoC guide exceeds the output size limit")
+            prepared_guides.append((poc_dir / filename, content))
+        for path, content in prepared_guides:
+            cls._write_private_artifact(path, content, _MAX_POC_GUIDE_BYTES)
+            logger.info("Saved PoC guide: %s", path)
 
     async def scan(
         self,
@@ -129,10 +282,8 @@ class Orchestrator:
         Returns:
             Complete ScanState with all findings and generated outputs.
         """
-        sid = scan_id or str(uuid.uuid4())[:8]
         output = output_dir or self._settings.OUTPUT_DIR
-        output_path = Path(output) / sid
-        output_path.mkdir(parents=True, exist_ok=True)
+        sid, output_path = self._prepare_scan_output(output, scan_id)
 
         state = create_initial_state(sid, apk_path, str(output_path))
         state["allow_advisory_lookup"] = bool(allow_advisory_lookup)
@@ -190,7 +341,9 @@ class Orchestrator:
         await self._save_outputs(state)
 
         state["current_phase"] = "partial" if state["errors"] else "complete"
-        (output_path / "state.json").write_text(json.dumps(redact(state), indent=2, default=str))
+        state_payload = json.dumps(redact(state), indent=2, default=str,
+                                   ensure_ascii=True, allow_nan=False).encode("utf-8")
+        self._write_private_artifact(output_path / "state.json", state_payload, _MAX_SCAN_STATE_BYTES)
         await _notify("Scan Complete", f"Scan {sid} complete: {candidate_count} unverified review candidates.", 98)
         logger.info(
             "Scan %s complete: %d candidate findings",
@@ -332,6 +485,8 @@ class Orchestrator:
             "il2cpp": asyncio.to_thread(self._il2cpp_auditor.audit_package, state["resource_path"]),
             "flutter": asyncio.to_thread(self._flutter_engine.analyze_package_directory, state["resource_path"]),
             "fileprovider": asyncio.to_thread(self._fileprovider_auditor.audit_resource_directory, state["resource_path"]),
+            "crypto_metadata": asyncio.to_thread(
+                self._crypto_api_auditor.audit_directory, state["decompiled_path"]),
             "data_safety": asyncio.to_thread(
                 self._privacy_manifest_auditor.audit_android_data_safety_package,
                 state.get("manifest_path", ""), state["resource_path"],
@@ -358,7 +513,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes", "native_jni", "crypto_metadata"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -410,7 +565,16 @@ class Orchestrator:
             elif name == "native_jni":
                 for lib_res in result:
                     all_findings.extend(lib_res.findings)
+                native_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and native_root.is_dir() and not native_root.is_symlink()
+                state["coverage"][name] = _native_jni_coverage(
+                    result, self._native_jni_analyzer.package_coverage, root_valid)
+                engines[name] = state["coverage"][name]["static_status"]
             elif name == "flutter":
+                framework_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and framework_root.is_dir() and not framework_root.is_symlink()
+                state["coverage"][name] = _framework_probe_coverage(name, result, root_valid)
+                engines[name] = state["coverage"][name]["static_status"]
                 if getattr(result, "is_flutter_app", False):
                     for ep in getattr(result, "api_endpoints", []):
                         state.setdefault("api_endpoints", []).append({
@@ -418,6 +582,10 @@ class Orchestrator:
                             "evidence_type": "embedded_url_candidate", "source_engine": "flutter",
                         })
             elif name == "hermes":
+                framework_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and framework_root.is_dir() and not framework_root.is_symlink()
+                state["coverage"][name] = _framework_probe_coverage(name, result, root_valid)
+                engines[name] = state["coverage"][name]["static_status"]
                 for h_res in (result or []):
                     if getattr(h_res, "is_hermes", False):
                         for ep in getattr(h_res, "api_endpoints", []):
@@ -448,17 +616,8 @@ class Orchestrator:
                     "exhaustive": False,
                 }
                 state["coverage"]["il2cpp"] = {
-                    "static_status": "partial" if getattr(result, "scan_status", "") != "complete"
-                    or getattr(result, "metadata_truncated", False)
-                    or getattr(result, "candidate_output_truncated", False)
-                    else "analyzed_heuristically",
-                    "runtime_status": "not_tested", "proof_status": "not_proven",
-                    "exhaustive": False,
+                    **_il2cpp_probe_coverage(result),
                     "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
-                    "candidate_count": len(getattr(result, "reconstructed_classes", []))
-                    + len(getattr(result, "reconstructed_fields", []))
-                    + len(getattr(result, "reconstructed_methods", [])),
-                    "limitations": ["bounded metadata names are review candidates, not source reconstruction or exploit proof"],
                 }
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):
@@ -493,6 +652,10 @@ class Orchestrator:
             elif name == "pending_intent":
                 all_findings.extend(result)
                 state["coverage"][name] = dict(self._pending_intent_auditor.coverage)
+            elif name == "crypto_metadata":
+                state["crypto_api_inventory"] = result.get("inventory", [])
+                state["coverage"][name] = dict(result.get("coverage", {}))
+                engines[name] = state["coverage"][name].get("static_status", "incomplete")
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":
@@ -574,6 +737,13 @@ class Orchestrator:
                 f_count = len(result)
             elif hasattr(result, "findings"):
                 f_count = len(getattr(result, "findings", []))
+            # Keep the summary engine map consistent with each analyzer's
+            # fail-closed coverage state. Android surface uses category-level
+            # coverage and intentionally retains its WebView summary above.
+            if name != "android_surface":
+                engine_coverage = state.get("coverage", {}).get(name)
+                if isinstance(engine_coverage, dict) and "static_status" in engine_coverage:
+                    engines[name] = engine_coverage["static_status"]
             logger.info("[Stage 2] %s: %d findings", name, f_count)
 
         # Deterministic Smali Call Graph reachability audit
@@ -581,7 +751,7 @@ class Orchestrator:
             smali_findings = self._call_graph_engine.audit_smali_directory(state["smali_path"])
             all_findings.extend(smali_findings)
             state["coverage"]["smali_call_graph"] = dict(self._call_graph_engine.coverage)
-            engines["smali_call_graph"]="completed_heuristically"
+            engines["smali_call_graph"] = state["coverage"]["smali_call_graph"].get("static_status", "unknown")
             logger.info("[Stage 2] Smali Call Graph: %d reachability findings", len(smali_findings))
         except Exception as e:
             engines["smali_call_graph"]="incomplete"
@@ -668,13 +838,8 @@ class Orchestrator:
         output = Path(state["output_dir"])
         await ReportEngine().generate_reports(state)
 
-        # Save PoC guides
-        poc_dir = output / "poc_guides"
-        poc_dir.mkdir(exist_ok=True)
-        for item in state.get("generated_poc_guides", []):
-            fp = poc_dir / Path(item["filename"]).name
-            fp.write_text(redact(item["poc_guide"]))
-            logger.info("Saved PoC guide: %s", fp)
+        # Save bounded review-only PoC guides.
+        Orchestrator._save_poc_guides(output, state.get("generated_poc_guides", []))
 
         # Save OASIS SARIF v2.1.0 report for CI/CD integration
         try:

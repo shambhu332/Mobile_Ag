@@ -6,6 +6,23 @@ import resource
 from config.settings import Settings
 from mobileag.security.archives import validate_archive
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import private_artifact_stream
+
+MAX_RESULT_BYTES = 16 * 1024 * 1024
+
+
+def _write_result(path: str | Path, value) -> None:
+    """Publish bounded worker JSON atomically without following result links."""
+    encoder = json.JSONEncoder(default=str, ensure_ascii=True, allow_nan=False,
+                               separators=(",", ":"))
+    with private_artifact_stream(path) as stream:
+        written = 0
+        for chunk in encoder.iterencode(redact(value)):
+            encoded = chunk.encode("utf-8")
+            written += len(encoded)
+            if written > MAX_RESULT_BYTES:
+                raise ValueError("Worker result exceeds output size limit")
+            stream.write(encoded)
 
 async def main():
     resource.setrlimit(resource.RLIMIT_AS, (4*1024**3, 4*1024**3))
@@ -34,9 +51,9 @@ async def main():
         state['execution_environment']={'python':sys.version.split()[0],'os':platform.platform(),'worker':'bubblewrap','network':'denied','device_access':'not_mounted'}
         for finding in state.get('filtered_findings', []):
             finding['status'] = 'UNVERIFIED'
-        Path('/work/result.json').write_text(json.dumps(redact(state),default=str))
+        _write_result('/work/result.json', state)
     except Exception:
-        Path('/work/result.json').write_text(json.dumps({'errors':['Isolated analysis failed; check tool readiness and archive format']}))
+        _write_result('/work/result.json', {'errors':['Isolated analysis failed; check tool readiness and archive format']})
 
 if __name__ == '__main__':
     asyncio.run(main())

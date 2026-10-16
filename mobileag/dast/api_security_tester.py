@@ -1,12 +1,18 @@
 """Conservative API review; live testing belongs to the approved replay workflow."""
 from __future__ import annotations
 
+from itertools import islice
 from typing import Any
 from urllib.parse import urlsplit, parse_qsl
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
 
 
 class APISecurityTester:
+    MAX_URL_CHARS = 8192
+    MAX_QUERY_FIELDS = 100
+    MAX_ENDPOINTS = 1_000
+
     def __init__(self, scan_id: str | None = None):
         self.scan_id = scan_id
         self.observations: dict[str, Any] = {}
@@ -28,9 +34,23 @@ class APISecurityTester:
         return findings
 
     async def _analyze_url_structure(self, url: str) -> list[Finding]:
-        parsed = urlsplit(url)
-        sensitive = {"token", "access_token", "refresh_token", "password", "apikey", "api_key", "secret", "auth"}
-        if not any(key.lower() in sensitive for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
+        if not isinstance(url, str) or not url or len(url) > self.MAX_URL_CHARS:
+            self.observations["url_structure_status"] = "incomplete_input"
+            return []
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+                self.observations["url_structure_status"] = "unsupported_or_invalid_url"
+                return []
+            # Validate authority syntax and bound query parsing before scanning.
+            _ = parsed.port
+            query = parse_qsl(parsed.query, keep_blank_values=True,
+                              max_num_fields=self.MAX_QUERY_FIELDS)
+        except (TypeError, ValueError, UnicodeError):
+            self.observations["url_structure_status"] = "incomplete_input"
+            return []
+        self.observations["url_structure_status"] = "analyzed"
+        if not any(MobileTokenSessionAuditor._is_sensitive_query_key(key) for key, _ in query):
             return []
         # Do not copy any URL/userinfo/query/path values into durable evidence.
         return [Finding(
@@ -43,9 +63,38 @@ class APISecurityTester:
         )]
 
     async def analyze_endpoints_static(self, endpoints: list[dict[str, Any]]) -> list[Finding]:
-        findings = []
-        for endpoint in endpoints:
-            findings.extend(await self._analyze_url_structure(endpoint.get("url", "")))
+        findings: list[Finding] = []
+        if not isinstance(endpoints, list):
+            self.observations["static_url_review_coverage"] = {
+                "status": "invalid_input", "endpoints_received": None,
+                "endpoints_analyzed": 0, "endpoints_omitted": 0,
+                "invalid_endpoint_records": 0, "incomplete_urls": 0,
+                "findings_count": 0, "endpoint_limit": self.MAX_ENDPOINTS,
+            }
+            self._telemetry("static_candidate_count", 0)
+            return findings
+        endpoints_received = len(endpoints)
+        endpoints_analyzed = 0
+        invalid_records = 0
+        incomplete_urls = 0
+        for endpoint in islice(endpoints, self.MAX_ENDPOINTS):
+            endpoints_analyzed += 1
+            if not isinstance(endpoint, dict) or not isinstance(endpoint.get("url"), str):
+                invalid_records += 1
+                continue
+            findings.extend(await self._analyze_url_structure(endpoint["url"]))
+            if self.observations.get("url_structure_status") != "analyzed":
+                incomplete_urls += 1
+        omitted = max(0, endpoints_received - endpoints_analyzed)
+        status = ("not_analyzed" if endpoints_received == 0 else
+                  "partial" if omitted or invalid_records or incomplete_urls else
+                  "analyzed_heuristically")
+        self.observations["static_url_review_coverage"] = {
+            "status": status, "endpoints_received": endpoints_received,
+            "endpoints_analyzed": endpoints_analyzed, "endpoints_omitted": omitted,
+            "invalid_endpoint_records": invalid_records, "incomplete_urls": incomplete_urls,
+            "findings_count": len(findings), "endpoint_limit": self.MAX_ENDPOINTS,
+        }
         # Missing request headers, route names, GraphQL and absent version strings
         # do not demonstrate backend authentication or access-control defects.
         self._telemetry("static_candidate_count", len(findings))

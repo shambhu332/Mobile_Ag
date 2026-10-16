@@ -25,8 +25,9 @@ import re
 from datetime import datetime, timezone
 from itertools import islice
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit
 
+from mobileag.analysis.api_endpoint_safety import safe_api_route
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
 
@@ -88,30 +89,12 @@ class MobileTokenSessionAuditor:
                 return "MobileAuth"
             parsed = urlsplit(url[:8192])
             hostname = parsed.hostname
-            if not parsed.scheme or not hostname:
+            if parsed.scheme.lower() not in {"http", "https"} or not hostname:
                 return "MobileAuth"
-            host = f"[{hostname}]" if ":" in hostname else hostname
-            # Ports can be malformed in attacker-controlled capture input.
-            try:
-                port = parsed.port
-            except ValueError:
+            safe_route = safe_api_route(url[:8192])
+            if safe_route == "[REDACTED URL]":
                 return "MobileAuth"
-            netloc = f"{host}:{port}" if port is not None else host
-            path_segments = parsed.path[:2048].split("/")
-            safe_segments: list[str] = []
-            redact_next = False
-            for segment in path_segments:
-                if redact_next or len(segment) >= 24 and re.fullmatch(r"[A-Za-z0-9._~-]+", segment):
-                    safe_segments.append("[REDACTED]")
-                    redact_next = False
-                    continue
-                safe_segments.append(segment[:128])
-                redact_next = segment.lower() in {
-                    "token", "access_token", "auth_token", "session", "sessionid",
-                    "session_id", "jwt", "reset", "verify", "password", "secret",
-                }
-            safe_path = "/".join(safe_segments)
-            return urlunsplit((parsed.scheme[:16], netloc[:512], safe_path, "", ""))
+            return safe_route
         except (TypeError, ValueError, UnicodeError):
             return "MobileAuth"
 

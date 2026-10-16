@@ -184,3 +184,86 @@ async def test_real_offline_reviews_integrated_with_failure_coverage(monkeypatch
     report = ReportEngine()._generate_markdown(ReportEngine()._prepare_data(result))
     assert 'auth_session: static=analyzed_heuristically' in report
     assert 'firebase: static=incomplete' in report
+
+
+def test_orchestrator_scan_output_rejects_path_traversal_and_symlink_escape(tmp_path):
+    output_root = tmp_path / "scans"
+    output_root.mkdir()
+    scan_id, output = Orchestrator._prepare_scan_output(output_root, "scan-safe_1")
+    assert scan_id == "scan-safe_1"
+    assert output == output_root / scan_id
+    assert output.is_dir()
+
+    with pytest.raises(ValueError, match="Invalid scan identifier"):
+        Orchestrator._prepare_scan_output(output_root, "../escaped")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (output_root / "linked-scan").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        Orchestrator._prepare_scan_output(output_root, "linked-scan")
+    assert list(outside.iterdir()) == []
+
+
+def test_orchestrator_private_artifact_writer_replaces_symlinks_and_enforces_cap(tmp_path):
+    import os
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "state.json"
+    output.symlink_to(victim)
+
+    Orchestrator._write_private_artifact(output, b'{"safe":true}', 100)
+
+    assert not output.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert output.read_bytes() == b'{"safe":true}'
+    assert os.stat(output).st_mode & 0o077 == 0
+    with pytest.raises(ValueError, match="size limit"):
+        Orchestrator._write_private_artifact(output, b"too large", 1)
+    assert output.read_bytes() == b'{"safe":true}'
+
+
+def test_orchestrator_poc_guides_validate_names_and_atomically_replace_links(tmp_path):
+    import os
+
+    output = tmp_path / "scan"
+    guide_dir = output / "poc_guides"
+    guide_dir.mkdir(parents=True)
+    victim = tmp_path / "victim.md"
+    victim.write_text("unchanged")
+    guide = guide_dir / "poc_cwe-926_abcd1234.md"
+    guide.symlink_to(victim)
+
+    Orchestrator._save_poc_guides(output, [{
+        "filename": guide.name,
+        "poc_guide": "Review-only synthetic validation plan.",
+    }])
+    assert not guide.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert "Review-only synthetic validation plan." in guide.read_text()
+    assert os.stat(guide).st_mode & 0o077 == 0
+
+    with pytest.raises(ValueError, match="fields are invalid"):
+        Orchestrator._save_poc_guides(output, [{"filename": "../escape.md", "poc_guide": "x"}])
+
+    with pytest.raises(ValueError, match="filenames must be unique"):
+        Orchestrator._save_poc_guides(output, [
+            {"filename": "poc_same.md", "poc_guide": "first"},
+            {"filename": "poc_same.md", "poc_guide": "second"},
+        ])
+
+
+def test_orchestrator_poc_guide_inventory_and_content_caps_fail_explicitly(tmp_path, monkeypatch):
+    import mobileag.core.orchestrator as orchestrator
+
+    guide = {"filename": "poc_test.md", "poc_guide": "review"}
+    monkeypatch.setattr(orchestrator, "_MAX_POC_GUIDES", 0)
+    with pytest.raises(ValueError, match="inventory exceeds"):
+        Orchestrator._save_poc_guides(tmp_path, [guide])
+
+    monkeypatch.setattr(orchestrator, "_MAX_POC_GUIDES", 500)
+    monkeypatch.setattr(orchestrator, "_MAX_POC_GUIDE_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        Orchestrator._save_poc_guides(tmp_path, [guide])
+    assert not (tmp_path / "poc_guides" / guide["filename"]).exists()

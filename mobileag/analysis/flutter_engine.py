@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
+from mobileag.analysis.api_endpoint_safety import safe_api_route
 
 
 @dataclass
@@ -156,12 +157,14 @@ class FlutterEngineAnalyzer:
                 continue
 
             for url in self.URL_PATTERN.findall(s):
-                if not url.endswith((".png", ".jpg", ".svg", ".ttf", ".woff")):
-                    if url not in endpoints and len(endpoints) >= self.MAX_ENDPOINTS:
+                safe_url = safe_api_route(url)
+                if (safe_url != "[REDACTED URL]"
+                        and not safe_url.endswith((".png", ".jpg", ".svg", ".ttf", ".woff"))):
+                    if safe_url not in endpoints and len(endpoints) >= self.MAX_ENDPOINTS:
                         result.candidate_output_truncated = True
                         result.scan_errors.append("endpoint_candidate_limit")
                     else:
-                        endpoints.add(url)
+                        endpoints.add(safe_url)
 
             if self.ROUTE_PATTERN.search(s) and len(s) < 60 and not s.startswith("http"):
                 if s not in routes and len(routes) >= self.MAX_NAMED_ROUTES:

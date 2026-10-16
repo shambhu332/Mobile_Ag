@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -95,3 +96,57 @@ def test_generated_cyclonedx_xml_validates_offline_against_pinned_xsd():
     invalid_document = copy.deepcopy(document)
     invalid_document.tag = "{http://cyclonedx.org/schema/bom/1.5}notABom"
     assert not schema.validate(invalid_document)
+
+
+@pytest.mark.parametrize("method, suffix", [
+    ("save_cyclonedx", ".json"),
+    ("save_cyclonedx_xml", ".xml"),
+    ("save_spdx", ".spdx.json"),
+])
+def test_sbom_writers_atomically_replace_symlinks_with_private_files(tmp_path, method, suffix):
+    output = tmp_path / f"artifact{suffix}"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output.symlink_to(victim)
+
+    saved = getattr(_synthetic_generator(), method)(output)
+
+    assert saved == output
+    assert victim.read_text() == "unchanged"
+    assert not output.is_symlink()
+    assert output.stat().st_size > 0
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+@pytest.mark.parametrize("method", ["save_cyclonedx", "save_cyclonedx_xml", "save_spdx"])
+def test_sbom_writers_enforce_size_cap_before_destination_write(tmp_path, monkeypatch, method):
+    import mobileag.analysis.sbom_generator as sbom_generator
+
+    output = tmp_path / "oversized.sbom"
+    monkeypatch.setattr(sbom_generator, "_MAX_SBOM_OUTPUT_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        getattr(_synthetic_generator(), method)(output)
+    assert not output.exists()
+
+
+def test_sbom_inventory_additions_have_explicit_count_limits(monkeypatch):
+    generator = MobileSbomGenerator("Bounded", "1")
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_COMPONENTS", 1)
+    generator.add_component("one", "1", "pkg:generic/one")
+    with pytest.raises(ValueError, match="component inventory"):
+        generator.add_component("two", "1", "pkg:generic/two")
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_VULNERABILITIES", 1)
+    generator.add_vulnerability("CVE-2025-1", "pkg:generic/one")
+    with pytest.raises(ValueError, match="vulnerability inventory"):
+        generator.add_vulnerability("CVE-2025-2", "pkg:generic/one")
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_LICENSES_PER_COMPONENT", 1)
+    with pytest.raises(ValueError, match="licenses"):
+        MobileSbomGenerator("Bounded", "1").add_component(
+            "lib", None, "pkg:generic/lib", licenses=["MIT", "Apache-2.0"])
+
+    monkeypatch.setattr(MobileSbomGenerator, "MAX_CWES_PER_VULNERABILITY", 1)
+    with pytest.raises(ValueError, match="CWE inventory"):
+        MobileSbomGenerator("Bounded", "1").add_vulnerability(
+            "CVE-2025-3", "pkg:generic/lib", cwe_ids=["CWE-79", "CWE-89"])

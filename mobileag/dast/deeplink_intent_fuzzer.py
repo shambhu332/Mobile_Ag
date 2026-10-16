@@ -5,6 +5,7 @@ collect logcat, crash tombstones, or proof of vulnerability.
 """
 from __future__ import annotations
 
+import inspect
 import subprocess
 import re
 import shlex
@@ -110,7 +111,13 @@ class DeepLinkIntentFuzzer:
         cmd = [self.adb_path, "-s", serial.strip(), "shell", shlex.join(remote_args)]
 
         try:
-            if guard() is False:
+            approved = guard()
+            if inspect.isawaitable(approved):
+                close = getattr(approved, "close", None)
+                if callable(close):
+                    close()
+                return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
+            if approved is False:
                 return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")
         except Exception:
             return FuzzResult(target_uri=target_uri, status="BLOCKED_SCOPE")

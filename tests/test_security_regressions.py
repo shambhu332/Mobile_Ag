@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from pydantic import ValidationError
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from config.settings import Settings
@@ -79,6 +80,124 @@ def test_upload_unique_validated(client):
     assert client.post('/api/upload/apk',files={'file':('bad.apk',b'PKbad')}).status_code == 400
     assert len(list(web.UPLOAD_DIR.iterdir())) == 2
 
+
+@pytest.mark.parametrize("payload", [
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {"EXTRA_SYNTHETIC": ["x" * 257]}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {f"EXTRA_{index}": ["value"] for index in range(31)}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {"EXTRA": ["value"] * 21}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "activities": ["A" * 513]},
+    {"serial": "s" * 129, "package_name": "org.example.synthetic"},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "deeplinks": ["https://example.invalid/" + "x" * 8192]},
+])
+def test_device_fuzz_request_rejects_oversized_target_inputs_before_dispatch(payload):
+    with pytest.raises(ValidationError):
+        web.DastFuzzRequest.model_validate(payload)
+
+
+def test_provider_and_deeplink_requests_bound_each_input_value():
+    with pytest.raises(ValidationError):
+        web.ProviderAuditRequest.model_validate({
+        "serial": "owned-device", "package_name": "org.example.synthetic",
+        "authorities": ["x" * 257],
+    })
+    with pytest.raises(ValidationError):
+        web.DeepLinkAuditRequest.model_validate({
+        "serial": "owned-device", "package_name": "org.example.synthetic",
+        "deep_links": ["https://example.invalid/" + "x" * 8192],
+    })
+
+
+@pytest.mark.parametrize("model,payload", [
+    (web.DeviceConnectRequest, {"host_port": "h" * 256}),
+    (web.DeviceActionRequest, {"serial": "s" * 129}),
+    (web.InstallApkRequest, {"serial": "owned-device", "apk_path": "p" * 4097}),
+    (web.LaunchActivityRequest, {"serial": "owned-device", "component": "c" * 513}),
+    (web.DispatchDeeplinkRequest, {"serial": "owned-device", "package_name": "org.example.app",
+                                   "uri": "u" * 8193}),
+    (web.StorageAuditRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.MemoryAuditRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.UICrawlRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.FridaDeployRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+])
+def test_device_operation_requests_reject_oversized_fields(model, payload):
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+@pytest.mark.parametrize("model,payload", [
+    (web.ApiTestRequest, {"url": "https://example.invalid", "body": "x" * 262145}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "headers": {"X": "v" * 8193}}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "headers": {"X" * 257: "v"}}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "timeout": 30.1}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_body": "x" * 262145}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_headers": {"X": "v" * 8193}}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_status": 700}),
+])
+def test_api_review_requests_reject_oversized_or_invalid_fields(model, payload):
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_api_replay_rejects_oversized_request_before_network(monkeypatch):
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    scoped_request = AsyncMock(side_effect=AssertionError("No request may be sent"))
+    monkeypatch.setattr(web, "scoped_request", scoped_request)
+    response = client.post("/api/apis/test", json={
+        "url": "https://example.invalid/", "method": "POST", "body": "x" * 262145,
+    })
+    assert response.status_code == 422
+    scoped_request.assert_not_awaited()
+
+
+def test_traffic_audit_rejects_aggregate_input_before_analysis(monkeypatch):
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    analyze = MagicMock(side_effect=AssertionError("Oversized input must not reach analysis"))
+    monkeypatch.setattr(web.traffic_auditor, "audit_transactions", analyze)
+    oversized = {
+        "transactions": [
+            {"url": "https://api.example.invalid/", "request_body": "x" * 100000,
+             "response_body": "y" * 100000}
+            for _ in range(3)
+        ]
+    }
+    response = client.post("/api/dast/traffic/audit", json=oversized)
+    assert response.status_code == 422
+    analyze.assert_not_called()
+
+
+def test_dynamic_api_rejects_oversized_targets_after_exact_scope_gate(monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "owned-device")
+    web.repository().save_policy({
+        "devices": ["owned-device"], "packages": ["org.example.synthetic"],
+        "origins": [], "methods": [],
+        "actions": ["fuzz", "storage", "providers", "deeplinks"],
+    })
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    adb_exec = AsyncMock()
+    monkeypatch.setattr(web.adb_manager, "_exec_cmd", adb_exec)
+    base = {"serial": "owned-device", "package_name": "org.example.synthetic"}
+    responses = [
+        client.post("/api/dast/fuzz", json={**base, "targeted_extras": {"EXTRA": ["x" * 257]}}),
+        client.post("/api/dast/providers", json={**base, "authorities": ["a" * 257]}),
+        client.post("/api/dast/deeplinks", json={**base, "deep_links": ["https://example.invalid/" + "x" * 8192]}),
+    ]
+    assert [response.status_code for response in responses] == [422, 422, 422]
+    adb_exec.assert_not_awaited()
+
 def test_websocket_auth(client):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect('/ws/telemetry') as ws:
@@ -112,6 +231,91 @@ async def test_scan_telemetry_broadcast_isolation():
     await manager.broadcast({'type': 'agent_progress', 'scan_id': 'scan-one', 'message': 'synthetic'})
     assert [m['scan_id'] for m in first.messages] == ['scan-one']
     assert second.messages == []
+
+
+@pytest.mark.asyncio
+async def test_websocket_telemetry_omits_oversized_and_cyclic_events(monkeypatch):
+    manager = web.ConnectionManager()
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = []
+        async def send_json(self, message):
+            self.messages.append(message)
+        async def close(self, code):
+            self.closed_code = code
+
+    connection = FakeWebSocket()
+    manager.active_connections.append(connection)
+    manager.sessions[connection] = web.app.state.auth_token
+    manager.subscriptions[connection] = "scan-one"
+    monkeypatch.setattr(web, "MAX_TELEMETRY_EVENT_BYTES", 64)
+
+    await manager.broadcast({"type": "agent_progress", "scan_id": "scan-one",
+                             "message": "synthetic", "payload": "x" * 100})
+    assert connection.messages[-1]["type"] == "telemetry_omitted"
+    assert connection.messages[-1]["scan_id"] == "scan-one"
+    assert "payload" not in connection.messages[-1]
+
+    cyclic = {"type": "agent_progress", "scan_id": "scan-one"}
+    cyclic["self"] = cyclic
+    await manager.broadcast(cyclic)
+    assert connection.messages[-1]["type"] == "telemetry_omitted"
+    assert "self" not in connection.messages[-1]
+
+
+@pytest.mark.asyncio
+async def test_websocket_capacity_slot_stays_reserved_during_scan_validation(monkeypatch):
+    manager = web.ConnectionManager()
+    monkeypatch.setattr(web, "manager", manager)
+    gate = asyncio.Event()
+    validation_started = asyncio.Event()
+    token = web.app.state.auth_token
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.closed_code = None
+            self.active_count_during_receive = None
+
+        async def accept(self):
+            pass
+
+        async def receive_json(self):
+            return {"token": token}
+
+        async def send_json(self, _message):
+            pass
+
+        async def receive_text(self):
+            self.active_count_during_receive = len(manager.active_connections)
+            raise WebSocketDisconnect()
+
+        async def close(self, code):
+            self.closed_code = code
+
+    # Leave one slot. The first authenticated scan connection reserves it
+    # while awaiting validation; a concurrent handshake must be rejected.
+    manager.active_connections.extend(object() for _ in range(31))
+
+    async def delayed_scan_validation(_scan_id):
+        validation_started.set()
+        await gate.wait()
+        return {}
+
+    monkeypatch.setattr(web, "get_scan_details", delayed_scan_validation)
+    first, second = FakeWebSocket(), FakeWebSocket()
+    first_task = asyncio.create_task(web._telemetry_stream(first, "synthetic-a"))
+    await validation_started.wait()
+    assert manager.pending == 1
+
+    await web._telemetry_stream(second, "synthetic-b")
+    assert second.closed_code == 1013
+    assert manager.pending == 1
+
+    gate.set()
+    await first_task
+    assert first.active_count_during_receive == 32
+    assert manager.pending == 0
 
 def test_device_scope(client):
     assert client.post('/api/dast/root',json={'serial':'unscoped'}).status_code == 403
@@ -166,6 +370,24 @@ async def test_osv_response_with_oversized_body_is_rejected(tmp_path):
     assert scanner.coverage['lookup_status'] == 'failed'
     assert scanner.coverage['oversized_responses'] == 1
     assert scanner.coverage['advisory_freshness'] == 'not_retrieved'
+
+
+@pytest.mark.asyncio
+async def test_osv_unexpected_lookup_task_failure_is_counted_as_failed_coverage(tmp_path, monkeypatch):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1"')
+
+    async def fail_unexpectedly(*args, **kwargs):
+        raise RuntimeError("synthetic task failure")
+
+    monkeypatch.setattr(scanner, "_query_osv_package", fail_unexpectedly)
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(MagicMock())):
+        assert await scanner.scan(str(tmp_path), allow_advisory_lookup=True) == []
+    assert scanner.coverage['lookup_status'] == 'failed'
+    assert scanner.coverage['failed'] == 1
+    assert scanner.coverage['successful'] == 0
 
 
 @pytest.mark.asyncio
@@ -410,6 +632,84 @@ async def test_analysis_resource_routing(tmp_path):
     obj._call_graph_engine.audit_smali_directory.assert_called_once_with(str(resources))
     obj._nsc_auditor.audit_directory_async.assert_awaited_once_with(str(resources))
     obj._pending_intent_auditor.audit_directory.assert_called_once_with(str(java), target_sdk=35)
+
+@pytest.mark.asyncio
+async def test_framework_probe_coverage_reaches_scan_state(tmp_path):
+    from types import SimpleNamespace
+    obj=Orchestrator(Settings(_env_file=None,offline=True))
+    state=create_initial_state('synthetic','unused',str(tmp_path))
+    state.update(decompiled_path=str(tmp_path), resource_path=str(tmp_path), smali_path=str(tmp_path),
+                 manifest_data={'components':[]})
+    for attr,method in [('_manifest_auditor','audit'),('_secret_scanner','scan'),('_code_reviewer','review'),
+                         ('_native_analyzer','analyze'),('_dependency_scanner','scan'),('_taint_engine','analyze_directory_async'),
+                         ('_nsc_auditor','audit_directory_async'),('_bin_protection','audit_directory_async'),
+                         ('_rn_scanner','scan_directory_async')]:
+        setattr(getattr(obj,attr),method,AsyncMock(return_value=[]))
+    obj._api_mapper.map_apis=AsyncMock(return_value=([],[]))
+    obj._call_graph_engine.audit_smali_directory=MagicMock(return_value=[])
+    obj._pending_intent_auditor.audit_directory=MagicMock(return_value=[])
+    obj._intent_redirection_auditor.audit_directory=MagicMock(return_value=[])
+    obj._native_jni_analyzer.audit_package_libraries=MagicMock(return_value=[SimpleNamespace(
+        findings=[], scan_status='analyzed_heuristically', scan_errors=[],
+        jni_export_name_candidates=['Java_example_Native_run'], dangerous_symbol_string_candidates=['system'],
+        imported_dangerous_symbols=['popen'])])
+    obj._native_jni_analyzer.package_coverage={'limits_reached':False,'source_files_skipped':0,
+                                               'libraries_analyzed':1,'entries_examined':1}
+    obj._fileprovider_auditor.audit_resource_directory=MagicMock(return_value=[])
+    obj._privacy_manifest_auditor.audit_android_data_safety_package=MagicMock(return_value={'findings':[],'coverage':{}})
+    obj._il2cpp_auditor.audit_package=MagicMock(return_value=SimpleNamespace(scan_status='complete'))
+    obj._flutter_engine.analyze_package_directory=MagicMock(return_value=SimpleNamespace(
+        is_flutter_app=True, scan_status='complete', api_endpoints=['https://api.invalid'], named_routes=['/login'],
+        bundled_assets=[], potential_secrets=[], scan_errors=[], candidate_output_truncated=False))
+    obj._hermes_analyzer.audit_package_bundles=MagicMock(return_value=[SimpleNamespace(
+        is_hermes=True, scan_status='complete', api_endpoints=['https://rn.invalid'], secrets=[], scan_errors=[],
+        candidate_output_truncated=False)])
+    await obj._run_analysis(state)
+    for name in ('flutter','hermes'):
+        coverage=state['coverage'][name]
+        assert coverage['static_status']=='analyzed_heuristically'
+        assert coverage['runtime_status']=='not_tested' and coverage['proof_status']=='not_proven'
+        assert coverage['exhaustive'] is False
+        assert coverage['analysis_kind']=='bounded_printable_string_candidates'
+    assert state['coverage']['flutter']['candidate_count']==2
+    assert state['coverage']['hermes']['endpoint_candidate_count']==1
+    assert state['coverage']['native_jni']['static_status']=='analyzed_heuristically'
+    assert state['coverage']['native_jni']['proof_status']=='not_proven'
+    assert state['coverage']['native_jni']['jni_export_candidate_count']==1
+    assert {ep['source_engine'] for ep in state['api_endpoints']} >= {'flutter','hermes'}
+    obj._native_jni_analyzer.audit_package_libraries=MagicMock(side_effect=RuntimeError('synthetic analyzer failure'))
+    await obj._run_analysis(state)
+    assert state['coverage']['native_jni']['static_status']=='incomplete'
+    assert state['coverage']['native_jni']['proof_status']=='not_proven'
+
+def test_framework_probe_coverage_marks_truncated_as_partial():
+    from types import SimpleNamespace
+    from mobileag.core.orchestrator import _framework_probe_coverage
+    coverage=_framework_probe_coverage('flutter',SimpleNamespace(
+        is_flutter_app=True,scan_status='complete',binary_truncated=True,api_endpoints=[],named_routes=[],
+        bundled_assets=[],potential_secrets=[],scan_errors=[]), root_valid=True)
+    assert coverage['static_status']=='partial'
+    assert coverage['candidate_output_truncated'] is True
+
+def test_empty_framework_inventory_requires_a_valid_scan_root():
+    from mobileag.core.orchestrator import _framework_probe_coverage
+    assert _framework_probe_coverage('hermes', [], root_valid=False)['static_status']=='incomplete'
+    assert _framework_probe_coverage('hermes', [], root_valid=True)['static_status']=='not_applicable'
+
+def test_il2cpp_probe_coverage_distinguishes_absent_and_incomplete_frameworks():
+    from types import SimpleNamespace
+    from mobileag.core.orchestrator import _il2cpp_probe_coverage
+    absent=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=False,scan_status='complete'))
+    assert absent['static_status']=='not_applicable'
+    assert absent['is_il2cpp'] is False
+    detected=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=True,scan_status='complete',
+        reconstructed_classes=['Synthetic'],reconstructed_fields=[],reconstructed_methods=[]))
+    assert detected['static_status']=='analyzed_heuristically'
+    assert detected['candidate_count']==1
+    invalid=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=False,scan_status='invalid',scan_errors=['invalid_scan_root']))
+    assert invalid['static_status']=='incomplete'
+    truncated=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=True,scan_status='complete',metadata_truncated=True))
+    assert truncated['static_status']=='partial'
 
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser

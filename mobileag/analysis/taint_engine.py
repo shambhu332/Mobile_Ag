@@ -1736,8 +1736,12 @@ class TaintEngine:
         self.coverage.update(runtime_status="not_tested", proof_status="not_proven", exhaustive=False,
                              candidate_count=len(all_findings), java_ast=dict(self.ast_coverage),
                              same_file_parameter_summary=dict(self._parameter_summary_coverage),
-                             symbol_resolver={"indexed_classes": len(self.symbol_resolver.classes) if hasattr(self, "symbol_resolver") else 0,
-                                              "static_status": "completed" if hasattr(self, "symbol_resolver") and self.symbol_resolver.classes else "not_analyzed"},
+                             symbol_resolver={
+                                 "indexed_classes": len(self.symbol_resolver.classes) if hasattr(self, "symbol_resolver") else 0,
+                                 "indexed_files": self.symbol_resolver.coverage.get("source_files_analyzed", 0) if hasattr(self, "symbol_resolver") else 0,
+                                 "static_status": self.symbol_resolver.coverage.get("static_status", "not_analyzed") if hasattr(self, "symbol_resolver") else "not_analyzed",
+                                 "coverage": dict(self.symbol_resolver.coverage) if hasattr(self, "symbol_resolver") else {},
+                             },
                              limits={**inventory.coverage['limits'], 'findings':1000,
                                      'parameter_summaries': MAX_PARAMETER_SINK_SUMMARIES,
                                      'parameter_summary_rounds': MAX_PARAMETER_SUMMARY_ROUNDS})

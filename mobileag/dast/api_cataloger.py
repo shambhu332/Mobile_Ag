@@ -32,6 +32,7 @@ _MAX_QUERY_NAME_LENGTH = 256
 _MAX_CAPTURE_REQUESTS = 10000
 _MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+_MAX_HAR_OUTPUT_BYTES = 64 * 1024 * 1024
 _MAX_ENDPOINTS = 10000
 _MAX_OPENAPI_BYTES = 16 * 1024 * 1024
 _SUPPORTED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
@@ -550,9 +551,25 @@ class MobileApiCataloger:
             }
         }
 
-    def save_har(self, output_path: str) -> None:
-        """Save captured traffic to HAR 1.2 JSON file."""
+    def save_har(self, output_path: str | Path) -> None:
+        """Save bounded HAR traffic through private atomic replacement."""
         data = self.export_har_json()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        payload = json.dumps(data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        if len(payload) > _MAX_HAR_OUTPUT_BYTES:
+            raise ValueError("HAR output exceeds the report size limit")
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, out_path)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+            raise
 

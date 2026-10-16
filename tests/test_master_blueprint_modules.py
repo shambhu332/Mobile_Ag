@@ -1333,6 +1333,35 @@ def test_har_exporter(tmp_path):
     assert loaded["log"]["version"] == "1.2"
 
 
+def test_har_save_replaces_symlink_atomically_with_private_file(tmp_path):
+    import json
+    import os
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "traffic.har"
+    output.symlink_to(victim)
+
+    MobileApiCataloger().save_har(output)
+
+    assert not output.is_symlink()
+    assert victim.read_text() == "unchanged"
+    assert json.loads(output.read_text())["log"]["version"] == "1.2"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_har_save_enforces_output_cap_before_destination_write(tmp_path, monkeypatch):
+    import pytest
+    import mobileag.dast.api_cataloger as api_cataloger
+
+    output = tmp_path / "oversized.har"
+    monkeypatch.setattr(api_cataloger, "_MAX_HAR_OUTPUT_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        api_cataloger.MobileApiCataloger().save_har(output)
+    assert not output.exists()
+
+
 def test_har_exporter_redacts_auth_fields_in_url_and_bodies():
     import json
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger

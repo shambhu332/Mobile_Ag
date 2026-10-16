@@ -190,7 +190,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
 * **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
-* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. Retained HAR requests are owned snapshots, so caller mutation after ingestion cannot bypass the recorded retention budget or rewrite later exports. JSON-object shape inference visits at most 100 properties without first materializing the full item sequence. Raw capture values remain in bounded process memory by design and are redacted on export. This does not establish hosted ingestion or a complete backend contract.
+* **Current boundary**: OpenAPI generation is locally schema-validated and output is bounded; persistence uses a private-mode temporary file and atomic replacement. HAR export is capped at 64 MiB and uses private-mode atomic replacement. Retained HAR requests are owned snapshots, so caller mutation after ingestion cannot bypass the recorded retention budget or rewrite later exports. JSON-object shape inference visits at most 100 properties without first materializing the full item sequence. Raw capture values remain in bounded process memory by design and are redacted on export. This does not establish hosted ingestion or a complete backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
@@ -1227,3 +1227,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed (**4 passed**); full-suite and compile results follow. This covers
    local planning-state persistence only; the checklist remains a planning
    reference and does not authorize or execute tests.
+
+   HAR persistence now caps serialized output at 64 MiB and uses private-mode
+   atomic replacement instead of writing through an existing destination
+   symlink. Synthetic tests cover successful redacted serialization, symlink
+   replacement, file mode, and fail-before-write size rejection. Focused HAR
+   tests passed (**11 passed**); full-suite and compile results follow. This
+   validates local export handling only, not completeness of captured traffic.

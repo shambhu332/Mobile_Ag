@@ -1730,3 +1730,8 @@ standalone browser regression also completed successfully in Chromium 155 with
 the synthetic ADB/UI adapter; it reported zero executed XSS markers and zero
 requests outside loopback. Its accessibility checks remain explicitly
 `not_run` and its provider inference is mocked, not live.
+
+The low-level `clear_logcat` helper is now retired consistently with its
+disabled web route: direct calls raise before any ADB command, preserving
+original device log evidence. A synthetic no-command regression covers the
+helper; no device log buffer was cleared.

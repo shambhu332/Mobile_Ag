@@ -334,6 +334,7 @@ async def test_logcat_and_pid_helpers_fail_closed_without_scope_guard():
     manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'1234',b''))
     with pytest.raises(PermissionError):await manager.get_logcat_dump('owned-device')
     with pytest.raises(PermissionError):await manager.get_process_pids('owned-device','org.example.app')
+    with pytest.raises(PermissionError):await manager.clear_logcat('owned-device')
     manager._exec_cmd.assert_not_awaited()
 
 @pytest.mark.asyncio

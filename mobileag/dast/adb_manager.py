@@ -304,9 +304,8 @@ class ADBManager:
                                   if token.isdecimal() and 0 < int(token) < 2**31))[:8]
 
     async def clear_logcat(self, serial: str) -> bool:
-        """Clear the device logcat buffer."""
-        code, _, _ = await self._exec_cmd(["-s", serial, "logcat", "-c"], timeout=3.0)
-        return code == 0
+        """Retired: preserve device log evidence; no command is issued."""
+        raise PermissionError("Device-wide logcat clearing is disabled to preserve assessment evidence")
 
     async def capture_screenshot(self, serial: str, guard=None) -> Optional[bytes]:
         """Capture device screenshot and return PNG bytes."""

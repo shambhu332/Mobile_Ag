@@ -184,7 +184,8 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     monkeypatch.setattr(worker._il2cpp_auditor, 'audit_package', lambda _: Il2CppAnalysisResult(
         is_il2cpp=True, metadata_version=29, metadata_tables_status='parsed',
         metadata_definitions_status='parsed', reconstructed_classes=['Fixture'],
-        reconstructed_methods=[{'name': 'reviewOnly'}], scan_status='complete'))
+        reconstructed_methods=[{'name': 'reviewOnly'}],
+        api_endpoints=['https://api.fixture.invalid/v1/il2cpp'], scan_status='complete'))
     monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',lambda _:[])
     (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
     state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
@@ -201,7 +202,7 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['il2cpp_analysis']['runtime_status']=='not_tested'
     assert result['il2cpp_analysis']['exhaustive'] is False
     embedded = {item['source_engine']: item for item in result['api_endpoints']}
-    for engine in ('flutter', 'hermes'):
+    for engine in ('flutter', 'hermes', 'il2cpp'):
         assert embedded[engine]['method'] == 'UNKNOWN'
         assert embedded[engine]['requires_auth'] is None
         assert embedded[engine]['evidence_type'] == 'embedded_url_candidate'

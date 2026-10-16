@@ -464,7 +464,10 @@ class Orchestrator:
                 }
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):
-                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                        state.setdefault("api_endpoints", []).append({
+                            "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                            "evidence_type": "embedded_url_candidate", "source_engine": "il2cpp",
+                        })
             elif name == "fileprovider":
                 for fp_res in (result or []):
                     all_findings.extend(fp_res.findings)

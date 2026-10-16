@@ -1574,3 +1574,40 @@ def test_instance_field_write_marks_register_flow_coverage_partial(tmp_path):
     assert engine.coverage["static_status"] == "partial"
     assert any("instance field write value is not modeled" in warning
                for warning in engine.coverage["register_dataflow_warnings"])
+
+
+def test_fill_array_data_marks_array_content_coverage_partial(tmp_path):
+    (tmp_path / "ArrayPayload.smali").write_text('''.class public Lfixture/ArrayPayload;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 7
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    const/4 v4, 0
+    const/4 v6, 2
+    new-array v3, v6, [Ljava/lang/String;
+    aput-object v2, v3, v4
+    fill-array-data v3, :array_data
+    aget-object v5, v3, v4
+    sget-object v0, Lfixture/ArrayPayload;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+    :array_data
+    .array-data 4
+        0x0
+        0x0
+    .end array-data
+.end method
+''', encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+
+    assert any(finding.metadata.get("analysis_kind") == "smali_local_register_flow"
+               for finding in findings)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("fill-array-data payload/index effects are not modeled" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])

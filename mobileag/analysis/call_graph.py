@@ -765,6 +765,7 @@ class SmaliCallGraphEngine:
             move_alias = re.match(r"move(?:-object|-wide)?(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
+            fill_array_data = re.match(r"fill-array-data\s+([vp]\d+),", text)
             filled_new_array = re.match(r"filled-new-array(?:/range)?\s+\{([^}]*)\}", text)
             instance_get = re.match(r"iget(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
             instance_put = re.match(r"iput(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
@@ -852,6 +853,8 @@ class SmaliCallGraphEngine:
                     warn(f"instance field read value is not modeled in {method.key} at line {line_no}")
                 if instance_put:
                     warn(f"instance field write value is not modeled in {method.key} at line {line_no}")
+                if fill_array_data:
+                    warn(f"fill-array-data payload/index effects are not modeled in {method.key} at line {line_no}")
                 if filled_new_array:
                     element_traces = frozenset(
                         trace for register in _invocation_registers(filled_new_array.group(1))

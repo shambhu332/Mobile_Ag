@@ -460,6 +460,17 @@ def test_api_mapper_redacts_short_and_percent_encoded_mixed_path_ids():
     assert "Ab%31Cd%32Ef" not in safe_encoded
 
 
+def test_api_mapper_redacts_typed_digit_bearing_path_ids_but_keeps_route_words():
+    safe = APIMapper._safe_route("/api/v1/users/usr_98472/orders/order_123")
+    encoded = APIMapper._safe_route("/api/v1/users/%75sr%5F98472")
+
+    assert safe == "/api/v1/users/{id}/orders/{id}"
+    assert encoded == "/api/v1/users/{id}"
+    assert APIMapper._safe_route("/api/v1/users/me") == "/api/v1/users/me"
+    assert APIMapper._safe_route("/api/v1/orders/recent") == "/api/v1/orders/recent"
+    assert APIMapper._safe_route("/api/v1/resource/item-00005-slug") == "/api/v1/resource/item-00005-slug"
+
+
 def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_router, tmp_path):
     class Match:
         def __init__(self, index):

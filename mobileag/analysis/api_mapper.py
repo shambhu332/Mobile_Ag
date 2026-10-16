@@ -224,6 +224,10 @@ class APIMapper:
             redact_next = False
             opaque_id = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
             short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
+            prefixed_resource_id = re.compile(
+                r"(?i)^(?:usr|user|acc|account|ord|order|profile|invoice|document|id)[_-]"
+                r"(?=[A-Za-z0-9_-]{2,}$)(?=.*\d)[A-Za-z0-9_-]+$"
+            )
             uuid = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
             email = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
             sensitive_segments = {
@@ -237,7 +241,9 @@ class APIMapper:
                         or uuid.fullmatch(segment) or email.fullmatch(segment)
                         or opaque_id.fullmatch(segment) or opaque_id.fullmatch(decoded_segment)
                         or short_mixed_case_id.fullmatch(segment)
-                        or short_mixed_case_id.fullmatch(decoded_segment)):
+                        or short_mixed_case_id.fullmatch(decoded_segment)
+                        or prefixed_resource_id.fullmatch(segment)
+                        or prefixed_resource_id.fullmatch(decoded_segment)):
                     safe_segments.append("{id}")
                     redact_next = False
                     continue

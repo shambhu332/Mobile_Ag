@@ -99,7 +99,7 @@ class MobileApiCataloger:
         opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
         short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
         prefixed_resource_id = re.compile(
-            r"(?i)^(?:usr|user|acc|account|ord|order|item|profile|invoice|document|id)[_-]"
+            r"(?i)^(?:usr|user|acc|account|ord|order|profile|invoice|document|id)[_-]"
             r"(?=[A-Za-z0-9_-]{2,}$)(?=.*\d)[A-Za-z0-9_-]+$"
         )
         email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")

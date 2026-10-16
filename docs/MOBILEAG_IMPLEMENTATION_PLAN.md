@@ -1276,3 +1276,15 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    passed (**1,231 passed**, 62.37 s); compileall and `git diff --check` passed.
    This repairs coverage reporting only: neither probe is a framework
    decompiler, and the tests do not establish APK recall or runtime behavior.
+
+Native JNI analyzer coverage is now copied into the orchestrator ledger with
+inventory limits/skips, per-library statuses, candidate counts, and explicit
+non-reachability/runtime-proof limitations. Analyzer exceptions become
+incomplete coverage; no native library in a valid extraction is not applicable.
+Synthetic propagation checks pass (**3 focused tests passed**). Full suite and
+compile results follow; this adds reporting only, not Java-to-native call-flow
+analysis.
+
+Validation for the native-JNI coverage-ledger change: full pytest passed
+(**1,231 passed**, 59.84 s); compileall and `git diff --check` passed. Results
+are synthetic regression evidence, not native exploit or APK-wide coverage proof.

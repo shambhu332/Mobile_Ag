@@ -481,7 +481,12 @@ async def test_framework_probe_coverage_reaches_scan_state(tmp_path):
     obj._call_graph_engine.audit_smali_directory=MagicMock(return_value=[])
     obj._pending_intent_auditor.audit_directory=MagicMock(return_value=[])
     obj._intent_redirection_auditor.audit_directory=MagicMock(return_value=[])
-    obj._native_jni_analyzer.audit_package_libraries=MagicMock(return_value=[])
+    obj._native_jni_analyzer.audit_package_libraries=MagicMock(return_value=[SimpleNamespace(
+        findings=[], scan_status='analyzed_heuristically', scan_errors=[],
+        jni_export_name_candidates=['Java_example_Native_run'], dangerous_symbol_string_candidates=['system'],
+        imported_dangerous_symbols=['popen'])])
+    obj._native_jni_analyzer.package_coverage={'limits_reached':False,'source_files_skipped':0,
+                                               'libraries_analyzed':1,'entries_examined':1}
     obj._fileprovider_auditor.audit_resource_directory=MagicMock(return_value=[])
     obj._privacy_manifest_auditor.audit_android_data_safety_package=MagicMock(return_value={'findings':[],'coverage':{}})
     obj._il2cpp_auditor.audit_package=MagicMock(return_value=SimpleNamespace(scan_status='complete'))
@@ -500,6 +505,9 @@ async def test_framework_probe_coverage_reaches_scan_state(tmp_path):
         assert coverage['analysis_kind']=='bounded_printable_string_candidates'
     assert state['coverage']['flutter']['candidate_count']==2
     assert state['coverage']['hermes']['endpoint_candidate_count']==1
+    assert state['coverage']['native_jni']['static_status']=='analyzed_heuristically'
+    assert state['coverage']['native_jni']['proof_status']=='not_proven'
+    assert state['coverage']['native_jni']['jni_export_candidate_count']==1
     assert {ep['source_engine'] for ep in state['api_endpoints']} >= {'flutter','hermes'}
 
 def test_framework_probe_coverage_marks_truncated_as_partial():

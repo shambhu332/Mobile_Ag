@@ -95,6 +95,28 @@ def _framework_probe_coverage(kind: str, results: Any) -> dict[str, Any]:
             "candidate_output_truncated": truncated, "scan_errors": errors, "limitations": limitations}
 
 
+def _native_jni_coverage(results: Any, inventory: Any, root_valid: bool) -> dict[str, Any]:
+    """Aggregate bounded ELF/JNI inventory without implying call reachability."""
+    items = results if isinstance(results, list) else []
+    inventory = inventory if isinstance(inventory, dict) else {}
+    statuses = [getattr(item, "scan_status", "unknown") for item in items]
+    errors = [str(error)[:200] for item in items
+              for error in (getattr(item, "scan_errors", []) or [])[:20]]
+    limited = bool(inventory.get("limits_reached") or inventory.get("source_files_skipped")) or any(
+        status not in {"analyzed_heuristically"} for status in statuses)
+    status = ("partial" if limited or errors else "analyzed_heuristically" if items else
+              "not_applicable" if root_valid else "incomplete")
+    return {**inventory, "static_status": status, "runtime_status": "not_tested", "proof_status": "not_proven",
+            "exhaustive": False, "library_count": len(items), "library_scan_statuses": statuses,
+            "jni_export_candidate_count": sum(len(getattr(item, "jni_export_name_candidates", []) or []) for item in items),
+            "dangerous_symbol_string_candidate_count": sum(len(getattr(item, "dangerous_symbol_string_candidates", []) or []) for item in items),
+            "imported_symbol_candidate_count": sum(len(getattr(item, "imported_dangerous_symbols", []) or []) for item in items),
+            "scan_errors": errors,
+            "limitations": ["bounded ELF/JNI name and symbol inventory; no Java-to-native call-flow resolution",
+                            "imported symbols and printable strings are review candidates, not proof of a reachable call",
+                            "runtime validation not performed; no exploit proof"]}
+
+
 class Orchestrator:
     """Main scan orchestrator that coordinates all agents through a pipeline.
 
@@ -469,7 +491,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes", "native_jni"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -521,6 +543,11 @@ class Orchestrator:
             elif name == "native_jni":
                 for lib_res in result:
                     all_findings.extend(lib_res.findings)
+                native_root = Path(state.get("resource_path", ""))
+                root_valid = bool(state.get("resource_path")) and native_root.is_dir() and not native_root.is_symlink()
+                state["coverage"][name] = _native_jni_coverage(
+                    result, self._native_jni_analyzer.package_coverage, root_valid)
+                engines[name] = state["coverage"][name]["static_status"]
             elif name == "flutter":
                 state["coverage"][name] = _framework_probe_coverage(name, result)
                 engines[name] = state["coverage"][name]["static_status"]

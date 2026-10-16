@@ -54,6 +54,7 @@ class MachOSecurityHeaders:
 
 
 class IOSSecurityAnalyzer:
+    MAX_PAYLOAD_ENTRIES = 20_000
     """Enterprise Static Security Analyzer for iOS IPA Archives."""
 
     def __init__(self) -> None:
@@ -85,12 +86,26 @@ class IOSSecurityAnalyzer:
         extract_archive(ipa_p, out_p)
 
         payload_dir = out_p / "Payload"
-        if not payload_dir.exists():
+        if payload_dir.is_symlink() or not payload_dir.is_dir():
             raise ValueError("Invalid IPA: Missing 'Payload' directory")
 
-        app_dirs = list(payload_dir.glob("*.app"))
+        app_dirs: list[Path] = []
+        try:
+            with os.scandir(payload_dir) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= self.MAX_PAYLOAD_ENTRIES:
+                        raise ValueError("IPA Payload entry count exceeds limit")
+                    if entry.name.endswith(".app") and entry.is_symlink():
+                        raise ValueError("Unsupported symlink app bundle")
+                    if entry.name.endswith(".app") and entry.is_dir(follow_symlinks=False):
+                        app_dirs.append(Path(entry.path))
+        except OSError as exc:
+            raise ValueError("Unable to inventory IPA Payload directory") from exc
+
         if not app_dirs:
             raise ValueError("Invalid IPA: No .app bundle found inside Payload directory")
+        if len(app_dirs) != 1:
+            raise ValueError("Invalid IPA: Multiple top-level .app bundles are ambiguous")
 
         app_dir = app_dirs[0]
         app_name = app_dir.stem

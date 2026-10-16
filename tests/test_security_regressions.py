@@ -333,6 +333,29 @@ def test_ipa_executable(tmp_path):
         z.writestr('Payload/Display.app/Real',b'synthetic')
     assert IOSSecurityAnalyzer().extract_ipa(file,tmp_path/'extract')['binary_path'].endswith('/Real')
 
+
+def test_ipa_extraction_rejects_ambiguous_top_level_apps_and_payload_overflow(tmp_path):
+    ambiguous = tmp_path / "ambiguous.ipa"
+    with zipfile.ZipFile(ambiguous, "w") as archive:
+        for name in ("First", "Second"):
+            base = f"Payload/{name}.app/"
+            archive.writestr(base + "Info.plist",
+                             plistlib.dumps({"CFBundleExecutable": "Executable"}))
+            archive.writestr(base + "Executable", b"synthetic")
+    with pytest.raises(ValueError, match="Multiple top-level"):
+        IOSSecurityAnalyzer().extract_ipa(ambiguous, tmp_path / "ambiguous-out")
+
+    oversized = tmp_path / "oversized-payload.ipa"
+    with zipfile.ZipFile(oversized, "w") as archive:
+        archive.writestr("Payload/Only.app/Info.plist",
+                         plistlib.dumps({"CFBundleExecutable": "Executable"}))
+        archive.writestr("Payload/Only.app/Executable", b"synthetic")
+        archive.writestr("Payload/notes.txt", b"synthetic")
+    analyzer = IOSSecurityAnalyzer()
+    analyzer.MAX_PAYLOAD_ENTRIES = 1
+    with pytest.raises(ValueError, match="entry count exceeds limit"):
+        analyzer.extract_ipa(oversized, tmp_path / "oversized-out")
+
 def test_archive_traversal(tmp_path):
     file=tmp_path/'test.apk'
     with zipfile.ZipFile(file,'w') as z:

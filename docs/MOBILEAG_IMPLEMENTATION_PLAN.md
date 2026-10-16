@@ -417,6 +417,15 @@ worker-tree/session tests passed (**5 passed**); the full suite passed
 (**1,085 passed**, 41.07 s; one expected synthetic duplicate-ZIP-member
 warning). `compileall` and `git diff --check` passed.
 
+IPA extraction now scans the direct `Payload` entries under a fixed cap, rejects
+symlink app bundles, and requires exactly one top-level `.app` instead of
+materializing all matches and silently selecting the first. Synthetic tests
+cover ambiguous app bundles and the entry cap. This makes bundle selection
+deterministic but does not validate IPA signing or app runtime behavior. Focused
+IPA tests passed (**3 passed**); the full suite passed (**1,086 passed**, 40.27
+s; one expected synthetic duplicate-ZIP-member warning). `compileall` and
+`git diff --check` passed.
+
 Network Security Configuration XML is also rejected when it contains DTD/entity
 declarations, for both manifest-reference discovery and the configuration
 audit; the existing no-follow, size-bounded file reader remains in force. A

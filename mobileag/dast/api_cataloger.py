@@ -44,6 +44,7 @@ class CapturedRequest:
     body: Optional[str] = None
     response_status: int = 200
     response_body: Optional[str] = None
+    response_headers: Dict[str, str] = field(default_factory=dict)
 
 
 class MobileApiCataloger:
@@ -157,16 +158,19 @@ class MobileApiCataloger:
         if (not isinstance(req, CapturedRequest) or not isinstance(req.method, str)
                 or len(req.method) > 16
                 or not isinstance(req.url, str) or not isinstance(req.headers, dict)
+                or not isinstance(req.response_headers, dict)
                 or not isinstance(req.query_params, dict)
                 or type(req.response_status) is not int
                 or not 100 <= req.response_status <= 599
                 or (req.body is not None and not isinstance(req.body, str))
                 or (req.response_body is not None and not isinstance(req.response_body, str))):
             return None
-        if len(req.headers) > _MAX_QUERY_FIELDS or len(req.query_params) > _MAX_QUERY_FIELDS:
+        if (len(req.headers) > _MAX_QUERY_FIELDS
+                or len(req.response_headers) > _MAX_QUERY_FIELDS
+                or len(req.query_params) > _MAX_QUERY_FIELDS):
             return None
         size = 128 + 4 * (len(req.method) + len(req.url))
-        for mapping in (req.headers, req.query_params):
+        for mapping in (req.headers, req.response_headers, req.query_params):
             for key, value in mapping.items():
                 if (not isinstance(key, str) or not isinstance(value, str)
                         or len(key) > _MAX_QUERY_NAME_LENGTH):
@@ -401,6 +405,8 @@ class MobileApiCataloger:
         for req in self.captured_requests:
             safe_headers = redact(req.headers)
             req_headers = [{"name": k, "value": str(v)} for k, v in safe_headers.items()]
+            safe_response_headers = redact(req.response_headers)
+            response_headers = [{"name": k, "value": str(v)} for k, v in safe_response_headers.items()]
             safe_query = redact(req.query_params)
             query_strings = [{"name": k, "value": str(v)} for k, v in safe_query.items()]
             safe_body = redact(req.body) if req.body is not None else None
@@ -439,7 +445,7 @@ class MobileApiCataloger:
                     "statusText": "OK" if req.response_status < 400 else "Error",
                     "httpVersion": "HTTP/1.1",
                     "cookies": [],
-                    "headers": [],
+                    "headers": response_headers,
                     "content": res_content,
                     "redirectURL": "",
                     "headersSize": -1,

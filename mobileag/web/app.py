@@ -1612,6 +1612,7 @@ def _captured_api_catalog(txs, title: str):
             method=tx.method, url=tx.url, headers=tx.request_headers,
             body=tx.request_body,
             response_status=tx.response_status, response_body=tx.response_body,
+            response_headers=tx.response_headers,
         ))
     return catalog
 

@@ -743,6 +743,45 @@ def test_openapi_catalog_bounds_har_retention_without_discarding_endpoint_model(
     assert "/v1/items" in oversized_spec["paths"]
 
 
+def test_har_exports_redacted_observed_response_headers():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/profile",
+        response_status=200,
+        response_headers={
+            "Content-Type": "application/json",
+            "Set-Cookie": "session_id=synthetic-response-cookie; Path=/; Secure",
+            "X-Request-Trace": "synthetic-trace-id",
+        },
+    ))
+    har = catalog.export_har_json()
+    headers = har["log"]["entries"][0]["response"]["headers"]
+    assert {item["name"] for item in headers} == {
+        "Content-Type", "Set-Cookie", "X-Request-Trace"
+    }
+    assert "synthetic-response-cookie" not in json.dumps(har)
+    assert "synthetic-trace-id" in json.dumps(har)
+
+
+def test_api_capture_catalog_preserves_response_headers_for_redacted_har():
+    from types import SimpleNamespace
+    from mobileag.web.app import _captured_api_catalog
+
+    tx = SimpleNamespace(
+        method="GET", url="https://api.example.test/v1/profile",
+        request_headers={}, request_body=None, response_status=200,
+        response_body=None,
+        response_headers={"Set-Cookie": "session_id=synthetic-response-cookie"},
+    )
+    har = _captured_api_catalog([tx], "test").export_har_json()
+    rendered = str(har)
+    assert "Set-Cookie" in rendered
+    assert "synthetic-response-cookie" not in rendered
+
+
 def test_openapi_catalog_counts_non_string_and_overlong_urls_as_invalid():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 

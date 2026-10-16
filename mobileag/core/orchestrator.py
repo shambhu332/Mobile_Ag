@@ -50,6 +50,7 @@ from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 from mobileag.analysis.fileprovider_auditor import FileProviderAuditor
+from mobileag.analysis.crypto_api_auditor import CryptoApiMetadataAuditor
 
 
 _MAX_SCAN_STATE_BYTES = 64 * 1024 * 1024
@@ -192,6 +193,7 @@ class Orchestrator:
         self._privacy_manifest_auditor = PrivacyManifestAuditor()
         self._rasp_auditor = RaspResilienceAuditor()
         self._fileprovider_auditor = FileProviderAuditor()
+        self._crypto_api_auditor = CryptoApiMetadataAuditor()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -483,6 +485,8 @@ class Orchestrator:
             "il2cpp": asyncio.to_thread(self._il2cpp_auditor.audit_package, state["resource_path"]),
             "flutter": asyncio.to_thread(self._flutter_engine.analyze_package_directory, state["resource_path"]),
             "fileprovider": asyncio.to_thread(self._fileprovider_auditor.audit_resource_directory, state["resource_path"]),
+            "crypto_metadata": asyncio.to_thread(
+                self._crypto_api_auditor.audit_directory, state["decompiled_path"]),
             "data_safety": asyncio.to_thread(
                 self._privacy_manifest_auditor.audit_android_data_safety_package,
                 state.get("manifest_path", ""), state["resource_path"],
@@ -509,7 +513,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes", "native_jni"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes", "native_jni", "crypto_metadata"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -648,6 +652,10 @@ class Orchestrator:
             elif name == "pending_intent":
                 all_findings.extend(result)
                 state["coverage"][name] = dict(self._pending_intent_auditor.coverage)
+            elif name == "crypto_metadata":
+                state["crypto_api_inventory"] = result.get("inventory", [])
+                state["coverage"][name] = dict(result.get("coverage", {}))
+                engines[name] = state["coverage"][name].get("static_status", "incomplete")
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":

@@ -204,7 +204,7 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
                                             'proof_status':'not_proven','exhaustive':False}
         return []
     monkeypatch.setattr(worker._call_graph_engine,'audit_smali_directory',partial_call_graph)
-    (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true);}}')
+    (tmp_path/'Fixture.java').write_text('class Fixture{void cfg(){settings.setAllowUniversalAccessFromFileURLs(true); Cipher.getInstance("AES/GCM/NoPadding");}}')
     state=create_initial_state('synthetic','unused',str(tmp_path));state.update(decompiled_path=str(tmp_path),resource_path=str(tmp_path),smali_path=str(tmp_path),manifest_data={'components':[]})
     result=await worker._run_analysis(state)
     assert result['coverage']['engines']['taint']=='skipped_disabled'
@@ -215,6 +215,8 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['engines']['smali_call_graph']=='partial'
     assert result['coverage']['engines']['dependencies']=='partial'
     assert result['coverage']['engines']['nsc']=='partial'
+    assert result['coverage']['engines']['crypto_metadata']=='analyzed_heuristically'
+    assert result['crypto_api_inventory'][0]['algorithm']=='AES/GCM/NoPadding'
     assert result['coverage']['dependencies']['lookup_status']=='skipped_offline'
     for engine in ('api_mapping','native','binary_protection','react_native',
                    'intent_redirection','pending_intent','fileprovider'):

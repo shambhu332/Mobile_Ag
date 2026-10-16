@@ -263,6 +263,7 @@ class ReportEngine:
             "stats": stats,
             "findings": findings,
             "api_endpoints": state.get("api_endpoints", []),
+            "crypto_api_inventory": state.get("crypto_api_inventory", []),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
             "review_surface_ledger": review_surface_ledger(state.get("coverage", {})),

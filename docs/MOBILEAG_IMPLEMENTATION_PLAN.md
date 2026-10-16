@@ -143,7 +143,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ### 3.3 Cryptographic API metadata review (no key/plaintext harvesting)
 * **Objective**: Record bounded cryptographic-use metadata for an authorized synthetic test case.
-* **Safe scope**: If separately approved, record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Prefer static API/configuration analysis; require output redaction and retention limits for any runtime metadata. This does not establish key entropy, data confidentiality, or cryptographic correctness.
+* **Safe scope**: If separately approved, runtime review may record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Static support now inventories bounded Java/Kotlin literal `getInstance` calls for selected platform crypto APIs, retaining only allowlisted algorithm/mode names, counts, and relative source locations; output has no code snippets or key material. Smali/native, dynamic algorithm resolution, imports/type identity, key-size inference, runtime observation, and algorithm quality/usage correctness remain unsupported. This static inventory is a review lead, not evidence of reachable crypto calls, key safety, data confidentiality, or cryptographic correctness.
 
 ---
 
@@ -1812,3 +1812,16 @@ artifact-writer tests passed (**14 passed**); the full suite passed (**1,322 pas
 54.45 s; one expected duplicate-ZIP-member warning). Compilation and
 `git diff --check` passed. This does not add confinement to an operator-selected
 root.
+
+The bounded static cryptography metadata inventory now runs in the scan pipeline
+and appears in JSON/Markdown/PDF source report data with its coverage entry. It
+accepts only a fixed set of conventional Java/Kotlin crypto factory API names
+and allowlisted algorithm/mode strings; arbitrary literals, snippets, keys, IVs,
+and plaintext are not retained. The cryptography/native review-surface ledger
+now includes this analyzer while leaving missing stages, runtime behavior, and
+proof state explicit. Synthetic positive, dynamic-value, comment, symlink-root,
+and skipped-source cases passed with the orchestrator/ledger regressions
+(**114 focused tests passed**); full pytest passed (**1,326 passed**, 53.86 s;
+one expected duplicate-ZIP-member warning). `compileall` and `git diff --check`
+passed. This is not runtime crypto instrumentation, key-size inference, a
+cryptographic-quality verdict, or proof of API reachability.

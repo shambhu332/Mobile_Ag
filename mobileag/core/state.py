@@ -36,6 +36,7 @@ class ScanState(TypedDict):
     components: list[dict[str, Any]]       # Exported activities, services, etc.
     deep_links: list[dict[str, Any]]       # URI schemes and app links
     api_endpoints: list[dict[str, Any]]    # Extracted API routes
+    crypto_api_inventory: list[dict[str, Any]]  # Literal Java/Kotlin crypto factory metadata
     secrets_found: list[dict[str, Any]]    # Hardcoded secrets, keys
     native_libraries: list[dict[str, Any]] # .so files with metadata
     dependencies: list[dict[str, Any]]     # Third-party libraries
@@ -80,7 +81,7 @@ def create_initial_state(
                       "proof_status": "not_proven", "exhaustive": False}
                for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping", "data_safety",
                             "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "il2cpp",
-                            "flutter", "hermes", "native_jni")}},
+                            "flutter", "hermes", "native_jni", "crypto_metadata")}},
         assessment_coverage="not_assessed",
         coverage_gaps=[],
         json_report_path="",
@@ -91,6 +92,7 @@ def create_initial_state(
         components=[],
         deep_links=[],
         api_endpoints=[],
+        crypto_api_inventory=[],
         secrets_found=[],
         native_libraries=[],
         dependencies=[],

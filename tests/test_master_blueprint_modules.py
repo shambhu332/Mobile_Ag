@@ -94,6 +94,25 @@ def test_api_catalog_retains_bounded_owned_request_snapshot():
     assert catalog.export_har_json()["log"]["entries"][0]["request"]["method"] == "POST"
 
 
+def test_api_json_schema_samples_large_objects_without_materializing_all_items():
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    class BoundedIterationDict(dict):
+        visited = 0
+
+        def items(self):
+            for item in super().items():
+                self.visited += 1
+                yield item
+
+    value = BoundedIterationDict((f"key-{index}", "sample") for index in range(10_000))
+    schema = MobileApiCataloger._json_schema(value)
+
+    assert len(schema["properties"]) == 100
+    assert schema["x-mobileag-truncated-properties"] is True
+    assert value.visited == 100
+
+
 def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     result = FileProviderAuditor().audit_xml_content(
         '<paths><files-path name="reports" path="reports/../" />'

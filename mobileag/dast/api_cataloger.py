@@ -11,6 +11,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, unquote, urlparse
@@ -131,7 +132,7 @@ class MobileApiCataloger:
         if isinstance(value, dict):
             properties = {}
             redacted_dynamic_keys = False
-            for key, item in list(value.items())[:100]:
+            for key, item in islice(value.items(), 100):
                 if isinstance(key, str) and len(key) <= 128:
                     if _looks_like_dynamic_json_key(key):
                         redacted_dynamic_keys = True

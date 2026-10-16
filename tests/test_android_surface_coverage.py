@@ -179,7 +179,17 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
         monkeypatch.setattr(target,method,AsyncMock(return_value=[]))
     worker._dependency_scanner.coverage={'static_status':'partial','lookup_status':'skipped_offline'}
     worker._nsc_auditor.coverage={'static_status':'partial'}
+    worker._api_mapper.coverage={'static_status':'partial'}
+    worker._native_analyzer.coverage={'static_status':'partial'}
+    worker._bin_protection.coverage={'static_status':'partial'}
+    worker._rn_scanner.coverage={'static_status':'partial'}
+    worker._intent_redirection_auditor.coverage={'static_status':'partial'}
+    worker._pending_intent_auditor.coverage={'static_status':'partial'}
+    worker._fileprovider_auditor.coverage={'static_status':'partial'}
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
+    monkeypatch.setattr(worker._intent_redirection_auditor,'audit_directory',lambda _:[])
+    monkeypatch.setattr(worker._pending_intent_auditor,'audit_directory',lambda *args,**kwargs:[])
+    monkeypatch.setattr(worker._fileprovider_auditor,'audit_resource_directory',lambda _:[])
     monkeypatch.setattr(worker._flutter_engine, 'analyze_package_directory', lambda _: SimpleNamespace(
         is_flutter_app=True, api_endpoints=['https://api.fixture.invalid/v1/flutter']))
     monkeypatch.setattr(worker._hermes_analyzer, 'audit_package_bundles', lambda _: [SimpleNamespace(
@@ -206,6 +216,9 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['engines']['dependencies']=='partial'
     assert result['coverage']['engines']['nsc']=='partial'
     assert result['coverage']['dependencies']['lookup_status']=='skipped_offline'
+    for engine in ('api_mapping','native','binary_protection','react_native',
+                   'intent_redirection','pending_intent','fileprovider'):
+        assert result['coverage']['engines'][engine]=='partial', (engine, result['coverage'].get(engine))
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
     assert result['il2cpp_analysis']['reconstructed_classes']==['Fixture']
     assert result['il2cpp_analysis']['reconstructed_methods']==[{'name':'reviewOnly'}]

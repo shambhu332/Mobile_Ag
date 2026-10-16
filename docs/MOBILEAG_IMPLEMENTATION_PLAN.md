@@ -1314,3 +1314,10 @@ Dependency and Network Security Config statuses. Focused tests passed (**34
 passed**); full pytest passed (**1,231 passed**, 60.15 s); compileall and
 `git diff --check` passed. This validates summary consistency on fixtures, not
 real APK coverage.
+
+Expanded the engine-summary regression to cover partial API mapping, native
+inventory, binary-protection, React Native, intent-redirection, PendingIntent,
+FileProvider, dependency, and Network Security Config statuses. The focused
+Orchestrator coverage file passed (**34 passed**); full pytest passed
+(**1,231 passed**, 60.20 s); compileall and `git diff --check` passed. These
+are controlled analyzer fixtures and do not establish real APK recall.

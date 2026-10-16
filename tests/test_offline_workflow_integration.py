@@ -42,6 +42,54 @@ def test_entry_and_total_byte_budgets(tmp_path):
     assert reader.coverage['limit_reasons'] == {'total_byte_budget': 1}
 
 
+@pytest.mark.parametrize("use_content_reader", [False, True])
+def test_source_inventory_does_not_materialize_unbounded_scandir(tmp_path, monkeypatch, use_content_reader):
+    from mobileag.analysis import bounded_sources
+
+    class Entry:
+        def __init__(self, number):
+            self.name = f"{number:05}.java"
+            self.path = str(tmp_path / self.name)
+
+        def is_symlink(self):
+            return False
+
+        def is_dir(self, follow_symlinks=True):
+            return False
+
+        def is_file(self, follow_symlinks=True):
+            return True
+
+    class Scan:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def __iter__(self):
+            nonlocal yielded
+            for number in range(10_000):
+                yielded += 1
+                yield Entry(number)
+
+    yielded = 0
+    if use_content_reader:
+        for number in range(3):
+            (tmp_path / f"{number:05}.java").write_text("synthetic", encoding="utf-8")
+    monkeypatch.setattr(bounded_sources.os, "scandir", lambda _path: Scan())
+    inventory = SourceInventory(max_entries=2)
+    if use_content_reader:
+        rows = list(inventory.read(tmp_path, {".java"}))
+    else:
+        rows = list(inventory.paths(tmp_path, {".java"}))
+
+    assert len(rows) == 2
+    assert inventory.coverage["entries_examined"] == 2
+    assert inventory.coverage["limit_reasons"] == {"entry_budget": 1}
+    assert yielded <= 3  # at most one lookahead beyond the configured entry budget
+
+
 def test_bounded_source_path_filter_excludes_unselected_files_before_read(tmp_path):
     selected = tmp_path / 'res' / 'xml' / 'paths.xml'
     ignored = tmp_path / 'assets' / 'paths.xml'

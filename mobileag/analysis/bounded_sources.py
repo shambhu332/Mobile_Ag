@@ -36,6 +36,19 @@ class SourceInventory:
         reasons = self.coverage['limit_reasons']
         reasons[reason] = reasons.get(reason, 0) + 1
 
+    @staticmethod
+    def _bounded_sorted_entries(entries, remaining: int):
+        """Sort only a bounded directory prefix; never materialize an unbounded scandir."""
+        selected = []
+        truncated = False
+        for entry in entries:
+            if len(selected) >= remaining:
+                truncated = True
+                break
+            selected.append(entry)
+        selected.sort(key=lambda item: item.name.casefold())
+        return selected, truncated
+
     def paths(self, directory, extensions=()):
         """Yield bounded regular-file paths without reading file contents."""
         allowed = {ext.lower() for ext in extensions}
@@ -51,11 +64,11 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        ordered_entries, truncated = self._bounded_sorted_entries(
+                            entries, self.max_entries - info['entries_examined'])
+                        if truncated:
+                            self.record_limit('entry_budget')
                         for entry in ordered_entries:
-                            if info['entries_examined'] >= self.max_entries:
-                                self.record_limit('entry_budget')
-                                return
                             info['entries_examined'] += 1
                             path = Path(entry.path)
                             if entry.is_symlink():
@@ -65,6 +78,8 @@ class SourceInventory:
                             elif (not allowed or path.suffix.lower() in allowed) and entry.is_file(follow_symlinks=False):
                                 info['source_files_analyzed'] += 1
                                 yield path
+                        if truncated:
+                            return
                 except OSError:
                     self.record_skip('directory_read_error')
         finally:
@@ -97,11 +112,11 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        ordered_entries, truncated = self._bounded_sorted_entries(
+                            entries, self.max_entries - info['entries_examined'])
+                        if truncated:
+                            self.record_limit('entry_budget')
                         for entry in ordered_entries:
-                            if info['entries_examined'] >= self.max_entries:
-                                self.record_limit('entry_budget')
-                                return
                             info['entries_examined'] += 1
                             path = Path(entry.path)
                             if entry.is_symlink():
@@ -145,6 +160,8 @@ class SourceInventory:
                                 yield path, data
                             except OSError:
                                 self.record_skip('unreadable_or_raced_file')
+                        if truncated:
+                            return
                 except OSError:
                     self.record_skip('directory_read_error')
         finally:

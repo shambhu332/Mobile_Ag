@@ -478,6 +478,15 @@ inventory and does not establish that a library is loaded or used at runtime.
 
 The Smali string inventory uses the shared no-symlink `SourceInventory` reader:
 at most 5,000 tree entries, 2 MiB per Smali file, and 32 MiB total source bytes.
+Directory enumeration retains and sorts only the remaining entry-budget-sized
+prefix (with at most one lookahead to detect truncation); it does not sort or
+materialize an unbounded `scandir` result before applying the cap. When more
+entries remain, coverage records `entry_budget` and the inventory is partial;
+the selected prefix is deterministic only relative to the filesystem's
+enumeration order, not a promise of globally lexicographically earliest files.
+Synthetic tests exercise both path-only enumeration and bounded file reading
+against a 10,000-entry iterator with a two-entry cap. This regression does not
+establish bounded kernel/filesystem internals or exhaustive APK coverage.
 String-entropy samples are capped at 500 strings and 256 characters per sample.
 Skipped files and limit conditions appear in the resilience API's `coverage`
 object; a partial scan must not be interpreted as absence of indicators. This

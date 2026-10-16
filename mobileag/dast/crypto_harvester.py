@@ -1,159 +1,42 @@
-"""In-memory Cryptographic Key and Plaintext Lifecycle Harvester.
+"""Safe parser for bounded crypto metadata; runtime hook generation is retired.
 
-Generates and manages Frida hooks into javax.crypto.Cipher, SecretKeySpec,
-KeyStore, and SQLCipher to harvest runtime symmetric keys, IVs, and plaintexts.
+Raw keys, IVs, plaintext, database credentials, and payload previews are never
+accepted into the returned event model.
 """
 from __future__ import annotations
 
-import binascii
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 
-@dataclass
+@dataclass(frozen=True)
 class HarvestedCryptoEvent:
     timestamp: str
-    operation: str  # ENCRYPT, DECRYPT, KEY_LOAD
+    operation: str
     algorithm: str
-    key_hex: Optional[str] = None
-    iv_hex: Optional[str] = None
-    plaintext_preview: Optional[str] = None
-    stack_trace: Optional[str] = None
 
 
 class CryptoHarvester:
-    """Manages in-memory cryptographic key interception and telemetry extraction."""
-
-    HARVESTER_FRIDA_SCRIPT = """
-/* MobileAg Cryptographic Key and Plaintext Harvester */
-Java.perform(function() {
-    var Cipher = Java.use('javax.crypto.Cipher');
-    var SecretKeySpec = Java.use('javax.crypto.spec.SecretKeySpec');
-    var IvParameterSpec = Java.use('javax.crypto.spec.IvParameterSpec');
-
-    function bytesToHex(bytes) {
-        if (!bytes) return null;
-        var hex = [];
-        for (var i = 0; i < bytes.length; i++) {
-            var b = (bytes[i] & 0xFF).toString(16);
-            if (b.length == 1) b = '0' + b;
-            hex.push(b);
-        }
-        return hex.join('');
-    }
-
-    function bytesToString(bytes) {
-        if (!bytes) return null;
-        var str = "";
-        for (var i = 0; i < Math.min(bytes.length, 128); i++) {
-            var c = bytes[i];
-            if (c >= 32 && c <= 126) str += String.fromCharCode(c);
-            else str += '.';
-        }
-        return str;
-    }
-
-    // Hook Cipher.init(int opmode, Key key, AlgorithmParameterSpec params)
-    try {
-        var initOverload = Cipher.init.overload('int', 'java.security.Key', 'java.security.spec.AlgorithmParameterSpec');
-        initOverload.implementation = function(opmode, key, params) {
-            var op = (opmode === 1) ? "ENCRYPT" : (opmode === 2 ? "DECRYPT" : "WRAP/UNWRAP");
-            var keyBytes = null;
-            try {
-                if (key && key.getEncoded) {
-                    keyBytes = bytesToHex(key.getEncoded());
-                }
-            } catch (err) {}
-
-            var ivBytes = null;
-            try {
-                if (params && params.getIV) {
-                    ivBytes = bytesToHex(params.getIV());
-                }
-            } catch (err) {}
-
-            send({
-                type: 'crypto_event',
-                operation: op,
-                algorithm: this.getAlgorithm(),
-                key: keyBytes,
-                iv: ivBytes
-            });
-
-            return initOverload.call(this, opmode, key, params);
-        };
-    } catch (e) {}
-
-    // Hook Cipher.doFinal(byte[] input)
-    try {
-        var doFinal = Cipher.doFinal.overload('[B');
-        doFinal.implementation = function(input) {
-            var res = doFinal.call(this, input);
-            var isEncrypt = (this.getAlgorithm().indexOf("ECB") !== -1 || true);
-            send({
-                type: 'crypto_payload',
-                algorithm: this.getAlgorithm(),
-                input_preview: bytesToString(input),
-                output_preview: bytesToString(res)
-            });
-            return res;
-        };
-    } catch (e) {}
-
-    // Hook net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase to harvest database password
-    try {
-        var SqlCipherDB = Java.use('net.sqlcipher.database.SQLiteDatabase');
-        var openMethods = SqlCipherDB.openOrCreateDatabase.overloads;
-        openMethods.forEach(function(overload) {
-            overload.implementation = function() {
-                var args = [].slice.call(arguments);
-                var pass = null;
-                for (var i = 0; i < args.length; i++) {
-                    if (typeof args[i] === 'string' && args[i].length > 0 && i > 0) {
-                        pass = args[i];
-                        break;
-                    } else if (Array.isArray(args[i])) {
-                        pass = bytesToHex(args[i]);
-                        break;
-                    }
-                }
-                send({
-                    type: 'crypto_event',
-                    operation: 'SQLCIPHER_KEY',
-                    algorithm: 'SQLCipher-256',
-                    key: pass ? String(pass) : 'UNKNOWN'
-                });
-                return overload.apply(this, arguments);
-            };
-        });
-    } catch (e) {}
-});
-"""
+    """Metadata-only parser retained for offline fixtures, not data harvesting."""
 
     def generate_hook_script(self) -> str:
-        """Return the standalone Frida hooking script."""
-        return self.HARVESTER_FRIDA_SCRIPT.strip() + "\n"
+        raise NotImplementedError(
+            "Crypto hook generation is disabled; raw key, IV, and plaintext collection is out of scope"
+        )
 
     def parse_event(self, message: Dict[str, Any]) -> Optional[HarvestedCryptoEvent]:
-        """Convert a Frida telemetry JSON payload into a structured HarvestedCryptoEvent."""
-        if not isinstance(message, dict) or message.get("type") not in {"crypto_event", "crypto_payload"}:
+        """Parse only allowlisted algorithm/operation labels from a synthetic event."""
+        if not isinstance(message, dict) or message.get("type") != "crypto_event":
             return None
-
+        operation = message.get("operation")
+        algorithm = message.get("algorithm")
+        if not isinstance(operation, str) or not isinstance(algorithm, str):
+            return None
+        operation = operation[:32]
+        algorithm = algorithm[:96]
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-        if message.get("type") == "crypto_event":
-            return HarvestedCryptoEvent(
-                timestamp=now,
-                operation=message.get("operation", "UNKNOWN"),
-                algorithm=message.get("algorithm", "UNKNOWN"),
-                key_hex=message.get("key"),
-                iv_hex=message.get("iv"),
-            )
-        else:
-            return HarvestedCryptoEvent(
-                timestamp=now,
-                operation="PAYLOAD_TRANSFER",
-                algorithm=message.get("algorithm", "UNKNOWN"),
-                plaintext_preview=message.get("input_preview") or message.get("output_preview"),
-            )
+        return HarvestedCryptoEvent(
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            operation=operation,
+            algorithm=algorithm,
+        )

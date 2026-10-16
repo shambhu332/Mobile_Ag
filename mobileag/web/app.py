@@ -2040,7 +2040,7 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
             if platform != "android" or not check_device(req.serial):
                 raise ValueError("DAST requires an explicitly scoped Android device")
             if req.bypass_root or req.bypass_ssl:
-                raise ValueError("Automatic bypass is unsupported; use the explicit Frida workbench and verify its result")
+                raise ValueError("Automatic root/TLS bypass is disabled; review configuration without altering authorization")
             activities = [c["name"] for c in scan["components"] if c.get("type") == "activity" and c.get("exported")]
             links = [d["uri"] for d in scan["deep_links"] if d.get("uri")]
             dynamic = await intent_fuzzer.run_full_dast_suite(serial=req.serial, package_name=scan["package_name"],
@@ -2139,7 +2139,7 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
     if request.auto_dast and (platform != "android" or not check_device(request.serial)):
         raise HTTPException(403, "DAST requires an explicit authorized Android device")
     if request.bypass_root or request.bypass_ssl:
-        raise HTTPException(422, "Automatic bypass is unsupported; use explicit Frida validation")
+        raise HTTPException(422, "Automatic root/TLS bypass is disabled; review configuration without altering authorization")
     output = Path(request.output_dir or OUTPUT_DIR).resolve()
     if output != OUTPUT_DIR.resolve():
         raise HTTPException(400, "Web job outputs use the configured output directory only")

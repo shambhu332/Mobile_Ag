@@ -36,7 +36,6 @@ from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.secret_scanner import SecretScanner
 from mobileag.analysis.taint_engine import TaintEngine
 from mobileag.filters.pipeline import FilterPipeline
-from mobileag.generators.frida_generator import FridaGenerator
 from mobileag.generators.poc_generator import PoCGenerator
 from mobileag.reporting.finding import Finding, FindingStatus
 from mobileag.reporting.sarif_exporter import SARIFExporter
@@ -109,7 +108,6 @@ class Orchestrator:
         )
 
         # Generators
-        self._frida_generator = FridaGenerator(self._router)
         self._poc_generator = PoCGenerator(self._router)
 
     async def scan(
@@ -638,9 +636,9 @@ class Orchestrator:
         return state
 
     async def _run_generation(self, state: ScanState) -> ScanState:
-        """Stage 4: Generate Frida scripts and PoC guides."""
+        """Stage 4: Generate bounded, review-only PoC guides."""
         state["current_phase"] = "generation"
-        logger.info("[Stage 4] Generation — Frida scripts + PoC guides...")
+        logger.info("[Stage 4] Generation — review-only PoC guides...")
 
         review_candidates = [Finding(**f) for f in state["filtered_findings"]]
         app_info = {
@@ -649,16 +647,8 @@ class Orchestrator:
             "scan_id": state["scan_id"],
         }
 
-        # Generate Frida scripts
-        try:
-            frida_results = await self._frida_generator.generate_batch(
-                review_candidates, app_info
-            )
-            state["generated_frida_scripts"] = frida_results
-            logger.info("[Stage 4] Generated %d Frida scripts", len(frida_results))
-        except Exception as exc:
-            logger.error("[Stage 4] Frida generation error: %s", exc)
-            state["errors"].append(f"Frida generation error: {exc}")
+        # Preserve the legacy state key as empty for old readers; no hooks are generated.
+        state["generated_frida_scripts"] = []
 
         # Generate PoC guides
         try:
@@ -674,17 +664,9 @@ class Orchestrator:
         return state
 
     async def _save_outputs(self, state: ScanState) -> None:
-        """Save generated Frida scripts and PoC guides to disk."""
+        """Save review-only PoC guides and reports to disk."""
         output = Path(state["output_dir"])
         await ReportEngine().generate_reports(state)
-
-        # Save Frida scripts
-        frida_dir = output / "frida_scripts"
-        frida_dir.mkdir(exist_ok=True)
-        for item in state.get("generated_frida_scripts", []):
-            fp = frida_dir / Path(item["filename"]).name
-            fp.write_text(redact(item["script"]))
-            logger.info("Saved Frida script: %s", fp)
 
         # Save PoC guides
         poc_dir = output / "poc_guides"

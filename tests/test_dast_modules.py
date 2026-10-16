@@ -365,11 +365,7 @@ def test_proxy_capture_storage_is_bounded_and_reports_omissions():
 
 def test_frida_runner_unified_agent_and_session():
     runner = FridaRunner()
-    unified_script = runner.generate_all_in_one_agent_script()
-    assert "TrustManager" in unified_script
-    assert "File.exists" in unified_script
-    assert "javax.crypto.Cipher" in unified_script
-    assert "Unified Enterprise Runtime" in unified_script
+    assert not hasattr(runner, "generate_all_in_one_agent_script")
 
     # Test attach_and_instrument_session fallback behavior
     result = runner.attach_and_instrument_session(

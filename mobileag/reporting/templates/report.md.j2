@@ -81,8 +81,8 @@ This is analyzer trace metadata, not proof of external reachability, attacker co
 #### Remediation
 {{ finding.remediation }}
 
-{% if finding.frida_script or finding.poc_guide %}
-*Note: A reproduction guide or Frida script has been generated for this finding in the output directory.*
+{% if finding.poc_guide %}
+*Note: A review-only reproduction guide has been generated for this finding. It is not executed or proof of exploitation.*
 {% endif %}
 
 ---

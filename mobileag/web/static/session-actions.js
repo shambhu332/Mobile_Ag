@@ -130,7 +130,6 @@
     actionCallbacks.set('static70', function(event) { toggleCopilotDrawer(); });
     actionCallbacks.set('static71', function(event) { askCopilotActivePoc(); });
     actionCallbacks.set('static72', function(event) { askCopilotActiveAdb(); });
-    actionCallbacks.set('static73', function(event) { askCopilotActiveFrida(); });
     actionCallbacks.set('static74', function(event) { askCopilotActiveFix(); });
     actionCallbacks.set('static75', function(event) { askCopilotBountyReport(); });
     actionCallbacks.set('static76', function(event) { if(event.key==='Enter') sendCopilotChat(); });

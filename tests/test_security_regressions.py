@@ -379,8 +379,8 @@ def test_frida_fails_closed():
 @pytest.mark.asyncio
 async def test_frida_runtime_attachment_and_daemon_start_are_disabled(monkeypatch):
     module=importlib.import_module('mobileag.dast.frida_runner')
-    native=MagicMock();session=native.get_device.return_value.attach.return_value
-    monkeypatch.setattr(module,'HAS_NATIVE_FRIDA',True);monkeypatch.setattr(module,'frida',native)
+    native=MagicMock()
+    monkeypatch.setattr(module,'HAS_NATIVE_FRIDA',True)
     runner=module.FridaRunner()
     result=await runner.execute_script_payload('emulator-5554','synthetic.app','console.log("test");')
     assert result['status']=='disabled' and result['executed'] is False

@@ -34,17 +34,16 @@ async def test_plans_do_not_invent_targets_or_execute_destructive_operations(cwe
 
 
 @pytest.mark.asyncio
-async def test_model_and_frida_generation_are_never_execution_attestations():
+async def test_review_guides_remain_unverified_and_frida_generation_is_disabled():
     class SuccessRouter:
         async def route(self, **kwargs):
             return SimpleNamespace(success=True, error="", content="Generated draft")
     finding = Finding(title="Synthetic", description="Unverified", cwe_id="CWE-Unknown")
     guide = await PoCGenerator(SuccessRouter()).generate(finding, {})
     assert guide.startswith("**Generated validation plan - NOT EXECUTED")
-    script = await FridaGenerator(Router()).generate(finding, {})
-    assert "NOT EXECUTED OR VERIFIED" in script
-    assert "no hook was installed" in script
-    assert "Hook installed successfully" not in script
+    with pytest.raises(NotImplementedError, match="Runtime hook generation is disabled"):
+        await FridaGenerator(Router()).generate(finding, {})
+    assert await FridaGenerator(Router()).generate_batch([finding], {}) == []
     assert finding.status is FindingStatus.UNVERIFIED
 
 

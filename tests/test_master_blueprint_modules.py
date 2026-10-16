@@ -142,23 +142,17 @@ def test_fileprovider_parser_rejects_dtds_and_entities(declaration):
     assert result.findings == []
 
 
-def test_unpinning_engine_generates_multi_layer_script():
+def test_unpinning_engine_refuses_bypass_generation():
     engine = UnpinningEngine()
-    config = UnpinningConfig(target_package="com.example.bank", bypass_java=True, bypass_boringssl=True, bypass_flutter=True)
-    script = engine.generate_script(config)
-
-    assert "com.example.bank" in script
-    assert "javax.net.ssl.TrustManager" in script
-    assert "SSL_CTX_set_custom_verify" in script
-    assert "libflutter.so" in script
+    config = UnpinningConfig(target_package="org.example.synthetic")
+    with pytest.raises(NotImplementedError, match="TLS verification bypass generation is disabled"):
+        engine.generate_script(config)
 
 
-def test_crypto_harvester_script_and_event_parsing():
+def test_crypto_harvester_refuses_scripts_and_discards_sensitive_fields():
     harvester = CryptoHarvester()
-    script = harvester.generate_hook_script()
-    assert "javax.crypto.Cipher" in script
-    assert "SecretKeySpec" in script
-    assert "net.sqlcipher.database.SQLiteDatabase" in script
+    with pytest.raises(NotImplementedError, match="raw key, IV, and plaintext collection is out of scope"):
+        harvester.generate_hook_script()
 
     event = harvester.parse_event({
         "type": "crypto_event",
@@ -170,7 +164,9 @@ def test_crypto_harvester_script_and_event_parsing():
     assert event is not None
     assert event.operation == "ENCRYPT"
     assert event.algorithm == "AES/CBC/PKCS5Padding"
-    assert event.key_hex == "00112233445566778899aabbccddeeff"
+    assert not hasattr(event, "key_hex")
+    assert not hasattr(event, "iv_hex")
+    assert "00112233445566778899aabbccddeeff" not in repr(event)
 
     sqlcipher_event = harvester.parse_event({
         "type": "crypto_event",
@@ -179,8 +175,9 @@ def test_crypto_harvester_script_and_event_parsing():
         "key": "SecretDbPassword123",
     })
     assert sqlcipher_event is not None
+    assert "SecretDbPassword123" not in repr(sqlcipher_event)
+    assert harvester.parse_event({"type": "crypto_payload", "input_preview": "synthetic plaintext"}) is None
     assert sqlcipher_event.operation == "SQLCIPHER_KEY"
-    assert sqlcipher_event.key_hex == "SecretDbPassword123"
 
 
 

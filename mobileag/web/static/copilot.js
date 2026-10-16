@@ -34,17 +34,6 @@
       }
     }
 
-    function askCopilotActiveFrida() {
-      const f = (currentScan && currentScan.findings && selectedFindingId)
-        ? currentScan.findings.find(item => item.id === selectedFindingId)
-        : (currentScan && currentScan.findings ? currentScan.findings[0] : null);
-      if (f) {
-        askCopilotPrompt(`Write a production-grade Frida hook script to verify or bypass ${escapeHtml(String(f.title ?? ""))} (${escapeHtml(String(f.cwe_id))})`);
-      } else {
-        askCopilotPrompt('Generate a universal Frida script for SSL unpinning and root bypass');
-      }
-    }
-
     function askCopilotActiveFix() {
       const f = (currentScan && currentScan.findings && selectedFindingId)
         ? currentScan.findings.find(item => item.id === selectedFindingId)

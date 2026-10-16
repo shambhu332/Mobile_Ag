@@ -11,6 +11,7 @@ import plistlib
 import struct
 import tempfile
 from pathlib import Path
+import pytest
 
 from mobileag.analysis.hermes_analyzer import HermesBytecodeAnalyzer
 from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
@@ -753,16 +754,10 @@ def test_ui_crawler_factory_propagates_smart_crawler_opt_ins():
 
 def test_frida_stealth_harness():
     harness = FridaStealthHarness()
-    config = harness.generate_random_config()
-
-    assert config.daemon_name.startswith("android_sys_")
-    assert 32000 <= config.listen_port <= 59000
-    assert config.socket_path.startswith("/data/local/tmp/.sock_")
-
-    preamble = harness.get_stealth_preamble_script()
-    assert "pthread_create" in preamble
-    assert "release-keys" in preamble
-    assert "java.io.File" in preamble
+    with pytest.raises(NotImplementedError, match="Stealthy daemon deployment is disabled"):
+        harness.generate_random_config()
+    with pytest.raises(NotImplementedError, match="Anti-detection hook generation is disabled"):
+        harness.get_stealth_preamble_script()
 
 
 def test_privacy_manifest_auditor():

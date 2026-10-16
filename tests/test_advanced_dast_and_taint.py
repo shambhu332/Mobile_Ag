@@ -271,32 +271,15 @@ class HtmlScreen {
 
 
 # =============================================================================
-# 1. FridaRunner Tests
+# 1. FridaRunner safe-profile tests
 # =============================================================================
-def test_frida_runner_script_generation():
+def test_frida_runner_exposes_no_hook_generators():
     runner = FridaRunner()
-    unpin_script = runner.generate_unpinning_script()
-    crypto_script = runner.generate_crypto_monitor_script()
-    root_script = runner.generate_root_bypass_script()
-
-    assert "TrustManager" in unpin_script
-    assert "CertificatePinner" in unpin_script
-    assert "javax.crypto.Cipher" in crypto_script
-    assert "File.exists" in root_script
-
-
-def test_frida_runner_crypto_telemetry_parsing():
-    runner = FridaRunner()
-    logs = [
-        "[CRYPTO_AUDIT] Algorithm: AES/ECB/PKCS5Padding | Mode: ENCRYPT_MODE | Key: AES (RAW)",
-        "[CRYPTO_AUDIT] Algorithm: AES/CBC/PKCS5Padding | Mode: ENCRYPT_MODE | IV: 00 00 00 00 00 00 00 00",
-        "Normal log line from activity",
-    ]
-    findings = runner.parse_crypto_telemetry(logs, package_name="com.test.app")
-    assert len(findings) == 2
-    cwes = {f.cwe_id for f in findings}
-    assert "CWE-327" in cwes  # Insecure ECB mode
-    assert "CWE-329" in cwes  # Static IV
+    assert not any(hasattr(runner, name) for name in (
+        "generate_unpinning_script", "generate_crypto_monitor_script",
+        "generate_root_bypass_script", "generate_all_in_one_agent_script",
+        "generate_stealth_unpinning_script", "generate_stealth_daemon_launcher",
+    ))
 
 
 @pytest.mark.asyncio

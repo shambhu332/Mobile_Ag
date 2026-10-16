@@ -1110,6 +1110,7 @@ class SmaliCallGraphEngine:
                         or target_key in SMALI_TAINT_TRANSFORMS
                         or target_key in SMALI_BUILDER_TO_STRING
                         or target_key in SMALI_BUILDER_MUTATORS
+                        or exact_target_key in SMALI_BUILDER_CONSTRUCTORS
                         or target_key in SMALI_STREAM_SOURCE_ACCESSORS
                         or target_key in SMALI_EXTERNAL_URI_STREAMS
                         or target_key in SMALI_EXTERNAL_PATH_READERS

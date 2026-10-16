@@ -412,11 +412,14 @@ def test_smali_string_construction_preserves_tainted_input(construction, tmp_pat
 .end method
 """, encoding="utf-8")
 
-    findings = SmaliCallGraphEngine().audit_smali_directory(tmp_path)
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
     flows = [finding for finding in findings
              if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
     assert len(flows) == 1
     assert flows[0].metadata["source_kind"] == "INTENT_EXTRA"
+    assert not any("tainted arguments passed to an unmodeled invocation" in warning
+                   for warning in engine.coverage["register_dataflow_warnings"])
 
 
 def test_internal_string_builder_is_not_unconditionally_treated_as_tainted(tmp_path):

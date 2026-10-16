@@ -1001,6 +1001,29 @@ def test_smali_unknown_register_destination_form_marks_coverage_partial(tmp_path
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_unknown_register_write_does_not_keep_stale_source_taint(tmp_path):
+    (tmp_path / "UnknownWriteTaint.smali").write_text("""
+.class public Lcom/example/UnknownWriteTaint;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 6
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    unsupported-op v2, v3
+    sget-object v4, Lcom/example/UnknownWriteTaint;->web:Landroid/webkit/WebView;
+    invoke-virtual {v4, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert not any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+    assert engine.coverage["static_status"] == "partial"
+
+
 def test_smali_primitive_conversion_preserves_intent_extra_taint(tmp_path):
     (tmp_path / "PrimitiveConversion.smali").write_text("""
 .class public Lcom/example/PrimitiveConversion;

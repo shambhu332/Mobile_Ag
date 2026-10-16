@@ -29,6 +29,7 @@ class Il2CppAnalysisResult:
     tree_entries_scanned: int = 0
     metadata_bytes_scanned: int = 0
     metadata_truncated: bool = False
+    candidate_output_truncated: bool = False
     scan_errors: List[str] = field(default_factory=list)
 
 
@@ -38,6 +39,7 @@ class Il2CppAuditor:
     IL2CPP_METADATA_MAGIC = 0xFAB11BAF
     MAX_TREE_ENTRIES = 50_000
     MAX_METADATA_BYTES = 10 * 1024 * 1024
+    MAX_PRINTABLE_STRINGS = 100_000
     MAX_ENDPOINTS = 100
     MAX_CLASS_CANDIDATES = 50
 
@@ -144,7 +146,15 @@ class Il2CppAuditor:
         classes: Set[str] = set()
 
         secret_marker_added = False
+        def mark_truncated(reason: str) -> None:
+            result.candidate_output_truncated = True
+            if reason not in result.scan_errors:
+                result.scan_errors.append(reason)
+
         for m in re.finditer(b"[\x20-\x7E]{4,}", data):
+            if result.string_literals_count >= self.MAX_PRINTABLE_STRINGS:
+                mark_truncated("printable_string_limit")
+                break
             result.string_literals_count += 1
             s = m.group().decode("utf-8", errors="ignore")
 
@@ -152,6 +162,8 @@ class Il2CppAuditor:
                 if not url.endswith((".png", ".jpg", ".asset", ".unity")):
                     if len(endpoints) < self.MAX_ENDPOINTS:
                         endpoints.add(url)
+                    elif url not in endpoints:
+                        mark_truncated("api_endpoint_limit")
 
             secret_match = self.SECRET_PATTERN.search(s)
             if secret_match and not secret_marker_added:
@@ -160,9 +172,11 @@ class Il2CppAuditor:
                 secret_marker_added = True
 
             # Detect class-like strings
-            if (len(classes) < self.MAX_CLASS_CANDIDATES
-                    and re.match(r"^[A-Z][a-zA-Z0-9_]+Manager$|^[A-Z][a-zA-Z0-9_]+Controller$", s)):
-                classes.add(s)
+            if re.match(r"^[A-Z][a-zA-Z0-9_]+Manager$|^[A-Z][a-zA-Z0-9_]+Controller$", s):
+                if len(classes) < self.MAX_CLASS_CANDIDATES:
+                    classes.add(s)
+                elif s not in classes:
+                    mark_truncated("class_candidate_limit")
 
         result.api_endpoints = sorted(endpoints)
         result.reconstructed_classes = sorted(classes)

@@ -127,6 +127,34 @@ def test_il2cpp_auditor():
         assert res.metadata_truncated is False
 
 
+def test_il2cpp_auditor_reports_string_and_candidate_caps():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        metadata_dir = Path(tmp_dir) / "assets/bin/Data/Managed/Metadata"
+        metadata_dir.mkdir(parents=True)
+        metadata = metadata_dir / "global-metadata.dat"
+        payload = struct.pack("<II", Il2CppAuditor.IL2CPP_METADATA_MAGIC, 29)
+        strings = (b"https://one.example.invalid/a\x00https://two.example.invalid/b\x00"
+                   b"AuthManager\x00AccountManager\x00PaymentManager")
+        metadata.write_bytes(payload + strings)
+
+        candidate_limited = Il2CppAuditor()
+        candidate_limited.MAX_ENDPOINTS = 1
+        candidate_limited.MAX_CLASS_CANDIDATES = 1
+        result = candidate_limited.audit_package(tmp_dir)
+
+        iteration_limited = Il2CppAuditor()
+        iteration_limited.MAX_PRINTABLE_STRINGS = 1
+        bounded = iteration_limited.audit_package(tmp_dir)
+
+    assert result.scan_status == "partial"
+    assert result.candidate_output_truncated is True
+    assert len(result.api_endpoints) == len(result.reconstructed_classes) == 1
+    assert {"api_endpoint_limit", "class_candidate_limit"} <= set(result.scan_errors)
+    assert bounded.scan_status == "partial"
+    assert bounded.string_literals_count == 1
+    assert "printable_string_limit" in bounded.scan_errors
+
+
 def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
     with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as outside_dir:
         base = Path(tmp_dir)

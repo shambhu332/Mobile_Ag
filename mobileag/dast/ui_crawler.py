@@ -25,6 +25,9 @@ _ACTION_BUTTON_TERMS = re.compile(
     r"(?i)\b(next|submit|login|sign in|search|explore|enter|start|proceed|open)\b"
 )
 _BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+_MAX_HIERARCHY_CHARS = 2 * 1024 * 1024
+_MAX_HIERARCHY_NODES = 5_000
+_XML_DECLARATION_RE = re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 
 
 class UICrawler:
@@ -62,12 +65,19 @@ class UICrawler:
     def parse_ui_elements(self, xml_content: str) -> list[dict[str, Any]]:
         """Parse UIAutomator XML hierarchy into structured interactable element objects."""
         elements: list[dict[str, Any]] = []
-        if not xml_content or not xml_content.startswith("<?xml") and "<hierarchy" not in xml_content:
+        if (not isinstance(xml_content, str) or not xml_content
+                or len(xml_content) > _MAX_HIERARCHY_CHARS
+                or _XML_DECLARATION_RE.search(xml_content)
+                or not xml_content.startswith("<?xml") and "<hierarchy" not in xml_content):
             return elements
 
         try:
             root = ET.fromstring(xml_content)
-            for node in root.iter("node"):
+            nodes = list(root.iter("node"))
+            # Fail closed instead of returning a partial action list.
+            if len(nodes) > _MAX_HIERARCHY_NODES:
+                return elements
+            for node in nodes:
                 has_children = len(list(node)) > 0
                 clickable = node.attrib.get("clickable", "false") == "true"
                 if has_children and not clickable:

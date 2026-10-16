@@ -78,6 +78,20 @@ def test_fileprovider_parser_bounds_direct_xml_input_and_validates_root():
     assert wrong_root.error_code == "unexpected_root_element"
 
 
+@pytest.mark.parametrize("declaration", [
+    '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>',
+    '<!DOCTYPE paths SYSTEM "file:///tmp/researcher-controlled-nonexistent">',
+])
+def test_fileprovider_parser_rejects_dtds_and_entities(declaration):
+    payload = f'{declaration}<paths><root-path name="root" path="." /></paths>'
+    result = FileProviderAuditor().audit_xml_content(payload)
+
+    assert result.parse_status == "invalid"
+    assert result.error_code == "xml_dtd_entity_rejected"
+    assert result.entries == []
+    assert result.findings == []
+
+
 def test_unpinning_engine_generates_multi_layer_script():
     engine = UnpinningEngine()
     config = UnpinningConfig(target_package="com.example.bank", bypass_java=True, bypass_boringssl=True, bypass_flutter=True)

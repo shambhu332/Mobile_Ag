@@ -63,6 +63,14 @@ class FileProviderAuditor:
             result.error_code = "xml_size_limit"
             return result
 
+        # APK resources are untrusted input. ElementTree does not resolve
+        # external entities by default, but accepting DTDs can still enable
+        # internal-entity expansion and needlessly enlarges the parser surface.
+        if "<!doctype" in xml_content.lower() or "<!entity" in xml_content.lower():
+            result.parse_status = "invalid"
+            result.error_code = "xml_dtd_entity_rejected"
+            return result
+
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError:

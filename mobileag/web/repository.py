@@ -8,13 +8,13 @@ import json
 import os
 import re
 import sqlite3
-import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from mobileag.security.privacy import redact
 from mobileag.reporting.validation import bind_confirmation
 from mobileag.reporting.artifact_writer import preflight_bounded_structure
+from mobileag.reporting.artifact_writer import write_private_artifact
 
 MAX_SCAN_DOCUMENT_BYTES = 64 * 1024 * 1024
 MAX_DASHBOARD_SNAPSHOT_BYTES = 64 * 1024 * 1024
@@ -59,17 +59,7 @@ def private_write(path: Path, value: dict) -> None:
     _, raw = _bounded_redacted_json(
         value, label="Dashboard snapshot", output_limit=MAX_DASHBOARD_SNAPSHOT_BYTES,
     )
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, name = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
-    temporary = Path(name)
-    try:
-        with os.fdopen(fd, 'w') as out:
-            out.write(raw)
-            out.flush()
-            os.fsync(out.fileno())
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    write_private_artifact(path, raw, MAX_DASHBOARD_SNAPSHOT_BYTES)
 
 
 

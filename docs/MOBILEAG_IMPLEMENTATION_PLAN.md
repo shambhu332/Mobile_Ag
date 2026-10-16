@@ -1782,8 +1782,8 @@ file descriptor: it walks the requested directory components with no-follow
 opens, creates private temporary files relative to that descriptor, then uses a
 directory-relative atomic replacement. ReportEngine, professional Markdown,
 SARIF, SBOM, OpenAPI/HAR, CLI reports, orchestrator scan state/PoC guides,
-checklist state, and the bounded streaming feedback export now share that
-implementation. Synthetic regressions verify parent-symlink rejection and that
+checklist state, bounded streaming feedback export, dashboard snapshots, and
+isolated-worker results now share that implementation. Synthetic regressions verify parent-symlink rejection and that
 renaming/replacing a parent after it has been opened does not redirect the
 publication into the replacement; destination-symlink replacement, private
 modes, caps, and failed streaming-export preservation remain covered. Focused
@@ -1793,3 +1793,13 @@ export/state tests passed (**67 passed**); full pytest passed (**1,321 passed**,
 detect an actual-directory substitution that races before that component is
 opened; standalone writers outside the shared helper and cross-platform support
 for descriptor-relative operations remain review items.
+
+
+The follow-up extended the same writer to bounded isolated-worker result JSON
+and redacted dashboard snapshots. This removes two remaining path-based
+temporary-file publishers while preserving worker streaming/caps and dashboard
+redaction/size validation. Focused worker, repository, and presentation tests
+passed (**71 passed**); the full suite passed (**1,321 passed**, 53.78 s; one
+expected duplicate-ZIP-member warning), and compilation plus `git diff --check`
+passed. Parent-root confinement and non-shared state writers remain explicitly
+unproven.

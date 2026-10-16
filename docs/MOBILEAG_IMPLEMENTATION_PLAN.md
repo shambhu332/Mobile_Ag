@@ -1614,3 +1614,12 @@ Focused DAST request/safety regressions passed (`test_security_regressions.py`:
 **64 passed**); full pytest passed (**1,282 passed**, 62.31 s); compileall and
 `git diff --check` passed. No device command, install, provider query, or
 network request was performed for this batch.
+
+The remaining device-operation request models now also bound serials,
+package names, APK paths, component names, deep-link URIs, and ADB connect
+host/port text before route handlers run. Synthetic validation regressions
+cover all affected models. Focused security/API tests passed (**106 passed**);
+full pytest passed (**1,291 passed**, 63.40 s); compileall and
+`git diff --check` passed. This validates request-shape rejection only; it
+does not grant device access, validate the ADB destination, or exercise a
+device/target.

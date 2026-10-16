@@ -112,6 +112,23 @@ def test_provider_and_deeplink_requests_bound_each_input_value():
     })
 
 
+@pytest.mark.parametrize("model,payload", [
+    (web.DeviceConnectRequest, {"host_port": "h" * 256}),
+    (web.DeviceActionRequest, {"serial": "s" * 129}),
+    (web.InstallApkRequest, {"serial": "owned-device", "apk_path": "p" * 4097}),
+    (web.LaunchActivityRequest, {"serial": "owned-device", "component": "c" * 513}),
+    (web.DispatchDeeplinkRequest, {"serial": "owned-device", "package_name": "org.example.app",
+                                   "uri": "u" * 8193}),
+    (web.StorageAuditRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.MemoryAuditRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.UICrawlRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+    (web.FridaDeployRequest, {"serial": "owned-device", "package_name": "p" * 257}),
+])
+def test_device_operation_requests_reject_oversized_fields(model, payload):
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
 def test_dynamic_api_rejects_oversized_targets_after_exact_scope_gate(monkeypatch):
     monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "owned-device")
     web.repository().save_policy({

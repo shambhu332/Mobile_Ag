@@ -1156,33 +1156,33 @@ BoundedExtraValues = Annotated[list[BoundedExtraValue], Field(max_length=20)]
 
 
 class DeviceConnectRequest(BaseModel):
-    host_port: str = "127.0.0.1:5555"
+    host_port: str = Field(default="127.0.0.1:5555", min_length=1, max_length=255)
 
 
 class DeviceActionRequest(BaseModel):
-    serial: str
+    serial: BoundedDeviceSerial
 
 
 class InstallApkRequest(BaseModel):
-    serial: str
-    apk_path: str
+    serial: BoundedDeviceSerial
+    apk_path: str = Field(min_length=1, max_length=4096)
     grant_permissions: bool = False
 
 
 class LaunchActivityRequest(BaseModel):
-    serial: str
-    component: str
+    serial: BoundedDeviceSerial
+    component: BoundedActivityName
 
 
 class DispatchDeeplinkRequest(BaseModel):
-    serial: str
-    package_name: str
-    uri: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    uri: BoundedDeepLink
 
 
 class StorageAuditRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
 
 
 class ProviderAuditRequest(BaseModel):
@@ -1211,19 +1211,19 @@ class DeepLinkAuditRequest(BaseModel):
 
 
 class MemoryAuditRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
 
 
 class UICrawlRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
     max_steps: int = Field(default=5, ge=1, le=20)
 
 
 class FridaDeployRequest(BaseModel):
-    serial: str
-    package_name: str
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
     script_type: Literal["unpinning", "crypto", "root_bypass", "all", "unified"] = "unpinning"  # "unpinning", "crypto", "root_bypass", "unified"
 
 

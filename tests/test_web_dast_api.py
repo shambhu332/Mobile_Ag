@@ -279,6 +279,34 @@ def test_dast_execute_adb_endpoint(client):
     assert "output" in data
 
 
+def test_dast_execute_adb_rechecks_scope_after_command(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    calls = []
+
+    async def revoke_shell_scope(serial, command):
+        calls.append((serial, command))
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "execute_adb"]
+        web.repository().save_policy(policy)
+        return {"status": "success", "output": "synthetic shell output", "exit_code": 0}
+
+    monkeypatch.setattr(web.adb_manager, "execute_shell", revoke_shell_scope)
+    response = client.post("/api/dast/execute_adb", json={
+        "serial": "emulator-5554", "command": "echo synthetic",
+    })
+    assert calls == [("emulator-5554", "echo synthetic")]
+    assert response.status_code == 403
+
+
+def test_dast_execute_adb_command_length_is_bounded(client):
+    response = client.post("/api/dast/execute_adb", json={
+        "serial": "emulator-5554", "command": "x" * 4097,
+    })
+    assert response.status_code == 422
+
+
 def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch):
     import importlib
 

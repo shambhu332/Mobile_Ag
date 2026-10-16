@@ -1200,7 +1200,7 @@ class TrafficAuditRequest(BaseModel):
 
 class ExecuteAdbRequest(BaseModel):
     serial: str
-    command: str
+    command: str = Field(min_length=1, max_length=4096)
 
 
 class ApiTestRequest(BaseModel):
@@ -1380,9 +1380,18 @@ async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest, request: Request)
 
 
 @app.post("/api/dast/execute_adb")
-async def execute_adb_command(req: ExecuteAdbRequest) -> dict[str, Any]:
+async def execute_adb_command(req: ExecuteAdbRequest, request: Request) -> dict[str, Any]:
     """Execute an ADB shell command directly on the connected BYOD device."""
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "execute_adb", req.model_dump())):
+            raise HTTPException(403, "Device-wide shell scope is unavailable or revoked")
+
+    guard()
     res = await adb_manager.execute_shell(req.serial, req.command)
+    guard()
     return res
 
 

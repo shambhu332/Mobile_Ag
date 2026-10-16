@@ -872,3 +872,15 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    mocked; no device was used. A revocation during dispatch cannot undo a
    command already sent, but the result is not accepted after the scope check
    fails. Existing test-environment warnings remain.
+
+   `/api/dast/execute_adb` now rechecks the authenticated session, configured
+   device allowlist, and explicit `execute_adb` policy at dispatch and after
+   command completion; command input is limited to 1–4,096 characters. Mocked
+   tests verify a revoked device-wide shell action suppresses the response and
+   an over-limit request is rejected. Focused route tests passed (**3 passed**,
+   22 deselected); the full suite passed (**1,164 passed**, 75.93 s), with
+   `compileall` and `git diff --check` passing. No command was run on a device.
+   The policy intentionally remains device-wide and the endpoint accepts
+   arbitrary command semantics; enabling it is not ordinary-app authority and
+   must be explicitly scoped/approved. It is unsuitable for unattended or
+   destructive testing.

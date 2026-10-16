@@ -202,6 +202,31 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
+    mapper = APIMapper(mock_router)
+    query_secret = "CANARY_ACCESS_TOKEN_0123456789"
+    path_secret = "SYNTHETIC-OPAQUE-ID-0123456789"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "Routes.smali").write_text(
+            f'.class public Lx/Routes;\n'
+            f'const-string v0, "/api/v1/users/{path_secret}?access_token={query_secret}"\n',
+            encoding="utf-8",
+        )
+        Path(tmpdir, "Urls.java").write_text(
+            f'String url = "https://dev-api.example.com/v1/reset/{path_secret}?token={query_secret}";\n',
+            encoding="utf-8",
+        )
+        endpoints, findings = await mapper.map_apis(tmpdir)
+
+    serialized = repr((endpoints, findings))
+    assert query_secret not in serialized
+    assert path_secret not in serialized
+    assert all("?" not in endpoint["url"] for endpoint in endpoints)
+    assert any(endpoint["url"] == "/api/v1/users/{id}" for endpoint in endpoints)
+    assert any("dev-api.example.com" in finding.title for finding in findings)
+
+
+@pytest.mark.asyncio
 async def test_bounded_secret_scan_caps_candidates_and_reports_partial_coverage(mock_router):
     scanner = SecretScanner(mock_router)
     with tempfile.TemporaryDirectory() as tmpdir:

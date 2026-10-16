@@ -31,6 +31,49 @@ class APIMapper:
         self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
                          "proof_status":"not_proven", "exhaustive":False}
 
+    @staticmethod
+    def _safe_route(value: str) -> str:
+        """Keep route shape, but never retain query, fragment, or opaque path values."""
+        try:
+            parsed = urlsplit(value[:8192])
+            origin = ""
+            if parsed.scheme or parsed.netloc:
+                hostname = parsed.hostname
+                if hostname:
+                    host = f"[{hostname}]" if ":" in hostname else hostname
+                    try:
+                        port = parsed.port
+                    except ValueError:
+                        return "[REDACTED URL]"
+                    scheme = parsed.scheme.lower()
+                    origin = f"{scheme}://{host}" if scheme else f"//{host}"
+                    if port is not None:
+                        origin += f":{port}"
+            segments = (parsed.path or "/").split("/")
+            safe_segments: list[str] = []
+            redact_next = False
+            opaque_id = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~%-]{24,}$")
+            uuid = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+            email = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
+            sensitive_segments = {
+                "token", "access_token", "auth_token", "session", "sessionid",
+                "session_id", "jwt", "reset", "verify", "password", "secret", "key",
+                "api_key", "client_secret", "secret_key", "auth",
+            }
+            for segment in segments:
+                if (redact_next or len(segment) > 128 or segment.isdigit()
+                        or uuid.fullmatch(segment) or email.fullmatch(segment)
+                        or opaque_id.fullmatch(segment)):
+                    safe_segments.append("{id}")
+                    redact_next = False
+                    continue
+                safe_segments.append(segment)
+                redact_next = segment.lower() in sensitive_segments
+            safe_path = "/".join(safe_segments) or "/"
+            return f"{origin}{safe_path}"[:4096]
+        except (TypeError, ValueError, UnicodeError):
+            return "[REDACTED URL]"
+
     def _sync_map_apis(self, base_path: Path) -> tuple[list[dict], list[dict]]:
         """Synchronously scan source files for API definitions and URL references."""
         endpoints: list[dict] = []
@@ -51,18 +94,19 @@ class APIMapper:
                         break
                     endpoints.append({
                         "method": method,
-                        "url": path,
+                        "url": self._safe_route(path),
                         "class_name": stem,
                         # Header occurrences elsewhere in this class are not a
                         # reliable endpoint-specific authorization signal.
                         "requires_auth": None
                     })
                     
+                    safe_path = self._safe_route(path)
                     if "admin" in path.lower() or "privilege" in path.lower():
                         if len(raw_findings) < 500:
                             raw_findings.append({
                             "type": "sensitive_route_name",
-                            "path": path,
+                            "path": safe_path,
                             "component": stem,
                             "file_path": rel_path
                             })
@@ -74,8 +118,9 @@ class APIMapper:
                         if len(endpoints) >= 5000:
                             inventory.record_limit('endpoint_count')
                             break
-                        if not any(ep.get("url") == route for ep in endpoints):
-                            endpoints.append({"method": "UNKNOWN", "url": route,
+                        safe_route = self._safe_route(route)
+                        if not any(ep.get("url") == safe_route for ep in endpoints):
+                            endpoints.append({"method": "UNKNOWN", "url": safe_route,
                                               "class_name": stem, "requires_auth": None,
                                               "evidence_type": "route_literal",
                                               "source_file": rel_path})
@@ -94,7 +139,7 @@ class APIMapper:
                         if len(raw_findings) < 500:
                             raw_findings.append({
                             "type": "staging_url",
-                            "url": url,
+                                "url": self._safe_route(url),
                             "component": stem,
                             "file_path": rel_path
                             })
@@ -105,7 +150,7 @@ class APIMapper:
                         if len(raw_findings) < 500:
                             raw_findings.append({
                             "type": "cleartext_url",
-                            "url": url,
+                                "url": self._safe_route(url),
                             "component": stem,
                             "file_path": rel_path
                             })

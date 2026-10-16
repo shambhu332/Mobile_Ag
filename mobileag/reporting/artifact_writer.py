@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import os
-import tempfile
+import secrets
+from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
 
@@ -55,29 +56,71 @@ def preflight_bounded_structure(value, *, max_bytes: int, max_nodes: int,
             raise ValueError(f"{label} exceeds the input size limit")
 
 
+@contextmanager
+def private_artifact_stream(path: str | Path):
+    """Yield a temporary binary stream and atomically publish on clean exit.
+
+    Directory-relative operations pin the selected parent so later renames do
+    not redirect the temporary file or replacement. Parent components are
+    opened one at a time without following symlinks.
+    """
+    output = Path(path)
+    if not output.name or output.name in {".", ".."}:
+        raise ValueError("Report artifact path must name a file")
+    if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")) or \
+            os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd or \
+            os.rename not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+        raise OSError("Secure directory-relative artifact writes are unsupported")
+
+    parent = Path(os.path.abspath(output.parent))
+    directory_fd = os.open(parent.anchor or "/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for component in parent.parts[1:]:
+            try:
+                child_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                   dir_fd=directory_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, 0o700, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                child_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                   dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+
+        temporary_name = f".{output.name}.{secrets.token_hex(12)}.tmp"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        fd = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
+    except BaseException:
+        os.close(directory_fd)
+        raise
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            yield stream
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_name, output.name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    except BaseException:
+        try:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+        except OSError:
+            pass
+        raise
+    finally:
+        os.close(directory_fd)
+
+
 def write_private_artifact(path: str | Path, content: str | bytes,
                            max_bytes: int = MAX_REPORT_ARTIFACT_BYTES) -> Path:
-    """Atomically replace a report file without following a destination symlink."""
+    """Atomically replace a bounded private artifact through a pinned directory."""
     payload = content.encode("utf-8") if isinstance(content, str) else content
     if not isinstance(payload, bytes) or len(payload) > max_bytes:
         raise ValueError("Report artifact exceeds the output size limit")
     output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_path = tempfile.mkstemp(
-        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent,
-    )
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, output)
-    except Exception:
-        try:
-            os.unlink(temporary_path)
-        except OSError:
-            pass
-        raise
+    with private_artifact_stream(path) as stream:
+        stream.write(payload)
     return output
 
 

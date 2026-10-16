@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import json
 import ipaddress
-import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from itertools import islice
 from pathlib import Path
@@ -18,6 +16,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 
 from mobileag.analysis.graphql_candidates import extract_graphql_operation_candidates
 from openapi_spec_validator import validate as validate_openapi_spec
+from mobileag.reporting.artifact_writer import write_private_artifact
 
 
 _DYNAMIC_JSON_KEY_PATTERNS = (
@@ -558,21 +557,7 @@ class MobileApiCataloger:
         if len(payload) > _MAX_OPENAPI_BYTES:
             raise ValueError("OpenAPI output exceeds the report size limit")
         out_path = Path(output_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, out_path)
-        except Exception:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
-        return out_path
+        return write_private_artifact(out_path, payload, _MAX_OPENAPI_BYTES)
 
     def export_har_json(self) -> Dict[str, Any]:
         """Convert captured HTTP transactions into HAR 1.2 format."""
@@ -659,18 +644,5 @@ class MobileApiCataloger:
         if len(payload) > _MAX_HAR_OUTPUT_BYTES:
             raise ValueError("HAR output exceeds the report size limit")
         out_path = Path(output_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, out_path)
-        except Exception:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
+        write_private_artifact(out_path, payload, _MAX_HAR_OUTPUT_BYTES)
 

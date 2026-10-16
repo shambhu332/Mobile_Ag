@@ -4,14 +4,13 @@ Self-learning feedback loop to adjust model confidences based on historical verd
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
 from typing import Dict, Any
 
 from mobileag.knowledge.qdrant_store import PatternMemory
 from mobileag.knowledge.neo4j_graph import AttackGraph
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import private_artifact_stream
 
 logger = logging.getLogger(__name__)
 
@@ -102,17 +101,12 @@ class FeedbackEngine:
             logger.warning("Qdrant not connected, cannot export training data.")
             return
 
-        temporary_path = None
         try:
             output = Path(output_path)
-            output.parent.mkdir(parents=True, exist_ok=True)
-            fd, temporary_path = tempfile.mkstemp(
-                prefix=f".{output.name}.", suffix=".tmp", dir=output.parent,
-            )
             rows = 0
             total_bytes = 0
             offset = None
-            with os.fdopen(fd, "wb") as stream:
+            with private_artifact_stream(output) as stream:
                 for _page in range(_MAX_TRAINING_EXPORT_PAGES):
                     points, offset = await self.qdrant.client.scroll(
                         collection_name=self.qdrant.collection_name,
@@ -135,16 +129,6 @@ class FeedbackEngine:
                 else:
                     if offset is not None:
                         raise ValueError("Training data export exceeds its page limit")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, output)
-            temporary_path = None
             logger.info("Exported %d redacted training records to %s", rows, output)
         except Exception as e:
             logger.error(f"Failed to export training data: {e}")
-        finally:
-            if temporary_path is not None:
-                try:
-                    os.unlink(temporary_path)
-                except OSError:
-                    pass

@@ -10,8 +10,6 @@ Enables seamless enterprise CI/CD integration:
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -20,7 +18,7 @@ from mobileag.reporting.coverage import review_surface_ledger
 from mobileag import __version__
 from mobileag.security.privacy import redact
 from mobileag.reporting.sarif_importer import MAX_BYTES, MAX_RESULTS, MAX_RULES, SarifImportError, validate_sarif_document
-from mobileag.reporting.artifact_writer import preflight_bounded_structure
+from mobileag.reporting.artifact_writer import preflight_bounded_structure, write_private_artifact
 
 
 class SARIFExporter:
@@ -211,21 +209,7 @@ class SARIFExporter:
         """Generate and save SARIF JSON report to disk."""
         sarif_data = cls.generate_sarif(findings, target_name, scan_id, artifact, coverage)
         out_p = Path(output_path)
-        out_p.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(sarif_data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
         if len(payload) > MAX_BYTES:
             raise SarifImportError("SARIF output exceeds the report size limit")
-        fd, temp_name = tempfile.mkstemp(prefix=f".{out_p.name}.", suffix=".tmp", dir=out_p.parent)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, out_p)
-        except Exception:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
-        return out_p
+        return write_private_artifact(out_p, payload, MAX_BYTES)

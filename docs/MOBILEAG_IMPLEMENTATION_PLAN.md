@@ -302,7 +302,7 @@ evidence.
 
 ### 9.3 Evidence-limited JSON, Markdown, and PDF report artifacts
 * **Objective**: Persist researcher-readable reports without converting unverified candidates into confirmed impact.
-* **Current boundary**: Orchestrator scan IDs are constrained to bounded path-safe names, and the per-scan output directory must not be a symlink or resolve outside the selected root. `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. CLI-generated JSON/Markdown reports use heuristic redaction and bounded private atomic writes. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. The feedback training-data export is capped by rows/pages/bytes, redacts payloads, and publishes via private atomic replacement; failed exports preserve the previous destination. The standalone SARIF, CycloneDX/SPDX, OpenAPI/HAR, and feedback-training writers have also been reviewed: their bounded outputs use private temporary files and atomic replacement, with synthetic tests confirming destination-symlink replacement does not modify the link target. These protections apply to the destination entry inside the selected existing parent; parent-directory replacement races and universal output-directory confinement are not proven. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
+* **Current boundary**: Orchestrator scan IDs are constrained to bounded path-safe names, and the per-scan output directory must not be a symlink or resolve outside the selected root. `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. CLI-generated JSON/Markdown reports use heuristic redaction and bounded private atomic writes. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. The feedback training-data export is capped by rows/pages/bytes, redacts payloads, and publishes via private atomic replacement; failed exports preserve the previous destination. The standalone SARIF, CycloneDX/SPDX, OpenAPI/HAR, and feedback-training writers have also been reviewed: their bounded outputs use private temporary files and atomic replacement, with synthetic tests confirming destination-symlink replacement does not modify the link target. The shared artifact writer now walks parent components with no-follow directory opens, then creates and replaces files relative to the pinned parent directory descriptor. ReportEngine, professional Markdown, SARIF, CycloneDX/SPDX, OpenAPI/HAR, CLI, scan-state/PoC-guide, checklist-state, and streaming feedback-training exports use this path; synthetic tests verify a parent rename after descriptor acquisition cannot redirect publication into a replacement directory. This does not establish confinement to a universal trusted output root, detect a directory substitution that occurs before that component is opened, or cover writers outside the shared helper. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
 
 ---
 
@@ -1776,3 +1776,20 @@ tests verify that a skipped symlink yields `partial` and a normal index reports
 passed (**3 passed**); full pytest passed (**1,319 passed**, 63.72 s),
 compileall and `git diff --check` passed. This corrects coverage reporting
 only; it does not establish cross-file taint accuracy.
+
+The shared artifact writer now publishes through a pinned parent-directory
+file descriptor: it walks the requested directory components with no-follow
+opens, creates private temporary files relative to that descriptor, then uses a
+directory-relative atomic replacement. ReportEngine, professional Markdown,
+SARIF, SBOM, OpenAPI/HAR, CLI reports, orchestrator scan state/PoC guides,
+checklist state, and the bounded streaming feedback export now share that
+implementation. Synthetic regressions verify parent-symlink rejection and that
+renaming/replacing a parent after it has been opened does not redirect the
+publication into the replacement; destination-symlink replacement, private
+modes, caps, and failed streaming-export preservation remain covered. Focused
+export/state tests passed (**67 passed**); full pytest passed (**1,321 passed**,
+53.94 s; one expected duplicate-ZIP-member warning). Compilation and
+`git diff --check` passed. This does not prove confinement to a trusted root or
+detect an actual-directory substitution that races before that component is
+opened; standalone writers outside the shared helper and cross-platform support
+for descriptor-relative operations remain review items.

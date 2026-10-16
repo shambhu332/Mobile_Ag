@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +26,7 @@ from typing import Any, Optional, Sequence
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 from mobileag.security.privacy import redact
+from mobileag.reporting.artifact_writer import write_private_artifact
 from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
@@ -141,23 +140,10 @@ class ProfessionalReportExporter:
 
         if output_path:
             p = Path(output_path)
-            p.parent.mkdir(parents=True, exist_ok=True)
             payload = report.encode("utf-8")
             if len(payload) > _MAX_PROFESSIONAL_REPORT_BYTES:
                 raise ValueError("Professional report exceeds the output size limit")
-            fd, temporary_path = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=p.parent)
-            try:
-                with os.fdopen(fd, "wb") as stream:
-                    stream.write(payload)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary_path, p)
-            except Exception:
-                try:
-                    os.unlink(temporary_path)
-                except OSError:
-                    pass
-                raise
+            write_private_artifact(p, payload, _MAX_PROFESSIONAL_REPORT_BYTES)
             logger.info("Professional report written to %s", p)
 
         return report

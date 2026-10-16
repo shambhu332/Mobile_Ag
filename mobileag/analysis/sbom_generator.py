@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import json
 import hashlib
-import os
 import re
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,31 +16,18 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, quote, urlsplit
 
 from packageurl import PackageURL
+from mobileag.reporting.artifact_writer import write_private_artifact
 
 
 _MAX_SBOM_OUTPUT_BYTES = 16 * 1024 * 1024
 
 
 def _write_sbom_atomically(output_path: str | Path, payload: bytes) -> Path:
-    """Write a bounded private artifact without following a destination symlink."""
+    """Write a bounded SBOM through the shared pinned-directory artifact path."""
     if len(payload) > _MAX_SBOM_OUTPUT_BYTES:
         raise ValueError("SBOM output exceeds the report size limit")
     out_path = Path(output_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, out_path)
-    except Exception:
-        try:
-            os.unlink(temp_name)
-        except OSError:
-            pass
-        raise
-    return out_path
+    return write_private_artifact(out_path, payload, _MAX_SBOM_OUTPUT_BYTES)
 
 
 def escape_purl_segment(value: str) -> str:

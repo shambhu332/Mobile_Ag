@@ -37,6 +37,40 @@ def test_private_artifact_write_accepts_bytes(tmp_path):
     assert output.read_bytes() == b"\x00\x01"
 
 
+def test_private_artifact_write_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tmp_path / "reports"
+    link.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError):
+        write_private_artifact(link / "report.json", b"synthetic")
+    assert not (outside / "report.json").exists()
+
+
+def test_private_artifact_write_stays_in_pinned_parent_after_path_replacement(tmp_path, monkeypatch):
+    parent = tmp_path / "reports"
+    parent.mkdir()
+    moved = tmp_path / "moved-reports"
+    real_fdopen = os.fdopen
+    moved_once = False
+
+    def replace_parent_after_temp_open(fd, *args, **kwargs):
+        nonlocal moved_once
+        if not moved_once:
+            parent.rename(moved)
+            parent.mkdir()
+            moved_once = True
+        return real_fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fdopen", replace_parent_after_temp_open)
+    write_private_artifact(parent / "report.json", b"synthetic")
+
+    assert (moved / "report.json").read_bytes() == b"synthetic"
+    assert not (parent / "report.json").exists()
+    assert list(parent.iterdir()) == []
+
+
 def test_taint_cli_export_redacts_and_privately_persists_json(tmp_path, monkeypatch):
     from click.testing import CliRunner
     import mobileag.analysis as analysis

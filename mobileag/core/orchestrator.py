@@ -5,10 +5,9 @@ import logging
 import uuid
 import json
 import re
-import os
-import tempfile
 from mobileag.security.privacy import redact
 from mobileag.reporting.report_engine import ReportEngine
+from mobileag.reporting.artifact_writer import write_private_artifact
 from pathlib import Path
 from typing import Optional, Any
 
@@ -225,22 +224,12 @@ class Orchestrator:
 
     @staticmethod
     def _write_private_artifact(path: Path, payload: bytes, max_bytes: int) -> None:
-        """Atomically write a bounded private artifact without following a link."""
-        if len(payload) > max_bytes:
-            raise ValueError("Scan artifact exceeds its output size limit")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        """Persist a bounded scan artifact through the shared safe writer."""
         try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, path)
-        except Exception:
-            try:
-                os.unlink(temporary_path)
-            except OSError:
-                pass
+            write_private_artifact(path, payload, max_bytes)
+        except ValueError as exc:
+            if "size limit" in str(exc):
+                raise ValueError("Scan artifact exceeds its output size limit") from exc
             raise
 
     @classmethod

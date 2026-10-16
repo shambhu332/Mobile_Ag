@@ -3,9 +3,7 @@
 import html
 import json
 import logging
-import os
 import re
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,7 +16,7 @@ from mobileag.reporting.evidence_contract import prepare_finding
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag.reporting.capability_inventory import capability_inventory
 from mobileag.security.privacy import redact
-from mobileag.reporting.artifact_writer import preflight_bounded_structure
+from mobileag.reporting.artifact_writer import preflight_bounded_structure, write_private_artifact
 
 logger = logging.getLogger(__name__)
 
@@ -45,22 +43,8 @@ class ReportEngine:
 
     @staticmethod
     def _atomic_private_write(path: Path, content: bytes, max_bytes: int = 64 * 1024 * 1024) -> None:
-        """Replace a report artifact without following an existing symlink."""
-        if not isinstance(content, bytes) or len(content) > max_bytes:
-            raise ValueError("Report artifact exceeds the output size limit")
-        fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, path)
-        except Exception:
-            try:
-                os.unlink(temporary_path)
-            except OSError:
-                pass
-            raise
+        """Replace a report through a pinned no-follow directory descriptor."""
+        write_private_artifact(path, content, max_bytes)
 
     def __init__(self):
         self._env: Optional[Environment] = None

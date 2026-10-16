@@ -127,6 +127,9 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
         is_macho=True, parse_status="parsed", symbol_names=["_stat"],
         swift_conformance_metadata_status="parsed",
         swift_conformance_candidates=[{"type_name": "Shape", "protocol_name": "Renderable"}],
+        swift_field_type_candidates=[{
+            "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
+        }],
     )
     monkeypatch.setattr(MachoBinaryParser, "parse_binary", lambda _self, _path: synthetic_parse)
 
@@ -136,6 +139,9 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
     assert report["swift_metadata"]["swift_conformance_candidates"] == [
         {"type_name": "Shape", "protocol_name": "Renderable"},
     ]
+    assert report["swift_metadata"]["swift_field_type_candidates"] == [{
+        "type_name": "Shape", "field_name": "size", "mangled_type_name": "$sSiD",
+    }]
 
     review = report["privacy_manifest"]["binary_api_symbol_review"]
     assert report["coverage"]["privacy_api_symbol_review"] == "analyzed_heuristically"

@@ -38,6 +38,7 @@ class MachoAnalysisResult:
     symbol_names: List[str] = field(default_factory=list)
     swift_type_name_candidates: List[str] = field(default_factory=list)
     swift_type_field_candidates: List[Dict[str, object]] = field(default_factory=list)
+    swift_field_type_candidates: List[Dict[str, str]] = field(default_factory=list)
     swift_type_metadata_status: str = "not_attempted"
     swift_protocol_name_candidates: List[str] = field(default_factory=list)
     swift_protocol_metadata_status: str = "not_attempted"
@@ -265,6 +266,9 @@ class MachoBinaryParser:
             for fields in slice_result.swift_type_field_candidates:
                 if fields not in result.swift_type_field_candidates and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append(fields)
+            for field_type in slice_result.swift_field_type_candidates:
+                if field_type not in result.swift_field_type_candidates and len(result.swift_field_type_candidates) < 1000:
+                    result.swift_field_type_candidates.append(field_type)
             for name in slice_result.swift_protocol_name_candidates:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
@@ -404,6 +408,9 @@ class MachoBinaryParser:
                 field_sections = [s for s in result.sections if s.get("name") == "__swift5_fieldmd"]
                 field_section = next((s for s in field_sections
                                       if isinstance(s.get("offset"), int) and isinstance(s.get("size"), int)
+                                      and 0 <= s["offset"] <= len(data)
+                                      and 0 <= s["size"] <= len(data) - s["offset"]
+                                      and s["size"] >= 16
                                       and s["offset"] <= field_descriptor <= s["offset"] + s["size"] - 16), None)
                 if field_section is None:
                     result.swift_type_metadata_status = "partial"
@@ -445,6 +452,41 @@ class MachoBinaryParser:
                         result.swift_type_metadata_status = "partial"
                         continue
                     field_names.append(field_name)
+                    type_relative = struct.unpack_from(endian + "i", data, record + 4)[0]
+                    if type_relative == 0:
+                        continue
+                    type_offset = record + 4 + type_relative
+                    if type_offset < 0 or type_offset >= len(data):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    type_end = data.find(b"\0", type_offset, min(len(data), type_offset + 256))
+                    if type_end < 0:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    raw_type = data[type_offset:type_end]
+                    # Keep only simple textual mangled names; symbolic references contain
+                    # embedded binary payloads and need a dedicated ABI-aware parser.
+                    if not raw_type.startswith((b"$s", b"$S", b"$e", b"_T")):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    try:
+                        mangled_type = raw_type.decode("ascii", errors="strict")
+                    except UnicodeDecodeError:
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    if any(ord(char) < 0x21 or ord(char) > 0x7e for char in mangled_type):
+                        result.swift_type_metadata_status = "partial"
+                        continue
+                    field_type_candidate = {
+                        "type_name": candidate,
+                        "field_name": field_name,
+                        "mangled_type_name": mangled_type,
+                    }
+                    if field_type_candidate not in result.swift_field_type_candidates:
+                        if len(result.swift_field_type_candidates) < 1000:
+                            result.swift_field_type_candidates.append(field_type_candidate)
+                        else:
+                            result.swift_type_metadata_status = "partial"
                 if field_names and len(result.swift_type_field_candidates) < 1000:
                     result.swift_type_field_candidates.append({"type_name": candidate, "field_names": field_names})
 

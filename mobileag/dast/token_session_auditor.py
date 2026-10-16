@@ -447,27 +447,16 @@ class MobileTokenSessionAuditor:
             elif auth_header:
                 token = auth_header.strip()
 
-            # 1. Cleartext HTTP transmission check
-            if url.lower().startswith("http://") and token:
-                findings.append(Finding(
-                    title="Authentication Credential Transmitted Over Cleartext HTTP",
-                    description="An Authorization credential was sent over an unencrypted HTTP channel, exposing it to network interception.",
-                    severity=Severity.HIGH,
-                    cwe_id="CWE-319",
-                    affected_component=safe_url,
-                    detection_method="MobileTokenSessionAuditor (Network Security)",
-                    status=FindingStatus.UNVERIFIED,
-                    remediation="Enforce HTTPS via Network Security Config and reject plain HTTP transmission.",
-                ))
-
-            # 2. Check query parameter tokens
+            # Parse URL credentials before classifying cleartext transport so
+            # query-carried credentials are not missed when no auth header exists.
+            query_credential_present = False
             try:
                 parsed = urlsplit(url)
             except ValueError:
                 url_inputs_unmodeled += 1
                 parsed = urlsplit("")
-            if (parsed.scheme.lower() in {"http", "https"}
-                    and (parsed.username is not None or parsed.password is not None)):
+            url_userinfo_present = parsed.username is not None or parsed.password is not None
+            if parsed.scheme.lower() in {"http", "https"} and url_userinfo_present:
                 findings.append(Finding(
                     title="Credential-Like Data Embedded in URL Userinfo",
                     description="The captured HTTP(S) URL contains username/password userinfo syntax. The values are omitted; the capture does not establish that the server used or accepted them.",
@@ -485,6 +474,7 @@ class MobileTokenSessionAuditor:
                 query_parse_incomplete += 1
             for q_name, q_val in query_tuples:
                 if self._is_sensitive_query_key(q_name):
+                    query_credential_present = True
                     if len(findings) >= self.MAX_FINDINGS:
                         finding_cap_reached = True
                         break
@@ -502,6 +492,23 @@ class MobileTokenSessionAuditor:
                         token = q_val
             if finding_cap_reached:
                 break
+
+            # A sensitive query parameter is also a cleartext credential
+            # candidate when the transport is HTTP, regardless of its value.
+            if parsed.scheme.lower() == "http" and (token or query_credential_present or url_userinfo_present):
+                if len(findings) >= self.MAX_FINDINGS:
+                    finding_cap_reached = True
+                    break
+                findings.append(Finding(
+                    title="Authentication Credential Transmitted Over Cleartext HTTP",
+                    description="An authorization credential or recognized credential-like URL field was observed over unencrypted HTTP. Its value is omitted; server use/acceptance is unverified.",
+                    severity=Severity.HIGH,
+                    cwe_id="CWE-319",
+                    affected_component=safe_url,
+                    detection_method="MobileTokenSessionAuditor (Network Security)",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Use HTTPS for authentication and do not place credentials in URLs.",
+                ))
 
             # Audit JWT claims if token is found
             if token:

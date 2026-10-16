@@ -509,6 +509,9 @@ when transaction or finding limits truncate processing, query parsing exceeds
 its field cap, or malformed/oversized URLs are unmodeled. The token audit API
 exposes this coverage rather than silently presenting a bounded result as
 complete.
+Recognized credential-like query keys or URL userinfo observed over HTTP also
+produce an unverified CWE-319 transport lead, even when no Authorization
+header is present; neither this nor the URL indicator proves server acceptance.
 
 ### BOLA candidate extraction boundary
 

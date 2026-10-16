@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,8 @@ class MachoAnalysisResult:
     swift_type_metadata_status: str = "not_attempted"
     swift_protocol_name_candidates: List[str] = field(default_factory=list)
     swift_protocol_metadata_status: str = "not_attempted"
+    binary_truncated: bool = False
+    candidate_output_truncated: bool = False
 
 
 class MachoBinaryParser:
@@ -60,6 +63,8 @@ class MachoBinaryParser:
 
     URL_PATTERN = re.compile(r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]*)?")
     MAX_BINARY_BYTES = 15 * 1024 * 1024
+    MAX_URL_CANDIDATES = 100_000
+    MAX_API_ENDPOINTS = 100
     LC_SEGMENT_64 = 0x19
     LC_SEGMENT_32 = 0x01
     LC_SYMTAB = 0x02
@@ -72,78 +77,70 @@ class MachoBinaryParser:
         """Parse an iOS Mach-O binary file."""
         path = Path(binary_path)
         result = MachoAnalysisResult()
-
-        if not path.is_file():
-            return result
-
         try:
             details = path.lstat()
-            if path.is_symlink() or not path.is_file():
+            if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
                 result.parse_status = "rejected_input"
                 result.parse_errors.append("Input must be a regular non-symlink file")
                 return result
-            result.file_size_bytes = details.st_size
         except OSError as exc:
             result.parse_status = "read_error"
             result.parse_errors.append(type(exc).__name__)
             return result
 
         try:
-            with open(path, "rb") as f:
-                header = f.read(32)
-        except OSError:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                opened = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(opened.st_mode)
+                        or (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino)):
+                    result.parse_status = "rejected_input"
+                    result.parse_errors.append("File changed during safe open")
+                    return result
+                result.file_size_bytes = opened.st_size
+                data = stream.read(self.MAX_BINARY_BYTES + 1)
+        except OSError as exc:
+            result.parse_status = "read_error"
+            result.parse_errors.append(type(exc).__name__)
             return result
 
-        if len(header) < 4:
+        if len(data) < 4:
             result.parse_status = "truncated"
+            result.parse_errors.append("Mach-O magic is truncated")
             return result
 
-        magic = struct.unpack(">I", header[:4])[0]
-        magic_le = struct.unpack("<I", header[:4])[0]
-
-        if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
-            result.is_macho = True
-            result.is_64bit = True
-        elif magic_le == self.MH_MAGIC_32 or magic == self.MH_MAGIC_32:
-            result.is_macho = True
-            result.is_64bit = False
-        elif magic in {self.FAT_MAGIC, self.FAT_MAGIC_64} or magic_le in {
-            self.FAT_MAGIC, self.FAT_MAGIC_64,
-        }:
-            result.is_macho = True
-            result.cpu_type = "Universal Fat Binary"
-        else:
+        magic = struct.unpack(">I", data[:4])[0]
+        magic_le = struct.unpack("<I", data[:4])[0]
+        is_thin64 = magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64
+        is_thin32 = magic_le == self.MH_MAGIC_32 or magic == self.MH_MAGIC_32
+        is_fat = (magic in {self.FAT_MAGIC, self.FAT_MAGIC_64}
+                  or magic_le in {self.FAT_MAGIC, self.FAT_MAGIC_64})
+        if not (is_thin64 or is_thin32 or is_fat):
             result.parse_status = "not_macho"
             return result
-
-        # Read binary data for section analysis
-        try:
-            with open(path, "rb") as f:
-                data = f.read(self.MAX_BINARY_BYTES + 1)
-        except OSError as exc:
-            result.parse_status = "read_error"
-            result.parse_errors.append(type(exc).__name__)
-            return result
+        result.is_macho = True
+        if is_thin64:
+            result.is_64bit = True
+        elif is_thin32:
+            result.is_64bit = False
+        else:
+            result.cpu_type = "Universal Fat Binary"
 
         truncated = len(data) > self.MAX_BINARY_BYTES
         data = data[:self.MAX_BINARY_BYTES]
+        result.binary_truncated = truncated
 
-        if magic_le == self.MH_MAGIC_64 or magic == self.MH_MAGIC_64:
+        if is_thin64:
             self._parse_thin_64(data, result)
-            if truncated:
-                result.parse_errors.append("Binary exceeds bounded read limit; file-backed sections may be incomplete")
-                result.parse_status = "partial"
-            elif result.parse_status == "not_attempted":
-                result.parse_status = "complete"
-        elif magic_le == self.MH_MAGIC_32 or magic == self.MH_MAGIC_32:
+        elif is_thin32:
             self._parse_thin_32(data, result)
-            if truncated:
-                result.parse_errors.append("Binary exceeds bounded read limit; file-backed sections may be incomplete")
-                result.parse_status = "partial"
-            elif result.parse_status == "not_attempted":
-                result.parse_status = "complete"
         else:
             self._parse_fat(data, result)
+        if truncated:
+            result.parse_errors.append("Binary exceeds bounded read limit; file-backed regions may be incomplete")
+            result.parse_status = "partial"
+        elif result.parse_status == "not_attempted":
+            result.parse_status = "complete"
 
         # Keep legacy whole-file name matches explicitly separate from
         # sections resolved from LC_SEGMENT_64 section records.
@@ -160,17 +157,30 @@ class MachoBinaryParser:
             result.crypto_frameworks.append("Security.framework")
 
         # Extract URLs
-        raw_strings = re.findall(b"https?://[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]+", data)
         endpoints: Set[str] = set()
-        for raw in raw_strings:
+        url_pattern = re.compile(rb"https?://[a-zA-Z0-9_.~!$&'()*+,;=:@%/-]+")
+        url_candidates = 0
+        for match in url_pattern.finditer(data):
+            if url_candidates >= self.MAX_URL_CANDIDATES:
+                result.candidate_output_truncated = True
+                result.parse_errors.append("URL candidate scan limit reached")
+                break
+            url_candidates += 1
             try:
-                u = raw.decode("utf-8", errors="ignore")
+                u = match.group(0).decode("utf-8", errors="ignore")
                 if not u.endswith((".png", ".jpg", ".svg", ".plist")):
-                    endpoints.add(u)
+                    if u not in endpoints and len(endpoints) >= self.MAX_API_ENDPOINTS:
+                        result.candidate_output_truncated = True
+                        if "API endpoint candidate limit reached" not in result.parse_errors:
+                            result.parse_errors.append("API endpoint candidate limit reached")
+                    else:
+                        endpoints.add(u)
             except Exception:
                 continue
 
-        result.api_endpoints = sorted(endpoints)[:100]
+        result.api_endpoints = sorted(endpoints)
+        if result.candidate_output_truncated:
+            result.parse_status = "partial"
         return result
 
     def _parse_fat(self, data: bytes, result: MachoAnalysisResult) -> None:

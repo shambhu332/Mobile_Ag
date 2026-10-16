@@ -245,6 +245,39 @@ def test_macho_parser_reports_malformed_load_commands_without_crashing(tmp_path)
     assert "Invalid load-command size" in result.parse_errors
 
 
+def test_macho_parser_rejects_symlink_and_marks_bounded_thin_input_partial(tmp_path):
+    real = tmp_path / "real.macho"
+    real.write_bytes(struct.pack("<I", MachoBinaryParser.MH_MAGIC_64) + b"\x00" * 64)
+    linked = tmp_path / "linked.macho"
+    linked.symlink_to(real)
+    linked_result = MachoBinaryParser().parse_binary(linked)
+    assert linked_result.parse_status == "rejected_input"
+
+    parser = MachoBinaryParser()
+    parser.MAX_BINARY_BYTES = 16
+    bounded = parser.parse_binary(real)
+    assert bounded.is_macho is True
+    assert bounded.binary_truncated is True
+    assert bounded.parse_status == "partial"
+    assert any("bounded read limit" in error for error in bounded.parse_errors)
+
+
+def test_macho_parser_caps_url_candidate_iteration_and_output(tmp_path):
+    header = struct.pack("<IiiIIIII", MachoBinaryParser.MH_MAGIC_64, 0x0100000C,
+                         0, 2, 0, 0, 0, 0)
+    binary = tmp_path / "URLs.macho"
+    binary.write_bytes(header + b"https://one.example.test/a\x00https://two.example.test/b")
+    parser = MachoBinaryParser()
+    parser.MAX_API_ENDPOINTS = 1
+
+    result = parser.parse_binary(binary)
+
+    assert result.api_endpoints == ["https://one.example.test/a"]
+    assert result.candidate_output_truncated is True
+    assert result.parse_status == "partial"
+    assert "API endpoint candidate limit reached" in result.parse_errors
+
+
 def test_macho_parser_inventories_only_bounded_swift_nominal_type_names(tmp_path):
     import struct
 

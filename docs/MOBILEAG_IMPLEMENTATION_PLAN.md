@@ -1338,3 +1338,11 @@ values fail closed to an empty inventory. Synthetic route coverage passed
 (**2 focused tests**); full pytest passed (**1,233 passed**, 61.07 s);
 compileall and `git diff --check` passed. `vulnerable_count` remains zero because
 this inventory endpoint does not establish backend authorization proof.
+
+IL2CPP coverage now distinguishes a complete scan with no Unity IL2CPP artifacts
+(`not_applicable`) from an analyzed IL2CPP candidate (`analyzed_heuristically`),
+invalid roots (`incomplete`), and truncation/errors (`partial`). The Orchestrator
+also retains the bounded candidate count and scan errors. Synthetic status
+regressions passed; full pytest passed (**1,234 passed**, 60.05 s); compileall
+and `git diff --check` passed. This remains a version-limited metadata/string
+probe, not C# decompilation or APK-wide coverage.

@@ -119,6 +119,33 @@ def _native_jni_coverage(results: Any, inventory: Any, root_valid: bool) -> dict
                             "runtime validation not performed; no exploit proof"]}
 
 
+def _il2cpp_probe_coverage(result: Any) -> dict[str, Any]:
+    """Report Unity IL2CPP probe state without calling an absent framework analyzed."""
+    scan_status = getattr(result, "scan_status", "unknown")
+    detected = bool(getattr(result, "is_il2cpp", False))
+    errors = [str(error)[:200] for error in (getattr(result, "scan_errors", []) or [])[:20]]
+    truncated = bool(getattr(result, "metadata_truncated", False)
+                     or getattr(result, "candidate_output_truncated", False))
+    if scan_status == "invalid" or scan_status in {"not_started", "unknown"}:
+        static_status = "incomplete"
+    elif scan_status != "complete" or truncated or errors:
+        static_status = "partial"
+    else:
+        static_status = "analyzed_heuristically" if detected else "not_applicable"
+    return {
+        "static_status": static_status, "runtime_status": "not_tested", "proof_status": "not_proven",
+        "exhaustive": False, "analysis_kind": "bounded_il2cpp_metadata_candidates",
+        "scan_status": scan_status, "is_il2cpp": detected, "metadata_truncated": bool(getattr(result, "metadata_truncated", False)),
+        "candidate_output_truncated": bool(getattr(result, "candidate_output_truncated", False)),
+        "candidate_count": len(getattr(result, "reconstructed_classes", []) or [])
+        + len(getattr(result, "reconstructed_fields", []) or [])
+        + len(getattr(result, "reconstructed_methods", []) or []),
+        "scan_errors": errors,
+        "limitations": ["bounded metadata names and embedded strings are review candidates, not source reconstruction",
+                        "runtime behavior, call reachability, and exploitability are not tested"],
+    }
+
+
 class Orchestrator:
     """Main scan orchestrator that coordinates all agents through a pipeline.
 
@@ -596,17 +623,8 @@ class Orchestrator:
                     "exhaustive": False,
                 }
                 state["coverage"]["il2cpp"] = {
-                    "static_status": "partial" if getattr(result, "scan_status", "") != "complete"
-                    or getattr(result, "metadata_truncated", False)
-                    or getattr(result, "candidate_output_truncated", False)
-                    else "analyzed_heuristically",
-                    "runtime_status": "not_tested", "proof_status": "not_proven",
-                    "exhaustive": False,
+                    **_il2cpp_probe_coverage(result),
                     "metadata_definitions_status": getattr(result, "metadata_definitions_status", "unknown"),
-                    "candidate_count": len(getattr(result, "reconstructed_classes", []))
-                    + len(getattr(result, "reconstructed_fields", []))
-                    + len(getattr(result, "reconstructed_methods", [])),
-                    "limitations": ["bounded metadata names are review candidates, not source reconstruction or exploit proof"],
                 }
                 if getattr(result, "is_il2cpp", False):
                     for ep in getattr(result, "api_endpoints", []):

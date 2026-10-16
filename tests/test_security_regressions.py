@@ -528,6 +528,21 @@ def test_empty_framework_inventory_requires_a_valid_scan_root():
     assert _framework_probe_coverage('hermes', [], root_valid=False)['static_status']=='incomplete'
     assert _framework_probe_coverage('hermes', [], root_valid=True)['static_status']=='not_applicable'
 
+def test_il2cpp_probe_coverage_distinguishes_absent_and_incomplete_frameworks():
+    from types import SimpleNamespace
+    from mobileag.core.orchestrator import _il2cpp_probe_coverage
+    absent=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=False,scan_status='complete'))
+    assert absent['static_status']=='not_applicable'
+    assert absent['is_il2cpp'] is False
+    detected=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=True,scan_status='complete',
+        reconstructed_classes=['Synthetic'],reconstructed_fields=[],reconstructed_methods=[]))
+    assert detected['static_status']=='analyzed_heuristically'
+    assert detected['candidate_count']==1
+    invalid=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=False,scan_status='invalid',scan_errors=['invalid_scan_root']))
+    assert invalid['static_status']=='incomplete'
+    truncated=_il2cpp_probe_coverage(SimpleNamespace(is_il2cpp=True,scan_status='complete',metadata_truncated=True))
+    assert truncated['static_status']=='partial'
+
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser
     manifest=tmp_path/'AndroidManifest.xml'

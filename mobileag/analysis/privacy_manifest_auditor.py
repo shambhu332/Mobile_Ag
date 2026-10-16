@@ -541,6 +541,12 @@ class PrivacyManifestAuditor:
         has_contacts = "android.permission.READ_CONTACTS" in permissions
 
         detected_trackers: Set[str] = set()
+        tracker_patterns = [
+            (re.compile(
+                rf"(?<![A-Za-z0-9_$.]){re.escape(package)}(?=\.|[^A-Za-z0-9_$]|$)"
+            ), description)
+            for package, description in self.THIRD_PARTY_TRACKING_SDKS.items()
+        ]
         if path is not None and path.is_dir() and not path.is_symlink():
             coverage["source_tree"] = "complete"
             entries = 0
@@ -576,8 +582,8 @@ class PrivacyManifestAuditor:
                     text = _mask_java_kotlin_comments_and_strings(
                         raw.decode("utf-8", errors="ignore")
                     )
-                    for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
-                        if package in text:
+                    for pattern, description in tracker_patterns:
+                        if pattern.search(text):
                             detected_trackers.add(description)
                 except OSError:
                     coverage["errors"].append("source_read_error")

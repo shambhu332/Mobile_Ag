@@ -123,6 +123,9 @@ OUTPUT_DIR = DATA_ROOT / "output"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 UPLOAD_DIR = DATA_ROOT / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+MAX_LEGACY_IMPORT_ENTRIES = 5_000
+MAX_LEGACY_IMPORT_FILE_BYTES = 16 * 1024 * 1024
+MAX_LEGACY_IMPORT_TOTAL_BYTES = 64 * 1024 * 1024
 
 app = FastAPI(
     title="MobileAg — AppSec Dashboard",
@@ -284,20 +287,37 @@ def repository() -> ScanRepository:
 
 app.state.scope_repository = repository
 
-def repository_import_legacy() -> None:
+def repository_import_legacy() -> dict[str, Any]:
+    """Import bounded direct-child legacy snapshots without following links."""
+    from mobileag.analysis.bounded_sources import SourceInventory
+
     repo = repository()
-    for file in OUTPUT_DIR.glob('*/dashboard.json'):
+    inventory = SourceInventory(max_entries=MAX_LEGACY_IMPORT_ENTRIES,
+                                max_file_bytes=MAX_LEGACY_IMPORT_FILE_BYTES,
+                                max_total_bytes=MAX_LEGACY_IMPORT_TOTAL_BYTES)
+    imported = 0
+    for file, raw in inventory.read(
+        OUTPUT_DIR, names={"dashboard.json"},
+        path_filter=lambda candidate: candidate.parent.parent == OUTPUT_DIR,
+    ):
         sid = file.parent.name
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', sid) or repo.get(sid) or repo.purged(sid):
             continue
-        if not file.resolve().is_relative_to(OUTPUT_DIR.resolve()) or file.stat().st_size > 16*1024*1024:
-            continue
         try:
-            document = json.loads(file.read_text())
+            document = json.loads(raw)
             if isinstance(document, dict) and document.get('scan_id') == sid:
                 repo.save(document)
+                imported += 1
         except (ValueError, OSError):
             logger.warning('Could not import legacy scan %s', sid)
+    return {
+        "imported": imported,
+        "status": "partial" if inventory.coverage["limits_reached"]
+                  or inventory.coverage["source_files_skipped"] else
+                  "analyzed_heuristically" if inventory.coverage["source_files_analyzed"]
+                  else "not_analyzed",
+        "coverage": dict(inventory.coverage),
+    }
 
 
 def effective_runtime_settings() -> dict[str, Any]:

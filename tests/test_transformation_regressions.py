@@ -121,6 +121,42 @@ def test_retention_rejects_symlink_and_active_job(client,tmp_path):
     assert client.post('/api/scans/scan_fixture/purge',json={'confirmation':'scan_fixture','revision':0}).status_code==409
     assert (outside/'untouched').read_text()=='original'
 
+
+def test_legacy_scan_import_is_bounded_direct_child_only_and_no_follow(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path / "output")
+    web.OUTPUT_DIR.mkdir(exist_ok=True)
+    valid = scan("legacy_fixture")
+    valid_dir = web.OUTPUT_DIR / "legacy_fixture"
+    valid_dir.mkdir()
+    (valid_dir / "dashboard.json").write_text(json.dumps(valid), encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    external = scan("linked_fixture")
+    (outside / "dashboard.json").write_text(json.dumps(external), encoding="utf-8")
+    (web.OUTPUT_DIR / "linked_fixture").symlink_to(outside, target_is_directory=True)
+
+    result = web.repository_import_legacy()
+
+    assert result["imported"] == 1
+    assert result["coverage"]["source_files_skipped"] == 1
+    assert web.repository().get("legacy_fixture")["scan_id"] == "legacy_fixture"
+    assert web.repository().get("linked_fixture") is None
+
+
+def test_legacy_scan_import_marks_entry_truncation_partial(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(web, "MAX_LEGACY_IMPORT_ENTRIES", 1)
+    web.OUTPUT_DIR.mkdir(exist_ok=True)
+    for sid in ("legacy_a", "legacy_b"):
+        folder = web.OUTPUT_DIR / sid
+        folder.mkdir()
+        (folder / "dashboard.json").write_text(json.dumps(scan(sid)), encoding="utf-8")
+
+    result = web.repository_import_legacy()
+
+    assert result["status"] == "partial"
+    assert result["coverage"]["limits_reached"] is True
+
 @pytest.mark.asyncio
 async def test_restart_recovery_is_not_automatic_execution():
     web.repository().save(scan(status='running'))

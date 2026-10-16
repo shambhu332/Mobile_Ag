@@ -426,6 +426,15 @@ IPA tests passed (**3 passed**); the full suite passed (**1,086 passed**, 40.27
 s; one expected synthetic duplicate-ZIP-member warning). `compileall` and
 `git diff --check` passed.
 
+Legacy dashboard snapshot import is now bounded by tree-entry, per-file, and
+aggregate-byte budgets; it considers only direct scan-child `dashboard.json`
+files, uses no-follow reads, and returns explicit partial coverage when files
+are skipped or limits are reached. Synthetic tests cover a successful import,
+a symlinked scan directory, and entry-budget truncation. Focused and full
+tests passed (**4 passed** and **1,088 passed**, 40.92 s; one expected synthetic
+duplicate-ZIP-member warning). `compileall` and `git diff --check` passed. This
+legacy migration path is not a scan result completeness claim.
+
 Network Security Configuration XML is also rejected when it contains DTD/entity
 declarations, for both manifest-reference discovery and the configuration
 audit; the existing no-follow, size-bounded file reader remains in force. A

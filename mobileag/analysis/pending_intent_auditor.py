@@ -96,6 +96,56 @@ class PendingIntentAuditor:
         args.append(masked[arg_start:end])
         return args
 
+    @staticmethod
+    def _constant_flag_aliases(masked: str) -> dict[str, str | None]:
+        """Collect unique bounded Java final-int and Kotlin const-int expressions."""
+        definitions: dict[str, list[str]] = {}
+        java = re.compile(
+            r"\b((?:(?:public|protected|private|static|final)\s+)*)(?:int|Integer)\s+"
+            r"([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{1,512});"
+        )
+        kotlin = re.compile(
+            r"\bconst\s+val\s+([A-Za-z_$][\w$]*)\s*:\s*Int\s*=\s*([^;\n]{1,512})"
+        )
+        for match in java.finditer(masked):
+            if re.search(r"\bfinal\b", match.group(1)):
+                definitions.setdefault(match.group(2), []).append(match.group(3).strip())
+        for match in kotlin.finditer(masked):
+            definitions.setdefault(match.group(1), []).append(match.group(2).strip())
+        # `None` explicitly records an ambiguous duplicate declaration.
+        return {name: values[0] if len(values) == 1 else None
+                for name, values in definitions.items()}
+
+    @classmethod
+    def _resolve_flag_symbols(cls, expression: str, aliases: dict[str, str | None],
+                              stack: tuple[str, ...] = ()) -> set[str] | None:
+        """Resolve a literal/constant flag expression without evaluating code."""
+        if len(stack) > 8 or not re.fullmatch(r"[\w.$|&~()+\-\s]+", expression):
+            return None
+        token_pattern = re.compile(
+            r"(?P<flag>(?:[A-Za-z_$][\w$]*\.)*FLAG_[A-Z0-9_]+)"
+            r"|(?P<number>0[xX][0-9A-Fa-f]+|\d+)"
+            r"|(?P<identifier>[A-Za-z_$][\w$]*)"
+            r"|(?P<operator>[|&~()+\-])|(?P<space>\s+)"
+        )
+        result: set[str] = set()
+        cursor = 0
+        for match in token_pattern.finditer(expression):
+            if match.start() != cursor:
+                return None
+            cursor = match.end()
+            if match.lastgroup == "flag":
+                result.add(match.group())
+            elif match.lastgroup == "identifier":
+                name = match.group()
+                if name in stack or name not in aliases or aliases[name] is None:
+                    return None
+                nested = cls._resolve_flag_symbols(aliases[name] or "", aliases, stack + (name,))
+                if nested is None:
+                    return None
+                result.update(nested)
+        return result if cursor == len(expression) else None
+
     def audit_file(self, file_path: str | Path, target_sdk: int | None = None) -> List[Finding]:
         """Audit a single Java/Kotlin file for PendingIntent vulnerabilities."""
         inventory = self._inventory()
@@ -113,6 +163,7 @@ class PendingIntentAuditor:
     def _audit_content(self, content: str, path_str: str, target_sdk: int | None = None) -> List[Finding]:
         findings: List[Finding] = []
         masked = self._mask_comments_and_strings(content)
+        aliases = self._constant_flag_aliases(masked)
         for match in self._factory_pattern.finditer(masked):
             method = match.group(1)
             open_paren = match.end() - 1
@@ -121,8 +172,26 @@ class PendingIntentAuditor:
                 continue
             args = self._arguments(masked, open_paren, end)
             final_flags = args[-1] if args else ""
-            has_immutable = bool(re.search(r"\bFLAG_IMMUTABLE\b", final_flags))
-            has_mutable = bool(re.search(r"\bFLAG_MUTABLE\b", final_flags))
+            resolved_flags = self._resolve_flag_symbols(final_flags, aliases)
+            if resolved_flags is None:
+                title = f"Unresolved PendingIntent Flags in {method}()"
+                description = (
+                    f"PendingIntent creation at line {content.count(chr(10), 0, match.start()) + 1} has a flags "
+                    "expression that this bounded literal/constant resolver cannot determine. Review the final "
+                    "argument and effective flags; this analyzer does not infer mutability from an unknown value."
+                )
+                idx = content.count("\n", 0, match.start()) + 1
+                findings.append(Finding(
+                    id=f"PENDING_INTENT_FLAGS_UNRESOLVED_{idx}",
+                    title=title, description=description, severity=Severity.INFO,
+                    status=FindingStatus.UNVERIFIED, cwe_id="CWE-Unknown", file_path=path_str,
+                    line_number=idx,
+                    metadata={"target_sdk": target_sdk, "review_kind": "flags_unresolved",
+                              "flags_resolution": "not_resolved"},
+                ))
+                continue
+            has_immutable = any(flag.endswith("FLAG_IMMUTABLE") for flag in resolved_flags)
+            has_mutable = any(flag.endswith("FLAG_MUTABLE") for flag in resolved_flags)
             idx = content.count("\n", 0, match.start()) + 1
 
             if has_immutable and has_mutable:
@@ -170,7 +239,8 @@ class PendingIntentAuditor:
                 status=FindingStatus.UNVERIFIED, cwe_id="CWE-Unknown" if compatibility_only else "CWE-927", file_path=path_str,
                 line_number=idx,
                 metadata={"target_sdk": target_sdk,
-                          "review_kind": "compatibility_lead" if compatibility_only else "mutability_review_candidate"},
+                          "review_kind": "compatibility_lead" if compatibility_only else "mutability_review_candidate",
+                          "flags_resolution": "literal_or_constant"},
             ))
 
         return findings

@@ -108,11 +108,43 @@ def test_pending_intent_review_uses_parsed_target_sdk_without_claiming_exploitab
     assert len(current_target) == len(legacy_target) == len(unknown_target) == 1
     assert current_target[0].severity == Severity.INFO
     assert current_target[0].cwe_id == "CWE-Unknown"
-    assert current_target[0].metadata == {"target_sdk": 35, "review_kind": "compatibility_lead"}
+    assert current_target[0].metadata == {
+        "target_sdk": 35, "review_kind": "compatibility_lead",
+        "flags_resolution": "literal_or_constant",
+    }
     assert "not evidence that a mutable token was created or exploitable" in current_target[0].description
     assert legacy_target[0].cwe_id == "CWE-927"
     assert legacy_target[0].metadata["target_sdk"] == 30
     assert unknown_target[0].metadata["target_sdk"] is None
+
+
+def test_pending_intent_auditor_resolves_bounded_flag_aliases_and_withholds_unknowns(tmp_path):
+    java = tmp_path / "Flags.java"
+    java.write_text('''class Flags {
+        private static final int BASE = PendingIntent.FLAG_IMMUTABLE;
+        private static final int IMMUTABLE = BASE | 0;
+        void create() {
+            PendingIntent.getActivity(ctx, 0, intent, IMMUTABLE);
+            int dynamic = chooseFlags();
+            PendingIntent.getBroadcast(ctx, 0, intent, dynamic);
+        }
+    }''')
+    findings = PendingIntentAuditor().audit_file(java, target_sdk=35)
+    assert len(findings) == 1
+    assert findings[0].id.startswith("PENDING_INTENT_FLAGS_UNRESOLVED_")
+    assert findings[0].metadata["review_kind"] == "flags_unresolved"
+    assert findings[0].cwe_id == "CWE-Unknown"
+
+    kotlin = tmp_path / "Flags.kt"
+    kotlin.write_text('''class Flags {
+        companion object {
+            const val IMMUTABLE: Int = PendingIntent.FLAG_IMMUTABLE
+        }
+        fun create() {
+            PendingIntent.getBroadcast(ctx, 0, intent, IMMUTABLE)
+        }
+    }''')
+    assert PendingIntentAuditor().audit_file(kotlin) == []
 
 
 def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):

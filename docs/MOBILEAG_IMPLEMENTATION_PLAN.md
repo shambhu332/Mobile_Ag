@@ -552,7 +552,7 @@ and [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html).
 
 Query-token review now normalizes parameter-name separators/casing and detects
 common aliases/suffixed names such as `refresh-token`, `id_token`,
-`client_secret`, and `X-Amz-Security-Token`; it flags the key even when the
+`client_secret`, `secret_key`, `cookie`, and `X-Amz-Security-Token`; it flags the key even when the
 value is short, never copies the value into evidence, and deliberately avoids
 substring matches such as `tokenizer`. This remains name-based heuristic
 coverage and cannot discover arbitrary credential parameter names.

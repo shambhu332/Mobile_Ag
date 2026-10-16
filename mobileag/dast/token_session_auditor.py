@@ -59,7 +59,10 @@ class MobileTokenSessionAuditor:
         "jwt",
         "bearer",
     }
-    TOKEN_QUERY_SUFFIXES = ("token", "secret", "apikey", "password", "signature")
+    TOKEN_QUERY_SUFFIXES = (
+        "token", "secret", "secretkey", "privatekey", "apikey", "password",
+        "passwd", "pwd", "cookie", "session", "signature",
+    )
 
     MAX_TOKEN_CHARS = 64 * 1024
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
@@ -119,7 +122,9 @@ class MobileTokenSessionAuditor:
         """Recognize common credential-key aliases without reading their values."""
         normalized = re.sub(r"[^a-z0-9]", "", name.casefold())
         exact = {re.sub(r"[^a-z0-9]", "", key) for key in cls.TOKEN_QUERY_PARAMS}
-        exact.update({"authorization", "clientsecret", "signature", "sig", "codeverifier"})
+        exact.update({"authorization", "clientsecret", "signature", "sig", "codeverifier",
+                      "cookie", "session", "password", "passwd", "pwd", "secretkey",
+                      "privatekey", "xapikey", "xgoogapikey"})
         return normalized in exact or normalized.endswith(cls.TOKEN_QUERY_SUFFIXES)
         try:
             return math.isfinite(value) and abs(value) <= 253402300799

@@ -1269,7 +1269,8 @@ def test_token_session_auditor_recognizes_credential_query_key_aliases():
     from mobileag.dast.api_cataloger import CapturedRequest
 
     keys = ("refresh-token", "id_token", "X-Amz-Security-Token", "client_secret",
-            "accessToken", "api-key")
+            "accessToken", "api-key", "cookie", "user_session", "secret_key",
+            "privateKey", "password")
     requests = [CapturedRequest(method="GET", url=f"https://api.example.invalid/path?{key}=synthetic-secret")
                 for key in keys]
     requests.append(CapturedRequest(method="GET", url="https://api.example.invalid/path?tokenizer=not-a-token"))

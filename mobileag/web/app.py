@@ -574,10 +574,24 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
     # bounded and refuses ambiguous roots instead of materializing an
     # unbounded recursive glob and arbitrarily choosing its first result.
     known_roots = [out_dir / "apktool_out" / "smali", out_dir / "apktool" / "smali"]
-    smali_roots = [p for p in known_roots if not p.is_symlink() and p.is_dir()]
-    discovery = {"status": "known_layout", "roots_found": len(smali_roots),
+
+    def has_symlink_component(path: Path) -> bool:
+        current = path
+        while current != OUTPUT_DIR and current != current.parent:
+            if current.is_symlink():
+                return True
+            current = current.parent
+        return OUTPUT_DIR.is_symlink()
+
+    unsafe_scan_root = has_symlink_component(out_dir)
+    smali_roots = ([] if unsafe_scan_root else
+                   [p for p in known_roots if not has_symlink_component(p) and p.is_dir()])
+    discovery = {"status": "not_analyzed_symlink_root" if unsafe_scan_root else "known_layout",
+                 "roots_found": len(smali_roots),
                  "entries_examined": 0, "limits_reached": False}
-    if len(smali_roots) > 1:
+    if unsafe_scan_root:
+        pass
+    elif len(smali_roots) > 1:
         discovery["status"] = "not_analyzed_multiple_known_roots"
     elif not smali_roots:
         inventory = SourceInventory(max_entries=5000, max_file_bytes=1,

@@ -46,3 +46,22 @@ def test_resilience_route_does_not_choose_ambiguous_fallback_root(tmp_path, monk
     assert coverage["root_discovery"]["status"] == "not_analyzed_ambiguous_roots"
     assert coverage["root_discovery"]["roots_found"] == 2
     assert response.json()["overall_score"] is None
+
+
+def test_resilience_route_does_not_follow_known_layout_symlink(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    scan_dir = web.OUTPUT_DIR / "resilience_fixture"
+    external = tmp_path / "outside" / "smali"
+    external.mkdir(parents=True)
+    scan_dir.mkdir(parents=True, exist_ok=True)
+    (external / "Example.smali").write_text(
+        '.class Lx/Example;\nconst-string v0, "magisk"\n', encoding="utf-8")
+    (scan_dir / "apktool_out").symlink_to(external.parent, target_is_directory=True)
+
+    response = client.get("/api/scans/resilience_fixture/resilience")
+
+    assert response.status_code == 200, response.text
+    coverage = response.json()["coverage"]
+    assert coverage["static_status"] == "not_analyzed"
+    assert "root_discovery" in coverage
+    assert "magisk" not in str(response.json()["vectors"])

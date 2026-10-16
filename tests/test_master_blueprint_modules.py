@@ -1280,6 +1280,21 @@ def test_token_session_auditor_recognizes_credential_query_key_aliases():
     assert all("?" not in finding.affected_component for finding in leaks)
 
 
+def test_token_session_auditor_reports_url_userinfo_without_echoing_credentials():
+    import json
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    findings = MobileTokenSessionAuditor().audit_transactions([
+        CapturedRequest(method="GET", url="https://synthetic-user:synthetic-password@api.example.invalid/v1/profile")
+    ])
+    credential_leads = [finding for finding in findings if finding.cwe_id == "CWE-522"]
+    assert len(credential_leads) == 1
+    serialized = json.dumps([finding.model_dump(mode="json") for finding in findings])
+    assert "synthetic-user" not in serialized
+    assert "synthetic-password" not in serialized
+
+
 def test_token_session_auditor_bounds_findings_and_reports_partial_coverage():
     from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
     from mobileag.dast.api_cataloger import CapturedRequest

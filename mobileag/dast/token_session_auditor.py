@@ -454,6 +454,18 @@ class MobileTokenSessionAuditor:
                 parsed = urlsplit(url)
             except ValueError:
                 parsed = urlsplit("")
+            if (parsed.scheme.lower() in {"http", "https"}
+                    and (parsed.username is not None or parsed.password is not None)):
+                findings.append(Finding(
+                    title="Credential-Like Data Embedded in URL Userinfo",
+                    description="The captured HTTP(S) URL contains username/password userinfo syntax. The values are omitted; the capture does not establish that the server used or accepted them.",
+                    severity=Severity.MEDIUM,
+                    cwe_id="CWE-522",
+                    affected_component=safe_url,
+                    detection_method="MobileTokenSessionAuditor (URL Hygiene)",
+                    status=FindingStatus.UNVERIFIED,
+                    remediation="Avoid placing credentials in URL userinfo; use a supported Authorization header and ensure captures redact URL authority credentials.",
+                ))
             try:
                 query_tuples = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=256)
             except ValueError:

@@ -556,6 +556,10 @@ common aliases/suffixed names such as `refresh-token`, `id_token`,
 value is short, never copies the value into evidence, and deliberately avoids
 substring matches such as `tokenizer`. This remains name-based heuristic
 coverage and cannot discover arbitrary credential parameter names.
+The same token audit emits an unverified CWE-522 review lead when captured
+HTTP(S) URLs contain userinfo syntax; the username/password values are omitted
+from finding text and the sanitized location. This pattern does not prove that
+the credentials were valid or accepted.
 Transaction-level token findings also have a 20,000-result ceiling; the auditor
 reports received/analyzed/omitted transactions and marks the output partial
 when either transaction or finding limits truncate processing. The token audit

@@ -382,6 +382,14 @@ IPA tests passed (**3 passed**); the full suite passed (**1,086 passed**, 40.27
 s; one expected synthetic duplicate-ZIP-member warning). `compileall` and
 `git diff --check` passed.
 
+Per-manifest output now has separate caps for tracking domains, declared API
+categories, and API reason-code pairs, in addition to package-wide caps. This
+prevents repeated declarations across up to 128 manifests from multiplying the
+retained output beyond the intended inventory bounds. Synthetic regressions
+cover per-manifest truncation and explicit partial status (**8 focused privacy
+tests**); the related privacy/IPA suites passed (**58 passed**); full pytest
+passed (**1,251 passed**, 60.25 s); compileall and `git diff --check` passed.
+
 Legacy dashboard snapshot import is now bounded by tree-entry, per-file, and
 aggregate-byte budgets; it considers only direct scan-child `dashboard.json`
 files, uses no-follow reads, and returns explicit partial coverage when files

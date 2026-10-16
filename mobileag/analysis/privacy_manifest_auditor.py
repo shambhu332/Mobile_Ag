@@ -61,10 +61,13 @@ class PrivacyManifestAuditor:
     MAX_MANIFEST_BYTES = 2 * 1024 * 1024
     MAX_MANIFEST_TOTAL_BYTES = 16 * 1024 * 1024
     MAX_TRACKING_DOMAINS = 2_048
+    MAX_TRACKING_DOMAINS_PER_MANIFEST = 256
     MAX_TRACKING_DOMAIN_CHARS = 253
     MAX_API_CATEGORIES = 512
+    MAX_API_CATEGORIES_PER_MANIFEST = 128
     MAX_API_CATEGORY_CHARS = 256
     MAX_API_REASON_CODES = 2_048
+    MAX_API_REASON_CODES_PER_MANIFEST = 128
     MAX_API_REASONS_PER_CATEGORY = 32
     MAX_API_REASON_CHARS = 64
     MAX_ERROR_CODES = 64
@@ -186,7 +189,7 @@ class PrivacyManifestAuditor:
             safe_domains: list[str] = []
             if isinstance(manifest_domains, list):
                 for index, domain in enumerate(manifest_domains):
-                    if index >= self.MAX_TRACKING_DOMAINS:
+                    if index >= self.MAX_TRACKING_DOMAINS_PER_MANIFEST:
                         record_error("tracking_domain_limit_reached")
                         break
                     if (not isinstance(domain, str) or not domain
@@ -210,7 +213,7 @@ class PrivacyManifestAuditor:
             local_api_reasons: set[tuple[str, str]] = set()
             if isinstance(api_types, list):
                 for index, entry in enumerate(api_types):
-                    if index >= self.MAX_API_CATEGORIES:
+                    if index >= self.MAX_API_CATEGORIES_PER_MANIFEST:
                         record_error("api_category_limit_reached")
                         break
                     if not isinstance(entry, dict) or not isinstance(entry.get("NSPrivacyAccessedAPIType"), str):
@@ -234,7 +237,8 @@ class PrivacyManifestAuditor:
                         record_error("invalid_api_reason_codes")
                         continue
                     for reason_index, reason in enumerate(reasons):
-                        if reason_index >= self.MAX_API_REASONS_PER_CATEGORY:
+                        if (reason_index >= self.MAX_API_REASONS_PER_CATEGORY
+                                or len(local_api_reasons) >= self.MAX_API_REASON_CODES_PER_MANIFEST):
                             record_error("api_reason_limit_reached")
                             break
                         if (not isinstance(reason, str) or not reason

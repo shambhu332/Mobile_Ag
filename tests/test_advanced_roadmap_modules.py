@@ -938,7 +938,8 @@ def test_ios_privacy_manifest_caps_domain_category_and_error_outputs(tmp_path):
         }, stream)
     auditor = PrivacyManifestAuditor()
     auditor.MAX_TRACKING_DOMAINS = 3
-    auditor.MAX_API_CATEGORIES = 3
+    auditor.MAX_TRACKING_DOMAINS_PER_MANIFEST = 3
+    auditor.MAX_API_CATEGORIES = 2
 
     result = auditor.audit_ios_privacy_manifest(tmp_path)
 
@@ -974,6 +975,35 @@ def test_ios_privacy_manifest_retains_bounded_reason_codes_without_validating_th
         {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.2"},
     ]
     assert "invalid_api_reason_codes" in result.errors
+
+
+def test_ios_privacy_manifest_bounds_each_manifest_summary(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": [f"host{index}.example" for index in range(5)],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "Category0",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.0", "SYNTHETIC.1", "SYNTHETIC.2"],
+            }] + [{
+                "NSPrivacyAccessedAPIType": f"Category{index}",
+                "NSPrivacyAccessedAPITypeReasons": [f"SYNTHETIC.{index}"],
+            } for index in range(1, 5)],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_TRACKING_DOMAINS_PER_MANIFEST = 2
+    auditor.MAX_API_CATEGORIES_PER_MANIFEST = 2
+    auditor.MAX_API_REASON_CODES_PER_MANIFEST = 2
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert len(result.manifests[0]["tracking_domains"]) == 2
+    assert len(result.manifests[0]["declared_api_categories"]) == 2
+    assert len(result.manifests[0]["declared_api_reasons"]) == 2
+    assert {"tracking_domain_limit_reached", "api_category_limit_reached",
+            "api_reason_limit_reached"} <= set(result.errors)
+    assert result.parse_status == "partial"
 
 
 def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():

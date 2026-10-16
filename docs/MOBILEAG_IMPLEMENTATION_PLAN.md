@@ -903,3 +903,13 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    (**1,166 passed**, 70.28 s), with `compileall` and `git diff --check`
    passing. Archive validation and installation were mocked; no APK was
    installed on a device. Existing test-environment warnings remain.
+
+   The `/api/dast/root` route now rechecks authenticated session, configured
+   device allowlist, and explicit `root` action policy around the root request
+   and its follow-up identity observation. A mock revokes policy after the
+   `adb root` command and verifies the follow-up `id` probe is not issued. Root
+   remains a device-level privilege transition, not ordinary-app evidence or
+   exploit proof. Focused root-route tests passed (**2 passed**) plus the
+   existing out-of-scope-device denial (**1 passed**); the full suite passed
+   (**1,167 passed**, 69.35 s), with `compileall` and `git diff --check`
+   passing. No root command ran on a device.

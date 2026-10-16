@@ -180,11 +180,20 @@ class ADBManager:
         success = "connected to" in out_str.lower() or "already connected" in out_str.lower()
         return {"status": "success" if success else "failed", "output": out_str}
 
-    async def restart_root(self, serial: str) -> dict[str, Any]:
+    async def restart_root(self, serial: str, guard=None) -> dict[str, Any]:
         """Restart adbd with root permissions on target device."""
+        def check_scope():
+            if guard is None:
+                return
+            if not callable(guard) or guard() is False:
+                raise PermissionError("ADB root action scope is unavailable or revoked")
+
+        check_scope()
         code, stdout, stderr = await self._exec_cmd(["-s", serial, "root"], timeout=4.0)
+        check_scope()
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         is_root = await self._check_root(serial)
+        check_scope()
         return {
             "status": "success" if is_root else "notice",
             "output": out_str or ("Root shell verified" if is_root else "adb root not supported in production build"),

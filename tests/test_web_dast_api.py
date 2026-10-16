@@ -352,6 +352,28 @@ def test_dast_install_rechecks_scope_after_archive_validation(client, monkeypatc
     installer.assert_not_awaited()
 
 
+def test_dast_root_stops_before_verification_after_scope_revocation(client, monkeypatch):
+    import importlib
+
+    web = importlib.import_module("mobileag.web.app")
+    commands = []
+
+    async def revoke_after_root_command(args, **kwargs):
+        commands.append(args)
+        policy = web.repository().get_policy()
+        policy["actions"] = [action for action in policy["actions"] if action != "root"]
+        web.repository().save_policy(policy)
+        return 0, b"synthetic root command result", b""
+
+    monkeypatch.setattr(web.adb_manager, "_exec_cmd", revoke_after_root_command)
+    check_root = AsyncMock(return_value=False)
+    monkeypatch.setattr(web.adb_manager, "_check_root", check_root)
+    response = client.post("/api/dast/root", json={"serial": "emulator-5554"})
+    assert response.status_code == 403
+    assert commands == [["-s", "emulator-5554", "root"]]
+    check_root.assert_not_awaited()
+
+
 def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch):
     import importlib
 

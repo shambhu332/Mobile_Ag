@@ -1318,9 +1318,18 @@ async def connect_dast_device(req: DeviceConnectRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dast/root")
-async def restart_dast_root(req: DeviceActionRequest) -> dict[str, Any]:
+async def restart_dast_root(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
     """Restart adbd with root privileges on the selected device."""
-    res = await adb_manager.restart_root(req.serial)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if (not check_device(req.serial)
+                or not check_action(repository().get_policy(), "root", req.model_dump())):
+            raise HTTPException(403, "ADB root action scope is unavailable or revoked")
+
+    guard()
+    res = await adb_manager.restart_root(req.serial, guard=guard)
+    guard()
     return res
 
 

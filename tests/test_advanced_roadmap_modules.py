@@ -895,6 +895,58 @@ def test_ios_privacy_manifest_inventory_is_entry_bounded(tmp_path):
     assert "scan_limit_reached" in result.errors
 
 
+def test_ios_privacy_manifest_enforces_aggregate_bytes_and_reports_coverage(tmp_path):
+    root = tmp_path / "app"
+    first = root / "A.framework" / "PrivacyInfo.xcprivacy"
+    second = root / "B.framework" / "PrivacyInfo.xcprivacy"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    payload = plistlib.dumps({"NSPrivacyTracking": False, "NSPrivacyTrackingDomains": [],
+                              "NSPrivacyAccessedAPITypes": []})
+    first.write_bytes(payload)
+    second.write_bytes(payload)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_MANIFEST_TOTAL_BYTES = len(payload) + 1
+
+    result = auditor.audit_ios_privacy_manifest(root)
+
+    assert result.manifest_bytes_scanned == len(payload)
+    assert result.manifest_count == 2
+    assert len(result.manifests) == 1
+    assert result.parse_status == "partial"
+    assert "manifest_total_byte_limit" in result.errors
+
+
+def test_ios_privacy_manifest_caps_domain_category_and_error_outputs(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": ["one.example", "x" * 254,
+                                         "two.example", "three.example", "four.example"],
+            "NSPrivacyAccessedAPITypes": [
+                {"NSPrivacyAccessedAPIType": "Category0"},
+                {"NSPrivacyAccessedAPIType": "x" * 257},
+                {"NSPrivacyAccessedAPIType": "Category1"},
+                {"NSPrivacyAccessedAPIType": "Category2"},
+            ],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_TRACKING_DOMAINS = 3
+    auditor.MAX_API_CATEGORIES = 3
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert result.parse_status == "partial"
+    assert result.tracking_domains == ["one.example", "two.example"]
+    assert len(result.declared_api_categories) == 2
+    assert len(result.manifests[0]["tracking_domains"]) == 2
+    assert len(result.errors) <= auditor.MAX_ERROR_CODES
+    assert "tracking_domain_limit_reached" in result.errors
+    assert "api_category_limit_reached" in result.errors
+    assert "invalid_tracking_domains" in result.errors
+
+
 def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = Path(tmp_dir) / "PrivacyInfo.xcprivacy"

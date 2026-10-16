@@ -1475,3 +1475,13 @@ context is retained. Focused token/JWT tests passed (**17 passed**); full pytest
 passed (**1,247 passed**, 60.52 s); compileall and `git diff --check` passed.
 This is evidence minimization only; token parsing and server-side session
 acceptance remain separate, bounded review tasks.
+
+iOS `PrivacyInfo.xcprivacy` inventory now enforces a 16 MiB aggregate read
+budget in addition to the per-file/tree caps, and bounds retained tracking
+domains, API categories, and distinct error codes. Over-limit or malformed list
+entries are recorded as partial coverage instead of being silently exposed as
+complete declarations. Synthetic tests cover aggregate-byte truncation, output
+caps, invalid oversized values, and normal manifest parsing. The full privacy /
+road-map module file passed (**48 passed**); full pytest passed (**1,249
+passed**, 60.56 s); compileall and `git diff --check` passed. This is bounded
+declaration inventory, not Apple compliance or runtime API-use proof.

@@ -1012,6 +1012,8 @@ def test_openapi_catalog_redacts_digit_bearing_prefixed_resource_ids():
     # Hard negatives: ordinary route words without digits remain literal.
     assert MobileApiCataloger._path_template("/v1/users/me") == "/v1/users/me"
     assert MobileApiCataloger._path_template("/v1/orders/recent") == "/v1/orders/recent"
+    # Percent-encoded ASCII is decoded for classification, not route output.
+    assert MobileApiCataloger._path_template("/v1/users/%75sr%5F98472") == "/v1/users/{id1}"
 
 
 def test_openapi_schema_redacts_dynamic_json_object_keys():

@@ -114,13 +114,20 @@ async def test_real_offline_reviews_integrated_with_failure_coverage(monkeypatch
         monkeypatch.setattr(obj, method, AsyncMock(return_value=value))
     monkeypatch.setattr(worker._call_graph_engine, 'audit_smali_directory', lambda _: [])
     (tmp_path / 'Auth.java').write_text('String password = "syntheticOpaqueCredential";')
+    (tmp_path / 'Analytics.java').write_text('com.google.firebase.analytics.FirebaseAnalytics')
     (tmp_path / 'strings.xml').write_text('<string>https://synthetic.firebaseio.com</string>')
+    manifest_path = tmp_path / 'AndroidManifest.xml'
+    manifest_path.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /></manifest>')
     state = create_initial_state('synthetic', 'unused', str(tmp_path))
-    state.update(decompiled_path=str(tmp_path), resource_path=str(tmp_path))
+    state.update(decompiled_path=str(tmp_path), resource_path=str(tmp_path), manifest_path=str(manifest_path))
     result = await worker._run_analysis(state)
     assert result['coverage']['engines']['auth_session'] == 'analyzed_heuristically'
     assert result['coverage']['engines']['firebase'] == 'analyzed_heuristically'
-    assert len(result['raw_findings']) == 2
+    assert result['coverage']['engines']['data_safety'] == 'analyzed_heuristically'
+    assert result['coverage']['data_safety']['manifest_parse'] == 'parsed'
+    assert result['coverage']['data_safety']['proof_status'] == 'not_proven'
+    assert result['coverage']['data_safety']['candidate_count'] == 1
+    assert len(result['raw_findings']) == 3
     assert 'syntheticOpaqueCredential' not in json.dumps(result)
     monkeypatch.setattr(worker._firebase_auditor, 'analyze', AsyncMock(side_effect=RuntimeError('synthetic failure')))
     result = await worker._run_analysis(state)

@@ -677,6 +677,33 @@ def test_android_data_safety_rejects_manifest_dtd_and_entity_declarations():
     assert findings == []
 
 
+def test_android_data_safety_package_scan_returns_coverage_without_findings(tmp_path):
+    manifest = tmp_path / "AndroidManifest.xml"
+    manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"/>',
+                        encoding="utf-8")
+    (tmp_path / "App.java").write_text("class App {}", encoding="utf-8")
+
+    result = PrivacyManifestAuditor().audit_android_data_safety_package(manifest, tmp_path)
+
+    assert result["findings"] == []
+    assert result["coverage"]["manifest_parse"] == "parsed"
+    assert result["coverage"]["source_tree"] == "complete"
+    assert result["coverage"]["files_read"] == 1
+
+
+def test_android_data_safety_package_scan_rejects_manifest_symlink(tmp_path):
+    real = tmp_path / "real.xml"
+    real.write_text('<manifest/>', encoding="utf-8")
+    linked = tmp_path / "AndroidManifest.xml"
+    linked.symlink_to(real)
+
+    result = PrivacyManifestAuditor().audit_android_data_safety_package(linked, tmp_path)
+
+    assert result["findings"] == []
+    assert result["coverage"]["manifest_parse"] == "invalid"
+    assert "manifest_read_error" in result["coverage"]["errors"]
+
+
 def test_android_data_safety_source_inventory_is_bounded_and_reports_partial_coverage():
     with tempfile.TemporaryDirectory() as tmp_dir:
         base = Path(tmp_dir)

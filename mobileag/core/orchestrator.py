@@ -252,6 +252,7 @@ class Orchestrator:
 
             # Parse manifest
             manifest_path = extraction.get("manifest_path", "")
+            state["manifest_path"] = str(manifest_path)
             if manifest_path:
                 state["manifest_data"] = self._manifest_parser.parse(manifest_path)
                 state["coverage"]["split_manifest"] = dict(
@@ -333,6 +334,10 @@ class Orchestrator:
             "il2cpp": asyncio.to_thread(self._il2cpp_auditor.audit_package, state["resource_path"]),
             "flutter": asyncio.to_thread(self._flutter_engine.analyze_package_directory, state["resource_path"]),
             "fileprovider": asyncio.to_thread(self._fileprovider_auditor.audit_resource_directory, state["resource_path"]),
+            "data_safety": asyncio.to_thread(
+                self._privacy_manifest_auditor.audit_android_data_safety_package,
+                state.get("manifest_path", ""), state["resource_path"],
+            ),
         }
 
         results = await asyncio.gather(
@@ -355,7 +360,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -418,6 +423,23 @@ class Orchestrator:
                 for fp_res in (result or []):
                     all_findings.extend(fp_res.findings)
                 state["coverage"][name] = dict(self._fileprovider_auditor.coverage)
+            elif name == "data_safety":
+                all_findings.extend(result.get("findings", []))
+                details = dict(result.get("coverage", {}))
+                complete_inputs = (details.get("manifest_parse") == "parsed"
+                                   and details.get("source_tree") == "complete")
+                static_status = ("partial" if not complete_inputs or details.get("limits_reached")
+                                 or details.get("errors") else "analyzed_heuristically")
+                state["coverage"][name] = {
+                    **details, "static_status": static_status,
+                    "runtime_status": "not_tested", "proof_status": "not_proven",
+                    "candidate_count": len(result.get("findings", [])), "exhaustive": False,
+                    "limitations": [
+                        "Play Console declarations are unavailable in the APK/source tree",
+                        "permission and SDK fingerprints do not prove data collection, execution, or sharing",
+                    ],
+                }
+                engines[name] = static_status
             elif name == "intent_redirection":
                 all_findings.extend(result)
                 state["coverage"][name] = dict(self._intent_redirection_auditor.coverage)

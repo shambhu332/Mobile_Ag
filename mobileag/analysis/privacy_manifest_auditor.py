@@ -13,7 +13,7 @@ import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
@@ -195,7 +195,54 @@ class PrivacyManifestAuditor:
             result.parse_status = "parsed"
         return result
 
-    def audit_android_data_safety_discrepancies(self, manifest_content: str, source_tree_dir: str | Path) -> List[Finding]:
+    def audit_android_data_safety_package(self, manifest_path: str | Path,
+                                          source_tree_dir: str | Path) -> Dict[str, Any]:
+        """Run bounded Data Safety indicators from an extracted APK directory.
+
+        The manifest is opened without following symlinks and is size-checked
+        before decoding. Coverage is returned even when no candidate finding is
+        produced, so callers do not mistake an empty list for a complete review.
+        """
+        content: str | None = None
+        read_error: str | None = None
+        path = Path(manifest_path) if manifest_path else None
+        if path is None:
+            read_error = "manifest_path_missing"
+        else:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as stream:
+                    info = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        read_error = "manifest_not_regular"
+                    elif info.st_size > self.MAX_ANDROID_MANIFEST_CHARS:
+                        read_error = "manifest_too_large"
+                    else:
+                        raw = stream.read(self.MAX_ANDROID_MANIFEST_CHARS + 1)
+                        if len(raw) > self.MAX_ANDROID_MANIFEST_CHARS:
+                            read_error = "manifest_too_large"
+                        else:
+                            content = raw.decode("utf-8", errors="replace")
+            except OSError:
+                read_error = "manifest_read_error"
+
+        coverage: Dict[str, Any] = {}
+        findings = self.audit_android_data_safety_discrepancies(
+            content, source_tree_dir, _coverage_out=coverage,
+        )
+        if read_error:
+            coverage["manifest_parse"] = "invalid"
+            coverage["manifest_truncated"] = read_error == "manifest_too_large"
+            errors = set(coverage.get("errors", []))
+            errors.discard("manifest_missing_or_too_large")
+            errors.add(read_error)
+            coverage["errors"] = sorted(errors)
+        return {"findings": findings, "coverage": coverage}
+
+    def audit_android_data_safety_discrepancies(
+        self, manifest_content: str | None, source_tree_dir: str | Path,
+        *, _coverage_out: Dict[str, Any] | None = None,
+    ) -> List[Finding]:
         """Emit a review lead for permissions and SDK fingerprints in Android sources.
 
         This is not a Google Play Data Safety compliance check: APK/source
@@ -203,7 +250,7 @@ class PrivacyManifestAuditor:
         which SDK code executes, or whether data is transmitted/shared.
         """
         findings: List[Finding] = []
-        path = Path(source_tree_dir)
+        path = Path(source_tree_dir) if str(source_tree_dir).strip() else None
         coverage = {
             "manifest_parse": "not_attempted", "manifest_truncated": False,
             "source_tree": "invalid", "files_read": 0, "bytes_read": 0,
@@ -243,12 +290,15 @@ class PrivacyManifestAuditor:
         has_contacts = "android.permission.READ_CONTACTS" in permissions
 
         detected_trackers: Set[str] = set()
-        if path.is_dir() and not path.is_symlink():
+        if path is not None and path.is_dir() and not path.is_symlink():
             coverage["source_tree"] = "complete"
             entries = 0
             total_bytes = 0
             limited = False
-            for root_dir, dirs, files in os.walk(path, followlinks=False):
+            def record_walk_error(_error: OSError) -> None:
+                coverage["errors"].append("source_directory_read_error")
+
+            for root_dir, dirs, files in os.walk(path, followlinks=False, onerror=record_walk_error):
                 dirs[:] = sorted(name for name in dirs if not (Path(root_dir) / name).is_symlink())
                 files.sort()
                 entries += len(dirs) + len(files)
@@ -325,4 +375,6 @@ class PrivacyManifestAuditor:
                 )
             )
 
+        if _coverage_out is not None:
+            _coverage_out.update(coverage)
         return findings

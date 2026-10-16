@@ -380,7 +380,9 @@ async def test_dependency_scan_inventories_bounded_elf_files_into_versionless_sb
 
     assert findings == []  # no online OSV lookup without per-run consent
     assert scanner.coverage["native_inventory_status"] == "partial"  # symlink skipped
-    assert scanner.coverage["native_candidate_files"] == 3
+    # Candidate files are regular files yielded by the no-follow inventory;
+    # symlink entries are separately counted and are never opened.
+    assert scanner.coverage["native_candidate_files"] == 2
     assert scanner.coverage["native_elf_candidates"] == 1
     assert scanner.coverage["native_non_elf_candidates"] == 1
     assert scanner.coverage["native_symlinks_skipped"] == 1
@@ -405,6 +407,22 @@ def test_native_library_inventory_reports_size_limit_as_partial(tmp_path, monkey
 
     assert records == []
     assert coverage["native_oversized_files_skipped"] == 1
+    assert coverage["native_limits_reached"] is True
+    assert coverage["native_inventory_status"] == "partial"
+
+
+def test_native_library_inventory_caps_directory_entries_before_materializing(tmp_path, monkeypatch):
+    import mobileag.analysis.dependency_scanner as scanner_module
+
+    library_dir = tmp_path / "lib" / "arm64-v8a"
+    library_dir.mkdir(parents=True)
+    (library_dir / "libsample.so").write_bytes(_synthetic_elf_shared_object())
+    monkeypatch.setattr(scanner_module, "_MAX_NATIVE_TREE_ENTRIES", 1)
+
+    records, coverage = DependencyScanner()._sync_find_native_libraries(tmp_path)
+
+    assert records == []
+    assert coverage["native_entries_seen"] == 1
     assert coverage["native_limits_reached"] is True
     assert coverage["native_inventory_status"] == "partial"
 

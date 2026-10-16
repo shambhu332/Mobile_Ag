@@ -513,93 +513,80 @@ class DependencyScanner:
             coverage.update(native_inventory_status="invalid", native_read_failures=1)
             return records, coverage
 
+        inventory = SourceInventory(max_entries=_MAX_NATIVE_TREE_ENTRIES,
+                                    max_file_bytes=1, max_total_bytes=1)
         stopped = False
-
-        def record_walk_error(_error: OSError) -> None:
-            coverage["native_read_failures"] += 1
-
-        try:
-            for current, dirs, files in os.walk(root, followlinks=False, onerror=record_walk_error):
-                current_path = Path(current)
-                symlink_dirs = {name for name in dirs if (current_path / name).is_symlink()}
-                coverage["native_symlinks_skipped"] += len(symlink_dirs)
-                dirs[:] = sorted(name for name in dirs if name not in symlink_dirs)
-                coverage["native_entries_seen"] += len(dirs) + len(files)
-                if coverage["native_entries_seen"] > _MAX_NATIVE_TREE_ENTRIES:
-                    coverage["native_limits_reached"] = True
-                    stopped = True
-                    break
-
-                for filename in sorted(files):
-                    if not _NATIVE_LIBRARY_NAME.fullmatch(filename):
+        for candidate in inventory.paths(root):
+            filename = candidate.name
+            if not _NATIVE_LIBRARY_NAME.fullmatch(filename):
+                continue
+            coverage["native_candidate_files"] += 1
+            if len(records) >= _MAX_NATIVE_LIBRARIES:
+                coverage["native_limits_reached"] = True
+                stopped = True
+                break
+            try:
+                fd = os.open(candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                             | getattr(os, "O_NONBLOCK", 0))
+                with os.fdopen(fd, "rb") as stream:
+                    details = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(details.st_mode):
+                        coverage["native_read_failures"] += 1
                         continue
-                    coverage["native_candidate_files"] += 1
-                    candidate = current_path / filename
-                    if candidate.is_symlink():
-                        coverage["native_symlinks_skipped"] += 1
+                    if details.st_size > _MAX_NATIVE_LIBRARY_BYTES:
+                        coverage["native_oversized_files_skipped"] += 1
+                        coverage["native_limits_reached"] = True
                         continue
-                    if len(records) >= _MAX_NATIVE_LIBRARIES:
+                    if coverage["native_bytes_hashed"] + details.st_size > _MAX_NATIVE_TOTAL_BYTES:
                         coverage["native_limits_reached"] = True
                         stopped = True
                         break
-                    try:
-                        fd = os.open(candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-                                     | getattr(os, "O_NONBLOCK", 0))
-                        with os.fdopen(fd, "rb") as stream:
-                            details = os.fstat(stream.fileno())
-                            if not stat.S_ISREG(details.st_mode):
-                                coverage["native_read_failures"] += 1
-                                continue
-                            if details.st_size > _MAX_NATIVE_LIBRARY_BYTES:
-                                coverage["native_oversized_files_skipped"] += 1
-                                coverage["native_limits_reached"] = True
-                                continue
-                            if coverage["native_bytes_hashed"] + details.st_size > _MAX_NATIVE_TOTAL_BYTES:
-                                coverage["native_limits_reached"] = True
-                                stopped = True
-                                break
-                            header = stream.read(64)
-                            elf_class = header[4] if len(header) > 4 else 0
-                            data_encoding = header[5] if len(header) > 5 else 0
-                            byte_order = "little" if data_encoding == 1 else "big"
-                            required_header = 52 if elf_class == 1 else 64 if elf_class == 2 else 0
-                            valid_elf_shared_object = (
-                                header.startswith(b"\x7fELF") and elf_class in {1, 2}
-                                and data_encoding in {1, 2} and len(header) >= required_header
-                                and int.from_bytes(header[16:18], byte_order) == 3
-                                and int.from_bytes(header[20:24], byte_order) == 1
-                            )
-                            if not valid_elf_shared_object:
-                                coverage["native_non_elf_candidates"] += 1
-                                continue
-                            digest = hashlib.sha256()
-                            digest.update(header)
-                            bytes_read = len(header)
-                            while chunk := stream.read(min(1024 * 1024, details.st_size - bytes_read)):
-                                digest.update(chunk)
-                                bytes_read += len(chunk)
-                            after = os.fstat(stream.fileno())
-                            if (bytes_read != details.st_size or after.st_size != details.st_size
-                                    or after.st_mtime_ns != details.st_mtime_ns):
-                                coverage["native_read_failures"] += 1
-                                continue
-                        relative_path = candidate.relative_to(root).as_posix()
-                        purl_path = "/".join(quote(part, safe="._-~") for part in relative_path.split("/"))
-                        records.append({"name": filename, "version": None,
-                                        "purl": f"pkg:generic/{purl_path}",
-                                        "file_path": relative_path,
-                                        "sha256": digest.hexdigest(),
-                                        "size_bytes": details.st_size,
-                                        "elf_class": 32 if elf_class == 1 else 64,
-                                        "machine": int.from_bytes(header[18:20], byte_order)})
-                        coverage["native_bytes_hashed"] += details.st_size
-                        coverage["native_elf_candidates"] += 1
-                    except OSError:
+                    header = stream.read(64)
+                    elf_class = header[4] if len(header) > 4 else 0
+                    data_encoding = header[5] if len(header) > 5 else 0
+                    byte_order = "little" if data_encoding == 1 else "big"
+                    required_header = 52 if elf_class == 1 else 64 if elf_class == 2 else 0
+                    valid_elf_shared_object = (
+                        header.startswith(b"\x7fELF") and elf_class in {1, 2}
+                        and data_encoding in {1, 2} and len(header) >= required_header
+                        and int.from_bytes(header[16:18], byte_order) == 3
+                        and int.from_bytes(header[20:24], byte_order) == 1
+                    )
+                    if not valid_elf_shared_object:
+                        coverage["native_non_elf_candidates"] += 1
+                        continue
+                    digest = hashlib.sha256()
+                    digest.update(header)
+                    bytes_read = len(header)
+                    while chunk := stream.read(min(1024 * 1024, details.st_size - bytes_read)):
+                        digest.update(chunk)
+                        bytes_read += len(chunk)
+                    after = os.fstat(stream.fileno())
+                    if (bytes_read != details.st_size or after.st_size != details.st_size
+                            or after.st_mtime_ns != details.st_mtime_ns):
                         coverage["native_read_failures"] += 1
-                if stopped:
-                    break
-        except OSError:
-            coverage["native_read_failures"] += 1
+                        continue
+                relative_path = candidate.relative_to(root).as_posix()
+                purl_path = "/".join(quote(part, safe="._-~") for part in relative_path.split("/"))
+                records.append({"name": filename, "version": None,
+                                "purl": f"pkg:generic/{purl_path}",
+                                "file_path": relative_path,
+                                "sha256": digest.hexdigest(),
+                                "size_bytes": details.st_size,
+                                "elf_class": 32 if elf_class == 1 else 64,
+                                "machine": int.from_bytes(header[18:20], byte_order)})
+                coverage["native_bytes_hashed"] += details.st_size
+                coverage["native_elf_candidates"] += 1
+            except OSError:
+                coverage["native_read_failures"] += 1
+            if stopped:
+                break
+
+        coverage["native_entries_seen"] = inventory.coverage["entries_examined"]
+        coverage["native_symlinks_skipped"] = inventory.coverage["source_file_skip_reasons"].get("symlink_entry", 0)
+        coverage["native_read_failures"] += inventory.coverage["source_file_skip_reasons"].get("directory_read_error", 0)
+        if inventory.coverage["limits_reached"]:
+            coverage["native_limits_reached"] = True
 
         if (coverage["native_limits_reached"] or coverage["native_read_failures"]
                 or coverage["native_symlinks_skipped"] or coverage["native_oversized_files_skipped"]

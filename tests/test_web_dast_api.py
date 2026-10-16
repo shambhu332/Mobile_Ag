@@ -330,7 +330,11 @@ def test_dast_traffic_audit_marks_shadow_review_not_requested_when_missing(clien
     assert body["live_requests_sent"] == 0
 
 
-def test_dast_frida_unified_endpoint(client):
+def test_dast_frida_unified_endpoint(client, monkeypatch):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    attach = AsyncMock(side_effect=AssertionError("Safe profile must not execute Frida"))
+    monkeypatch.setattr(web.frida_runner, "execute_script_payload", attach)
     response = client.post(
         "/api/dast/frida",
         json={
@@ -339,10 +343,8 @@ def test_dast_frida_unified_endpoint(client):
             "script_type": "unified",
         },
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "unavailable"
-    assert "Unified Enterprise Runtime" in data["script"]
+    assert response.status_code == 403
+    attach.assert_not_awaited()
 
 
 def test_dast_execute_adb_endpoint(client):

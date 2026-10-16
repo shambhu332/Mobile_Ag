@@ -36,34 +36,13 @@ class FridaRunner:
     def __init__(self, adb: Optional[ADBManager] = None) -> None:
         self.adb = adb or ADBManager()
 
-    async def is_frida_server_running(self, serial: str) -> bool:
-        """Check if frida-server process is currently running on the device."""
-        code, stdout, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", "su -c 'ps -A | grep -i frida'"],
-            timeout=4.0,
-        )
-        if code == 0 and b"frida" in stdout.lower():
-            return True
-        # Fallback check
-        code, stdout, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", "ps | grep -i frida"],
-            timeout=4.0,
-        )
-        return code == 0 and b"frida" in stdout.lower()
+    async def is_frida_server_running(self, serial: str) -> Optional[bool]:
+        """Return unknown; status checks use the separately scoped read-only API."""
+        return None
 
     async def start_frida_server(self, serial: str, server_path: str = "/data/local/tmp/frida-server") -> bool:
-        """Attempt to launch frida-server via root shell."""
-        # Ensure executable permissions
-        await self.adb._exec_cmd(
-            ["-s", serial, "shell", f"su -c 'chmod 755 {server_path}'"],
-            timeout=3.0,
-        )
-        # Launch daemonized in background
-        code, _, _ = await self.adb._exec_cmd(
-            ["-s", serial, "shell", f"su -c '{server_path} -D &'"],
-            timeout=4.0,
-        )
-        return code == 0
+        """Disabled: MobileAg does not start privileged instrumentation daemons."""
+        return False
 
     def generate_unpinning_script(self) -> str:
         """Generate universal SSL/TLS certificate unpinning JavaScript hook."""
@@ -244,47 +223,9 @@ Java.perform(function () {
         script_code: str,
         duration: float = 6.0,
     ) -> dict[str, Any]:
-        """Deploy and execute a Frida script against the package using root shell or frida CLI."""
-        if not HAS_NATIVE_FRIDA or frida is None:
-            return {"status": "unavailable", "message": "Install the frida extra and run a matching server on the selected test device"}
-        import asyncio
-        import threading
-        import secrets
-        if not 0 < duration <= 30:
-            raise ValueError("Instrumentation duration must be between 0 and 30 seconds")
-        marker = secrets.token_hex(16)
-
-        def execute():
-            session = script = None
-            ready = threading.Event()
-            errors = []
-            def on_message(message, data):
-                if message.get("type") == "send" and message.get("payload") == marker:
-                    ready.set()
-                elif message.get("type") == "error":
-                    errors.append(message.get("description", "Frida script error"))
-            try:
-                device = frida.get_device(serial, timeout=2)
-                session = device.attach(package_name)
-                # Acknowledge after Java's queued initialization callbacks, not just file transfer.
-                acknowledgment = "\nJava.perform(function(){ send(" + repr(marker) + "); });"
-                script = session.create_script(script_code + acknowledgment)
-                script.on("message", on_message)
-                script.load()
-                if not ready.wait(duration) or errors:
-                    return {"status": "error", "message": "Hook initialization not acknowledged", "errors": errors}
-                return {"status": "executed", "package_name": package_name, "serial": serial,
-                        "message": "Script initialization acknowledged; session detached after validation", "persistent": False}
-            except Exception as exc:
-                return {"status": "error", "message": str(exc), "package_name": package_name}
-            finally:
-                if script is not None:
-                    try: script.unload()
-                    except Exception: pass
-                if session is not None:
-                    try: session.detach()
-                    except Exception: pass
-        return await asyncio.to_thread(execute)
+        """Disabled: runtime hooks, trust bypasses, and secret harvesting are out of scope."""
+        return {"status": "disabled", "executed": False,
+                "message": "Runtime instrumentation is disabled in the safe assessment profile"}
 
     def generate_all_in_one_agent_script(self) -> str:
         """Combine SSL unpinning, root/emulator cloaking, and crypto monitoring into a single unified hook."""
@@ -303,41 +244,10 @@ console.log("[MobileAg-Frida] Unified Dynamic Instrumentation Suite Active.");
         on_message: Optional[Callable[[dict, bytes | None], None]] = None,
         serial: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Attach to running app via native Python Frida RPC or return diagnostics if unavailable."""
-        if not HAS_NATIVE_FRIDA or frida is None:
-            return {
-                "status": "native_frida_unavailable",
-                "native_frida": False,
+        """Disabled: the safe profile never attaches a hook to an app process."""
+        return {"status": "disabled", "native_frida": HAS_NATIVE_FRIDA,
                 "package_name": package_name,
-                "message": "Native frida module not installed or unavailable in this environment. Falling back to ADB runner.",
-            }
-
-        try:
-            if not serial:
-                raise ValueError("An explicit authorized device serial is required")
-            device = frida.get_device(serial, timeout=2)
-
-            session = device.attach(package_name)
-            script = session.create_script(script_code)
-            if on_message:
-                script.on("message", on_message)
-            script.load()
-
-            return {
-                "status": "attached",
-                "native_frida": True,
-                "package_name": package_name,
-                "session": session,
-                "script": script,
-            }
-        except Exception as e:
-            logger.warning("Native Frida attach failed for %s: %s", package_name, e)
-            return {
-                "status": "error",
-                "native_frida": True,
-                "package_name": package_name,
-                "error": str(e),
-            }
+                "message": "Runtime instrumentation is disabled in the safe assessment profile"}
 
     def generate_stealth_unpinning_script(self, target_package: str, bypass_flutter: bool = True, bypass_boringssl: bool = True) -> str:
         """Generate comprehensive stealth unpinning script spanning Java, BoringSSL, and Flutter."""

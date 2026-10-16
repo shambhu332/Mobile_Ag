@@ -939,3 +939,26 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    the full suite passed (**1,170 passed**, 56.44 s), with `compileall` and
    `git diff --check` passing. Capture was mocked; no device screen was read.
    Existing test-environment warnings remain.
+
+   Frida runtime execution, daemon startup/status shell probing, and preset
+   script delivery are now disabled. The policy no longer authorizes a
+   `frida` execution action; legacy execution endpoints reject requests, and
+   the dashboard retains only read-only Frida process observation under its
+   separately scoped `frida_status` action. Hook, TLS-bypass, root-bypass, and
+   crypto/key-harvesting controls and generated-script delivery were removed
+   from the UI. Focused synthetic regressions passed (**23 passed**, 178
+   deselected); `git diff --check` passed. No device was used and no Frida
+   process was attached. Script-generator code remains in the source tree but
+   is not delivered or executed through the application; its safety and
+   completeness are not claimed. This intentionally retires those actions,
+   rather than treating security-bypass tooling as completed functionality.
+
+   Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
+   regression passed with synthetic fixtures and mocked device/model adapters.
+   It confirmed no page errors, no XSS marker execution, no external requests,
+   no real ADB/Frida calls, and no Frida deployment controls. The browser
+   report also recorded `masvs_kpi_present: false`; this is an existing
+   dashboard coverage gap, not claimed as fixed by this batch. Chromium
+   reported expected synthetic 401/404/503 responses and CSP-blocked inline
+   handler control. Browser artifacts were written under `/tmp`, not into the
+   repository. No device or commercial model was contacted.

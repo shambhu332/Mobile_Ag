@@ -306,10 +306,11 @@ async def test_frida_runner_execution():
 
     runner = FridaRunner(adb=mock_adb)
     is_running = await runner.is_frida_server_running("emulator-5554")
-    assert is_running is True
+    assert is_running is None  # Unknown; the helper does not issue root-shell probes.
 
     res = await runner.execute_script_payload("emulator-5554", "com.test.app", "console.log('test');")
-    assert res["status"] == "unavailable"  # ADB file writes are not instrumentation.
+    assert res["status"] == "disabled" and res["executed"] is False
+    mock_adb._exec_cmd.assert_not_awaited()
 
 
 # =============================================================================
@@ -1333,20 +1334,13 @@ def test_web_crawl_endpoint(client):
 
 def test_web_frida_endpoint(client):
     with patch("mobileag.web.app.frida_runner.execute_script_payload") as mock_frida:
-        mock_frida.return_value = {
-            "status": "executed",
-            "frida_server_running": True,
-            "script_path": "/data/local/tmp/test.js",
-        }
         response = client.post("/api/dast/frida", json={
             "serial": "emulator-5554",
             "package_name": "com.test.app",
             "script_type": "crypto",
         })
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "executed"
-        assert "javax.crypto.Cipher" in data["script"]
+        assert response.status_code == 403
+        mock_frida.assert_not_called()
 
 
 def test_web_taint_endpoint(client):

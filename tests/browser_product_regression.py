@@ -223,7 +223,7 @@ def main():
                     assert sum(generated_poc_url in request for request in requests)==1
                     poc_generation_is_explicit=True
                     copied={}
-                    for pane,expression in [('poc','getOrGeneratePocGuide(currentScan.findings[0])'),('adb',"'adb shell ' + getOrGenerateAdbCommand(currentScan.findings[0])"),('frida','getOrGenerateFridaScript(currentScan.findings[0])'),('ast','currentScan.findings[0].code_snippet')]:
+                    for pane,expression in [('poc','getOrGeneratePocGuide(currentScan.findings[0])'),('ast','currentScan.findings[0].code_snippet')]:
                         page.locator('#subtab-btn-'+pane).click()
                         expected=page.evaluate(expression)
                         page.locator('#poc-pane-'+pane+' button').first.click()
@@ -486,19 +486,18 @@ def main():
                         'unconfigured_execution_blocked':True,'forged_submit_blocked':True,'refresh_preserves_selection':True,
                         'configured_model_visible':True,'explicit_consent_required':True,'configuration_hosts_provider_controls':True,'assessment_keeps_explicit_consent':True,
                         'configuration_not_connectivity':True,'catalog_failure_blocks_selected_ai':True}
-                    # Status and preview have zero instrumentation POSTs.
+                    # Process status is read-only; hook preview/deploy controls are retired.
                     page.locator('#nav-dast').click()
                     wait_condition(page,'document.querySelector("#header-device-select").options.length===2')
                     assert 'executable available' in page.locator('#dast-adb-indicator').inner_text()
-                    assert page.locator('[data-onclick="static49"]').is_disabled()
+                    assert page.locator('[data-onclick="static49"]').count()==0
+                    assert page.locator('[data-onclick="static50"]').count()==0
+                    assert page.locator('#frida-script-preview-panel').count()==0
                     device_posts=[]
                     page.on('request',lambda request:device_posts.append(request.url) if request.method=='POST' and '/api/dast/' in request.url else None)
                     page.locator('#header-device-select').select_option('emulator-synthetic')
                     assert 'Root not checked' in page.locator('#header-root-badge').inner_text()
                     wait_condition(page,'document.querySelector("#frida-status-badge").textContent.includes("attachment not checked")')
-                    page.locator('[data-onclick="static50"]').click()
-                    page.locator('#frida-script-preview-panel').wait_for(state='visible')
-                    assert page.locator('#frida-script-code').inner_text()
                     assert device_posts==[]
                     # Failed refresh invalidates previously selected ready-looking state.
                     page.route('**/api/dast/devices',lambda route:route.fulfill(status=503,json={'detail':'Synthetic inventory unavailable'}))

@@ -373,26 +373,22 @@ def test_settings_validated(client):
 
 def test_frida_fails_closed():
     from mobileag.dast.frida_runner import FridaRunner
-    assert asyncio.run(FridaRunner().execute_script_payload('emulator-5554','synthetic.app','test'))['status']=='unavailable'
+    result=asyncio.run(FridaRunner().execute_script_payload('emulator-5554','synthetic.app','test'))
+    assert result['status']=='disabled' and result['executed'] is False
 
 @pytest.mark.asyncio
-async def test_frida_acknowledgment_and_cleanup(monkeypatch):
+async def test_frida_runtime_attachment_and_daemon_start_are_disabled(monkeypatch):
     module=importlib.import_module('mobileag.dast.frida_runner')
     native=MagicMock();session=native.get_device.return_value.attach.return_value
-    script=session.create_script.return_value
-    callback={}
-    script.on.side_effect=lambda event,fn: callback.update(fn=fn)
-    def loaded():
-        import re
-        code=session.create_script.call_args.args[0]
-        marker=re.search(r"send\('([^']+)'\)",code).group(1)
-        callback['fn']({'type':'send','payload':marker},None)
-    script.load.side_effect=loaded
     monkeypatch.setattr(module,'HAS_NATIVE_FRIDA',True);monkeypatch.setattr(module,'frida',native)
-    result=await module.FridaRunner().execute_script_payload('emulator-5554','synthetic.app','console.log("test");')
-    assert result['status']=='executed'
-    native.get_device.assert_called_once_with('emulator-5554',timeout=2)
-    session.detach.assert_called_once();script.unload.assert_called_once()
+    runner=module.FridaRunner()
+    result=await runner.execute_script_payload('emulator-5554','synthetic.app','console.log("test");')
+    assert result['status']=='disabled' and result['executed'] is False
+    attached=runner.attach_and_instrument_session('synthetic.app','console.log("test");',serial='emulator-5554')
+    assert attached['status']=='disabled'
+    assert await runner.start_frida_server('emulator-5554') is False
+    assert await runner.is_frida_server_running('emulator-5554') is None
+    native.get_device.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_analysis_resource_routing(tmp_path):

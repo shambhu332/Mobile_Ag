@@ -87,28 +87,6 @@
       }
     }
 
-    async function deployFridaScriptQuick(scriptType) {
-      const dev = dastActiveDevice;
-      if (!dev) {
-        showToast('Connect an ADB device first via Live DAST tab', 'error');
-        return;
-      }
-      const pkg = document.getElementById('dast-input-package')?.value.trim();
-      if (!pkg || pkg === 'com.target.mobile.app') { showToast('Specify your exact approved package first.', 'error'); return; }
-      showToast(`Deploying Frida ${scriptType} to ${pkg} on ${escapeHtml(String(dev))}...`, 'info');
-      try {
-        const res = await fetch('/api/dast/frida', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dev, package_name: pkg, script_type: scriptType })
-        });
-        const data = await res.json();
-        showToast(`Frida ${scriptType}: ${escapeHtml(String(data.status ?? ""))}`, data.status === 'executed' ? 'success' : 'error');
-      } catch (err) {
-        showToast(`Frida deploy error: ${err}`, 'error');
-      }
-    }
-
     function renderDastDeviceFleet() {
       const container = document.getElementById('dast-device-fleet-list');
       if (!container) return;
@@ -757,12 +735,9 @@
       }
     }
 
-    // 4. Frida Dynamic Instrumentation & Hooks
-    let activeFridaScriptCode = '';
-
     function updateDastControls() {
       const selected = dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device');
-      const actions = [9,10,38,39,40,41,42,43,44,45,46,47,48,49,51,53,58,59,60];
+      const actions = [38,39,40,41,42,43,44,45,46,47,48,58,60];
       for (const id of actions) document.querySelectorAll(`[data-onclick="static${id}"]`).forEach(button => {
         button.disabled = !selected;
         button.title = selected ? 'Requires the saved exact action scope' : 'Explicitly select an online server-approved device first';
@@ -790,63 +765,6 @@
         if (dastActiveDevice !== serial) return;
         if (badge) badge.textContent = error.status === 403 ? 'Frida observation not approved' : 'Frida status unknown — retry';
         showToast('Approve frida_status for this dedicated device in Configuration before checking. No hook was executed.', 'info');
-      }
-    }
-
-    async function deployFridaScript(scriptType) {
-      if (!dastActiveDevice) {
-        showToast('Select a device first', 'error');
-        return;
-      }
-      const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
-      showToast(`Deploying Frida hook [${scriptType}] to ${pkg}...`, 'info');
-
-      try {
-        const res = await fetch('/api/dast/frida', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, script_type: scriptType }),
-        });
-        const data = await res.json();
-        activeFridaScriptCode = data.script || '';
-
-        previewFridaScript(scriptType, data.script);
-        showToast(`Frida [${scriptType}]: ${escapeHtml(String(data.status ?? ""))}`, data.status === 'executed' ? 'success' : 'error');
-        setTimeout(fetchDastLogcat, 1000);
-      } catch (e) {
-        showToast(`Frida deploy error: ${e}`, 'error');
-      }
-    }
-
-    async function previewFridaScript(scriptType, codeOverride) {
-      const panel = document.getElementById('frida-script-preview-panel');
-      const title = document.getElementById('frida-preview-title');
-      const pre = document.getElementById('frida-script-code');
-      if (!panel || !pre) return;
-
-      if (!codeOverride) {
-        const pkg = document.getElementById('dast-input-package')?.value.trim() || 'com.target.mobile.app';
-        try {
-          const res = await fetch('/api/frida/presets/' + encodeURIComponent(scriptType));
-          const data = await res.json();
-          activeFridaScriptCode = data.script || '';
-        } catch (e) {
-          activeFridaScriptCode = '// Could not load preview';
-        }
-      } else {
-        activeFridaScriptCode = codeOverride;
-      }
-
-      if (title) title.textContent = `// Frida Hook: ${scriptType.toUpperCase()}`;
-      pre.textContent = activeFridaScriptCode;
-      panel.classList.remove('hidden');
-      panel.scrollIntoView({ behavior: 'smooth' });
-    }
-
-    function copyFridaScript() {
-      if (activeFridaScriptCode) {
-        navigator.clipboard.writeText(activeFridaScriptCode);
-        showToast('Frida script copied to clipboard', 'success');
       }
     }
 

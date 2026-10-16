@@ -1303,11 +1303,8 @@ async def get_frida_status(request: Request, serial: str = Query(min_length=1, m
 
 @app.get("/api/frida/presets/{script_type}")
 async def preview_frida_preset(script_type: Literal["crypto", "root_bypass", "unpinning"]):
-    """Generate preview text only. Never use the execution route for previews."""
-    generators = {"crypto": frida_runner.generate_crypto_monitor_script,
-                  "root_bypass": frida_runner.generate_root_bypass_script,
-                  "unpinning": frida_runner.generate_unpinning_script}
-    return {"script": generators[script_type](), "executed": False}
+    """Retired: do not expose hook scripts that bypass controls or collect secrets."""
+    raise HTTPException(410, "Frida hook previews are disabled by the safe assessment profile")
 
 
 @app.post("/api/dast/connect")
@@ -1569,24 +1566,9 @@ async def crawl_dast_ui(req: UICrawlRequest, request: Request) -> dict[str, Any]
 
 @app.post("/api/dast/frida")
 async def deploy_dast_frida(req: FridaDeployRequest, request: Request) -> dict[str, Any]:
-    """Generate or deploy dynamic Frida runtime scripts (SSL unpinning, crypto monitor, root bypass, unified)."""
+    """Retired: runtime hook deployment, bypasses, and secret harvesting are out of scope."""
     require_current_session(request)
-    from mobileag.web.policy import check_action
-    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
-        raise HTTPException(403, 'Frida device-wide diagnostic action is not approved')
-    if req.script_type == "crypto":
-        script = frida_runner.generate_crypto_monitor_script()
-    elif req.script_type == "root_bypass":
-        script = frida_runner.generate_root_bypass_script()
-    elif req.script_type in ("all", "unified"):
-        script = frida_runner.generate_all_in_one_agent_script()
-    else:
-        script = frida_runner.generate_unpinning_script()
-    res = await frida_runner.execute_script_payload(req.serial, req.package_name, script)
-    require_current_session(request)
-    if not check_device(req.serial) or not check_action(repository().get_policy(), 'frida', req.model_dump()):
-        raise HTTPException(403, 'Frida device-wide diagnostic action was revoked')
-    return {"status": res.get("status", "error"), "result": res, "script": script}
+    raise HTTPException(410, "Frida runtime deployment is disabled; use read-only process observation")
 
 
 @app.post("/api/dast/traffic/audit")

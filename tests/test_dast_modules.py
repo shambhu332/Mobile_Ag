@@ -376,7 +376,7 @@ def test_frida_runner_unified_agent_and_session():
         package_name="com.test.app",
         script_code="console.log('test');",
     )
-    assert isinstance(result, dict)
+    assert isinstance(result, dict) and result["status"] == "disabled"
     assert "package_name" in result
     assert result["package_name"] == "com.test.app"
 

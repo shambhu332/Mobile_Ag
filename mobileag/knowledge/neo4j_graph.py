@@ -261,7 +261,9 @@ class AttackGraph:
                                 "group": primary_label.lower(),
                                 "shape": "square" if primary_label == "Vulnerability" else "dot",
                                 "size": 24 if primary_label == "Vulnerability" else 20,
-                                "color": color_map.get(primary_label, "#94A3B8")
+                                "color": color_map.get(primary_label, "#94A3B8"),
+                                "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
+                                              if primary_label == "Vulnerability" else None,
                             })
 
                         if a and rel_type:

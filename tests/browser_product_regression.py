@@ -33,7 +33,7 @@ async def fixture():
     findings=await SecretScanner(LLMRouter(Settings(_env_file=None,offline=True))).scan(str(source))
     result=[f.model_dump(mode='json') for f in findings]
     result[0]['id']='synthetic-finding'
-    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','artifact_sha256':'a'*64,'stats':{'total':1,'high':1},'findings':result,'coverage':{'android_surface':AndroidSurfaceAnalyzer().scan(str(source),{})['coverage']},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
+    return {'scan_id':'scan_synthetic','package_name':'org.example.review','status':'completed','version':'synthetic','artifact_sha256':'a'*64,'stats':{'total':1,'high':1},'findings':result,'attack_surface_graph':{'nodes':[{'id':'app','label':'org.example.review','group':'app'},{'id':'scan::synthetic-finding','finding_id':'synthetic-finding','label':'Review candidate','group':'vulnerability'}],'edges':[{'from':'app','to':'scan::synthetic-finding','label':'has_vuln'}]},'coverage':{'android_surface':AndroidSurfaceAnalyzer().scan(str(source),{})['coverage']},'revision':0,'api_endpoints':[{'id':'synthetic-api','method':'GET','url':'https://owned-fixture.invalid/profile','path':'/profile','host':'owned-fixture.invalid','status':'UNVERIFIED','source':'Synthetic declared fixture, not captured traffic','auth_type':'Not assessed'}]}
 scan=asyncio.run(fixture());m=importlib.import_module('mobileag.web.app')
 m.repository().save(scan)
 m.attack_graph.verify_connection=AsyncMock(return_value=False)
@@ -148,6 +148,10 @@ def main():
                     page.locator('#session-token').fill('synthetic-local-only')
                     page.locator('#session-token').press('Enter')
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
+                    page.evaluate('handleGraphNodeClick({nodes:["scan::synthetic-finding"]})')
+                    assert page.evaluate('selectedFindingId')=='synthetic-finding'
+                    assert page.locator('#view-findings').is_visible()
+                    page.evaluate('switchView("overview")')
                     wait_condition(page,'document.querySelector("#auto-ready-status").textContent.startsWith("Checked ")')
                     assert page.locator('#view-assessment #assessment-readiness').count()==1
                     assert page.evaluate('dastActiveDevice') is None

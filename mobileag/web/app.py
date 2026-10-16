@@ -2031,7 +2031,7 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
                 f_color = "#ef4444" if sev in {"CRITICAL", "HIGH"} else "#f59e0b" if sev == "MEDIUM" else "#3b82f6"
                 nodes.append({
                     "id": f_id, "label": (f.get("title") or "Finding")[:25], "group": "vulnerability",
-                    "shape": "diamond", "size": 20, "color": f_color
+                    "shape": "diamond", "size": 20, "color": f_color, "finding_id": f_id
                 })
                 edges.append({"from": "app", "to": f_id, "label": "has_vuln"})
         scan["attack_surface_graph"] = {"nodes": nodes, "edges": edges}

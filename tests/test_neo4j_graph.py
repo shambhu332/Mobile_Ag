@@ -28,6 +28,32 @@ class _Driver:
         return _Session(self.calls)
 
 
+class _ExportResult:
+    def __init__(self, record):
+        self.record = record
+
+    def __aiter__(self):
+        async def records():
+            yield self.record
+        return records()
+
+
+class _ExportSession(_Session):
+    async def run(self, query, **params):
+        return _ExportResult({
+            "a": {"scan_id": "scan-a", "package_name": "sample", "version": "1"},
+            "rel_type": "HAS_VULNERABILITY",
+            "target": {"finding_id": '["scan-a","finding","finding-1"]',
+                       "display_finding_id": "finding-1", "title": "Review candidate"},
+            "target_labels": ["Vulnerability"],
+        })
+
+
+class _ExportDriver:
+    def session(self):
+        return _ExportSession([])
+
+
 @pytest.mark.asyncio
 async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     graph = AttackGraph.__new__(AttackGraph)
@@ -65,3 +91,17 @@ def test_scoped_keys_are_stable_and_type_distinct():
     assert _scoped_key("scan", "component", "same") == _scoped_key("scan", "component", "same")
     assert _scoped_key("scan-a", "component", "same") != _scoped_key("scan-b", "component", "same")
     assert _scoped_key("scan", "component", "same") != _scoped_key("scan", "api", "same")
+
+
+@pytest.mark.asyncio
+async def test_visjs_vulnerability_node_carries_original_finding_id():
+    graph = AttackGraph.__new__(AttackGraph)
+    graph._connected = True
+    graph.driver = _ExportDriver()
+
+    result = await graph.export_visjs_graph("scan-a")
+
+    finding_nodes = [node for node in result["nodes"] if node["group"] == "vulnerability"]
+    assert len(finding_nodes) == 1
+    assert finding_nodes[0]["id"] == '["scan-a","finding","finding-1"]'
+    assert finding_nodes[0]["finding_id"] == "finding-1"

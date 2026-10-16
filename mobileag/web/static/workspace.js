@@ -206,21 +206,26 @@
       if (visNetwork) visNetwork.destroy();
       visNetwork = new vis.Network(container, data, options);
 
-      visNetwork.on('click', function(params) {
-        if (params.nodes.length > 0) {
-          const nodeId = params.nodes[0];
-          selectFindingByNode(nodeId);
-        }
-      });
+      visNetwork.on('click', handleGraphNodeClick);
     }
 
     function graphFit() { if (visNetwork) visNetwork.fit({ animation: true }); }
     function graphZoomIn() { if (visNetwork) visNetwork.moveTo({ scale: visNetwork.getScale() * 1.3 }); }
     function graphZoomOut() { if (visNetwork) visNetwork.moveTo({ scale: visNetwork.getScale() * 0.7 }); }
 
-    function selectFindingByNode(nodeId) {
+    function handleGraphNodeClick(params) {
+      if (!Array.isArray(params?.nodes) || params.nodes.length === 0) return;
+      const nodeId = params.nodes[0];
+      const graphNode = visNodes?.get(nodeId);
+      selectFindingByNode(nodeId, graphNode?.finding_id);
+    }
+
+    function selectFindingByNode(nodeId, findingId = null) {
       if (!currentScan || !currentScan.findings) return;
-      const f = currentScan.findings.find(item => item.id === nodeId || (item.cwe_id && item.cwe_id.toLowerCase() === nodeId.toLowerCase()));
+      const normalizedNodeId = String(nodeId || '').toLowerCase();
+      const f = currentScan.findings.find(item =>
+        (findingId && item.id === findingId) || item.id === nodeId ||
+        (typeof item.cwe_id === 'string' && item.cwe_id.toLowerCase() === normalizedNodeId));
       if (f) {
         switchView('findings');
         inspectFinding(f.id);

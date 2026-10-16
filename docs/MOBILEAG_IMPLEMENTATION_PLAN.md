@@ -823,3 +823,14 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    mocked; no device was used, and this does not prove deep-link exploitability
    or Android runtime behavior. Existing pytest-asyncio and async-resource
    warnings remain.
+
+   `UICrawler` now fails closed on an explicit boolean scope denial before or
+   between UIAutomator dump/read operations, and it skips cleanup once the
+   guard denies further commands. Synthetic regressions verify pre-command
+   denial and revocation after the uniquely named dump command; revocation may
+   leave that temporary file on-device because cleanup is intentionally not
+   attempted out of scope. Focused UI/runtime regressions passed (**9 passed**,
+   86 deselected); the full suite passed (**1,157 passed**, 72.39 s), with
+   `compileall` and `git diff --check` passing. All ADB actions were mocked;
+   no Android device or UI behavior was tested. Existing pytest-asyncio and
+   async-resource warnings remain.

@@ -105,3 +105,51 @@ async def test_scope_denial_after_baseline_blocks_deep_link_launch():
         )
     adb.get_logcat_dump.assert_awaited_once()
     adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ui_hierarchy_explicit_denial_prevents_device_commands():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from mobileag.dast.ui_crawler import UICrawler
+
+    adb = SimpleNamespace(_exec_cmd=AsyncMock())
+    with pytest.raises(PermissionError):
+        await UICrawler(adb).dump_ui_hierarchy('synthetic-serial', guard=lambda: False)
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ui_hierarchy_revocation_stops_read_and_cleanup_commands():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from mobileag.dast.ui_crawler import UICrawler
+
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(return_value=(0, b'', b'')))
+    checks = 0
+
+    def revoke_after_dump():
+        nonlocal checks
+        checks += 1
+        return checks < 2
+
+    with pytest.raises(PermissionError):
+        await UICrawler(adb).dump_ui_hierarchy(
+            'synthetic-serial', guard=revoke_after_dump,
+        )
+    adb._exec_cmd.assert_awaited_once()
+    assert adb._exec_cmd.await_args.args[0][3:5] == ['uiautomator', 'dump']
+
+
+@pytest.mark.asyncio
+async def test_ui_crawl_reports_explicit_scope_denial_without_adb():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from mobileag.dast.ui_crawler import UICrawler
+
+    adb = SimpleNamespace(_exec_cmd=AsyncMock())
+    report = await UICrawler(adb).crawl_app(
+        'synthetic-serial', 'org.example.fixture', guard=lambda: False,
+    )
+    assert report['status'] == 'blocked'
+    adb._exec_cmd.assert_not_awaited()

@@ -1346,3 +1346,12 @@ also retains the bounded candidate count and scan errors. Synthetic status
 regressions passed; full pytest passed (**1,234 passed**, 60.05 s); compileall
 and `git diff --check` passed. This remains a version-limited metadata/string
 probe, not C# decompilation or APK-wide coverage.
+
+Static API mapping now records bounded GraphQL `query`/`mutation`/`subscription`
+operation-name candidates with source path and line, separately from URL/route
+candidates. It does not invent an HTTP path or treat an operation name as a
+server endpoint. Comments are excluded; a 1,000-item cap marks coverage partial.
+Synthetic positive, comment-negative, location, and cap regressions passed
+(**2 focused tests**); full pytest passed (**1,236 passed**, 61.42 s); compileall
+and `git diff --check` passed. This lexical inventory does not establish an
+operation's execution, server schema, or authorization behavior.

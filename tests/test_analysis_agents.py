@@ -199,6 +199,51 @@ async def test_api_mapper_ignores_java_kotlin_comments_but_keeps_literal_strings
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_records_graphql_operation_candidates_without_claiming_routes(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "GraphClient.kt").write_text(
+        'class GraphClient {\n'
+        '  val endpoint = "/graphql"\n'
+        '  val document = """\n'
+        '    query LoadProfile($id: ID!) { profile(id: $id) { id } }\n'
+        '    mutation UpdateProfile { updateProfile { id } }\n'
+        '    subscription ProfileEvents { profileEvents { id } }\n'
+        '  """\n'
+        '  // query CommentOnly { hidden }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+    operations = mapper.coverage["graphql_operation_candidates"]
+    assert [(item["operation_type"], item["operation_name"]) for item in operations] == [
+        ("query", "LoadProfile"), ("mutation", "UpdateProfile"),
+        ("subscription", "ProfileEvents"),
+    ]
+    assert all(item["evidence_type"] == "graphql_operation_string_candidate" for item in operations)
+    assert [item["line_number"] for item in operations] == [4, 5, 6]
+    assert any(endpoint["url"] == "/graphql" for endpoint in endpoints)
+    assert mapper.coverage["graphql_operation_candidate_count"] == 3
+    assert "CommentOnly" not in str(operations)
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_graphql_operation_candidate_limit_is_partial(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    mapper.MAX_GRAPHQL_OPERATION_CANDIDATES = 1
+    (tmp_path / "GraphClient.js").write_text(
+        'const queryText = `query First { viewer { id } }`;\n'
+        'const mutationText = `mutation Second { update { id } }`;\n',
+        encoding="utf-8",
+    )
+
+    await mapper.map_apis(str(tmp_path))
+    assert mapper.coverage["graphql_operation_candidate_count"] == 1
+    assert mapper.coverage["graphql_operations_truncated"] is True
+    assert mapper.coverage["static_status"] == "partial"
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_extracts_retrofit_head_options_and_literal_http_methods(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "Methods.java").write_text(

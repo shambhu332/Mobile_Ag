@@ -192,7 +192,10 @@ class APIMapper:
             r'''["'`]((?:/)(?:api|graphql|v[0-9]+|auth|oauth|login|users?|account|payments?)(?:/[A-Za-z0-9._~%{}:$-]+)*(?:\?[A-Za-z0-9._~%{}=&%-]*)?)["'`]''',
             re.IGNORECASE,
         )
-        self.graphql_pattern = re.compile(r'query\s*\{|mutation\s*\{')
+        self.graphql_pattern = re.compile(
+            r"\b(query|mutation|subscription)\b(?:\s+([_A-Za-z][_0-9A-Za-z]{0,127}))?\s*(?=\(|\{)"
+        )
+        self.MAX_GRAPHQL_OPERATION_CANDIDATES = 1000
         self.coverage = {"static_status":"not_analyzed", "runtime_status":"not_tested",
                          "proof_status":"not_proven", "exhaustive":False}
 
@@ -343,6 +346,8 @@ class APIMapper:
         raw_findings: list[dict] = []
         seen_endpoint_urls: set[str] = set()
         deduplicated_endpoint_count = 0
+        graphql_operation_candidates: list[dict[str, object]] = []
+        graphql_operations_truncated = False
         http_diagnostics = {"unmodeled": 0, "oversized_or_unclosed": 0}
         malformed_xml_comment_files = 0
 
@@ -362,6 +367,23 @@ class APIMapper:
                     malformed_xml_comment_files += int(malformed_xml)
                 elif file_path.suffix.lower() in {".js", ".mjs", ".dart"}:
                     content = _mask_javascript_dart_comments(content)
+
+                # Retain operation names as a separate lexical inventory. An
+                # operation is not an HTTP endpoint or proof of a server route.
+                for match, line_number in self._matches_with_line_numbers(self.graphql_pattern, content):
+                    if len(graphql_operation_candidates) >= self.MAX_GRAPHQL_OPERATION_CANDIDATES:
+                        inventory.record_limit("graphql_operation_candidate_count")
+                        graphql_operations_truncated = True
+                        break
+                    operation_type = match.group(1).lower()
+                    operation_name = match.group(2)
+                    graphql_operation_candidates.append({
+                        "operation_type": operation_type,
+                        "operation_name": operation_name[:128] if operation_name else None,
+                        "source_file": rel_path,
+                        "line_number": line_number,
+                        "evidence_type": "graphql_operation_string_candidate",
+                    })
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
                 # parsed with a bounded quote-aware scanner to avoid repeated
@@ -464,6 +486,9 @@ class APIMapper:
         self.coverage = dict(inventory.coverage)
         self.coverage.update(runtime_status='not_tested', proof_status='not_proven', exhaustive=False,
                              candidate_count=len(raw_findings), endpoints_count=len(endpoints),
+                             graphql_operation_candidate_count=len(graphql_operation_candidates),
+                             graphql_operation_candidates=graphql_operation_candidates,
+                             graphql_operations_truncated=graphql_operations_truncated,
                              deduplicated_endpoint_count=deduplicated_endpoint_count,
                              unmodeled_retrofit_http_annotations=http_diagnostics["unmodeled"],
                              oversized_or_unclosed_retrofit_http_annotations=http_diagnostics[

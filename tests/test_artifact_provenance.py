@@ -483,3 +483,29 @@ def test_source_inventory_order_is_stable_and_casefold_sorted(tmp_path):
     actual = [str(path.relative_to(tmp_path)) for path, _ in inventory.read(tmp_path, {".java"})]
 
     assert actual == ["A.java", "z.java", "nested/b.java"]
+
+
+def test_apk_extractor_smali_inventory_is_bounded_and_no_follow(tmp_path, monkeypatch):
+    import mobileag.ingestion.apk_extractor as extractor_module
+
+    root = tmp_path / "smali"
+    package_dir = root / "fixture"
+    package_dir.mkdir(parents=True)
+    (package_dir / "A.smali").write_text(".class public Lfixture/A;\n", encoding="utf-8")
+    outside = tmp_path / "Outside.smali"
+    outside.write_text(".class public Lfixture/Outside;\n", encoding="utf-8")
+    (root / "Linked.smali").symlink_to(outside)
+
+    counted = APKExtractor._count_smali_files(root)
+    descriptors = APKExtractor._read_smali_class_descriptors(root)
+    assert counted == {"status": "incomplete", "count": None}
+    assert descriptors["status"] == "incomplete"
+    assert descriptors["descriptors"] is None
+
+    (root / "Linked.smali").unlink()
+    monkeypatch.setattr(extractor_module, "_MAX_SMALI_WALK_ENTRIES", 1)
+    capped_count = APKExtractor._count_smali_files(root)
+    capped_descriptors = APKExtractor._read_smali_class_descriptors(root)
+
+    assert capped_count == {"status": "capped", "count": 0}
+    assert capped_descriptors == {"status": "capped", "count": 0, "descriptors": None}

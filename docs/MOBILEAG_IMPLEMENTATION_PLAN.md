@@ -396,6 +396,16 @@ Synthetic tests cover DTD/entity, oversize, and final-symlink cases. This does
 not harden every XML consumer or make extraction ancestor directories
 race-proof.
 
+The APK extractor's materialized Smali file-count and class-descriptor
+comparisons now enumerate through the shared bounded no-symlink inventory
+instead of `os.walk` directory lists. Entry-cap truncation and skipped paths
+produce `capped` / `incomplete` outcomes, withholding descriptor sets rather
+than claiming exact DEX-to-Smali correspondence. The provenance regressions
+passed (**21 passed**); the full suite passed (**1,083 passed**, 40.65 s; one
+expected synthetic duplicate-ZIP-member warning). `compileall` and
+`git diff --check` passed. This does not prove decompiler completeness or
+APK-wide class coverage.
+
 Network Security Configuration XML is also rejected when it contains DTD/entity
 declarations, for both manifest-reference discovery and the configuration
 audit; the existing no-follow, size-bounded file reader remains in force. A

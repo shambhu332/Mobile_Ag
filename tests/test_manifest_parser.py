@@ -517,6 +517,25 @@ def test_provider_path_resource_traversal_or_symlink_fails_incomplete(tmp_path):
     assert all(provider['entries'] == [] for provider in parsed['provider_path_inventory']['providers'])
 
 
+def test_provider_path_resource_rejects_dtd_and_entity_expansion(tmp_path):
+    manifest_path = tmp_path / 'AndroidManifest.xml'
+    xml_dir = tmp_path / 'res' / 'xml'
+    xml_dir.mkdir(parents=True)
+    (xml_dir / 'provider_paths.xml').write_text(
+        '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>'
+        '<paths><root-path name="&marker;" path="."/></paths>')
+    manifest_path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <application><provider android:name=".Files" android:exported="false">
+        <meta-data android:name="androidx.core.content.FILE_PROVIDER_PATHS" android:resource="@xml/provider_paths"/>
+      </provider></application></manifest>''')
+
+    inventory = ManifestParser().parse(str(manifest_path))['provider_path_inventory']
+    assert inventory['static_status'] == 'incomplete'
+    assert inventory['unresolved_count'] == 1
+    assert inventory['providers'][0]['status'] == 'unavailable_or_invalid'
+    assert inventory['providers'][0]['entries'] == []
+
+
 @pytest.mark.asyncio
 async def test_exported_component_is_review_not_proven_vulnerability():
     from mobileag.analysis.manifest_auditor import ManifestAuditor

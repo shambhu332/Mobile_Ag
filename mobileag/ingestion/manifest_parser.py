@@ -379,9 +379,16 @@ class ManifestParser:
                         or not resolved.is_relative_to(resolved_root)
                         or candidate.is_symlink() or not resolved.is_file()):
                     raise ValueError("unsafe or non-file resource")
-                if resolved.stat().st_size > 65536:
+                fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as stream:
+                    details = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(details.st_mode) or details.st_size > 65536:
+                        raise ValueError("resource exceeds 65536 bytes or is not regular")
+                    raw = stream.read(65537)
+                if len(raw) > 65536:
                     raise ValueError("resource exceeds 65536 bytes")
-                raw = resolved.read_bytes()
+                if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                    raise ValueError("DTD/entity declarations are unsupported")
                 xml_root = ET.fromstring(raw)
                 entries = [{"type": child.tag, "name": child.attrib.get("name", ""),
                             "path": child.attrib.get("path", "")}

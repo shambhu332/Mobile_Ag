@@ -1223,6 +1223,29 @@ def test_android_data_safety_requires_sdk_package_boundaries():
         assert findings[0].metadata["trackers"] == ["Google Firebase Analytics"]
 
 
+def test_android_data_safety_scans_smali_descriptors_and_constants_not_comments():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "Analytics.smali"
+        source.write_text(
+            "# com.facebook.android in a comment is not a code marker\n"
+            ".class public Lcom/google/firebase/analytics/FirebaseAnalytics;\n"
+            '.method public test()V\n    const-string v0, "com.adjust.sdk"\n.end method\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+
+        findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        )
+
+    assert len(findings) == 1
+    assert findings[0].metadata["trackers"] == [
+        "Adjust Attribution SDK", "Google Firebase Analytics",
+    ]
+
+
 def test_android_data_safety_ignores_nested_permission_examples_and_non_manifest_roots():
     with tempfile.TemporaryDirectory() as tmp_dir:
         source = Path(tmp_dir) / "App.java"

@@ -70,6 +70,33 @@ def _mask_java_kotlin_comments_and_strings(source: str) -> str:
     return "".join(chars)
 
 
+def _mask_smali_comments(source: str) -> str:
+    """Blank Smali # comments while retaining quoted string constants."""
+    chars = list(source)
+    index = 0
+    while index < len(source):
+        if source[index] == '"':
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+        elif source[index] == "#":
+            end = index + 1
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            for position in range(index, end):
+                chars[position] = " "
+            index = end
+        else:
+            index += 1
+    return "".join(chars)
+
+
 @dataclass
 class PrivacyManifestResult:
     has_privacy_manifest: bool = False
@@ -543,7 +570,9 @@ class PrivacyManifestAuditor:
         detected_trackers: Set[str] = set()
         tracker_patterns = [
             (re.compile(
-                rf"(?<![A-Za-z0-9_$.]){re.escape(package)}(?=\.|[^A-Za-z0-9_$]|$)"
+                rf"(?<![A-Za-z0-9_$.])(?:L)?"
+                rf"{re.escape(package).replace(r'\.', r'[./]')}"
+                rf"(?=[./]|[^A-Za-z0-9_$]|$)"
             ), description)
             for package, description in self.THIRD_PARTY_TRACKING_SDKS.items()
         ]
@@ -579,9 +608,9 @@ class PrivacyManifestAuditor:
                     total_bytes += len(raw)
                     coverage["bytes_read"] = total_bytes
                     coverage["files_read"] += 1
-                    text = _mask_java_kotlin_comments_and_strings(
-                        raw.decode("utf-8", errors="ignore")
-                    )
+                    decoded = raw.decode("utf-8", errors="ignore")
+                    text = (_mask_smali_comments(decoded) if candidate.suffix.lower() == ".smali"
+                            else _mask_java_kotlin_comments_and_strings(decoded))
                     for pattern, description in tracker_patterns:
                         if pattern.search(text):
                             detected_trackers.add(description)

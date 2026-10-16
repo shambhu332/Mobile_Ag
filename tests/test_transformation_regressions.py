@@ -348,6 +348,21 @@ async def test_android_driver_device_commands_require_scope_guard():
         with pytest.raises(PermissionError):await operation
     adb._exec_cmd.assert_not_awaited()
 
+@pytest.mark.asyncio
+async def test_android_driver_stops_after_scope_revocation_between_shell_commands():
+    from mobileag.dast.adb_manager import ADBManager
+    from mobileag.automation.android import AndroidDriver
+    from unittest.mock import AsyncMock
+    adb=ADBManager();adb._exec_cmd=AsyncMock(return_value=(0,b'focused window org.example.app/.Main',b''))
+    driver=AndroidDriver(adb,'owned-device','org.example.app');checks=0
+    def revoke_after_foreground_command():
+        nonlocal checks
+        checks+=1
+        if checks>=4:raise PermissionError('synthetic scope revoked')
+    with pytest.raises(PermissionError):await driver.snapshot(guard=revoke_after_foreground_command)
+    assert adb._exec_cmd.await_count==1
+    assert 'uiautomator' not in adb._exec_cmd.await_args.args[0]
+
 def test_dependency_constraints_have_no_local_artifact_references():
     from pathlib import Path
     snapshot = (Path(__file__).resolve().parents[1]/'requirements/validated-python314.txt').read_text()

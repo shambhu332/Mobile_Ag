@@ -1735,3 +1735,9 @@ The low-level `clear_logcat` helper is now retired consistently with its
 disabled web route: direct calls raise before any ADB command, preserving
 original device log evidence. A synthetic no-command regression covers the
 helper; no device log buffer was cleared.
+
+An additional driver regression revokes scope between the foreground check
+and hierarchy dump and confirms the second shell command is not issued. The
+focused revocation/guard checks passed (**2 passed**); full pytest passed
+(**1,316 passed**, 63.26 s). Compilation and `git diff --check` also passed;
+this remains synthetic authorization-boundary evidence, not device behavior.

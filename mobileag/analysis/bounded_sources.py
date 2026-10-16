@@ -4,6 +4,23 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import Callable
+
+
+def explicit_scan_root(directory) -> Path | None:
+    """Normalize a caller-supplied root without treating missing input as cwd."""
+    if directory is None:
+        return None
+    try:
+        raw = os.fspath(directory)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return Path(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 class SourceInventory:
@@ -35,6 +52,19 @@ class SourceInventory:
         reasons = self.coverage['limit_reasons']
         reasons[reason] = reasons.get(reason, 0) + 1
 
+    @staticmethod
+    def _bounded_sorted_entries(entries, remaining: int):
+        """Sort only a bounded directory prefix; never materialize an unbounded scandir."""
+        selected = []
+        truncated = False
+        for entry in entries:
+            if len(selected) >= remaining:
+                truncated = True
+                break
+            selected.append(entry)
+        selected.sort(key=lambda item: item.name.casefold())
+        return selected, truncated
+
     def paths(self, directory, extensions=()):
         """Yield bounded regular-file paths without reading file contents."""
         allowed = {ext.lower() for ext in extensions}
@@ -50,11 +80,11 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        ordered_entries, truncated = self._bounded_sorted_entries(
+                            entries, self.max_entries - info['entries_examined'])
+                        if truncated:
+                            self.record_limit('entry_budget')
                         for entry in ordered_entries:
-                            if info['entries_examined'] >= self.max_entries:
-                                self.record_limit('entry_budget')
-                                return
                             info['entries_examined'] += 1
                             path = Path(entry.path)
                             if entry.is_symlink():
@@ -64,6 +94,8 @@ class SourceInventory:
                             elif (not allowed or path.suffix.lower() in allowed) and entry.is_file(follow_symlinks=False):
                                 info['source_files_analyzed'] += 1
                                 yield path
+                        if truncated:
+                            return
                 except OSError:
                     self.record_skip('directory_read_error')
         finally:
@@ -71,11 +103,15 @@ class SourceInventory:
                                     else 'analyzed_heuristically' if info['source_files_analyzed']
                                     else 'not_analyzed')
 
-    def read(self, directory, extensions=(), *, names=(), suffixes=()):
+    def read(
+        self, directory, extensions=(), *, names=(), suffixes=(),
+        path_filter: Callable[[Path], bool] | None = None,
+    ):
         """Yield bounded regular files selected by extension, exact name or suffix.
 
-        Selection is case-insensitive. Limits and skipped/partial status are
-        retained in ``coverage`` even when traversal stops early.
+        Selection is case-insensitive. ``path_filter`` can further restrict
+        selected paths before opening them. Limits and skipped/partial status
+        are retained in ``coverage`` even when traversal stops early.
         """
         allowed_extensions = {ext.lower() for ext in extensions}
         allowed_names = {name.lower() for name in names}
@@ -92,11 +128,11 @@ class SourceInventory:
                 current = pending.pop()
                 try:
                     with os.scandir(current) as entries:
-                        ordered_entries = sorted(entries, key=lambda item: item.name.casefold())
+                        ordered_entries, truncated = self._bounded_sorted_entries(
+                            entries, self.max_entries - info['entries_examined'])
+                        if truncated:
+                            self.record_limit('entry_budget')
                         for entry in ordered_entries:
-                            if info['entries_examined'] >= self.max_entries:
-                                self.record_limit('entry_budget')
-                                return
                             info['entries_examined'] += 1
                             path = Path(entry.path)
                             if entry.is_symlink():
@@ -109,6 +145,13 @@ class SourceInventory:
                                     and path.name.lower() not in allowed_names
                                     and not any(path.name.lower().endswith(suffix) for suffix in allowed_suffixes)):
                                 continue
+                            if path_filter is not None:
+                                try:
+                                    if not path_filter(path):
+                                        continue
+                                except Exception:
+                                    self.record_skip('path_filter_error')
+                                    continue
                             try:
                                 # O_NOFOLLOW also closes the final-component symlink race.
                                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -133,6 +176,8 @@ class SourceInventory:
                                 yield path, data
                             except OSError:
                                 self.record_skip('unreadable_or_raced_file')
+                        if truncated:
+                            return
                 except OSError:
                     self.record_skip('directory_read_error')
         finally:

@@ -89,8 +89,12 @@ def test_browser_policy_blocks_external_writes_and_device_gets():
     origin = 'http://127.0.0.1:8080'
     assert permitted_request(origin, origin+'/api/scans?limit=1&summaries=true', 'GET')
     assert permitted_request(origin, origin+'/static/workspace.js', 'GET')
+    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/resilience', 'GET')
+    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/test-plan', 'GET')
+    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/findings/synthetic-finding/poc', 'GET')
     for url, method in [(origin+'/api/scans/run', 'POST'), (origin+'/api/settings', 'PUT'),
-                        ('https://evil.invalid/', 'GET'), (origin+'/api/dast/logcat?serial=test', 'GET')]:
+                        ('https://evil.invalid/', 'GET'), (origin+'/api/dast/logcat?serial=test', 'GET'),
+                        (origin+'/api/scans/scan_synthetic/findings/synthetic-finding/feedback', 'GET')]:
         assert not permitted_request(origin, url, method)
 
 

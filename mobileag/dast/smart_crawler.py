@@ -7,6 +7,7 @@ screen state hashes to prevent navigation loops.
 from __future__ import annotations
 
 import hashlib
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
@@ -35,23 +36,51 @@ class CrawlerDecision:
 class SmartUICrawler:
     """Intelligently navigates Android application UIs based on semantic element detection."""
 
-    def __init__(self, test_user: str = "testuser@example.com", test_pass: str = "P@ssword123!"):
+    MAX_HIERARCHY_CHARS = 2 * 1024 * 1024
+    MAX_HIERARCHY_ELEMENTS = 5000
+
+    def __init__(self, test_user: Optional[str] = None, test_pass: Optional[str] = None,
+                 allow_form_submit: bool = False, allow_exploratory_clicks: bool = False,
+                 allow_test_credential_entry: bool = False,
+                 allow_back_navigation: bool = False):
+        # Credentials are supplied only by the authorized operator. Never ship
+        # reusable-looking defaults that could be entered into an unintended app.
         self.test_user = test_user
         self.test_pass = test_pass
+        self.allow_form_submit = allow_form_submit
+        self.allow_exploratory_clicks = allow_exploratory_clicks
+        self.allow_test_credential_entry = allow_test_credential_entry
+        self.allow_back_navigation = allow_back_navigation
         self.visited_states: Dict[str, int] = {}  # state_hash -> visit_count
+        self.last_parse_status = "not_parsed"
 
     def parse_hierarchy_xml(self, xml_content: str) -> List[UIElement]:
         """Parse uiautomator dump XML into structured UIElements."""
         elements: List[UIElement] = []
+        if not isinstance(xml_content, str):
+            self.last_parse_status = "invalid_input"
+            return elements
+        if len(xml_content) > self.MAX_HIERARCHY_CHARS:
+            self.last_parse_status = "too_large"
+            return elements
+        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_content, flags=re.IGNORECASE):
+            self.last_parse_status = "unsafe_declaration"
+            return elements
         if not xml_content or "<hierarchy" not in xml_content:
+            self.last_parse_status = "empty"
             return elements
 
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError:
+            self.last_parse_status = "parse_error"
             return elements
 
-        for node in root.iter("node"):
+        self.last_parse_status = "ok"
+        for index, node in enumerate(root.iter("node")):
+            if index >= self.MAX_HIERARCHY_ELEMENTS:
+                self.last_parse_status = "truncated"
+                break
             r_id = node.get("resource-id", "")
             cls = node.get("class", "")
             text = node.get("text", "")
@@ -83,8 +112,11 @@ class SmartUICrawler:
     def _classify_semantic_role(self, r_id: str, cls: str, text: str, desc: str, is_pwd_attr: bool) -> str:
         combined = f"{r_id} {text} {desc}".lower()
 
-        # Permission allow buttons
-        if any(w in combined for w in ("while using the app", "only this time", "allow", "grant", "permission_allow")):
+        # Permission allow & biometric prompt bypass buttons
+        if any(w in combined for w in (
+            "while using the app", "only this time", "allow", "grant", "permission_allow",
+            "use password", "cancel biometric", "accept", "continue", "i agree"
+        )):
             return "permission_allow"
 
         # Passwords
@@ -119,23 +151,31 @@ class SmartUICrawler:
     def decide_next_action(self, current_activity: str, xml_content: str) -> CrawlerDecision:
         """Analyze current screen and select best next exploratory action."""
         elements = self.parse_hierarchy_xml(xml_content)
+        if self.last_parse_status not in {"ok", "empty"}:
+            return CrawlerDecision(action="WAIT", explanation=(
+                f"UI hierarchy analysis is incomplete ({self.last_parse_status}); no UI action taken."
+            ))
         state_hash = self.compute_state_hash(current_activity, elements)
 
         visits = self.visited_states.get(state_hash, 0)
         self.visited_states[state_hash] = visits + 1
 
-        # Priority 1: Dismiss system permission prompts immediately
+        # OS permission and consent prompts are authorization boundaries. A
+        # classifier may recognize them, but the crawler must not consent.
         for el in elements:
             if el.semantic_role == "permission_allow":
-                return CrawlerDecision(
-                    action="CLICK",
-                    target_bounds=el.bounds,
-                    explanation=f"Auto-dismissing OS permission prompt: {el.text or el.content_desc}",
-                )
+                return CrawlerDecision(action="WAIT", explanation=(
+                    f"Permission/consent prompt requires explicit operator review: "
+                    f"{el.text or el.content_desc}"
+                ))
 
         # Priority 2: Fill empty username fields
         for el in elements:
-            if el.semantic_role == "username" and not el.text:
+            if el.semantic_role == "username" and not el.text and self.test_user:
+                if not self.allow_test_credential_entry:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Entering a researcher-supplied test identity requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -145,7 +185,11 @@ class SmartUICrawler:
 
         # Priority 3: Fill empty password fields
         for el in elements:
-            if el.semantic_role == "password" and not el.text:
+            if el.semantic_role == "password" and not el.text and self.test_pass:
+                if not self.allow_test_credential_entry:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Entering a researcher-supplied test credential requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="TYPE_TEXT",
                     target_bounds=el.bounds,
@@ -153,9 +197,18 @@ class SmartUICrawler:
                     explanation=f"Filling test password into: {el.resource_id or el.class_name}",
                 )
 
+        if any(el.semantic_role == "username" and not el.text for el in elements) and not self.test_user:
+            return CrawlerDecision(action="WAIT", explanation="Username field detected; no operator-supplied test identity")
+        if any(el.semantic_role == "password" and not el.text for el in elements) and not self.test_pass:
+            return CrawlerDecision(action="WAIT", explanation="Password field detected; no operator-supplied test credential")
+
         # Priority 4: Click login/submit if credentials are populated
         for el in elements:
             if el.semantic_role == "submit_button" and el.is_clickable:
+                if not self.allow_form_submit:
+                    return CrawlerDecision(action="WAIT", explanation=(
+                        "Form submission requires explicit operator approval"
+                    ))
                 return CrawlerDecision(
                     action="CLICK",
                     target_bounds=el.bounds,
@@ -164,6 +217,10 @@ class SmartUICrawler:
 
         # Priority 5: If screen has been visited many times (> 3), press BACK to escape loop
         if visits >= 3:
+            if not self.allow_back_navigation:
+                return CrawlerDecision(action="WAIT", explanation=(
+                    f"Repeated screen state {state_hash} detected; BACK navigation requires explicit operator approval"
+                ))
             return CrawlerDecision(
                 action="BACK",
                 explanation=f"Screen state {state_hash} visited {visits} times; pressing BACK to escape loop.",
@@ -172,6 +229,10 @@ class SmartUICrawler:
         # Priority 6: Click an unvisited clickable element
         clickables = [e for e in elements if e.is_clickable and e.bounds]
         if clickables:
+            if not self.allow_exploratory_clicks:
+                return CrawlerDecision(action="WAIT", explanation=(
+                    "Exploratory UI interaction is disabled pending explicit operator approval"
+                ))
             target = clickables[visits % len(clickables)]
             return CrawlerDecision(
                 action="CLICK",

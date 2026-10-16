@@ -6,6 +6,8 @@ embedded native shared libraries, and build metadata.
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -16,7 +18,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class SbomComponent:
     name: str
-    version: str
+    version: Optional[str]
     purl: str
     component_type: str = "library"  # library, framework, operating-system
     scope: str = "required"
@@ -32,11 +34,12 @@ class MobileSbomGenerator:
         self.app_name = app_name
         self.app_version = app_version
         self.components: List[SbomComponent] = []
+        self.vulnerabilities: List[Dict[str, Any]] = []
 
     def add_component(
         self,
         name: str,
-        version: str,
+        version: Optional[str],
         purl: str,
         component_type: str = "library",
         hashes: Optional[Dict[str, str]] = None,
@@ -53,27 +56,54 @@ class MobileSbomGenerator:
         )
         self.components.append(comp)
 
+    def add_vulnerability(
+        self,
+        vuln_id: str,
+        purl: str,
+        description: str = "",
+        severity: str = "medium",
+        cwe_ids: Optional[List[str]] = None,
+    ) -> None:
+        """Attach an OSV/CVE security advisory to an inventoried component."""
+        self.vulnerabilities.append({
+            "id": vuln_id,
+            "purl": purl,
+            "description": description,
+            "severity": severity,
+            "cwe_ids": cwe_ids or [],
+        })
+
+    def _component_refs(self) -> list[str]:
+        """Create stable, document-local unique CycloneDX component references."""
+        return [f"mobileag-component-{index}-{hashlib.sha256(c.purl.encode('utf-8')).hexdigest()[:12]}"
+                for index, c in enumerate(self.components, 1)]
+
+
     def generate_cyclonedx_json(self) -> Dict[str, Any]:
         """Generate CycloneDX v1.5 JSON formatted SBOM."""
         serial_number = f"urn:uuid:{uuid.uuid4()}"
         timestamp = datetime.now(timezone.utc).isoformat()
 
         cyclonedx_components = []
-        for c in self.components:
+        component_refs = self._component_refs()
+        for c, bom_ref in zip(self.components, component_refs):
             comp_entry: Dict[str, Any] = {
+                "bom-ref": bom_ref,
                 "type": c.component_type,
                 "name": c.name,
                 "version": c.version,
                 "purl": c.purl,
                 "scope": c.scope,
             }
+            if c.version is None:
+                comp_entry.pop("version")
             if c.hashes:
                 comp_entry["hashes"] = [{"alg": k.upper(), "content": v} for k, v in c.hashes.items()]
             if c.licenses:
                 comp_entry["licenses"] = [{"license": {"id": lic}} for lic in c.licenses]
             cyclonedx_components.append(comp_entry)
 
-        return {
+        res = {
             "bomFormat": "CycloneDX",
             "specVersion": "1.5",
             "serialNumber": serial_number,
@@ -96,6 +126,29 @@ class MobileSbomGenerator:
             "components": cyclonedx_components,
         }
 
+        if self.vulnerabilities:
+            cyclonedx_vulns = []
+            for v in self.vulnerabilities:
+                component_index = next((i for i, c in enumerate(self.components) if c.purl == v["purl"]), None)
+                if component_index is None:
+                    continue
+                v_entry: Dict[str, Any] = {
+                    "id": v["id"],
+                    "description": v["description"],
+                    "ratings": [{"severity": v["severity"].lower()}],
+                    "affects": [{"ref": component_refs[component_index]}],
+                }
+                if v.get("cwe_ids"):
+                    v_entry["cwes"] = [
+                        int(re.sub(r"[^\d]", "", cwe))
+                        for cwe in v["cwe_ids"]
+                        if re.sub(r"[^\d]", "", cwe)
+                    ]
+                cyclonedx_vulns.append(v_entry)
+            res["vulnerabilities"] = cyclonedx_vulns
+
+        return res
+
     def generate_spdx_json(self) -> Dict[str, Any]:
         """Generate SPDX 2.3 JSON formatted SBOM."""
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -106,7 +159,6 @@ class MobileSbomGenerator:
             pkg: Dict[str, Any] = {
                 "SPDXID": f"SPDXRef-Package-{idx}",
                 "name": c.name,
-                "versionInfo": c.version,
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": False,
                 "externalRefs": [
@@ -117,6 +169,8 @@ class MobileSbomGenerator:
                     }
                 ],
             }
+            if c.version is not None:
+                pkg["versionInfo"] = c.version
             if c.licenses:
                 pkg["licenseConcluded"] = c.licenses[0]
             else:
@@ -142,8 +196,107 @@ class MobileSbomGenerator:
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
+    def generate_cyclonedx_xml(self) -> str:
+        """Generate CycloneDX v1.5 XML formatted SBOM."""
+        import xml.etree.ElementTree as ET
+
+        serial_number = f"urn:uuid:{uuid.uuid4()}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        ns = "http://cyclonedx.org/schema/bom/1.5"
+        root = ET.Element("bom", {
+            "xmlns": ns,
+            "serialNumber": serial_number,
+            "version": "1",
+        })
+
+        metadata = ET.SubElement(root, "metadata")
+        ts_elem = ET.SubElement(metadata, "timestamp")
+        ts_elem.text = timestamp
+
+        tools = ET.SubElement(metadata, "tools")
+        tool = ET.SubElement(tools, "tool")
+        vendor = ET.SubElement(tool, "vendor")
+        vendor.text = "MobileAg"
+        name = ET.SubElement(tool, "name")
+        name.text = "MobileAg Security Scanner"
+        ver = ET.SubElement(tool, "version")
+        ver.text = "0.1.0"
+
+        app_comp = ET.SubElement(metadata, "component", {"type": "application"})
+        app_name_elem = ET.SubElement(app_comp, "name")
+        app_name_elem.text = self.app_name
+        app_ver_elem = ET.SubElement(app_comp, "version")
+        app_ver_elem.text = self.app_version
+
+        components = ET.SubElement(root, "components")
+        component_refs = self._component_refs()
+        for c, bom_ref in zip(self.components, component_refs):
+            comp_elem = ET.SubElement(components, "component", {"type": c.component_type, "bom-ref": bom_ref})
+            c_name = ET.SubElement(comp_elem, "name")
+            c_name.text = c.name
+            if c.version is not None:
+                c_ver = ET.SubElement(comp_elem, "version")
+                c_ver.text = c.version
+            c_scope = ET.SubElement(comp_elem, "scope")
+            c_scope.text = c.scope
+            if c.hashes:
+                hashes_elem = ET.SubElement(comp_elem, "hashes")
+                for alg, h_val in c.hashes.items():
+                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg.upper()})
+                    h_elem.text = h_val
+
+            if c.licenses:
+                licenses_elem = ET.SubElement(comp_elem, "licenses")
+                for lic in c.licenses:
+                    license_elem = ET.SubElement(licenses_elem, "license")
+                    id_elem = ET.SubElement(license_elem, "id")
+                    id_elem.text = lic
+
+            # CycloneDX 1.5 component sequence places purl after hashes,
+            # licenses, copyright and cpe. Keep XML output in schema order.
+            c_purl = ET.SubElement(comp_elem, "purl")
+            c_purl.text = c.purl
+
+        if self.vulnerabilities:
+            vulns_elem = ET.SubElement(root, "vulnerabilities")
+            for v in self.vulnerabilities:
+                component_index = next((i for i, c in enumerate(self.components) if c.purl == v["purl"]), None)
+                if component_index is None:
+                    continue
+                v_elem = ET.SubElement(vulns_elem, "vulnerability")
+                id_elem = ET.SubElement(v_elem, "id")
+                id_elem.text = v["id"]
+                ratings = ET.SubElement(v_elem, "ratings")
+                rating = ET.SubElement(ratings, "rating")
+                sev = ET.SubElement(rating, "severity")
+                sev.text = v["severity"].lower()
+                if v.get("cwe_ids"):
+                    cwes_elem = ET.SubElement(v_elem, "cwes")
+                    for cwe in v["cwe_ids"]:
+                        digits = re.sub(r"[^\d]", "", cwe)
+                        if digits:
+                            ET.SubElement(cwes_elem, "cwe").text = digits
+                if v.get("description"):
+                    desc_elem = ET.SubElement(v_elem, "description")
+                    desc_elem.text = v["description"]
+                affects = ET.SubElement(v_elem, "affects")
+                target = ET.SubElement(affects, "target")
+                ref = ET.SubElement(target, "ref")
+                ref.text = component_refs[component_index]
+
+        ET.indent(root, space="  ")
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+    def save_cyclonedx_xml(self, output_path: str | Path) -> None:
+        """Write CycloneDX XML to disk."""
+        xml_data = self.generate_cyclonedx_xml()
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(xml_data)
+
     def save_spdx(self, output_path: str | Path) -> None:
         """Write SPDX JSON to disk."""
         data = self.generate_spdx_json()
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+

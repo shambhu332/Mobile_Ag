@@ -24,6 +24,7 @@ except ImportError:
 
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ class BinaryProtectionAuditor:
 
     def find_native_libraries(self, decompiled_dir: str | Path) -> list[Path]:
         """Locate all .so files under lib/ or root directories."""
-        root = Path(decompiled_dir)
+        root = explicit_scan_root(decompiled_dir)
+        if root is None or root.is_symlink() or not root.is_dir():
+            return []
         inventory = SourceInventory(max_entries=5000, max_file_bytes=64*1024*1024,
                                     max_total_bytes=256*1024*1024)
         return sorted(path for path, _ in inventory.read(root, {".so"}))
@@ -201,8 +204,12 @@ class BinaryProtectionAuditor:
 
     def audit_directory(self, decompiled_dir: str | Path) -> list[dict[str, Any]]:
         """Synchronously audit all discovered .so libraries under a directory."""
-        root = Path(decompiled_dir)
+        root = explicit_scan_root(decompiled_dir)
         all_findings = []
+        if root is None or root.is_symlink() or not root.is_dir():
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return all_findings
         if ELFFile is None:
             self.coverage = {"static_status": "unsupported", "runtime_status": "not_tested",
                              "proof_status": "not_proven", "exhaustive": False,
@@ -241,3 +248,9 @@ class BinaryProtectionAuditor:
             ))
 
         return findings
+
+    def get_rasp_auditor(self) -> Any:
+        """Instantiate an OWASP MASVS-RESILIENCE scoring engine."""
+        from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
+        return RaspResilienceAuditor()
+

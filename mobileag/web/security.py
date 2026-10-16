@@ -99,7 +99,9 @@ class SecurityMiddleware:
             if consumed > limit:
                 raise HTTPException(413, 'Request size limit exceeded')
             return message
-        if path.startswith('/api/dast/') and path not in {'/api/dast/devices', '/api/dast/traffic/audit'}:
+        if (path.startswith('/api/dast/')
+                and path not in {'/api/dast/devices', '/api/dast/traffic/audit'}
+                and not path.startswith('/api/dast/api-capture/')):
             import json
             req = Request(scope, limited_receive)
             try:

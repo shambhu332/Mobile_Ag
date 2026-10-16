@@ -17,6 +17,7 @@ class ManifestParser:
     """
     
     ANDROID_NS = "http://schemas.android.com/apk/res/android"
+    MAX_MANIFEST_XML_BYTES = 8 * 1024 * 1024
 
     def __init__(self) -> None:
         pass
@@ -201,7 +202,20 @@ class ManifestParser:
                 permission_origin = "application_inherited" if app_permission_raw else "none"
             read_permission = self._get_attrib(elem, "readPermission") if tag == "provider" else ""
             write_permission = self._get_attrib(elem, "writePermission") if tag == "provider" else ""
-            task_affinity = self._get_attrib(elem, "taskAffinity")
+            affinity_key = f"{{{self.ANDROID_NS}}}taskAffinity"
+            task_affinity_raw = elem.attrib.get(affinity_key)
+            application_task_affinity = app_elem.attrib.get(affinity_key)
+            if task_affinity_raw is not None:
+                task_affinity = task_affinity_raw
+                task_affinity_origin = "component"
+            elif application_task_affinity is not None:
+                task_affinity = application_task_affinity
+                task_affinity_origin = "application"
+            else:
+                task_affinity = package_name
+                task_affinity_origin = "package_default"
+            launch_mode_raw = self._get_attrib(elem, "launchMode")
+            launch_mode = launch_mode_raw or "standard"
             intent_filters = self._parse_intent_filters(elem)
             
             # Default export logic is version-dependent. Apps targeting API 31+
@@ -315,6 +329,12 @@ class ManifestParser:
                 }),
                 "permission_resolution": permission_resolution,
                 "taskAffinity": task_affinity,
+                "taskAffinityOrigin": task_affinity_origin,
+                "declaredTaskAffinity": task_affinity_raw,
+                "taskAffinityExplicit": task_affinity_raw is not None,
+                "launchMode": launch_mode,
+                "launchModeOrigin": "component" if launch_mode_raw else "platform_default",
+                "launchModeExplicit": bool(launch_mode_raw),
                 "intent_filters": intent_filters,
                 "meta_data": meta_data,
                 "grant_uri_permissions": grant_uri_permissions,
@@ -359,9 +379,16 @@ class ManifestParser:
                         or not resolved.is_relative_to(resolved_root)
                         or candidate.is_symlink() or not resolved.is_file()):
                     raise ValueError("unsafe or non-file resource")
-                if resolved.stat().st_size > 65536:
+                fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as stream:
+                    details = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(details.st_mode) or details.st_size > 65536:
+                        raise ValueError("resource exceeds 65536 bytes or is not regular")
+                    raw = stream.read(65537)
+                if len(raw) > 65536:
                     raise ValueError("resource exceeds 65536 bytes")
-                raw = resolved.read_bytes()
+                if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                    raise ValueError("DTD/entity declarations are unsupported")
                 xml_root = ET.fromstring(raw)
                 entries = [{"type": child.tag, "name": child.attrib.get("name", ""),
                             "path": child.attrib.get("path", "")}
@@ -519,13 +546,29 @@ class ManifestParser:
         Returns:
             A dictionary containing structured manifest data.
         """
-        path = Path(manifest_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Manifest not found: {manifest_path}")
-
         try:
-            tree = ET.parse(path)
-            root = tree.getroot()
+            path = Path(manifest_path)
+        except (TypeError, ValueError) as e:
+            raise ValueError("Invalid manifest path") from e
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Manifest not found: {manifest_path}") from None
+        except OSError as e:
+            raise ValueError("Manifest is unavailable or not a safe regular file") from e
+        try:
+            with os.fdopen(fd, "rb") as stream:
+                file_info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(file_info.st_mode):
+                    raise ValueError("Manifest is not a regular file")
+                if file_info.st_size > self.MAX_MANIFEST_XML_BYTES:
+                    raise ValueError("Manifest exceeds XML size limit")
+                raw = stream.read(self.MAX_MANIFEST_XML_BYTES + 1)
+            if len(raw) > self.MAX_MANIFEST_XML_BYTES:
+                raise ValueError("Manifest exceeds XML size limit")
+            if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                raise ValueError("Manifest DTD/entity declarations are unsupported")
+            root = ET.fromstring(raw)
         except ET.ParseError as e:
             logger.error(f"Failed to parse manifest XML: {e}")
             raise ValueError(f"Invalid XML in manifest: {e}")
@@ -619,8 +662,40 @@ class ManifestParser:
         # Parse components
         activities = self._parse_components(app_elem, "activity", target_sdk,
                                             permission_resources, package_name)
-        activities.extend(self._parse_components(app_elem, "activity-alias", target_sdk,
-                                                 permission_resources, package_name))
+        aliases = self._parse_components(app_elem, "activity-alias", target_sdk,
+                                         permission_resources, package_name)
+
+        def canonical_component_name(value: str) -> str:
+            if value.startswith("."):
+                return f"{package_name}{value}"
+            if "." not in value:
+                return f"{package_name}.{value}" if package_name else value
+            return value
+
+        activity_index: dict[str, list[dict[str, Any]]] = {}
+        for activity in activities:
+            activity_index.setdefault(canonical_component_name(activity["name"]), []).append(activity)
+        for alias in aliases:
+            target_raw = alias.get("alias_target")
+            matches = activity_index.get(canonical_component_name(target_raw), []) if isinstance(target_raw, str) and target_raw else []
+            if len(matches) != 1:
+                alias["alias_target_resolution"] = "unresolved"
+                alias["taskAffinity"] = None
+                alias["taskAffinityOrigin"] = "alias_target_unresolved"
+                alias["launchMode"] = "unknown"
+                alias["launchModeOrigin"] = "alias_target_unresolved"
+                continue
+            target = matches[0]
+            alias["alias_target_resolution"] = "resolved"
+            alias["alias_target_resolved_name"] = target["name"]
+            # Android specifies that activity-alias attributes absent from its
+            # supported subset inherit from the target activity. Do not treat
+            # similarly named raw attributes on the alias as effective policy.
+            alias["taskAffinity"] = target.get("taskAffinity")
+            alias["taskAffinityOrigin"] = "alias_target"
+            alias["launchMode"] = target.get("launchMode", "unknown")
+            alias["launchModeOrigin"] = "alias_target"
+        activities.extend(aliases)
         services = self._parse_components(app_elem, "service", target_sdk,
                                           permission_resources, package_name)
         receivers = self._parse_components(app_elem, "receiver", target_sdk,
@@ -635,6 +710,8 @@ class ManifestParser:
 
         application_dict = {
             "allowBackup": allow_backup_bool,
+            "taskAffinity": app_elem.attrib.get(f"{{{self.ANDROID_NS}}}taskAffinity"),
+            "taskAffinityExplicit": f"{{{self.ANDROID_NS}}}taskAffinity" in app_elem.attrib,
             "backup_rule_references": backup_rule_references,
             "backup_rules_inventory": backup_rules_inventory,
             "debuggable": debuggable_bool,

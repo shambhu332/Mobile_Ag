@@ -19,6 +19,7 @@ class ScanState(TypedDict):
 
     # ── Ingestion Results ──
     manifest_data: dict[str, Any]
+    manifest_path: str
     resource_path: str
     smali_path: str
     coverage: dict[str, Any]
@@ -66,6 +67,7 @@ def create_initial_state(
         package_name="",
         output_dir=output_dir,
         manifest_data={},
+        manifest_path="",
         decompiled_path="",
         resource_path="",
         smali_path="",
@@ -75,7 +77,7 @@ def create_initial_state(
             "exhaustive":False,"automatic_exploit_proof":False},
             **{name: {"static_status": "not_started", "runtime_status": "not_tested",
                       "proof_status": "not_proven", "exhaustive": False}
-               for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping",
+               for name in ("auth_session", "firebase", "secrets", "code_review", "api_mapping", "data_safety",
                             "native", "dependencies", "taint", "nsc", "binary_protection", "react_native")}},
         assessment_coverage="not_assessed",
         coverage_gaps=[],

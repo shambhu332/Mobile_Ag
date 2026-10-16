@@ -1,19 +1,27 @@
 """Native JNI Cross-Boundary Analyzer (inspired by REA).
 
-Inspects native shared libraries (.so) in mobile packages, maps exported JNI entry points
-(Java_<package>_<class>_<method>), and audits imported libc and OS calls to uncover
-hidden native execution sinks (system, popen, strcpy, sqlite3_exec).
+Inspects bounded native shared-library inputs, inventories selected ELF dynamic
+symbols and JNI export names, and emits unverified review leads without claiming
+native call reachability or exploitability.
 """
 from __future__ import annotations
 
 import os
 import re
+import stat
 import struct
+from io import BytesIO
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
+
+try:
+    from elftools.elf.elffile import ELFFile
+except ImportError:  # pragma: no cover - dependency is pinned for normal installs
+    ELFFile = None
 
 
 @dataclass
@@ -22,6 +30,8 @@ class JniExportedFunction:
     java_class: str
     java_method: str
     library_name: str
+    # Deprecated compatibility field. Binary-wide string co-occurrence cannot
+    # establish that a JNI method reaches or calls a native symbol.
     dangerous_calls_referenced: List[str] = field(default_factory=list)
 
 
@@ -29,13 +39,26 @@ class JniExportedFunction:
 class NativeLibraryAuditResult:
     library_name: str
     architecture: str
+    scan_status: str = "not_analyzed"
+    bytes_scanned: int = 0
+    scan_truncated: bool = False
+    scan_errors: List[str] = field(default_factory=list)
     exported_jni_functions: List[JniExportedFunction] = field(default_factory=list)
+    jni_export_name_candidates: List[str] = field(default_factory=list)
+    dangerous_symbol_string_candidates: List[str] = field(default_factory=list)
     imported_dangerous_symbols: List[str] = field(default_factory=list)
+    elf_parse_status: str = "not_attempted"
+    dynamic_symbols_seen: int = 0
     findings: List[Finding] = field(default_factory=list)
 
 
 class NativeJniAnalyzer:
-    """Disassembles and audits ELF dynamic symbols and JNI exported functions."""
+    """Collects bounded printable-string and JNI-name candidates from ELF files."""
+
+    MAX_LIBRARY_BYTES = 5 * 1024 * 1024
+    MAX_PACKAGE_ENTRIES = 5000
+    MAX_PACKAGE_LIBRARIES = 1000
+    MAX_PACKAGE_BYTES = 64 * 1024 * 1024
 
     DANGEROUS_LIBC_SINKS = {
         "system": ("CWE-78", Severity.HIGH, "Native Command Injection sink 'system()' imported"),
@@ -46,84 +69,214 @@ class NativeJniAnalyzer:
         "sqlite3_exec": ("CWE-89", Severity.HIGH, "Raw SQL execution sink 'sqlite3_exec()' imported in native library"),
     }
 
+    def __init__(self) -> None:
+        self.package_coverage = SourceInventory(
+            max_entries=self.MAX_PACKAGE_ENTRIES,
+            max_file_bytes=self.MAX_LIBRARY_BYTES,
+            max_total_bytes=self.MAX_PACKAGE_BYTES,
+        ).coverage
+
     def demangle_jni_name(self, symbol: str) -> Optional[tuple[str, str]]:
-        """Convert Java_com_example_app_NativeClass_methodName to (FQCN, method)."""
+        """Decode the JNI long-name prefix into a class and method name.
+
+        Overload signatures are omitted from the returned method name. This is
+        a name decoder only; it does not resolve Java declarations or prove use.
+        """
         if not symbol.startswith("Java_"):
             return None
+        body = symbol[5:]
+        overload = body.find("__")
+        if overload >= 0:
+            body = body[:overload]
 
-        # JNI name encoding replaces '_' with '/' or package separators
-        # Java_com_example_app_NativeClass_nativeMethod
-        parts = symbol.split("_")
-        if len(parts) >= 3:
-            # parts[0] is 'Java'
-            # middle parts form package + class
-            method = parts[-1]
-            pkg_class = ".".join(parts[1:-1])
-            return pkg_class, method
-        return None
+        delimiter = None
+        index = len(body) - 1
+        while index >= 0:
+            if body[index] != "_":
+                index -= 1
+                continue
+            if index + 1 < len(body) and body[index + 1] in "123":
+                index -= 1
+                continue
+            if (index + 5 < len(body) and body[index + 1] == "0"
+                    and re.fullmatch(r"[0-9a-fA-F]{4}", body[index + 2:index + 6])):
+                index -= 1
+                continue
+            delimiter = index
+            break
+        if delimiter is None or delimiter == 0 or delimiter == len(body) - 1:
+            return None
 
-    def audit_library(self, so_path: str | Path) -> NativeLibraryAuditResult:
-        """Audit an individual .so ELF library."""
+        def decode(component: str, *, class_name: bool) -> str:
+            output: list[str] = []
+            cursor = 0
+            while cursor < len(component):
+                char = component[cursor]
+                if char == "_" and cursor + 1 < len(component):
+                    marker = component[cursor + 1]
+                    replacements = {"1": "_", "2": ";", "3": "["}
+                    if marker in replacements:
+                        output.append(replacements[marker])
+                        cursor += 2
+                        continue
+                    if (marker == "0" and cursor + 5 < len(component)
+                            and re.fullmatch(r"[0-9a-fA-F]{4}", component[cursor + 2:cursor + 6])):
+                        output.append(chr(int(component[cursor + 2:cursor + 6], 16)))
+                        cursor += 6
+                        continue
+                    output.append("." if class_name else "_")
+                else:
+                    output.append(char)
+                cursor += 1
+            return "".join(output)
+
+        class_name = decode(body[:delimiter], class_name=True)
+        method_name = decode(body[delimiter + 1:], class_name=False)
+        if not class_name or not method_name:
+            return None
+        return class_name, method_name
+
+    def audit_library(self, so_path: str | Path, *, data: bytes | None = None) -> NativeLibraryAuditResult:
+        """Audit one library path, or bytes from the bounded package inventory."""
         path = Path(so_path)
         lib_name = path.name
         arch = path.parent.name if path.parent.name in ("arm64-v8a", "armeabi-v7a", "x86", "x86_64") else "unknown"
 
         result = NativeLibraryAuditResult(library_name=lib_name, architecture=arch)
 
-        try:
-            with open(path, "rb") as f:
-                data = f.read(5 * 1024 * 1024)  # Read up to 5MB
-        except OSError:
-            return result
+        if data is not None:
+            if not isinstance(data, bytes):
+                result.scan_status = "invalid"
+                result.scan_errors.append("invalid_library_bytes")
+                return result
+            file_size = len(data)
+        else:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as f:
+                    if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                        result.scan_status = "invalid"
+                        result.scan_errors.append("non_regular_library")
+                        return result
+                    file_size = os.fstat(f.fileno()).st_size
+                    data = f.read(self.MAX_LIBRARY_BYTES + 1)
+            except OSError:
+                result.scan_status = "invalid"
+                result.scan_errors.append("library_read_error")
+                return result
+        result.scan_truncated = file_size > self.MAX_LIBRARY_BYTES or len(data) > self.MAX_LIBRARY_BYTES
+        if len(data) > self.MAX_LIBRARY_BYTES:
+            data = data[:self.MAX_LIBRARY_BYTES]
+        result.bytes_scanned = len(data)
+        if result.scan_truncated:
+            result.scan_status = "partial"
+            result.scan_errors.append("library_byte_limit")
+        else:
+            result.scan_status = "analyzed_heuristically"
 
         # Basic ELF Magic verification (0x7F, 'E', 'L', 'F')
         if not data.startswith(b"\x7fELF"):
+            result.scan_status = "invalid"
+            result.scan_errors.append("invalid_elf_header")
             return result
 
-        # Extract printable strings
+        # Extract printable strings as candidates; these are not ELF imports.
         raw_strings = re.findall(b"[a-zA-Z0-9_]{3,}", data)
         strings_set: Set[str] = {s.decode("ascii", errors="ignore") for s in raw_strings}
 
-        # Identify dangerous imported sinks
-        for sink, (cwe, sev, desc) in self.DANGEROUS_LIBC_SINKS.items():
+        for sink in self.DANGEROUS_LIBC_SINKS:
             if sink in strings_set:
-                result.imported_dangerous_symbols.append(sink)
+                result.dangerous_symbol_string_candidates.append(sink)
 
-        # Identify exported JNI functions
+        # Parse dynamic symbols separately from byte-string heuristics. Imports
+        # still do not prove a call site or JNI reachability.
+        seen_imports: set[str] = set()
+        seen_jni_symbols: set[str] = set()
+        if ELFFile is None:
+            result.elf_parse_status = "unsupported"
+            result.scan_errors.append("elf_parser_unavailable")
+        elif result.scan_truncated:
+            result.elf_parse_status = "partial"
+            result.scan_errors.append("elf_table_may_be_truncated")
+        else:
+            try:
+                elf = ELFFile(BytesIO(data))
+                dynsym = elf.get_section_by_name(".dynsym")
+                if dynsym is None:
+                    result.elf_parse_status = "not_present"
+                    result.scan_status = "partial"
+                    result.scan_errors.append("dynamic_symbol_table_missing")
+                else:
+                    result.elf_parse_status = "parsed"
+                    for index, symbol in enumerate(dynsym.iter_symbols()):
+                        if index >= 5000:
+                            result.elf_parse_status = "partial"
+                            result.scan_errors.append("dynamic_symbol_limit")
+                            break
+                        result.dynamic_symbols_seen += 1
+                        name = symbol.name
+                        if not name or len(name) > 256 or symbol.entry.st_info.type != "STT_FUNC":
+                            continue
+                        if symbol.entry.st_shndx == "SHN_UNDEF":
+                            if name in self.DANGEROUS_LIBC_SINKS and name not in seen_imports:
+                                seen_imports.add(name)
+                                result.imported_dangerous_symbols.append(name)
+                        elif name.startswith("Java_"):
+                            demangled = self.demangle_jni_name(name)
+                            if demangled and name not in seen_jni_symbols:
+                                seen_jni_symbols.add(name)
+                                cls_name, method_name = demangled
+                                result.exported_jni_functions.append(JniExportedFunction(
+                                    mangled_name=name, java_class=cls_name,
+                                    java_method=method_name, library_name=lib_name,
+                                ))
+            except Exception:
+                result.elf_parse_status = "partial"
+                result.scan_status = "partial"
+                result.scan_errors.append("elf_symbol_parse_error")
+
+        if result.elf_parse_status in {"partial", "unsupported", "not_present"}:
+            result.scan_status = "partial"
+
+        # Identify JNI-looking strings for review, but do not promote them to
+        # verified exports unless the dynamic symbol table says so.
         for s in strings_set:
             if s.startswith("Java_"):
                 demangled = self.demangle_jni_name(s)
                 if demangled:
-                    cls_name, method_name = demangled
-                    jni_func = JniExportedFunction(
-                        mangled_name=s,
-                        java_class=cls_name,
-                        java_method=method_name,
-                        library_name=lib_name,
-                        dangerous_calls_referenced=[d for d in result.imported_dangerous_symbols],
-                    )
-                    result.exported_jni_functions.append(jni_func)
+                    result.jni_export_name_candidates.append(s)
 
-        # Generate findings for high-risk native configurations
-        for sink in result.imported_dangerous_symbols:
-            cwe, sev, desc = self.DANGEROUS_LIBC_SINKS[sink]
-            matching_jni = [f.java_class + "." + f.java_method for f in result.exported_jni_functions]
-            jni_ctx = f" Exposed via JNI endpoints: {', '.join(matching_jni[:3])}." if matching_jni else ""
-
+        # Imports or symbol-like strings are review leads, never exploit claims.
+        for sink in sorted(set(result.imported_dangerous_symbols) |
+                           set(result.dangerous_symbol_string_candidates)):
+            is_import = sink in result.imported_dangerous_symbols
             result.findings.append(
                 Finding(
                     id=f"NATIVE_LIBC_SINK_{lib_name}_{sink}",
-                    title=f"Native Dangerous Execution Sink in {lib_name}: {sink}()",
-                    description=f"{desc} inside shared library '{lib_name}' ({arch}).{jni_ctx}",
-                    severity=sev,
+                    title=(f"Review native ELF import in {lib_name}: {sink}" if is_import else
+                           f"Review native symbol-like string candidate in {lib_name}: {sink}"),
+                    description=((f"The ELF dynamic symbol table lists undefined function import '{sink}' in '{lib_name}' ({arch}). "
+                                  "This does not establish a call site, execution, attacker-controlled arguments, or JNI reachability.")
+                                 if is_import else
+                                 (f"The bounded printable-string scan found '{sink}' in '{lib_name}' ({arch}). "
+                                  "This does not establish an ELF dynamic import, call site, execution, "
+                                  "tainted arguments, or reachability from an exported JNI method.")),
+                    severity=Severity.INFO,
                     status=FindingStatus.UNVERIFIED,
-                    cwe_id=cwe,
+                    cwe_id="CWE-Unknown",
                     file_path=str(path),
                     metadata={
                         "library": lib_name,
                         "architecture": arch,
-                        "sink": sink,
-                        "exported_jni_methods": [f.mangled_name for f in result.exported_jni_functions],
+                        "symbol_string_candidate": not is_import,
+                        "analysis_kind": "elf_dynamic_symbol_import" if is_import else "byte_string_inventory",
+                        "exported_jni_symbols_co_located": [f.mangled_name for f in result.exported_jni_functions],
+                        "call_reachability": "not_analyzed",
+                        "scan_status": result.scan_status,
+                        "elf_parse_status": result.elf_parse_status,
+                        "bytes_scanned": result.bytes_scanned,
+                        "scan_truncated": result.scan_truncated,
+                        "dynamic_symbols_seen": result.dynamic_symbols_seen,
                     },
                 )
             )
@@ -133,12 +286,33 @@ class NativeJniAnalyzer:
     def audit_package_libraries(self, extracted_dir: str | Path) -> List[NativeLibraryAuditResult]:
         """Audit all native libraries in extracted APK."""
         results: List[NativeLibraryAuditResult] = []
-        lib_dir = Path(extracted_dir) / "lib"
-        if not lib_dir.is_dir():
+        root = explicit_scan_root(extracted_dir)
+        if root is None or root.is_symlink() or not root.is_dir():
+            self.package_coverage = SourceInventory(
+                max_entries=self.MAX_PACKAGE_ENTRIES,
+                max_file_bytes=self.MAX_LIBRARY_BYTES,
+                max_total_bytes=self.MAX_PACKAGE_BYTES,
+            ).coverage
+            return results
+        lib_dir = root / "lib"
+        if lib_dir.is_symlink() or not lib_dir.is_dir():
+            self.package_coverage = SourceInventory(
+                max_entries=self.MAX_PACKAGE_ENTRIES,
+                max_file_bytes=self.MAX_LIBRARY_BYTES,
+                max_total_bytes=self.MAX_PACKAGE_BYTES,
+            ).coverage
             return results
 
-        for root, _, files in os.walk(lib_dir):
-            for file in files:
-                if file.endswith(".so"):
-                    results.append(self.audit_library(os.path.join(root, file)))
+        inventory = SourceInventory(
+            max_entries=self.MAX_PACKAGE_ENTRIES,
+            max_file_bytes=self.MAX_LIBRARY_BYTES,
+            max_total_bytes=self.MAX_PACKAGE_BYTES,
+        )
+        for candidate, data in inventory.read(lib_dir, {".so"}):
+            if len(results) >= self.MAX_PACKAGE_LIBRARIES:
+                inventory.record_limit("native_library_count")
+                break
+            results.append(self.audit_library(candidate, data=data))
+        self.package_coverage = dict(inventory.coverage)
+        self.package_coverage["libraries_analyzed"] = len(results)
         return results

@@ -379,6 +379,25 @@ def test_initial_state_has_empty_artifact_provenance():
     assert state["artifact_provenance"] == {}
 
 
+def test_extractor_package_name_probe_rejects_unsafe_manifest_xml(tmp_path, monkeypatch):
+    extractor = object.__new__(APKExtractor)
+    manifest = tmp_path / "AndroidManifest.xml"
+    manifest.write_text(
+        '<!DOCTYPE manifest [<!ENTITY pkg "expanded.synthetic">]>'
+        '<manifest package="&pkg;"/>', encoding="utf-8")
+    assert extractor._parse_package_name(manifest) == "unknown"
+
+    target = tmp_path / "target.xml"
+    target.write_text('<manifest package="org.example.synthetic"/>', encoding="utf-8")
+    link = tmp_path / "linked-manifest.xml"
+    link.symlink_to(target)
+    assert extractor._parse_package_name(link) == "unknown"
+
+    manifest.write_text('<manifest package="org.example.synthetic"/>', encoding="utf-8")
+    monkeypatch.setattr("mobileag.ingestion.apk_extractor._MAX_PACKAGE_MANIFEST_BYTES", 8)
+    assert extractor._parse_package_name(manifest) == "unknown"
+
+
 def test_decompiler_diagnostic_summary_is_count_only_and_downgrades_unsupported_markers():
     from mobileag.ingestion.apk_extractor import _TOOL_DIAGNOSTIC_MARKERS
 
@@ -464,3 +483,29 @@ def test_source_inventory_order_is_stable_and_casefold_sorted(tmp_path):
     actual = [str(path.relative_to(tmp_path)) for path, _ in inventory.read(tmp_path, {".java"})]
 
     assert actual == ["A.java", "z.java", "nested/b.java"]
+
+
+def test_apk_extractor_smali_inventory_is_bounded_and_no_follow(tmp_path, monkeypatch):
+    import mobileag.ingestion.apk_extractor as extractor_module
+
+    root = tmp_path / "smali"
+    package_dir = root / "fixture"
+    package_dir.mkdir(parents=True)
+    (package_dir / "A.smali").write_text(".class public Lfixture/A;\n", encoding="utf-8")
+    outside = tmp_path / "Outside.smali"
+    outside.write_text(".class public Lfixture/Outside;\n", encoding="utf-8")
+    (root / "Linked.smali").symlink_to(outside)
+
+    counted = APKExtractor._count_smali_files(root)
+    descriptors = APKExtractor._read_smali_class_descriptors(root)
+    assert counted == {"status": "incomplete", "count": None}
+    assert descriptors["status"] == "incomplete"
+    assert descriptors["descriptors"] is None
+
+    (root / "Linked.smali").unlink()
+    monkeypatch.setattr(extractor_module, "_MAX_SMALI_WALK_ENTRIES", 1)
+    capped_count = APKExtractor._count_smali_files(root)
+    capped_descriptors = APKExtractor._read_smali_class_descriptors(root)
+
+    assert capped_count == {"status": "capped", "count": 0}
+    assert capped_descriptors == {"status": "capped", "count": 0, "descriptors": None}

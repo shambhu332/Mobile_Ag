@@ -69,6 +69,35 @@ def test_session_expiration_rotation_and_logout(client,monkeypatch,capsys):
     # Do not persist the terminal reconnect token in any evidence.
     assert 'after logout' in capsys.readouterr().out
 
+
+def test_isolated_worker_tree_measurement_enforces_bounded_no_follow_inventory(tmp_path):
+    from mobileag.web.jobs import _measure_tree
+
+    root = tmp_path / "worker"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    (nested / "result.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="entry budget"):
+        _measure_tree(root, max_entries=1)
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("synthetic", encoding="utf-8")
+    (root / "linked.txt").symlink_to(outside)
+    with pytest.raises(RuntimeError, match="symlink"):
+        _measure_tree(root, reject_skipped=True)
+
+
+def test_isolated_worker_tree_measurement_counts_regular_file_bytes(tmp_path):
+    from mobileag.web.jobs import _measure_tree
+
+    root = tmp_path / "worker"
+    root.mkdir()
+    (root / "one").write_bytes(b"123")
+    (root / "two").write_bytes(b"45")
+
+    assert _measure_tree(root) == (5, 2)
+
 def test_retention_confirm_revision_original_and_tombstone(client):
     document=scan();web.repository().save(document)
     original=web.UPLOAD_DIR/'original.apk';original.write_bytes(b'preserve')
@@ -91,6 +120,42 @@ def test_retention_rejects_symlink_and_active_job(client,tmp_path):
     (web.OUTPUT_DIR/'scan_fixture').symlink_to(outside,target_is_directory=True)
     assert client.post('/api/scans/scan_fixture/purge',json={'confirmation':'scan_fixture','revision':0}).status_code==409
     assert (outside/'untouched').read_text()=='original'
+
+
+def test_legacy_scan_import_is_bounded_direct_child_only_and_no_follow(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path / "output")
+    web.OUTPUT_DIR.mkdir(exist_ok=True)
+    valid = scan("legacy_fixture")
+    valid_dir = web.OUTPUT_DIR / "legacy_fixture"
+    valid_dir.mkdir()
+    (valid_dir / "dashboard.json").write_text(json.dumps(valid), encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    external = scan("linked_fixture")
+    (outside / "dashboard.json").write_text(json.dumps(external), encoding="utf-8")
+    (web.OUTPUT_DIR / "linked_fixture").symlink_to(outside, target_is_directory=True)
+
+    result = web.repository_import_legacy()
+
+    assert result["imported"] == 1
+    assert result["coverage"]["source_files_skipped"] == 1
+    assert web.repository().get("legacy_fixture")["scan_id"] == "legacy_fixture"
+    assert web.repository().get("linked_fixture") is None
+
+
+def test_legacy_scan_import_marks_entry_truncation_partial(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(web, "MAX_LEGACY_IMPORT_ENTRIES", 1)
+    web.OUTPUT_DIR.mkdir(exist_ok=True)
+    for sid in ("legacy_a", "legacy_b"):
+        folder = web.OUTPUT_DIR / sid
+        folder.mkdir()
+        (folder / "dashboard.json").write_text(json.dumps(scan(sid)), encoding="utf-8")
+
+    result = web.repository_import_legacy()
+
+    assert result["status"] == "partial"
+    assert result["coverage"]["limits_reached"] is True
 
 @pytest.mark.asyncio
 async def test_restart_recovery_is_not_automatic_execution():

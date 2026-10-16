@@ -171,6 +171,25 @@ async def test_api_mapper(mock_router):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("missing_path", [None, "", "   "])
+async def test_api_mapper_does_not_scan_current_directory_for_missing_path(mock_router, monkeypatch, missing_path):
+    mapper = APIMapper(mock_router)
+
+    def unexpected_scan(_path):
+        raise AssertionError("missing input must not resolve to the process working directory")
+
+    monkeypatch.setattr(mapper, "_sync_map_apis", unexpected_scan)
+    endpoints, findings = await mapper.map_apis(missing_path)
+
+    assert endpoints == []
+    assert findings == []
+    assert mapper.coverage["static_status"] == "not_analyzed"
+    assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+    assert mapper.coverage["exhaustive"] is False
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
     mapper = APIMapper(mock_router)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -182,6 +201,123 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
     staging = [finding for finding in findings if "Staging/Dev" in finding.title]
     assert len(staging) == 1
     assert "dev-api.example.com" in staging[0].title
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(mock_router):
+    mapper = APIMapper(mock_router)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "Api.smali").write_text(
+            '.class public Lx/Api;\n const-string v0, "/api/v2/profile"\n',
+            encoding="utf-8",
+        )
+        endpoints, findings = await mapper.map_apis(tmpdir)
+    ep = next(e for e in endpoints if e["url"] == "/api/v2/profile")
+    assert ep["method"] == "UNKNOWN"
+    assert ep["evidence_type"] == "route_literal"
+    assert ep["requires_auth"] is None
+    assert mapper.coverage["runtime_status"] == "not_tested"
+    assert mapper.coverage["proof_status"] == "not_proven"
+
+
+@pytest.mark.asyncio
+async def test_api_mapper_redacts_query_and_opaque_path_values(mock_router):
+    mapper = APIMapper(mock_router)
+    query_secret = "CANARY_ACCESS_TOKEN_0123456789"
+    path_secret = "SYNTHETIC-OPAQUE-ID-0123456789"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        Path(tmpdir, "Routes.smali").write_text(
+            f'.class public Lx/Routes;\n'
+            f'const-string v0, "/api/v1/users/{path_secret}?access_token={query_secret}"\n',
+            encoding="utf-8",
+        )
+        Path(tmpdir, "Urls.java").write_text(
+            f'String url = "https://dev-api.example.com/v1/reset/{path_secret}?token={query_secret}";\n',
+            encoding="utf-8",
+        )
+        endpoints, findings = await mapper.map_apis(tmpdir)
+
+    serialized = repr((endpoints, findings))
+    assert query_secret not in serialized
+    assert path_secret not in serialized
+    assert all("?" not in endpoint["url"] for endpoint in endpoints)
+    assert any(endpoint["url"] == "/api/v1/users/{id}" for endpoint in endpoints)
+    assert any("dev-api.example.com" in finding.title for finding in findings)
+
+
+def test_api_mapper_iterates_route_matches_lazily_and_stops_at_output_cap(mock_router, tmp_path):
+    class Match:
+        def __init__(self, index):
+            self.index = index
+
+        def group(self, number):
+            assert number == 1
+            return f"/api/v1/resource/item-{self.index:05}-slug"
+
+    class LazyMatches:
+        def __init__(self):
+            self.yielded = 0
+
+        def finditer(self, _content):
+            for index in range(10_000):
+                self.yielded += 1
+                yield Match(index)
+
+        def findall(self, _content):
+            raise AssertionError("findall would materialize all attacker-controlled matches")
+
+    (tmp_path / "routes.smali").write_text("synthetic route corpus", encoding="utf-8")
+    mapper = APIMapper(mock_router)
+    lazy = LazyMatches()
+    mapper.route_literal_pattern = lazy
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 5000
+    assert lazy.yielded == 5001  # One match is consumed to detect the cap.
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limit_reasons"]["endpoint_count"] == 1
+
+
+def test_api_mapper_deduplicates_redacted_routes_without_marking_partial(mock_router, tmp_path):
+    (tmp_path / "routes.smali").write_text(
+        '.class public Lx/Routes;\n'
+        'const-string v0, "/api/v1/users/12345678-1234-4234-8234-123456789abc"\n'
+        'const-string v1, "/api/v1/users/abcdefab-cdef-4abc-8def-abcdefabcdef"\n',
+        encoding="utf-8",
+    )
+    mapper = APIMapper(mock_router)
+
+    endpoints, _findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 1
+    assert endpoints[0]["url"] == "/api/v1/users/{id}"
+    assert mapper.coverage["deduplicated_endpoint_count"] == 1
+    assert mapper.coverage["static_status"] == "analyzed_heuristically"
+    assert mapper.coverage["limits_reached"] is False
+
+
+def test_api_mapper_marks_sensitive_route_finding_cap_as_partial(mock_router, tmp_path):
+    routes = '\n'.join('@GET("/api/v1/admin/resource")' for _ in range(501))
+    (tmp_path / "Api.java").write_text(routes, encoding="utf-8")
+    mapper = APIMapper(mock_router)
+
+    endpoints, findings = mapper._sync_map_apis(tmp_path)
+
+    assert len(endpoints) == 501
+    assert len(findings) == 500
+    assert mapper.coverage["static_status"] == "partial"
+    assert mapper.coverage["limit_reasons"]["finding_count"] == 1
+
+
+def test_api_mapper_safe_route_strips_userinfo_and_encodes_control_characters():
+    safe = APIMapper._safe_route(
+        "https://researcher:synthetic-password@example.com/api/token/canary?auth_token=secret#frag"
+    )
+    assert safe == "https://example.com/api/token/{id}"
+    assert "researcher" not in safe and "synthetic-password" not in safe
+    assert "secret" not in safe and "frag" not in safe
+    assert "\n" not in APIMapper._safe_route("/api/line\nbreak")
 
 
 @pytest.mark.asyncio
@@ -214,6 +350,82 @@ async def test_dependency_scanner(mock_router):
 
         findings = await scanner.scan(tmpdir)
         assert isinstance(findings, list)
+
+
+def _synthetic_elf_shared_object(machine: int = 183) -> bytes:
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    header[4] = 2  # ELFCLASS64
+    header[5] = 1  # ELFDATA2LSB
+    header[6] = 1  # EV_CURRENT
+    header[16:18] = (3).to_bytes(2, "little")  # ET_DYN
+    header[18:20] = machine.to_bytes(2, "little")
+    header[20:24] = (1).to_bytes(4, "little")
+    return bytes(header) + b"synthetic ELF payload"
+
+
+@pytest.mark.asyncio
+async def test_dependency_scan_inventories_bounded_elf_files_into_versionless_sbom(tmp_path):
+    import hashlib
+
+    native_path = tmp_path / "lib" / "arm64-v8a" / "libsample.so"
+    native_path.parent.mkdir(parents=True)
+    binary = _synthetic_elf_shared_object()
+    native_path.write_bytes(binary)
+    (native_path.parent / "fake.so").write_bytes(b"not an ELF binary")
+    (native_path.parent / "liblink.so").symlink_to(native_path)
+
+    scanner = DependencyScanner()
+    findings = await scanner.scan(str(tmp_path))
+
+    assert findings == []  # no online OSV lookup without per-run consent
+    assert scanner.coverage["native_inventory_status"] == "partial"  # symlink skipped
+    # Candidate files are regular files yielded by the no-follow inventory;
+    # symlink entries are separately counted and are never opened.
+    assert scanner.coverage["native_candidate_files"] == 2
+    assert scanner.coverage["native_elf_candidates"] == 1
+    assert scanner.coverage["native_non_elf_candidates"] == 1
+    assert scanner.coverage["native_symlinks_skipped"] == 1
+    assert scanner.coverage["native_bytes_hashed"] == len(binary)
+
+    generator = scanner.generate_sbom("NativeFixture", "1.0")
+    components = generator.generate_cyclonedx_json()["components"]
+    native = next(component for component in components if component["name"] == "libsample.so")
+    assert native["purl"] == "pkg:generic/lib/arm64-v8a/libsample.so"
+    assert native["hashes"] == [{"alg": "SHA-256", "content": hashlib.sha256(binary).hexdigest()}]
+    assert "version" not in native  # no binary release version was inferred
+
+
+def test_native_library_inventory_reports_size_limit_as_partial(tmp_path, monkeypatch):
+    import mobileag.analysis.dependency_scanner as scanner_module
+
+    native_path = tmp_path / "libsample.so"
+    native_path.write_bytes(_synthetic_elf_shared_object())
+    monkeypatch.setattr(scanner_module, "_MAX_NATIVE_LIBRARY_BYTES", 16)
+
+    records, coverage = DependencyScanner()._sync_find_native_libraries(tmp_path)
+
+    assert records == []
+    assert coverage["native_oversized_files_skipped"] == 1
+    assert coverage["native_limits_reached"] is True
+    assert coverage["native_inventory_status"] == "partial"
+
+
+def test_native_library_inventory_caps_directory_entries_before_materializing(tmp_path, monkeypatch):
+    import mobileag.analysis.dependency_scanner as scanner_module
+
+    library_dir = tmp_path / "lib" / "arm64-v8a"
+    library_dir.mkdir(parents=True)
+    (library_dir / "libsample.so").write_bytes(_synthetic_elf_shared_object())
+    monkeypatch.setattr(scanner_module, "_MAX_NATIVE_TREE_ENTRIES", 1)
+
+    records, coverage = DependencyScanner()._sync_find_native_libraries(tmp_path)
+
+    assert records == []
+    assert coverage["native_entries_seen"] == 1
+    assert coverage["native_limits_reached"] is True
+    assert coverage["native_inventory_status"] == "partial"
+
 
 
 def test_dependency_inventory_understands_literal_kotlin_and_groovy_notation(tmp_path, mock_router):

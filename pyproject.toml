@@ -9,7 +9,7 @@ include = ["mobileag*", "config*"]
 mobileag = ["data/*.json", "web/templates/*.html", "web/static/*.js", "web/static/*.css", "web/static/vendor/*", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-asyncio", "build"]
+test = ["pytest", "pytest-asyncio", "build", "lxml"]
 frida = ["frida"]
 dashboard = ["playwright==1.63.0"]
 
@@ -33,6 +33,7 @@ dependencies = [
     "jinja2",
     "pydantic",
     "jsonschema>=4,<5",
+    "openapi-spec-validator==0.9.0",
     "rich",
     "python-dotenv",
     "aiohttp",

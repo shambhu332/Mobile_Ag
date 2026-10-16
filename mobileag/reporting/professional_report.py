@@ -432,7 +432,11 @@ class ProfessionalReportExporter:
             for name, item in ledger["surfaces"].items():
                 if isinstance(item, dict):
                     paths = ", ".join(item.get("mapped_coverage_paths", [])) or "none"
-                    lines.append(f"| {name} | {item.get('analysis_state')} | {item.get('runtime_state')} | {item.get('evidence_state')} | {paths} | {item.get('gap') or 'not recorded'} |")
+                    gap_reasons = item.get("gap_reasons", [])
+                    gap = "; ".join(reason for reason in gap_reasons if isinstance(reason, str)) if isinstance(gap_reasons, list) else ""
+                    if not gap:
+                        gap = item.get("gap") or "not recorded"
+                    lines.append(f"| {name} | {item.get('analysis_state')} | {item.get('runtime_state')} | {item.get('evidence_state')} | {paths} | {gap} |")
         inventory = meta.get("_capability_inventory", {}) if isinstance(meta, dict) else {}
         if isinstance(inventory, dict) and isinstance(inventory.get("formats"), dict):
             lines.extend(["", "### E. Framework and Format Support Inventory", "",

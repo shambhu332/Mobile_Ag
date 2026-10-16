@@ -1,7 +1,10 @@
 """Test suite for accuracy improvements: Native JNI analyzer, path-sensitive sanitizers, and dynamic verification loop."""
 import os
+import shutil
+import subprocess
 import tempfile
 from unittest.mock import MagicMock, patch
+import pytest
 
 from mobileag.analysis.native_jni_bridge import NativeJniAnalyzer
 from mobileag.filters.sanitizer_check import SanitizerFilter
@@ -35,12 +38,172 @@ def test_native_jni_analyzer():
 
         assert res.library_name == "libsecurity.so"
         assert res.architecture == "arm64-v8a"
-        assert len(res.exported_jni_functions) == 1
-        assert res.exported_jni_functions[0].java_class == "com.example.app.NativeSecurity"
-        assert res.exported_jni_functions[0].java_method == "executeCommand"
-        assert "system" in res.imported_dangerous_symbols
-        assert "sqlite3_exec" in res.imported_dangerous_symbols
+        assert res.exported_jni_functions == []  # The malformed fixture has no parsed dynamic symbols.
+        assert "Java_com_example_app_NativeSecurity_executeCommand" in res.jni_export_name_candidates
+        assert "system" in res.dangerous_symbol_string_candidates
+        assert "sqlite3_exec" in res.dangerous_symbol_string_candidates
+        assert res.imported_dangerous_symbols == []
         assert len(res.findings) >= 2
+        for finding in res.findings:
+            assert finding.cwe_id == "CWE-Unknown"
+            assert finding.severity == Severity.INFO
+            assert finding.metadata["call_reachability"] == "not_analyzed"
+            assert "does not establish an ELF dynamic import" in finding.description
+
+
+@pytest.mark.parametrize("symbol, expected", [
+    ("Java_com_example_Native_run__I", ("com.example.Native", "run")),
+    ("Java_com_example_Native_do_1Thing", ("com.example.Native", "do_Thing")),
+    ("Java_com_example_Native_text_2value", ("com.example.Native", "text;value")),
+    ("Java_com_example_Native_array_3value", ("com.example.Native", "array[value")),
+    ("Java_com_example_Native_name_00041", ("com.example.Native", "nameA")),
+])
+def test_jni_export_name_decoder_handles_overload_and_escape_forms(symbol, expected):
+    assert NativeJniAnalyzer().demangle_jni_name(symbol) == expected
+
+
+@pytest.mark.skipif(shutil.which("gcc") is None, reason="gcc required for synthetic ELF fixture")
+def test_native_jni_analyzer_parses_import_and_export_symbols_without_call_path(tmp_path):
+    source = tmp_path / "native.c"
+    library = tmp_path / "libnative.so"
+    source.write_text(
+        "#include <stdlib.h>\n"
+        "void Java_com_example_Native_run(void) { system(\"true\"); }\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [shutil.which("gcc"), "-shared", "-fPIC", "-fno-builtin", "-o", str(library), str(source)],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "parsed"
+    assert result.dynamic_symbols_seen > 0
+    assert "system" in result.imported_dangerous_symbols
+    assert any(item.java_method == "run" for item in result.exported_jni_functions)
+    assert result.exported_jni_functions[0].dangerous_calls_referenced == []
+    system_finding = next(item for item in result.findings if item.title.endswith(": system"))
+    assert system_finding.metadata["analysis_kind"] == "elf_dynamic_symbol_import"
+    assert system_finding.metadata["call_reachability"] == "not_analyzed"
+    assert system_finding.severity == Severity.INFO
+    assert system_finding.cwe_id == "CWE-Unknown"
+
+    object_file = tmp_path / "native.o"
+    subprocess.run(
+        [shutil.which("gcc"), "-c", "-fno-builtin", "-o", str(object_file), str(source)],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+    object_result = NativeJniAnalyzer().audit_library(object_file)
+    assert object_result.elf_parse_status == "not_present"
+    assert object_result.scan_status == "partial"
+    assert object_result.imported_dangerous_symbols == []
+    assert "dynamic_symbol_table_missing" in object_result.scan_errors
+
+
+def test_native_jni_analyzer_does_not_follow_direct_library_symlink(tmp_path):
+    target = tmp_path / "synthetic.elf"
+    target.write_bytes(b"\x7fELF" + b"\x00" * 40 + b"system\x00")
+    link = tmp_path / "libcandidate.so"
+    link.symlink_to(target)
+
+    result = NativeJniAnalyzer().audit_library(link)
+
+    assert result.imported_dangerous_symbols == []
+    assert result.findings == []
+    assert result.scan_status == "invalid"
+    assert result.scan_errors == ["library_read_error"]
+
+
+def test_native_jni_package_inventory_is_bounded_and_skips_symlinks(tmp_path):
+    root = tmp_path / "package"
+    lib = root / "lib" / "arm64-v8a"
+    lib.mkdir(parents=True)
+    payload = b"\x7fELF\x00system\x00"
+    (lib / "liba.so").write_bytes(payload)
+    (lib / "libb.so").write_bytes(payload)
+    outside = tmp_path / "outside.so"
+    outside.write_bytes(payload)
+    (lib / "a-link.so").symlink_to(outside)
+
+    analyzer = NativeJniAnalyzer()
+    analyzer.MAX_PACKAGE_LIBRARIES = 1
+    results = analyzer.audit_package_libraries(root)
+
+    assert len(results) == 1
+    assert results[0].library_name == "liba.so"
+    assert analyzer.package_coverage["libraries_analyzed"] == 1
+    assert analyzer.package_coverage["limits_reached"] is True
+    assert analyzer.package_coverage["source_files_skipped"] >= 1
+    assert analyzer.package_coverage["static_status"] == "partial"
+
+
+def test_native_jni_analyzer_reports_bounded_prefix_as_partial(tmp_path):
+    library = tmp_path / "liblarge.so"
+    library.write_bytes(b"\x7fELF\x00system\x00" + b"\x00" * (5 * 1024 * 1024))
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.scan_status == "partial"
+    assert result.scan_truncated is True
+    assert result.bytes_scanned == 5 * 1024 * 1024
+    assert "library_byte_limit" in result.scan_errors
+    assert result.imported_dangerous_symbols == []
+    candidate = next(item for item in result.findings if "system" in item.title)
+    assert candidate.metadata["scan_status"] == "partial"
+    assert candidate.metadata["elf_parse_status"] == "partial"
+    assert candidate.metadata["scan_truncated"] is True
+
+
+def test_native_jni_analyzer_reports_missing_elf_parser_as_partial(tmp_path, monkeypatch):
+    import mobileag.analysis.native_jni_bridge as native_jni
+
+    library = tmp_path / "libcandidate.so"
+    library.write_bytes(b"\x7fELF\x00system\x00")
+    monkeypatch.setattr(native_jni, "ELFFile", None)
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "unsupported"
+    assert result.scan_status == "partial"
+    assert result.imported_dangerous_symbols == []
+    assert result.dangerous_symbol_string_candidates == ["system"]
+    assert "elf_parser_unavailable" in result.scan_errors
+
+
+def test_native_jni_analyzer_caps_and_deduplicates_dynamic_symbols(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import mobileag.analysis.native_jni_bridge as native_jni
+
+    class FakeSymbol:
+        name = "system"
+        entry = SimpleNamespace(
+            st_info=SimpleNamespace(type="STT_FUNC"), st_shndx="SHN_UNDEF",
+        )
+
+    class FakeDynamicSymbols:
+        def iter_symbols(self):
+            for _ in range(5001):
+                yield FakeSymbol()
+
+    class FakeElf:
+        def __init__(self, _stream):
+            pass
+
+        def get_section_by_name(self, name):
+            return FakeDynamicSymbols() if name == ".dynsym" else None
+
+    library = tmp_path / "libbounded.so"
+    library.write_bytes(b"\x7fELF\x00system\x00")
+    monkeypatch.setattr(native_jni, "ELFFile", FakeElf)
+
+    result = NativeJniAnalyzer().audit_library(library)
+
+    assert result.elf_parse_status == "partial"
+    assert result.scan_status == "partial"
+    assert result.dynamic_symbols_seen == 5000
+    assert result.imported_dangerous_symbols == ["system"]
+    assert "dynamic_symbol_limit" in result.scan_errors
 
 
 def test_sanitizer_filter_path_sensitive_guards():

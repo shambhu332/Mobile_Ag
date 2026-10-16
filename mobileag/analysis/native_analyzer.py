@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 logger = logging.getLogger(__name__)
 _MAX_NATIVE_IMPORT_NAME_SAMPLES = 2048
@@ -195,6 +195,11 @@ class NativeAnalyzer:
     async def analyze(self, decompiled_path: str) -> list[Finding]:
         """Analyze bounded native-library bytes from a decompiled application."""
         logger.info("Starting native analysis in: %s", decompiled_path)
-        findings = await asyncio.to_thread(self._sync_analyze, Path(decompiled_path))
+        base_path = explicit_scan_root(decompiled_path)
+        if base_path is None:
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return []
+        findings = await asyncio.to_thread(self._sync_analyze, base_path)
         logger.info("Native analysis completed: %d findings.", len(findings))
         return findings

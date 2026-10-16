@@ -64,6 +64,7 @@ def test_ci_pins_python_and_test_build_toolchain_constraints():
     assert "python-version: '3.14.7'" in workflow
     assert "-c requirements/validated-python314.txt" in workflow
     assert '".[test]"' in workflow and '".[test,java-ast]"' not in workflow
+    assert '".[test]" build setuptools wheel' in workflow
     assert 'requires = ["setuptools==84.0.0", "wheel==0.48.0"]' in pyproject
     pins = {}
     for line in (root / "requirements/validated-python314.txt").read_text().splitlines():
@@ -71,5 +72,7 @@ def test_ci_pins_python_and_test_build_toolchain_constraints():
             name, version = line.split("==", 1)
             pins[name.lower().replace("_", "-")] = version
     for name in ("build", "setuptools", "wheel", "pytest", "pytest-asyncio", "jsonschema",
-                 "jsonschema-specifications", "referencing", "rpds-py", "tree-sitter", "tree-sitter-java"):
+                 "jsonschema-specifications", "openapi-spec-validator", "openapi-schema-validator",
+                 "jsonschema-path", "pathable", "lazy-object-proxy", "rfc3339-validator",
+                 "referencing", "rpds-py", "lxml", "tree-sitter", "tree-sitter-java"):
         assert name in pins, f"CI lock/constraints missing exact pin for {name}"

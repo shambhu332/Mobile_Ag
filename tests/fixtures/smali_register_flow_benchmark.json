@@ -1,31 +1,165 @@
 {
-  "schema_version": 1,
-  "description": "Synthetic smoke benchmark for same-method Smali move-result/move-object register flow. Does not measure whole-program or APK recall.",
+  "schema_version": 3,
+  "description": "Public synthetic smoke corpus for bounded same-method Smali register flow, including external-content and provider Cursor and exact lifecycle Intent paths with hard-negative untainted selectors, wrong callback bases, and non-callback helpers. Matched by CWE and sink line; not blind, independent, whole-program, or APK-recall evidence.",
   "cases": [
     {
       "id": "intent_extra_direct_to_webview",
-      "expected_cwes": ["CWE-829"],
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 11
+        }
+      ],
       "source": ".class public Lfixture/Direct;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n sget-object v0, Lfixture/Direct;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     },
     {
       "id": "intent_extra_through_move_object_alias_and_range",
-      "expected_cwes": ["CWE-829"],
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 13
+        }
+      ],
       "source": ".class public Lfixture/Alias;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n # comment before result is allowed\n move-result-object v2\n move-object v3, v2\n sget-object v0, Lfixture/Alias;->web:Landroid/webkit/WebView;\n invoke-virtual/range {v0 .. v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     },
     {
+      "id": "conditional_branch_target_reachable_sink",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 13
+        }
+      ],
+      "source": ".class public Lfixture/BranchTarget;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;I)V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n if-eqz p2, :use\n return-void\n:use\n invoke-virtual {p1, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "two_sink_instances_same_cwe",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 10
+        },
+        {
+          "cwe": "CWE-829",
+          "sink_line": 11
+        }
+      ],
+      "source": ".class public Lfixture/TwoSinks;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n invoke-virtual {p1, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n invoke-virtual {p1, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
       "id": "unrelated_constant_sink_negative",
-      "expected_cwes": [],
+      "expected_candidates": [],
       "source": ".class public Lfixture/Constant;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n const-string v2, \"https://safe.invalid\"\n sget-object v0, Lfixture/Constant;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     },
     {
       "id": "overwritten_array_value_sink_negative",
-      "expected_cwes": [],
+      "expected_candidates": [],
       "source": ".class public Lfixture/Array;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 5\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n aget-object v2, v3, v4\n sget-object v0, Lfixture/Array;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     },
     {
       "id": "unreachable_sink_after_return_negative",
-      "expected_cwes": [],
+      "expected_candidates": [],
       "source": ".class public Lfixture/Dead;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n return-void\n sget-object v0, Lfixture/Dead;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n.end method"
+    },
+    {
+      "id": "contentresolver_cursor_value_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 16
+        }
+      ],
+      "source": ".class public Lfixture/ProviderCursor;\n.super Landroid/app/Activity;\n.method public queryProvider(Landroid/webkit/WebView;)V\n .registers 9\n invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;\n move-result-object v0\n const-string v1, \"content://example.test/items\"\n invoke-static {v1}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;\n move-result-object v1\n const/4 v2, 0\n invoke-virtual {v0, v1, v2, v2, v2, v2}, Landroid/content/ContentResolver;->query(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;\n move-result-object v3\n const/4 v4, 0\n invoke-interface {v3, v4}, Landroid/database/Cursor;->getString(I)Ljava/lang/String;\n move-result-object v5\n invoke-virtual {p1, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "tainted_path_files_readstring_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 17
+        }
+      ],
+      "source": ".class public Lfixture/ExternalNio;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 9\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v5\n invoke-virtual {v5}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v0\n invoke-virtual {v0}, Landroid/net/Uri;->getPath()Ljava/lang/String;\n move-result-object v1\n const/4 v2, 0\n new-array v2, v2, [Ljava/lang/String;\n invoke-static {v1, v2}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;\n move-result-object v3\n invoke-static {v3}, Ljava/nio/file/Files;->readString(Ljava/nio/file/Path;)Ljava/lang/String;\n move-result-object v4\n invoke-virtual {p2, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "hardcoded_content_uri_is_not_tainted",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/InternalContent;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 8\n const-string v0, \"content://example.test/internal\"\n invoke-static {v0}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;\n move-result-object v1\n invoke-virtual {p0}, Landroid/app/Activity;->getContentResolver()Landroid/content/ContentResolver;\n move-result-object v2\n invoke-virtual {v2, v1}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;\n move-result-object v3\n new-instance v4, Ljava/io/InputStreamReader;\n invoke-direct {v4, v3}, Ljava/io/InputStreamReader;-><init>(Ljava/io/InputStream;)V\n new-instance v5, Ljava/io/BufferedReader;\n invoke-direct {v5, v4}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V\n invoke-virtual {v5}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;\n move-result-object v6\n invoke-virtual {p1, v6}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "hardcoded_path_is_not_tainted",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/InternalNio;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 6\n const-string v0, \"/data/user/0/example.test/files/config\"\n const/4 v1, 0\n new-array v1, v1, [Ljava/lang/String;\n invoke-static {v0, v1}, Ljava/nio/file/Paths;->get(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;\n move-result-object v2\n invoke-static {v2}, Ljava/nio/file/Files;->readString(Ljava/nio/file/Path;)Ljava/lang/String;\n move-result-object v3\n invoke-virtual {p1, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "lifecycle_intent_action_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 8
+        }
+      ],
+      "source": ".class public Lfixture/LifecycleRoute;\n.super Landroid/app/Activity;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 4\n invoke-virtual {p1}, Landroid/content/Intent;->getAction()Ljava/lang/String;\n move-result-object v0\n sget-object v1, Lfixture/LifecycleRoute;->web:Landroid/webkit/WebView;\n invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "activity_result_intent_data_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 8
+        }
+      ],
+      "source": ".class public Lfixture/ActivityResultRoute;\n.super Landroid/app/Activity;\n.method protected onActivityResult(IILandroid/content/Intent;)V\n .registers 6\n invoke-virtual {p3}, Landroid/content/Intent;->getAction()Ljava/lang/String;\n move-result-object v0\n sget-object v1, Lfixture/ActivityResultRoute;->web:Landroid/webkit/WebView;\n invoke-virtual {v1, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "locally_constructed_intent_data_is_not_tainted",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/InternalIntent;\n.super Landroid/app/Activity;\n.method public readInternalIntent(Landroid/webkit/WebView;)V\n .registers 8\n new-instance v0, Landroid/content/Intent;\n invoke-direct {v0}, Landroid/content/Intent;-><init>()V\n const-string v1, \"https://safe.invalid\"\n invoke-static {v1}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;\n move-result-object v2\n invoke-virtual {v0, v2}, Landroid/content/Intent;->setData(Landroid/net/Uri;)Landroid/content/Intent;\n invoke-virtual {v0}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v3\n invoke-virtual {v3}, Landroid/net/Uri;->toString()Ljava/lang/String;\n move-result-object v4\n invoke-virtual {p1, v4}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "local_intent_extra_is_not_tainted",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/InternalIntentExtra;\n.super Landroid/app/Activity;\n.method public open(Landroid/webkit/WebView;)V\n .registers 7\n new-instance v0, Landroid/content/Intent;\n invoke-direct {v0}, Landroid/content/Intent;-><init>()V\n const-string v1, \"url\"\n const-string v2, \"https://safe.invalid\"\n invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->putExtra(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;\n move-result-object v0\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v3\n invoke-virtual {p1, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "lifecycle_intent_extra_to_webview",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 9
+        }
+      ],
+      "source": ".class public Lfixture/LifecycleExtra;\n.super Landroid/app/Activity;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 4\n const-string v0, \"url\"\n invoke-virtual {p1, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v1\n sget-object v2, Lfixture/LifecycleExtra;->web:Landroid/webkit/WebView;\n invoke-virtual {v2, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "same_named_callback_wrong_superclass_is_not_a_root",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/NotAnActivity;\n.super Ljava/lang/Object;\n.method public onNewIntent(Landroid/content/Intent;)V\n .registers 3\n invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v0\n invoke-virtual {v0}, Landroid/net/Uri;->toString()Ljava/lang/String;\n move-result-object v1\n sget-object v0, Lfixture/NotAnActivity;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "ordinary_intent_parameter_helper_is_not_a_lifecycle_root",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/IntentHelper;\n.super Ljava/lang/Object;\n.method public open(Landroid/content/Intent;Landroid/webkit/WebView;)V\n .registers 5\n invoke-virtual {p1}, Landroid/content/Intent;->getData()Landroid/net/Uri;\n move-result-object v0\n invoke-virtual {v0}, Landroid/net/Uri;->toString()Ljava/lang/String;\n move-result-object v1\n invoke-virtual {p2, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "filled_new_array_preserves_tainted_elements",
+      "expected_candidates": [
+        {
+          "cwe": "CWE-829",
+          "sink_line": 15
+        }
+      ],
+      "source": ".class public Lfixture/FilledArray;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 7\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n filled-new-array {v2}, [Ljava/lang/String;\n move-result-object v3\n const/4 v4, 0\n aget-object v5, v3, v4\n sget-object v0, Lfixture/FilledArray;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v5}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "rsub_untainted_overwrite_kills_stale_taint",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/RsubOverwrite;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 4\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n const/4 v3, 1\n rsub-int/lit8 v2, v3, 0x1\n sget-object v0, Lfixture/RsubOverwrite;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
+    },
+    {
+      "id": "instance_field_read_overwrites_tainted_register",
+      "expected_candidates": [],
+      "source": ".class public Lfixture/StaleInstanceField;\n.super Landroid/app/Activity;\n.method public open()V\n .registers 3\n invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;\n move-result-object v0\n const-string v1, \"url\"\n invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;\n move-result-object v2\n iget-object v2, p0, Lfixture/StaleInstanceField;->internalUrl:Ljava/lang/String;\n sget-object v0, Lfixture/StaleInstanceField;->web:Landroid/webkit/WebView;\n invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V\n return-void\n.end method"
     }
   ]
 }

@@ -1,6 +1,7 @@
 """Test FastAPI DAST endpoints in MobileAg web application."""
 
 from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,29 @@ from mobileag.web.app import app
 @pytest.fixture
 def client():
     return TestClient(app, headers={"Authorization": "Bearer " + app.state.auth_token})
+
+
+def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    from mobileag.dast.traffic_auditor import HTTPTransaction
+
+    capture = SimpleNamespace(get_transactions=lambda: [HTTPTransaction(
+        url="https://api.example.test/v1/me", method="GET", response_status=200,
+        response_body='{"account":"synthetic"}')],
+        get_capture_stats=lambda: {'transaction_count': 1, 'stored_bytes_estimate': 256,
+                                   'omitted_transactions': 0},
+        omitted_transactions=0)
+    monkeypatch.setattr(web, "api_capture_proxy", capture)
+
+    assert TestClient(app).get("/api/dast/api-capture/openapi").status_code == 401
+    openapi = client.get("/api/dast/api-capture/openapi")
+    assert openapi.status_code == 200
+    assert openapi.json()["x-mobileag-proof-state"] == "not_proven"
+    assert "/v1/me" in openapi.json()["paths"]
+    har = client.get("/api/dast/api-capture/har")
+    assert har.status_code == 200
+    assert har.json()["log"]["entries"][0]["request"]["method"] == "GET"
 
 
 def test_dast_devices_endpoint(client):
@@ -183,6 +207,40 @@ def test_dast_traffic_audit_endpoint(client):
     assert data["status"] == "success"
     assert data["findings_count"] >= 1
     assert any(f["cwe_id"] == "CWE-639" for f in data["findings"])
+
+
+def test_dast_traffic_audit_can_review_declared_shadow_routes_without_live_requests(client):
+    secret_id = "AbCdEf0123456789GhIjKlMnOpQrStUv"
+    secret_query = "synthetic-shadow-query-marker"
+    response = client.post("/api/dast/traffic/audit", json={
+        "transactions": [{
+            "url": f"https://alice:synthetic-password@api.example.test/v1/orders/{secret_id}?token={secret_query}",
+            "method": "POST", "response_status": 200,
+        }],
+        "declared_endpoints": [{
+            "url": "https://api.example.test/v1/orders/{orderId}", "method": "GET",
+        }],
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["shadow_api_review_status"] == "unverified_review_leads"
+    assert body["shadow_api_findings_count"] == 1
+    shadow = body["shadow_api_findings"][0]
+    assert shadow["metadata"]["method"] == "POST"
+    assert shadow["affected_component"] == "/v1/orders/{id1}"
+    assert body["live_requests_sent"] == 0
+    encoded_shadow = str(shadow)
+    for secret in ("alice", "synthetic-password", secret_id, secret_query):
+        assert secret not in encoded_shadow
+
+
+def test_dast_traffic_audit_marks_shadow_review_not_requested_when_missing(client):
+    response = client.post("/api/dast/traffic/audit", json={"transactions": []})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["shadow_api_review_status"] == "not_requested"
+    assert body["shadow_api_findings_count"] == 0
+    assert body["live_requests_sent"] == 0
 
 
 def test_dast_frida_unified_endpoint(client):

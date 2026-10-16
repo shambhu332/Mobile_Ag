@@ -87,6 +87,31 @@ def test_websocket_auth(client):
     with client.websocket_connect('/ws/telemetry') as ws:
         ws.send_json({'token':web.app.state.auth_token})
         assert ws.receive_json()['type'] == 'connection_established'
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect('/ws/scans/not-real/telemetry') as ws:
+            ws.send_json({'token':web.app.state.auth_token})
+            ws.receive_json()
+
+
+@pytest.mark.asyncio
+async def test_scan_telemetry_broadcast_isolation():
+    manager = web.ConnectionManager()
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = []
+        async def send_json(self, message):
+            self.messages.append(message)
+        async def close(self, code):
+            self.closed_code = code
+
+    first, second = FakeWebSocket(), FakeWebSocket()
+    token = web.app.state.auth_token
+    manager.active_connections[:] = [first, second]
+    manager.sessions.update({first: token, second: token})
+    manager.subscriptions.update({first: 'scan-one', second: 'scan-two'})
+    await manager.broadcast({'type': 'agent_progress', 'scan_id': 'scan-one', 'message': 'synthetic'})
+    assert [m['scan_id'] for m in first.messages] == ['scan-one']
+    assert second.messages == []
 
 def test_device_scope(client):
     assert client.post('/api/dast/root',json={'serial':'unscoped'}).status_code == 403
@@ -308,6 +333,29 @@ def test_ipa_executable(tmp_path):
         z.writestr('Payload/Display.app/Real',b'synthetic')
     assert IOSSecurityAnalyzer().extract_ipa(file,tmp_path/'extract')['binary_path'].endswith('/Real')
 
+
+def test_ipa_extraction_rejects_ambiguous_top_level_apps_and_payload_overflow(tmp_path):
+    ambiguous = tmp_path / "ambiguous.ipa"
+    with zipfile.ZipFile(ambiguous, "w") as archive:
+        for name in ("First", "Second"):
+            base = f"Payload/{name}.app/"
+            archive.writestr(base + "Info.plist",
+                             plistlib.dumps({"CFBundleExecutable": "Executable"}))
+            archive.writestr(base + "Executable", b"synthetic")
+    with pytest.raises(ValueError, match="Multiple top-level"):
+        IOSSecurityAnalyzer().extract_ipa(ambiguous, tmp_path / "ambiguous-out")
+
+    oversized = tmp_path / "oversized-payload.ipa"
+    with zipfile.ZipFile(oversized, "w") as archive:
+        archive.writestr("Payload/Only.app/Info.plist",
+                         plistlib.dumps({"CFBundleExecutable": "Executable"}))
+        archive.writestr("Payload/Only.app/Executable", b"synthetic")
+        archive.writestr("Payload/notes.txt", b"synthetic")
+    analyzer = IOSSecurityAnalyzer()
+    analyzer.MAX_PAYLOAD_ENTRIES = 1
+    with pytest.raises(ValueError, match="entry count exceeds limit"):
+        analyzer.extract_ipa(oversized, tmp_path / "oversized-out")
+
 def test_archive_traversal(tmp_path):
     file=tmp_path/'test.apk'
     with zipfile.ZipFile(file,'w') as z:
@@ -351,7 +399,7 @@ async def test_analysis_resource_routing(tmp_path):
     obj=Orchestrator(Settings(_env_file=None,offline=True))
     java=tmp_path/'jadx_out'; resources=tmp_path/'apktool_out'
     java.mkdir();resources.mkdir();(resources/'Test.smali').write_text('synthetic')
-    manifest=resources/'AndroidManifest.xml';manifest.write_text('<manifest package="test.app"><application/></manifest>')
+    manifest=resources/'AndroidManifest.xml';manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="test.app"><uses-sdk android:targetSdkVersion="35"/><application/></manifest>')
     obj._extractor.extract=AsyncMock(return_value={'jadx_dir':str(java),'apktool_dir':str(resources),'manifest_path':str(manifest),'package_name':'test.app'})
     state=await obj._run_ingestion(create_initial_state('test','test.apk',str(tmp_path)))
     assert state['coverage']['smali_files']==1
@@ -361,9 +409,11 @@ async def test_analysis_resource_routing(tmp_path):
         setattr(getattr(obj,attr),method,AsyncMock(return_value=[]))
     obj._api_mapper.map_apis=AsyncMock(return_value=([],[]))
     obj._call_graph_engine.audit_smali_directory=MagicMock(return_value=[])
+    obj._pending_intent_auditor.audit_directory=MagicMock(return_value=[])
     await obj._run_analysis(state)
     obj._call_graph_engine.audit_smali_directory.assert_called_once_with(str(resources))
     obj._nsc_auditor.audit_directory_async.assert_awaited_once_with(str(resources))
+    obj._pending_intent_auditor.audit_directory.assert_called_once_with(str(java), target_sdk=35)
 
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser
@@ -414,7 +464,7 @@ async def test_proxy_framing_binary_and_auth(monkeypatch):
     monkeypatch.setenv('MOBILEAG_PROXY_TOKEN','synthetic-proxy-token')
     request=AsyncMock(return_value={'status_code':200,'headers':{},'body':b'\xff\x00binary'})
     monkeypatch.setattr(module,'scoped_request',request)
-    proxy=module.AsyncMITMProxy(port=0)
+    proxy=module.AsyncMITMProxy(port=0, allowed_origins={'http://scope.invalid'}, allowed_methods={'POST'})
     await proxy.start()
     port=proxy._server.sockets[0].getsockname()[1]
     try:

@@ -42,6 +42,8 @@ async def lifespan(application):
     automation_service().store().recover()
     assessment_service().store().recover()
     yield
+    if api_capture_proxy is not None:
+        await api_capture_proxy.stop()
     CANCELLED.update(PROCESSES)
     assessments=assessment_service()
     for task in list(assessments.tasks.values()):task.cancel()
@@ -95,6 +97,7 @@ logger = logging.getLogger(__name__)
 adb_manager = ADBManager()
 logcat_auditor = LogcatAuditor()
 traffic_auditor = TrafficAuditor()
+api_capture_proxy = None
 storage_auditor = StorageAuditor(adb=adb_manager)
 provider_auditor = ProviderAuditor(adb=adb_manager)
 deeplink_fuzzer = DeepLinkFuzzer(adb=adb_manager)
@@ -120,6 +123,9 @@ OUTPUT_DIR = DATA_ROOT / "output"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 UPLOAD_DIR = DATA_ROOT / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+MAX_LEGACY_IMPORT_ENTRIES = 5_000
+MAX_LEGACY_IMPORT_FILE_BYTES = 16 * 1024 * 1024
+MAX_LEGACY_IMPORT_TOTAL_BYTES = 64 * 1024 * 1024
 
 app = FastAPI(
     title="MobileAg — AppSec Dashboard",
@@ -166,14 +172,17 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self.pending = 0
         self.sessions = {}
+        self.subscriptions: dict[WebSocket, str | None] = {}
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, scan_id: str | None = None) -> None:
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.subscriptions[websocket] = scan_id
         logger.info("WebSocket subscriber connected (%d active)", len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.sessions.pop(websocket,None)
+        self.subscriptions.pop(websocket, None)
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
             logger.info("WebSocket subscriber disconnected (%d remaining)", len(self.active_connections))
@@ -181,6 +190,9 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         for connection in list(self.active_connections):
             try:
+                subscribed_scan = self.subscriptions.get(connection)
+                if subscribed_scan is not None and message.get("scan_id") != subscribed_scan:
+                    continue
                 if time.monotonic() >= app.state.session_deadline or not authorized(self.sessions.get(connection),app.state.auth_token):
                     await connection.close(code=1008)
                     self.disconnect(connection)
@@ -195,7 +207,17 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time agent execution stream and live telemetry."""
+    """Authenticated legacy stream for all dashboard telemetry events."""
+    await _telemetry_stream(websocket)
+
+
+@app.websocket("/ws/scans/{scan_id}/telemetry")
+async def websocket_scan_telemetry(websocket: WebSocket, scan_id: str) -> None:
+    """Authenticated scan-specific stream; never delivers another scan's events."""
+    await _telemetry_stream(websocket, scan_id=scan_id)
+
+
+async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) -> None:
     if len(manager.active_connections) + manager.pending >= 32:
         await websocket.close(code=1013)
         return
@@ -211,12 +233,20 @@ async def websocket_telemetry(websocket: WebSocket) -> None:
         return
     finally:
         manager.pending -= 1
+    if scan_id is not None:
+        try:
+            await get_scan_details(scan_id)
+        except HTTPException:
+            await websocket.close(code=1008)
+            return
     manager.active_connections.append(websocket)
     manager.sessions[websocket] = auth["token"]
+    manager.subscriptions[websocket] = scan_id
     try:
         await websocket.send_json({
             "type": "connection_established",
             "message": "Connected to MobileAg Live Telemetry Stream",
+            **({"scan_id": scan_id} if scan_id is not None else {}),
             "timestamp": datetime.now().isoformat(),
             "neo4j_online": attack_graph._connected,
         })
@@ -257,20 +287,37 @@ def repository() -> ScanRepository:
 
 app.state.scope_repository = repository
 
-def repository_import_legacy() -> None:
+def repository_import_legacy() -> dict[str, Any]:
+    """Import bounded direct-child legacy snapshots without following links."""
+    from mobileag.analysis.bounded_sources import SourceInventory
+
     repo = repository()
-    for file in OUTPUT_DIR.glob('*/dashboard.json'):
+    inventory = SourceInventory(max_entries=MAX_LEGACY_IMPORT_ENTRIES,
+                                max_file_bytes=MAX_LEGACY_IMPORT_FILE_BYTES,
+                                max_total_bytes=MAX_LEGACY_IMPORT_TOTAL_BYTES)
+    imported = 0
+    for file, raw in inventory.read(
+        OUTPUT_DIR, names={"dashboard.json"},
+        path_filter=lambda candidate: candidate.parent.parent == OUTPUT_DIR,
+    ):
         sid = file.parent.name
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', sid) or repo.get(sid) or repo.purged(sid):
             continue
-        if not file.resolve().is_relative_to(OUTPUT_DIR.resolve()) or file.stat().st_size > 16*1024*1024:
-            continue
         try:
-            document = json.loads(file.read_text())
+            document = json.loads(raw)
             if isinstance(document, dict) and document.get('scan_id') == sid:
                 repo.save(document)
+                imported += 1
         except (ValueError, OSError):
             logger.warning('Could not import legacy scan %s', sid)
+    return {
+        "imported": imported,
+        "status": "partial" if inventory.coverage["limits_reached"]
+                  or inventory.coverage["source_files_skipped"] else
+                  "analyzed_heuristically" if inventory.coverage["source_files_analyzed"]
+                  else "not_analyzed",
+        "coverage": dict(inventory.coverage),
+    }
 
 
 def effective_runtime_settings() -> dict[str, Any]:
@@ -538,24 +585,87 @@ async def get_scan_apis(scan_id: str) -> dict[str, Any]:
 
 @app.get("/api/scans/{scan_id}/resilience")
 async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
-    """Return MASVS-RESILIENCE scoring from RaspResilienceAuditor."""
+    """Return heuristic resilience inventory and its bounded-input coverage."""
     scan = await get_scan_details(scan_id)
     out_dir = OUTPUT_DIR / scan_id
-    smali_dir = out_dir / "apktool_out" / "smali"
-    if not smali_dir.exists():
-        smali_dir = out_dir / "apktool" / "smali"
-    if not smali_dir.exists():
-        candidates = list(out_dir.glob("**/smali"))
-        smali_dir = candidates[0] if candidates else smali_dir
+    from mobileag.analysis.bounded_sources import SourceInventory
+
+    # Discover every canonical Smali root (including smali_classesN for
+    # multidex APKs) under one shared budget. Never choose an arbitrary root.
+    known_bases = [out_dir / "apktool_out", out_dir / "apktool"]
+
+    def has_symlink_component(path: Path) -> bool:
+        current = path
+        while current != OUTPUT_DIR and current != current.parent:
+            if current.is_symlink():
+                return True
+            current = current.parent
+        return OUTPUT_DIR.is_symlink()
+
+    unsafe_scan_root = has_symlink_component(out_dir)
+    discovery_inventory = SourceInventory(max_entries=5000, max_file_bytes=1,
+                                          max_total_bytes=1)
+
+    def discover_roots(search_root: Path, *, direct_children_only: bool) -> set[Path]:
+        found = set()
+        for candidate in discovery_inventory.paths(search_root, {".smali"}):
+            for parent in candidate.parents:
+                if parent == search_root:
+                    break
+                if (parent.name == "smali" or re.fullmatch(r"smali_classes\d+", parent.name)):
+                    if not direct_children_only or parent.parent == search_root:
+                        found.add(parent)
+                    break
+        return found
+
+    smali_roots: list[Path] = []
+    discovery = {"status": "not_analyzed_symlink_root" if unsafe_scan_root else "known_layout",
+                 "roots_found": 0, "entries_examined": 0, "limits_reached": False}
+    if not unsafe_scan_root:
+        safe_bases = [base for base in known_bases
+                      if not has_symlink_component(base) and base.is_dir()]
+        roots_by_base = {base: discover_roots(base, direct_children_only=True)
+                         for base in safe_bases}
+        active_bases = [base for base, roots in roots_by_base.items() if roots]
+        discovered_root_count = sum(len(roots) for roots in roots_by_base.values())
+        if len(active_bases) == 1:
+            smali_roots = sorted(roots_by_base[active_bases[0]], key=lambda p: p.name.casefold())
+            discovery["status"] = "known_layout"
+        elif len(active_bases) > 1:
+            discovery["status"] = "not_analyzed_multiple_known_bases"
+        elif not safe_bases:
+            roots = discover_roots(out_dir, direct_children_only=False)
+            root_bases = {root.parent for root in roots}
+            discovered_root_count = len(roots)
+            if len(root_bases) == 1:
+                smali_roots = sorted(roots, key=lambda p: p.name.casefold())
+                discovery["status"] = "bounded_fallback"
+            elif len(root_bases) > 1:
+                discovery["status"] = "not_analyzed_ambiguous_roots"
+            else:
+                discovery["status"] = "not_analyzed_no_root"
+        else:
+            discovery["status"] = "not_analyzed_no_root"
+        discovery["roots_found"] = discovered_root_count
+        discovery["entries_examined"] = discovery_inventory.coverage["entries_examined"]
+        discovery["limits_reached"] = discovery_inventory.coverage["limits_reached"]
+        if discovery["limits_reached"]:
+            smali_roots = []
+            discovery["status"] = "not_analyzed_incomplete_inventory"
 
     from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
     auditor = RaspResilienceAuditor()
-    res = auditor.audit_package(smali_dir)
+    res = auditor.audit_package(smali_roots) if smali_roots else auditor.audit_package(None)
+    res.coverage["root_discovery"] = discovery
+    if not smali_roots:
+        res.coverage["static_status"] = "not_analyzed"
+        res.coverage["exhaustive"] = False
 
     return {
         "scan_id": scan_id,
         "overall_score": res.overall_score,
         "grade": res.grade,
+        "coverage": res.coverage,
         "vectors": {
             k: {
                 "name": v.vector_name,
@@ -595,6 +705,58 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
     return gen.generate_cyclonedx_json()
 
 
+@app.get("/api/scans/{scan_id}/cyclonedx.xml")
+async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
+    """Export CycloneDX v1.5 XML SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return Response(content=gen.generate_cyclonedx_xml(), media_type="application/xml")
+
+
+@app.get("/api/scans/{scan_id}/spdx")
+async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
+    """Export SPDX 2.3 SBOM."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    version = scan.get("version") or "1.0.0"
+    gen = MobileSbomGenerator(app_name=app_name, app_version=version)
+
+    deps = scan.get("dependencies", [])
+    for d in deps:
+        gen.add_component(
+            name=d.get("name", "library"),
+            version=d.get("version", "unknown"),
+            purl=d.get("purl", f"pkg:generic/{d.get('name', 'library')}"),
+        )
+    if not deps:
+        gen.add_component(
+            name=app_name,
+            version=version,
+            purl=f"pkg:apk/{app_name}@{version}",
+            component_type="application",
+        )
+    return gen.generate_spdx_json()
+
+
 @app.get("/api/scans/{scan_id}/openapi")
 async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
     """Export discovered mobile APIs in OpenAPI 3.0 format."""
@@ -610,6 +772,50 @@ async def get_scan_openapi(scan_id: str) -> dict[str, Any]:
         cataloger.ingest_request(CapturedRequest(method=method, url=url))
 
     return cataloger.export_openapi_json()
+
+
+@app.get("/api/scans/{scan_id}/har")
+async def get_scan_har(scan_id: str) -> dict[str, Any]:
+    """Export intercepted mobile HTTP/HTTPS traffic in HAR 1.2 format."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
+    cataloger = MobileApiCataloger(title=f"{app_name} APIs", version="1.0.0")
+
+    apis = scan.get("api_endpoints", [])
+    for ep in apis:
+        url = ep.get("url") or f"https://api.example.com{ep.get('path', '/')}"
+        method = ep.get("method", "GET")
+        cataloger.ingest_request(CapturedRequest(method=method, url=url))
+
+    return cataloger.export_har_json()
+
+
+@app.get("/api/scans/{scan_id}/tokens/audit")
+async def audit_scan_tokens(scan_id: str) -> dict[str, Any]:
+    """Audit captured authentication tokens and session lifecycle."""
+    scan = await get_scan_details(scan_id)
+    from mobileag.dast.token_session_auditor import MobileTokenSessionAuditor
+    from mobileag.dast.api_cataloger import CapturedRequest
+
+    auditor = MobileTokenSessionAuditor()
+    apis = scan.get("api_endpoints", [])
+    captured = [
+        CapturedRequest(
+            method=ep.get("method", "GET"),
+            url=ep.get("url") or f"https://api.example.com{ep.get('path', '/')}",
+            headers=ep.get("headers", {}),
+            query_params=ep.get("query_params", {}),
+            response_status=ep.get("status_code", 200),
+        )
+        for ep in apis
+    ]
+    findings = auditor.audit_transactions(captured)
+    return {
+        "scan_id": scan_id,
+        "token_findings_count": len(findings),
+        "findings": [f.model_dump() for f in findings],
+    }
 
 
 @app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")
@@ -975,8 +1181,15 @@ class CapturedTransaction(BaseModel):
     request_body: Optional[str] = Field(default=None, max_length=262144)
     response_body: Optional[str] = Field(default=None, max_length=262144)
 
+class DeclaredApiEndpoint(BaseModel):
+    model_config = {"extra": "forbid"}
+    url: str = Field(max_length=8192)
+    method: Optional[Literal["GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"]] = None
+
+
 class TrafficAuditRequest(BaseModel):
     transactions: list[CapturedTransaction] = Field(default_factory=list, max_length=100)
+    declared_endpoints: list[str | DeclaredApiEndpoint] = Field(default_factory=list, max_length=1000)
 
 
 
@@ -1309,14 +1522,132 @@ async def deploy_dast_frida(req: FridaDeployRequest, request: Request) -> dict[s
 
 @app.post("/api/dast/traffic/audit")
 async def audit_dast_traffic(req: TrafficAuditRequest) -> dict[str, Any]:
-    """Audit recorded HTTP transactions against OWASP API Security Top 10 rules."""
+    """Audit supplied captured traffic; never sends network requests."""
     txs = [HTTPTransaction(**item.model_dump()) for item in req.transactions]
     findings = traffic_auditor.audit_transactions(txs)
+    declared = [
+        item.model_dump(exclude_none=True) if isinstance(item, DeclaredApiEndpoint) else item
+        for item in req.declared_endpoints
+    ]
+    shadow_findings = (traffic_auditor.find_shadow_apis(txs, declared) if declared else [])
     return {
         "status": "success",
         "findings_count": len(findings),
         "findings": redact([f.to_dict() for f in findings]),
+        "shadow_api_review_status": ("unverified_review_leads" if declared else "not_requested"),
+        "shadow_api_findings_count": len(shadow_findings),
+        "shadow_api_findings": redact([f.to_dict() for f in shadow_findings]),
+        "live_requests_sent": 0,
     }
+
+
+@app.post("/api/dast/api-capture/start")
+async def start_api_capture(request: Request) -> dict[str, Any]:
+    """Start authenticated loopback HTTP capture; HTTPS CONNECT is unsupported."""
+    global api_capture_proxy
+    from mobileag.web.policy import check_action
+    require_current_session(request)
+    policy = repository().get_policy()
+    if not check_action(policy, 'api_capture', {}):
+        raise HTTPException(403, 'API capture is not enabled in the operator scope policy')
+    if not policy.get('origins') or not policy.get('methods'):
+        raise HTTPException(403, 'API capture requires explicitly scoped origins and methods')
+    from mobileag.dast.mitm_proxy import AsyncMITMProxy
+    if (api_capture_proxy is not None and api_capture_proxy.is_running and
+            (api_capture_proxy.allowed_origins != set(policy['origins']) or
+             api_capture_proxy.allowed_methods != {m.upper() for m in policy['methods']})):
+        raise HTTPException(409, 'Stop the running capture proxy before changing its scope')
+    if api_capture_proxy is None:
+        api_capture_proxy = AsyncMITMProxy(host='127.0.0.1', port=8082,
+            auditor=traffic_auditor, allowed_origins=policy['origins'],
+            allowed_methods=policy['methods'])
+    try:
+        await api_capture_proxy.start()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(503, str(exc))
+    require_current_session(request)
+    return {'status': 'listening', 'host': '127.0.0.1', 'port': 8082,
+            'https_interception': False, 'scope_origins': policy['origins'],
+            'scope_methods': policy['methods'],
+            'note': 'Configure a researcher-controlled client to use the authenticated local proxy; no APK/device is changed.'}
+
+
+@app.post("/api/dast/api-capture/stop")
+async def stop_api_capture(request: Request) -> dict[str, Any]:
+    global api_capture_proxy
+    require_current_session(request)
+    count = len(api_capture_proxy.get_transactions()) if api_capture_proxy else 0
+    if api_capture_proxy:
+        await api_capture_proxy.stop()
+    require_current_session(request)
+    return {'status': 'stopped', 'captured_transactions': count}
+
+
+@app.get("/api/dast/api-capture/transactions")
+async def get_api_capture_transactions(request: Request) -> dict[str, Any]:
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    capture_stats = api_capture_proxy.get_capture_stats() if api_capture_proxy else {
+        'transaction_count': 0, 'stored_bytes_estimate': 0, 'omitted_transactions': 0}
+    require_current_session(request)
+    return {'count': len(txs), 'capture_stats': capture_stats,
+            'transactions': redact([tx.__dict__ if hasattr(tx, '__dict__') else {
+        'url': tx.url, 'method': tx.method, 'request_headers': tx.request_headers,
+        'response_status': tx.response_status, 'response_headers': tx.response_headers,
+        'request_body': tx.request_body, 'response_body': tx.response_body,
+    } for tx in txs])}
+
+
+def _captured_api_catalog(txs, title: str):
+    """Build an inventory/export model from observed transactions, not guesses."""
+    from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest
+    catalog = MobileApiCataloger(title=title)
+    for tx in txs:
+        catalog.ingest_request(CapturedRequest(
+            method=tx.method, url=tx.url, headers=tx.request_headers,
+            body=tx.request_body,
+            response_status=tx.response_status, response_body=tx.response_body,
+        ))
+    return catalog
+
+
+@app.get("/api/dast/api-capture/openapi")
+async def get_api_capture_openapi(request: Request) -> dict[str, Any]:
+    """Export an OpenAPI inventory based solely on captured, redacted requests."""
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    catalog = _captured_api_catalog(txs, 'Observed Mobile API Traffic')
+    result = catalog.export_openapi_json()
+    if api_capture_proxy:
+        result['x-mobileag-capture-limits']['omittedRequests'] += api_capture_proxy.omitted_transactions
+    require_current_session(request)
+    result['x-mobileag-evidence-state'] = 'observed_capture_inventory'
+    result['x-mobileag-proof-state'] = 'not_proven'
+    return result
+
+
+@app.get("/api/dast/api-capture/har")
+async def get_api_capture_har(request: Request) -> dict[str, Any]:
+    """Export current in-memory capture as redacted HAR 1.2."""
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    result = _captured_api_catalog(txs, 'Observed Mobile API Traffic').export_har_json()
+    result['log']['x-mobileag-capture-stats'] = (
+        api_capture_proxy.get_capture_stats() if api_capture_proxy else {
+            'transaction_count': 0, 'stored_bytes_estimate': 0, 'omitted_transactions': 0})
+    require_current_session(request)
+    return result
+
+
+@app.post("/api/dast/api-capture/audit")
+async def audit_api_capture(request: Request) -> dict[str, Any]:
+    require_current_session(request)
+    txs = api_capture_proxy.get_transactions() if api_capture_proxy else []
+    findings = traffic_auditor.audit_transactions(txs)
+    require_current_session(request)
+    return {'status': 'capture_analysis', 'transactions_reviewed': len(txs),
+            'findings': redact([finding.to_dict() for finding in findings]),
+            'live_requests_sent': 0}
 
 
 @app.post("/api/analysis/taint")
@@ -1497,7 +1828,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5)
+        crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5, guard=guard)
         await manager.broadcast({
             "type": "dast_progress",
             "stage": "UI Crawl Complete",
@@ -1667,6 +1998,44 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["stats"] = {level:sum(f.get("severity", "").lower() == level for f in scan["findings"])
                          for level in ("critical","high","medium","low","info")}
         scan["stats"]["total"] = len(scan["findings"])
+
+        # Dynamically build interactive Vis.js Attack Surface Graph
+        nodes = [{"id": "app", "label": scan["package_name"] or apk_name, "group": "app", "shape": "dot", "size": 32, "color": "#0ea5e9"}]
+        edges = []
+        seen_nodes = {"app"}
+        for c in (scan["components"] or [])[:15]:
+            c_name = c.get("name", "Component")
+            c_id = f"comp_{c_name}"
+            if c_id not in seen_nodes:
+                seen_nodes.add(c_id)
+                nodes.append({
+                    "id": c_id, "label": c_name.split(".")[-1], "group": "component",
+                    "shape": "dot", "size": 18, "color": "#10b981" if not c.get("exported") else "#f59e0b"
+                })
+                edges.append({"from": "app", "to": c_id, "label": "component"})
+        for ep in (scan["api_endpoints"] or [])[:15]:
+            ep_url = ep.get("url") if isinstance(ep, dict) else getattr(ep, "url", str(ep))
+            ep_id = f"api_{ep_url}"
+            if ep_id not in seen_nodes:
+                seen_nodes.add(ep_id)
+                nodes.append({
+                    "id": ep_id, "label": ep_url[:30], "group": "api",
+                    "shape": "dot", "size": 16, "color": "#06b6d4"
+                })
+                edges.append({"from": "app", "to": ep_id, "label": "calls"})
+        for f in (scan["findings"] or [])[:20]:
+            f_id = f.get("id", str(id(f)))
+            if f_id not in seen_nodes:
+                seen_nodes.add(f_id)
+                sev = f.get("severity", "MEDIUM").upper()
+                f_color = "#ef4444" if sev in {"CRITICAL", "HIGH"} else "#f59e0b" if sev == "MEDIUM" else "#3b82f6"
+                nodes.append({
+                    "id": f_id, "label": (f.get("title") or "Finding")[:25], "group": "vulnerability",
+                    "shape": "diamond", "size": 20, "color": f_color
+                })
+                edges.append({"from": "app", "to": f_id, "label": "has_vuln"})
+        scan["attack_surface_graph"] = {"nodes": nodes, "edges": edges}
+
         from mobileag.reporting.report_engine import ReportEngine
         state.update(scan_id=scan_id, output_dir=str(Path(req.output_dir) / scan_id),
                      filtered_findings=scan["findings"], package_name=scan["package_name"])

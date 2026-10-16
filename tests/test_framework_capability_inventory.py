@@ -2,6 +2,17 @@ from mobileag.ingestion.framework_detector import FrameworkDetector
 from mobileag.reporting.capability_inventory import capability_inventory
 
 
+def test_framework_detector_returns_coverage_for_missing_input(tmp_path):
+    detector = FrameworkDetector()
+
+    for source in (None, "", str(tmp_path / "missing")):
+        result = detector.detect(source)
+        assert result["framework"] == "Unknown"
+        assert result["coverage"]["static_status"] == "not_analyzed"
+        assert result["coverage"]["proof_status"] == "not_proven"
+        assert result["coverage"]["exhaustive"] is False
+
+
 def test_framework_detector_preserves_multiple_signature_hits(tmp_path):
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "index.android.bundle").write_bytes(b"synthetic")

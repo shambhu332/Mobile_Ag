@@ -77,3 +77,9 @@ class ProviderAuditor:
             results.append({'authority': urlsplit(uri).netloc, 'uri': uri, 'findings_count': len(current)})
             findings.extend(current)
         return results, findings
+
+    def create_fuzzer(self) -> Any:
+        """Create a ContentProviderFuzzer bound to the active ADB runner."""
+        from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+        return ContentProviderFuzzer(adb_path=getattr(self.adb, "adb_path", None))
+

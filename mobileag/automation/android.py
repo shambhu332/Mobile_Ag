@@ -16,7 +16,12 @@ DANGEROUS=re.compile(r'(?i)\b(delete|remove|wipe|reset|pay|buy|purchase|subscrib
 def digest(value):return hashlib.sha256(value.encode()).hexdigest()[:24]
 
 def parse_snapshot(xml,package):
-    if len(xml.encode())>1024*1024:raise ValueError('Hierarchy limit exceeded')
+    if not isinstance(xml,str):raise ValueError('Invalid hierarchy XML')
+    if len(xml)>1024*1024:raise ValueError('Hierarchy limit exceeded')
+    try:encoded=xml.encode('utf-8')
+    except UnicodeEncodeError as exc:raise ValueError('Invalid hierarchy XML encoding') from exc
+    if len(encoded)>1024*1024:raise ValueError('Hierarchy limit exceeded')
+    if re.search(r'<!\s*(?:DOCTYPE|ENTITY)\b',xml,re.IGNORECASE):raise ValueError('DTD/entity declarations are unsupported')
     try:root=ET.fromstring(xml)
     except ET.ParseError:raise ValueError("Invalid hierarchy XML")
     nodes=list(root.iter('node'))

@@ -1,4 +1,4 @@
-"""OWASP MASVS-RESILIENCE Binary Hardening & RASP Auditor.
+"""Bounded Smali string-inventory helper for resilience review (not MASVS scoring).
 
 Evaluates an Android application binary across 6 core resilience vectors:
 1. Identifier Obfuscation Ratio
@@ -11,31 +11,33 @@ Evaluates an Android application binary across 6 core resilience vectors:
 from __future__ import annotations
 
 import math
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 
 @dataclass
 class ResilienceVectorScore:
     vector_name: str
     masvs_category: str
-    score: float  # 0.0 to 100.0
+    score: Optional[float]  # None when this vector is not meaningfully measured
     detected_indicators: List[str] = field(default_factory=list)
-    passed: bool = False
+    passed: Optional[bool] = None  # None means the analyzer cannot determine pass/fail
 
 
 @dataclass
 class ResilienceAssessmentResult:
-    overall_score: float = 0.0
-    grade: str = "F"
+    overall_score: Optional[float] = None
+    grade: str = "Not validated"
     vectors: Dict[str, ResilienceVectorScore] = field(default_factory=dict)
+    coverage: Dict[str, object] = field(default_factory=dict)
 
 
 class RaspResilienceAuditor:
-    """Evaluates mobile binary resilience against reverse engineering and tampering."""
+    """Inventory candidate resilience-related strings without scoring effectiveness."""
 
     ROOT_INDICATORS = [
         "su", "/system/bin/su", "/system/xbin/su", "/sbin/su", "daemonsu",
@@ -53,10 +55,18 @@ class RaspResilienceAuditor:
         "verifySignature", "checkSignature", "SHA-256", "signingCertificateHistory"
     ]
 
-    def audit_package(self, smali_dir: str | Path) -> ResilienceAssessmentResult:
-        """Audit decompiled Smali sources for resilience vectors."""
-        path = Path(smali_dir)
+    def audit_package(self, smali_dir: str | Path | List[str | Path]) -> ResilienceAssessmentResult:
+        """Audit one or more decompiled Smali roots under a shared budget."""
+        supplied_roots = smali_dir if isinstance(smali_dir, (list, tuple)) else [smali_dir]
+        paths = [explicit_scan_root(root) for root in supplied_roots]
         result = ResilienceAssessmentResult()
+        if (not paths or any(path is None or path.is_symlink() or not path.is_dir()
+                             for path in paths)):
+            result.coverage = SourceInventory().coverage
+            return result
+        # Duplicate roots would double-count evidence; stable de-duplication
+        # also makes callers' ordering irrelevant.
+        paths = list(dict.fromkeys(paths))
 
         total_classes = 0
         obfuscated_classes = 0
@@ -65,102 +75,93 @@ class RaspResilienceAuditor:
         tamper_detections: set[str] = set()
         string_samples: List[str] = []
 
-        if not path.is_dir():
-            return result
+        # Bound traversal and reads; extracted APK trees are untrusted input.
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
+                                    max_total_bytes=32 * 1024 * 1024)
+        for path in paths:
+            for _file_path, data in inventory.read(path, {".smali"}):
+                total_classes += 1
+                base_name = _file_path.stem
+                # This is a filename heuristic, not a class-identifier parser.
+                if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
+                    obfuscated_classes += 1
 
-        for root, _, files in os.walk(path):
-            for file in files:
-                if file.endswith(".smali"):
-                    total_classes += 1
-                    base_name = file[:-6]
-                    # Obfuscated names are typically 1-3 characters (e.g. a.smali, b.smali, x1.smali)
-                    if len(base_name) <= 2 or (len(base_name) == 3 and base_name[0].isalpha() and base_name[1:].isdigit()):
-                        obfuscated_classes += 1
+                content = data.decode("utf-8", errors="replace")
+                for ind in self.ROOT_INDICATORS:
+                    if ind in content:
+                        root_detections.add(ind)
+                for ind in self.DEBUG_INDICATORS:
+                    if ind in content:
+                        debug_detections.add(ind)
+                for ind in self.TAMPER_INDICATORS:
+                    if ind in content:
+                        tamper_detections.add(ind)
 
-                    full_path = os.path.join(root, file)
-                    try:
-                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                            content = f.read()
-                    except OSError:
-                        continue
+                # Cap both sample count and individual sample work for predictable CPU.
+                for match in re.finditer(r'const-string[^\"]*\"([^\"]+)\"', content):
+                    s_match = match.group(1)
+                    if len(s_match) > 8:
+                        if len(string_samples) >= 500:
+                            break
+                        string_samples.append(s_match[:256])
+        result.coverage = dict(inventory.coverage)
 
-                    # Scan indicators
-                    for ind in self.ROOT_INDICATORS:
-                        if ind in content:
-                            root_detections.add(ind)
-                    for ind in self.DEBUG_INDICATORS:
-                        if ind in content:
-                            debug_detections.add(ind)
-                    for ind in self.TAMPER_INDICATORS:
-                        if ind in content:
-                            tamper_detections.add(ind)
-
-                    # Extract const-string samples for entropy
-                    for s_match in re.findall(r'const-string[^\"]*\"([^\"]+)\"', content):
-                        if len(s_match) > 8:
-                            string_samples.append(s_match)
-                            if len(string_samples) >= 500:
-                                break
-
-        # 1. Identifier Obfuscation
+        # These are candidate indicators only. Their observed presence does not
+        # prove that a defense is reachable, effective, or complete.
         obf_ratio = (obfuscated_classes / total_classes * 100.0) if total_classes > 0 else 0.0
         v_obf = ResilienceVectorScore(
             vector_name="Identifier Obfuscation",
             masvs_category="MASVS-RESILIENCE-1",
-            score=min(100.0, obf_ratio * 1.25),
+            score=None,
             detected_indicators=[f"Obfuscated class ratio: {obf_ratio:.1f}% ({obfuscated_classes}/{total_classes})"],
-            passed=obf_ratio >= 40.0,
+            passed=None,
         )
 
-        # 2. Control Flow Complexity (estimated by class density)
+        # 2. Control flow cannot be inferred from class-name obfuscation. Do not
+        # fabricate a score or pass/fail result from an unrelated signal.
         v_flow = ResilienceVectorScore(
             vector_name="Control Flow Flattening",
             masvs_category="MASVS-RESILIENCE-2",
-            score=50.0 if obf_ratio > 50 else 20.0,
-            detected_indicators=["Heuristic flow complexity based on method branching"],
-            passed=obf_ratio > 50,
+            score=None,
+            detected_indicators=["Not assessed: control-flow graph/branch analysis is not implemented"],
+            passed=None,
         )
 
-        # 3. String Pool Entropy
+        # Entropy is a content statistic, not evidence of string encryption.
         avg_entropy = self._calculate_average_entropy(string_samples)
-        # High entropy (> 4.5 bits) suggests encrypted or packed strings
-        entropy_score = min(100.0, max(0.0, (avg_entropy - 3.0) * 50.0))
         v_entropy = ResilienceVectorScore(
             vector_name="String Pool Encryption",
             masvs_category="MASVS-RESILIENCE-3",
-            score=entropy_score,
-            detected_indicators=[f"Average string entropy: {avg_entropy:.2f} bits/byte"],
-            passed=avg_entropy >= 4.2,
+            score=None,
+            detected_indicators=[f"Average entropy of sampled strings: {avg_entropy:.2f} bits/character; encryption not inferred"],
+            passed=None,
         )
 
         # 4. Anti-Root / Jailbreak
-        root_score = min(100.0, len(root_detections) * 20.0)
         v_root = ResilienceVectorScore(
             vector_name="Device Integrity & Root Detection",
             masvs_category="MASVS-RESILIENCE-4",
-            score=root_score,
-            detected_indicators=sorted(root_detections),
-            passed=len(root_detections) >= 3,
+            score=None,
+            detected_indicators=sorted(root_detections) or ["No root-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         # 5. Anti-Debugging
-        debug_score = min(100.0, len(debug_detections) * 33.3)
         v_debug = ResilienceVectorScore(
             vector_name="Anti-Debugging & Dynamic Inspection",
             masvs_category="MASVS-RESILIENCE-5",
-            score=debug_score,
-            detected_indicators=sorted(debug_detections),
-            passed=len(debug_detections) >= 2,
+            score=None,
+            detected_indicators=sorted(debug_detections) or ["No debug-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         # 6. Tamper Resistance
-        tamper_score = min(100.0, len(tamper_detections) * 33.3)
         v_tamper = ResilienceVectorScore(
             vector_name="Signature Verification & Tamper Resistance",
             masvs_category="MASVS-RESILIENCE-6",
-            score=tamper_score,
-            detected_indicators=sorted(tamper_detections),
-            passed=len(tamper_detections) >= 2,
+            score=None,
+            detected_indicators=sorted(tamper_detections) or ["No signature/tamper-related indicator strings found in scanned Smali"],
+            passed=None,
         )
 
         result.vectors = {
@@ -172,21 +173,9 @@ class RaspResilienceAuditor:
             "tamper_resistance": v_tamper,
         }
 
-        # Calculate Overall Weighted Score
-        weights = [0.25, 0.15, 0.15, 0.15, 0.15, 0.15]
-        scores = [v_obf.score, v_flow.score, v_entropy.score, v_root.score, v_debug.score, v_tamper.score]
-        result.overall_score = round(sum(w * s for w, s in zip(weights, scores)), 1)
-
-        if result.overall_score >= 80:
-            result.grade = "A"
-        elif result.overall_score >= 65:
-            result.grade = "B"
-        elif result.overall_score >= 50:
-            result.grade = "C"
-        elif result.overall_score >= 35:
-            result.grade = "D"
-        else:
-            result.grade = "F"
+        # No aggregate score: these unrelated string/name heuristics are not
+        # validated measures of resilience or MASVS conformance.
+        result.overall_score = None
 
         return result
 

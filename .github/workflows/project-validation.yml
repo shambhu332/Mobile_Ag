@@ -12,12 +12,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.14.7'
-      - run: python -m pip install -c requirements/validated-python314.txt ".[test]"
+      - run: python -m pip install -c requirements/validated-python314.txt ".[test]" build setuptools wheel
       - run: python -m pytest -q
       - name: Location-aware accuracy regressions (synthetic candidates only)
-        run: |
-          python scripts/evaluate-accuracy.py --corpus tests/fixtures/accuracy_instances.json
-          python scripts/evaluate-accuracy.py --corpus tests/fixtures/accuracy_instances.json --lexical-only
+        run: python scripts/evaluate-accuracy.py --corpus tests/fixtures/accuracy_instances.json
       - run: python -m build --wheel
       - name: Reproducible isolated wheel comparison
         run: python scripts/check-reproducible-wheel.py

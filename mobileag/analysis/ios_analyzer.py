@@ -54,6 +54,7 @@ class MachOSecurityHeaders:
 
 
 class IOSSecurityAnalyzer:
+    MAX_PAYLOAD_ENTRIES = 20_000
     """Enterprise Static Security Analyzer for iOS IPA Archives."""
 
     def __init__(self) -> None:
@@ -85,12 +86,26 @@ class IOSSecurityAnalyzer:
         extract_archive(ipa_p, out_p)
 
         payload_dir = out_p / "Payload"
-        if not payload_dir.exists():
+        if payload_dir.is_symlink() or not payload_dir.is_dir():
             raise ValueError("Invalid IPA: Missing 'Payload' directory")
 
-        app_dirs = list(payload_dir.glob("*.app"))
+        app_dirs: list[Path] = []
+        try:
+            with os.scandir(payload_dir) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= self.MAX_PAYLOAD_ENTRIES:
+                        raise ValueError("IPA Payload entry count exceeds limit")
+                    if entry.name.endswith(".app") and entry.is_symlink():
+                        raise ValueError("Unsupported symlink app bundle")
+                    if entry.name.endswith(".app") and entry.is_dir(follow_symlinks=False):
+                        app_dirs.append(Path(entry.path))
+        except OSError as exc:
+            raise ValueError("Unable to inventory IPA Payload directory") from exc
+
         if not app_dirs:
             raise ValueError("Invalid IPA: No .app bundle found inside Payload directory")
+        if len(app_dirs) != 1:
+            raise ValueError("Invalid IPA: Multiple top-level .app bundles are ambiguous")
 
         app_dir = app_dirs[0]
         app_name = app_dir.stem
@@ -474,11 +489,94 @@ class IOSSecurityAnalyzer:
             all_findings.extend(plist_findings)
 
         macho_headers = MachOSecurityHeaders()
+        swift_metadata = {}
+        m_res = None
         if extracted.get("binary_path"):
             macho_headers, bin_findings = self.audit_macho_binary(extracted["binary_path"])
             all_findings.extend(bin_findings)
             sym_findings = self.audit_binary_symbols_and_apis(extracted["binary_path"])
             all_findings.extend(sym_findings)
+            try:
+                from mobileag.analysis.macho_parser import MachoBinaryParser
+                m_parser = MachoBinaryParser()
+                m_res = m_parser.parse_binary(extracted["binary_path"])
+                if m_res.is_macho:
+                    swift_metadata = {
+                        "parse_status": m_res.parse_status,
+                        "parse_errors": m_res.parse_errors,
+                        "load_commands_count": m_res.load_commands_count,
+                        "architectures": m_res.architectures,
+                        "slice_count": m_res.slice_count,
+                        "imported_dylibs": m_res.imported_dylibs,
+                        "symbol_names": m_res.symbol_names,
+                        "sections": m_res.sections,
+                        "swift_sections": m_res.swift_sections_detected,
+                        "swift_section_name_candidates": m_res.swift_section_name_candidates,
+                        "swift_type_metadata_status": m_res.swift_type_metadata_status,
+                        "swift_type_name_candidates": m_res.swift_type_name_candidates,
+                        "swift_type_field_candidates": m_res.swift_type_field_candidates,
+                        "swift_protocol_metadata_status": m_res.swift_protocol_metadata_status,
+                        "swift_protocol_name_candidates": m_res.swift_protocol_name_candidates,
+                        "crypto_frameworks": m_res.crypto_frameworks,
+                        "api_endpoints": m_res.api_endpoints,
+                    }
+            except Exception as e:
+                logger.debug("MachoBinaryParser optional pass skipped: %s", e)
+
+        privacy_manifest_summary: dict[str, Any] = {}
+        try:
+            from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
+            p_auditor = PrivacyManifestAuditor()
+            p_res = p_auditor.audit_ios_privacy_manifest(temp_extract_dir)
+            app_manifest_result = p_auditor.audit_ios_privacy_manifest(extracted["app_dir"])
+            privacy_manifest_summary = {
+                "has_privacy_manifest": p_res.has_privacy_manifest,
+                "parse_status": p_res.parse_status,
+                "manifest_count": p_res.manifest_count,
+                "manifest_paths": p_res.manifest_paths,
+                "manifests": p_res.manifests,
+                "errors": p_res.errors,
+                "tracking_enabled": p_res.tracking_enabled,
+                "tracking_domains": p_res.tracking_domains,
+                "declared_api_categories": p_res.declared_api_categories,
+            }
+            app_manifest = next((item for item in app_manifest_result.manifests
+                                 if item.get("path") == "PrivacyInfo.xcprivacy"), None)
+            if app_manifest is not None:
+                app_manifest_state = "parsed"
+                app_declared_categories = app_manifest.get("declared_api_categories", [])
+            elif "PrivacyInfo.xcprivacy" in app_manifest_result.manifest_paths:
+                app_manifest_state = "invalid"
+                app_declared_categories = []
+            else:
+                app_manifest_state = "absent"
+                app_declared_categories = []
+            api_symbol_review = p_auditor.audit_ios_binary_api_symbols(
+                m_res.symbol_names if m_res is not None and m_res.is_macho else None,
+                app_declared_categories,
+                app_manifest_state=app_manifest_state,
+                binary_path=extracted.get("binary_path") or "",
+                binary_parse_status=m_res.parse_status if m_res is not None else "not_tested",
+            )
+            all_findings.extend(api_symbol_review.pop("findings"))
+            privacy_manifest_summary["binary_api_symbol_review"] = api_symbol_review
+            for manifest_index, manifest in enumerate(p_res.manifests, start=1):
+                if manifest["tracking_enabled"] is True and not manifest["tracking_domains"]:
+                    all_findings.append(Finding(
+                        id=f"ios-privacy-001-{manifest_index}",
+                        title="CWE-359: Privacy Manifest Tracking Enabled Without Declared Tracking Domains",
+                        description=(f"NSPrivacyTracking is enabled in {manifest['path']}, but that manifest has no "
+                                     "NSPrivacyTrackingDomains declaration. This static consistency indicator "
+                                     "does not establish tracking behavior or regulatory non-compliance."),
+                        severity=Severity.MEDIUM,
+                        cwe_id="CWE-359",
+                        affected_component="PrivacyInfo.xcprivacy",
+                        detection_method="PrivacyManifestAuditor (iOS Privacy Manifest)",
+                        status=FindingStatus.UNVERIFIED,
+                        remediation="Declare all internet domains used for third-party tracking in NSPrivacyTrackingDomains.",
+                    ))
+        except Exception as e:
+            logger.debug("Privacy manifest check skipped: %s", e)
 
         return {
             "app_name": extracted["app_name"],
@@ -488,12 +586,16 @@ class IOSSecurityAnalyzer:
             "platform": "iOS",
             "findings_count": len(all_findings),
             "coverage": {"info_plist":"parsed", "binary_format":"mach_o_64" if macho_headers.is_macho else "unsupported",
-                         "symbols":"byte_string_heuristic", "entitlements":"not_assessed", "runtime":"not_assessed"},
+                         "symbols":"byte_string_heuristic", "privacy_api_symbol_review": privacy_manifest_summary.get("binary_api_symbol_review", {}).get("status", "not_analyzed"),
+                         "entitlements":"not_assessed", "runtime":"not_assessed"},
             "errors": [] if macho_headers.is_macho else ["Unsupported or truncated executable; binary security was not assessed"],
             "findings": all_findings,
             "macho_security": {
                 "pie_enabled": macho_headers.pie_enabled,
                 "has_stack_canary": macho_headers.has_stack_canary,
                 "has_arc": macho_headers.has_arc,
-            }
+            },
+            "swift_metadata": swift_metadata,
+            "privacy_manifest": privacy_manifest_summary,
         }
+

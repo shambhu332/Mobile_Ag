@@ -3,6 +3,7 @@ Neo4j attack surface graph integration.
 """
 
 import logging
+import json
 from typing import Dict, Any, List, Optional
 try:
     from neo4j import AsyncGraphDatabase
@@ -17,6 +18,11 @@ from mobileag.knowledge.schemas import (
 from mobileag.reporting.finding import Finding
 
 logger = logging.getLogger(__name__)
+
+
+def _scoped_key(scan_id: str, kind: str, value: str) -> str:
+    """Stable globally unique key while retaining legacy uniqueness constraints."""
+    return json.dumps([scan_id, kind, value], ensure_ascii=True, separators=(",", ":"))
 
 class AttackGraph:
     """Manages the Neo4j attack surface graph."""
@@ -86,15 +92,17 @@ class AttackGraph:
 
         query = """
         MATCH (a:App {scan_id: $scan_id})
-        MERGE (c:Component {name: $name})
-        SET c.component_type = $component_type, c.exported = $exported, c.permission = $permission
+        MERGE (c:Component {name: $node_key})
+        SET c.display_name = $display_name, c.component_type = $component_type,
+            c.exported = $exported, c.permission = $permission
         MERGE (a)-[:HAS_COMPONENT]->(c)
         """
         async with self.driver.session() as session:
             await session.run(
                 query,
                 scan_id=scan_id,
-                name=component_data.name,
+                node_key=_scoped_key(scan_id, "component", component_data.name),
+                display_name=component_data.name,
                 component_type=component_data.component_type,
                 exported=component_data.exported,
                 permission=component_data.permission
@@ -107,17 +115,19 @@ class AttackGraph:
 
         query = """
         MATCH (a:App {scan_id: $scan_id})
-        MERGE (v:Vulnerability {finding_id: $finding_id})
-        SET v.title = $title, v.cwe = $cwe, v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence
+        MERGE (v:Vulnerability {finding_id: $node_key})
+        SET v.display_finding_id = $display_finding_id, v.title = $title, v.cwe = $cwe,
+            v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence
         MERGE (a)-[:HAS_VULNERABILITY]->(v)
         """
         async with self.driver.session() as session:
             await session.run(
                 query,
                 scan_id=scan_id,
-                finding_id=finding.id,
+                node_key=_scoped_key(scan_id, "finding", finding.id),
+                display_finding_id=finding.id,
                 title=finding.title,
-                cwe=finding.cwe,
+                cwe=finding.cwe_id,
                 severity=finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity),
                 cvss=finding.cvss_score,
                 confidence=finding.confidence
@@ -130,15 +140,16 @@ class AttackGraph:
             
         query = """
         MATCH (a:App {scan_id: $scan_id})
-        MERGE (e:APIEndpoint {url: $url})
-        SET e.method = $method, e.requires_auth = $requires_auth
+        MERGE (e:APIEndpoint {url: $node_key})
+        SET e.display_url = $display_url, e.method = $method, e.requires_auth = $requires_auth
         MERGE (a)-[:CALLS_API]->(e)
         """
         async with self.driver.session() as session:
             await session.run(
                 query,
                 scan_id=scan_id,
-                url=endpoint_data.url,
+                node_key=_scoped_key(scan_id, "api", endpoint_data.url),
+                display_url=endpoint_data.url,
                 method=endpoint_data.method,
                 requires_auth=endpoint_data.requires_auth
             )
@@ -151,7 +162,8 @@ class AttackGraph:
         query = """
         MATCH (a:App {scan_id: $scan_id})-[:HAS_COMPONENT]->(c:Component {exported: true})
         MATCH (a)-[:HAS_VULNERABILITY]->(v:Vulnerability)
-        RETURN c.name AS component, c.component_type AS type, v.title AS vulnerability, v.severity AS severity
+        RETURN coalesce(c.display_name, c.name) AS component, c.component_type AS type,
+               v.title AS vulnerability, v.severity AS severity
         """
         chains = []
         async with self.driver.session() as session:
@@ -236,10 +248,13 @@ class AttackGraph:
                     primary_label = labels[0] if labels else "Component"
 
                     if target:
-                        target_id = target.get("finding_id") or target.get("name") or target.get("url") or str(id(target))
+                        target_id = (target.get("finding_id") or target.get("name")
+                                     or target.get("url") or str(id(target)))
                         if target_id not in seen_nodes:
                             seen_nodes.add(target_id)
-                            label_txt = target.get("name") or target.get("title") or target.get("url") or "Node"
+                            label_txt = (target.get("display_name") or target.get("title")
+                                         or target.get("display_url") or target.get("name")
+                                         or target.get("url") or "Node")
                             nodes.append({
                                 "id": target_id,
                                 "label": label_txt[:35],

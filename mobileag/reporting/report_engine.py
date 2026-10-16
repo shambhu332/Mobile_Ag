@@ -251,7 +251,11 @@ class ReportEngine:
             for name, item in ledger.get('surfaces', {}).items():
                 paths = ', '.join(f"`{path}`" for path in item.get('mapped_coverage_paths', [])) or 'none'
                 counts = ', '.join(f"{path}: {values}" for path, values in item.get('recorded_counts', {}).items()) or 'none'
-                rows.append(f"| {name} | {item.get('analysis_state', 'not_tested')} | {item.get('runtime_state', 'not_tested')} | {item.get('evidence_state', 'not_tested')} | {paths} | {counts} | {item.get('gap') or 'no additional mapping gap recorded'} |")
+                gap_reasons = item.get('gap_reasons', [])
+                gap = '; '.join(reason for reason in gap_reasons if isinstance(reason, str)) if isinstance(gap_reasons, list) else ''
+                if not gap:
+                    gap = item.get('gap') or 'no additional mapping gap recorded'
+                rows.append(f"| {name} | {item.get('analysis_state', 'not_tested')} | {item.get('runtime_state', 'not_tested')} | {item.get('evidence_state', 'not_tested')} | {paths} | {counts} | {gap} |")
         inventory = data.get('capability_inventory', {})
         if inventory:
             rows.append('\n### Framework and format support inventory\n')

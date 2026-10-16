@@ -1167,6 +1167,14 @@ def test_ui_crawler_parsing_and_dialog_handling():
     assert elements[0]["clickable"] is True
 
 
+def test_ui_crawler_parser_rejects_oversized_entity_and_node_bomb_inputs():
+    crawler = UICrawler()
+    assert crawler.parse_ui_elements('<!DOCTYPE hierarchy [<!ENTITY x "expanded">]><hierarchy><node text="&x;"/></hierarchy>') == []
+    assert crawler.parse_ui_elements('<hierarchy>' + (' ' * (2 * 1024 * 1024)) + '</hierarchy>') == []
+    nodes = ''.join('<node package="com.example" clickable="true"/>' for _ in range(5001))
+    assert crawler.parse_ui_elements('<hierarchy>' + nodes + '</hierarchy>') == []
+
+
 @pytest.mark.asyncio
 async def test_ui_crawler_crawl_flow():
     mock_adb = ADBManager()
@@ -1176,7 +1184,7 @@ async def test_ui_crawler_crawl_flow():
     </hierarchy>""", b""))
 
     crawler = UICrawler(adb=mock_adb)
-    res = await crawler.crawl_app("emulator-5554", "com.test.app", max_steps=2)
+    res = await crawler.crawl_app("emulator-5554", "com.test.app", max_steps=2, guard=lambda: None)
     assert res["status"] == "blocked"  # Missing package identity is not safe scope.
     assert res["screens_explored"] == 0
     assert res["buttons_clicked"] == res["dialogs_dismissed"] == res["inputs_filled"] == 0

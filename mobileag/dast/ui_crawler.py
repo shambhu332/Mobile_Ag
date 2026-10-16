@@ -25,6 +25,9 @@ _ACTION_BUTTON_TERMS = re.compile(
     r"(?i)\b(next|submit|login|sign in|search|explore|enter|start|proceed|open)\b"
 )
 _BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+_MAX_HIERARCHY_CHARS = 2 * 1024 * 1024
+_MAX_HIERARCHY_NODES = 5_000
+_XML_DECLARATION_RE = re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 
 
 class UICrawler:
@@ -35,6 +38,9 @@ class UICrawler:
 
     async def dump_ui_hierarchy(self, serial: str, guard=None) -> str:
         """Dump the current foreground window UIAutomator hierarchy XML."""
+        if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
+                or not callable(guard)):
+            raise PermissionError("UI observation requires an explicit device serial and scope guard")
         # Do not overwrite a user's predictable uidump.xml or read stale output.
         path='/data/local/tmp/mobileag-observe-'+uuid.uuid4().hex+'.xml'
         try:
@@ -48,17 +54,30 @@ class UICrawler:
                 return stdout.decode("utf-8",errors="replace").strip()
             return ""
         finally:
-            await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
+            try:
+                guard()
+                await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
+            except Exception as exc:
+                # Revocation can leave only our uniquely named temporary dump;
+                # do not run further device actions once scope is withdrawn.
+                logger.debug("Skipped UI dump cleanup after scope revocation: %s", type(exc).__name__)
 
     def parse_ui_elements(self, xml_content: str) -> list[dict[str, Any]]:
         """Parse UIAutomator XML hierarchy into structured interactable element objects."""
         elements: list[dict[str, Any]] = []
-        if not xml_content or not xml_content.startswith("<?xml") and "<hierarchy" not in xml_content:
+        if (not isinstance(xml_content, str) or not xml_content
+                or len(xml_content) > _MAX_HIERARCHY_CHARS
+                or _XML_DECLARATION_RE.search(xml_content)
+                or not xml_content.startswith("<?xml") and "<hierarchy" not in xml_content):
             return elements
 
         try:
             root = ET.fromstring(xml_content)
-            for node in root.iter("node"):
+            nodes = list(root.iter("node"))
+            # Fail closed instead of returning a partial action list.
+            if len(nodes) > _MAX_HIERARCHY_NODES:
+                return elements
+            for node in nodes:
                 has_children = len(list(node)) > 0
                 clickable = node.attrib.get("clickable", "false") == "true"
                 if has_children and not clickable:
@@ -93,16 +112,14 @@ class UICrawler:
         return elements
 
     async def tap_element(self, serial: str, center: tuple[int, int]) -> None:
-        """Send tap input to element center coordinates."""
-        cx, cy = center
-        if cx > 0 and cy > 0:
-            await self.adb._exec_cmd(["-s", serial, "shell", "input", "tap", str(cx), str(cy)], timeout=3.0)
+        """Disabled: this observer returns plans and never dispatches taps."""
+        logger.warning("UI tap dispatch is disabled; candidate action requires separate review")
+        return None
 
     async def input_text(self, serial: str, text: str) -> None:
-        """Send text input via ADB shell input."""
-        # Sanitize spaces for adb input text
-        escaped = text.replace(" ", "%s")
-        await self.adb._exec_cmd(["-s", serial, "shell", "input", "text", escaped], timeout=3.0)
+        """Disabled: this observer never sends text to the device."""
+        logger.warning("UI text input is disabled; synthetic credential entry requires a separate approved workflow")
+        return None
 
     async def handle_system_dialogs(self, serial, elements):
         """Consent belongs to the operator; never automatically accept it."""
@@ -122,6 +139,15 @@ class UICrawler:
         base = {"package_name": package_name, "device_serial": serial,
                 "screens_explored": 0, "dialogs_dismissed": 0, "inputs_filled": 0,
                 "buttons_clicked": 0, "mode": "observe_only", "planned_actions": []}
+        if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
+                or not isinstance(package_name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)
+                or not callable(guard)):
+            return {**base, "status": "blocked", "reason": "Explicit device, package, and scope guard are required"}
+        try:
+            guard()
+        except Exception:
+            return {**base, "status": "blocked", "reason": "UI observation scope is unavailable or revoked"}
         xml = await self.dump_ui_hierarchy(serial, guard=guard)
         elements = self.parse_ui_elements(xml)
         if not elements:
@@ -135,3 +161,17 @@ class UICrawler:
                  for el in elements if el["clickable"]][:50]
         return {**base, "status": "observed", "screens_explored": 1, "planned_actions": plans,
                 "reason": "Read-only snapshot; no taps, consent, text input or transactions were performed"}
+
+    def get_smart_crawler(self, test_user: str | None = None, test_pass: str | None = None,
+                          allow_form_submit: bool = False,
+                          allow_exploratory_clicks: bool = False,
+                          allow_test_credential_entry: bool = False,
+                          allow_back_navigation: bool = False) -> Any:
+        """Instantiate a crawler with separate explicit opt-ins for mutations."""
+        from mobileag.dast.smart_crawler import SmartUICrawler
+        return SmartUICrawler(test_user=test_user, test_pass=test_pass,
+                              allow_form_submit=allow_form_submit,
+                              allow_exploratory_clicks=allow_exploratory_clicks,
+                              allow_test_credential_entry=allow_test_credential_entry,
+                              allow_back_navigation=allow_back_navigation)
+

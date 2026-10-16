@@ -135,7 +135,7 @@ async def test_ui_observer_does_not_act_outside_package(package):
     adb=SimpleNamespace(_exec_cmd=AsyncMock())
     crawler=UICrawler(adb)
     crawler.dump_ui_hierarchy=AsyncMock(return_value=f'<hierarchy><node package="{package}" text="Allow" clickable="true" bounds="[1,1][10,10]"/></hierarchy>')
-    result=await crawler.crawl_app('synthetic-serial','org.example.synthetic')
+    result=await crawler.crawl_app('synthetic-serial','org.example.synthetic',guard=lambda: None)
     assert result['status']=='blocked' and result['buttons_clicked']==0
     adb._exec_cmd.assert_not_awaited()
 
@@ -145,8 +145,19 @@ async def test_intended_package_observation_never_taps_or_fills():
     adb=SimpleNamespace(_exec_cmd=AsyncMock())
     crawler=UICrawler(adb)
     crawler.dump_ui_hierarchy=AsyncMock(return_value='<hierarchy><node package="org.example.synthetic" text="Submit" clickable="true" bounds="[1,1][10,10]"/></hierarchy>')
-    result=await crawler.crawl_app('synthetic-serial','org.example.synthetic')
+    result=await crawler.crawl_app('synthetic-serial','org.example.synthetic',guard=lambda: None)
     assert result['status']=='observed' and result['planned_actions'][0]['requires_explicit_review']
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ui_observer_fails_closed_without_scope_and_mutation_helpers_are_inert():
+    adb=SimpleNamespace(_exec_cmd=AsyncMock())
+    crawler=UICrawler(adb)
+    result=await crawler.crawl_app('synthetic-serial','org.example.synthetic')
+    assert result['status']=='blocked'
+    await crawler.tap_element('synthetic-serial',(100,200))
+    await crawler.input_text('synthetic-serial','synthetic text')
     adb._exec_cmd.assert_not_awaited()
 
 

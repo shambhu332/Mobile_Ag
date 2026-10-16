@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
 from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import explicit_scan_root
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,14 @@ class NetworkSecurityConfigAuditor:
             raise ValueError("XML file exceeds safe size limit")
         return data
 
+    @classmethod
+    def _parse_bounded_xml(cls, path: Path, limit: int = 2*1024*1024) -> ET.Element:
+        """Parse bounded Android XML without accepting DTD/entity declarations."""
+        raw = cls._read_bounded(path, limit)
+        if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+            raise ValueError("DTD/entity declarations are unsupported")
+        return ET.fromstring(raw)
+
     def locate_config_path(
         self,
         decompiled_dir: str,
@@ -56,7 +65,11 @@ class NetworkSecurityConfigAuditor:
         Returns:
             Path object to the XML file if found, else None.
         """
-        root_path = Path(decompiled_dir)
+        root_path = explicit_scan_root(decompiled_dir)
+        if root_path is None or root_path.is_symlink() or not root_path.is_dir():
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return None
         xml_name = "network_security_config"
 
         # 1. Inspect manifest for android:networkSecurityConfig attribute
@@ -70,7 +83,7 @@ class NetworkSecurityConfigAuditor:
 
         if manifest_file.exists():
             try:
-                root_elem = ET.fromstring(self._read_bounded(manifest_file))
+                root_elem = self._parse_bounded_xml(manifest_file)
                 app_elem = root_elem.find("application")
                 if app_elem is not None:
                     attr_val = app_elem.attrib.get(f"{{{ANDROID_NS}}}networkSecurityConfig", "")
@@ -116,7 +129,7 @@ class NetworkSecurityConfigAuditor:
             return []
 
         try:
-            root = ET.fromstring(self._read_bounded(path))
+            root = self._parse_bounded_xml(path)
         except ET.ParseError as e:
             logger.error(f"Failed to parse Network Security Configuration XML at {path}: {e}")
             self.coverage.update(static_status="partial", limits_reached=True,

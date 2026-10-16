@@ -24,6 +24,15 @@ class FrameworkDetector:
         Returns:
             A dictionary containing detection results.
         """
+        inventory = SourceInventory(max_entries=5000)
+        if not decompiled_path:
+            return {
+                "framework": "Unknown",
+                "version_hint": "unknown",
+                "detection_evidence": [],
+                "analysis_notes": ["Decompiled directory not found."],
+                "coverage": dict(inventory.coverage),
+            }
         base_dir = Path(decompiled_path)
         
         frameworks = {
@@ -73,10 +82,10 @@ class FrameworkDetector:
                 "framework": "Unknown",
                 "version_hint": version_hint,
                 "detection_evidence": [],
-                "analysis_notes": ["Decompiled directory not found."]
+                "analysis_notes": ["Decompiled directory not found."],
+                "coverage": dict(inventory.coverage),
             }
 
-        inventory = SourceInventory(max_entries=5000)
         paths = list(inventory.paths(base_dir))
         relative_paths = [str(path.relative_to(base_dir)) for path in paths]
 

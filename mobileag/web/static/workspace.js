@@ -154,11 +154,13 @@
           .then(data => {
             const scoreEl = document.getElementById('kpi-resilience-score');
             const gradeEl = document.getElementById('kpi-resilience-grade');
-            if (scoreEl && data.overall_score !== undefined) {
+            if (scoreEl && typeof data.overall_score === 'number') {
               scoreEl.textContent = `${data.overall_score}%`;
+            } else if (scoreEl) {
+              scoreEl.textContent = 'Not validated';
             }
             if (gradeEl && data.grade) {
-              gradeEl.textContent = `Grade ${data.grade}`;
+              gradeEl.textContent = data.grade === 'Not validated' ? data.grade : `Grade ${data.grade}`;
             }
           })
           .catch(() => {});

@@ -71,6 +71,29 @@ def test_manifest_parser(dummy_manifest):
     }
 
 
+def test_manifest_parser_rejects_dtds_oversized_inputs_and_symlinks(tmp_path):
+    parser = ManifestParser()
+    manifest = tmp_path / "AndroidManifest.xml"
+    manifest.write_text(
+        '<!DOCTYPE manifest [<!ENTITY pkg "synthetic.pkg">]>'
+        '<manifest package="&pkg;"><application /></manifest>', encoding="utf-8")
+    with pytest.raises(ValueError, match="DTD/entity"):
+        parser.parse(str(manifest))
+
+    parser.MAX_MANIFEST_XML_BYTES = 32
+    manifest.write_text('<manifest package="synthetic"><application /></manifest>', encoding="utf-8")
+    with pytest.raises(ValueError, match="size limit"):
+        parser.parse(str(manifest))
+
+    parser.MAX_MANIFEST_XML_BYTES = 8 * 1024 * 1024
+    target = tmp_path / "target.xml"
+    target.write_text('<manifest package="synthetic"><application /></manifest>', encoding="utf-8")
+    link = tmp_path / "manifest-link.xml"
+    link.symlink_to(target)
+    with pytest.raises(ValueError, match="safe regular file"):
+        parser.parse(str(link))
+
+
 def test_backup_rule_xml_inventory_is_bounded_and_does_not_publish_paths(tmp_path):
     res = tmp_path / "res" / "xml"
     res.mkdir(parents=True)
@@ -190,6 +213,69 @@ def test_component_permissions_resolve_application_defaults_and_provider_overrid
     parsed["application"]["allowBackup"] = False
     findings = __import__('asyncio').run(ManifestAuditor(None).audit(parsed, parsed['package_name']))
     assert not any("Exported Provider" in f.title for f in findings)
+
+
+def test_task_affinity_inventory_resolves_inheritance_launch_mode_and_review_lead(tmp_path):
+    from mobileag.analysis.manifest_auditor import ManifestAuditor
+
+    path = tmp_path / "AndroidManifest.xml"
+    path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.example">
+      <application android:taskAffinity="org.shared.task">
+        <activity android:name=".Inherited" android:exported="true" android:launchMode="singleTask"/>
+        <activity android:name=".Explicit" android:exported="true" android:taskAffinity="org.partner.task" android:launchMode="standard"/>
+        <activity android:name=".Default" android:exported="true"/>
+        <activity android:name=".NoAffinity" android:exported="true" android:taskAffinity=""/>
+        <activity-alias android:name=".Alias" android:targetActivity="org.example.Explicit" android:exported="true" android:taskAffinity="org.alias.task"/>
+        <activity-alias android:name=".BrokenAlias" android:targetActivity=".Missing" android:exported="true"/>
+      </application></manifest>''')
+
+    parsed = ManifestParser().parse(str(path))
+    inherited, explicit, defaulted, no_affinity = parsed["components"][:4]
+    assert (inherited["taskAffinity"], inherited["taskAffinityOrigin"]) == ("org.shared.task", "application")
+    assert inherited["launchMode"] == "singleTask"
+    assert (explicit["taskAffinity"], explicit["taskAffinityOrigin"]) == ("org.partner.task", "component")
+    assert explicit["launchMode"] == "standard"
+    assert (defaulted["taskAffinity"], defaulted["taskAffinityOrigin"]) == ("org.shared.task", "application")
+    assert no_affinity["taskAffinity"] == ""
+    assert no_affinity["taskAffinityOrigin"] == "component"
+    alias = parsed["components"][-2]
+    assert alias["alias_target"] == "org.example.Explicit"
+    assert alias["alias_target_resolution"] == "resolved"
+    assert alias["alias_target_resolved_name"] == ".Explicit"
+    assert (alias["taskAffinity"], alias["taskAffinityOrigin"]) == ("org.partner.task", "alias_target")
+    assert (alias["launchMode"], alias["launchModeOrigin"]) == ("standard", "alias_target")
+    unresolved_alias = parsed["components"][-1]
+    assert unresolved_alias["alias_target_resolution"] == "unresolved"
+    assert unresolved_alias["taskAffinity"] is None
+    assert unresolved_alias["taskAffinityOrigin"] == "alias_target_unresolved"
+
+    findings = __import__('asyncio').run(ManifestAuditor(None).audit(parsed, parsed["package_name"]))
+    leads = [item for item in findings if item.metadata.get("analysis_kind") == "exported_non_default_task_affinity"]
+    assert len(leads) == 4
+    assert {item.affected_component for item in leads} == {".Inherited", ".Explicit", ".Default", ".Alias"}
+    assert all(item.status == FindingStatus.UNVERIFIED and item.cvss_score == 0 for item in leads)
+    explicit_lead = next(item for item in leads if item.affected_component == ".Explicit")
+    assert explicit_lead.metadata["launch_mode"] == "standard"
+    assert explicit_lead.metadata["task_affinity_origin"] == "component"
+    assert "does not demonstrate task hijacking" in explicit_lead.description
+    alias_lead = next(item for item in leads if item.affected_component == ".Alias")
+    assert alias_lead.metadata["task_affinity_origin"] == "alias_target"
+    assert alias_lead.metadata["alias_target_resolution"] == "resolved"
+    assert not any(item.affected_component == ".BrokenAlias" for item in leads)
+
+    default_manifest = tmp_path / "DefaultAffinity.xml"
+    default_manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.example">
+      <application><activity android:name=".Default" android:exported="true"/></application></manifest>''')
+    package_default = ManifestParser().parse(str(default_manifest))["components"][0]
+    assert (package_default["taskAffinity"], package_default["taskAffinityOrigin"]) == (
+        "org.example", "package_default",
+    )
+    default_data = ManifestParser().parse(str(default_manifest))
+    default_findings = __import__('asyncio').run(
+        ManifestAuditor(None).audit(default_data, default_data["package_name"]),
+    )
+    assert not any(item.metadata.get("analysis_kind") == "exported_non_default_task_affinity"
+                   for item in default_findings)
 
 
 @pytest.mark.asyncio
@@ -429,6 +515,25 @@ def test_provider_path_resource_traversal_or_symlink_fails_incomplete(tmp_path):
     assert parsed['provider_path_inventory']['static_status'] == 'incomplete'
     assert parsed['provider_path_inventory']['unresolved_count'] == 2
     assert all(provider['entries'] == [] for provider in parsed['provider_path_inventory']['providers'])
+
+
+def test_provider_path_resource_rejects_dtd_and_entity_expansion(tmp_path):
+    manifest_path = tmp_path / 'AndroidManifest.xml'
+    xml_dir = tmp_path / 'res' / 'xml'
+    xml_dir.mkdir(parents=True)
+    (xml_dir / 'provider_paths.xml').write_text(
+        '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>'
+        '<paths><root-path name="&marker;" path="."/></paths>')
+    manifest_path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <application><provider android:name=".Files" android:exported="false">
+        <meta-data android:name="androidx.core.content.FILE_PROVIDER_PATHS" android:resource="@xml/provider_paths"/>
+      </provider></application></manifest>''')
+
+    inventory = ManifestParser().parse(str(manifest_path))['provider_path_inventory']
+    assert inventory['static_status'] == 'incomplete'
+    assert inventory['unresolved_count'] == 1
+    assert inventory['providers'][0]['status'] == 'unavailable_or_invalid'
+    assert inventory['providers'][0]['entries'] == []
 
 
 @pytest.mark.asyncio

@@ -478,6 +478,21 @@ def test_review_surface_ledger_exposes_specific_analyzer_gap_and_limit_reasons()
     assert row['proof_status'] == 'not_proven'
 
 
+def test_review_surface_ledger_lists_missing_mapped_analyzers_explicitly():
+    row = review_surface_ledger({'android_surface': {'categories': {
+        'webview': {'static_status': 'analyzed_heuristically', 'candidate_count': 1},
+    }}})['surfaces']['webview_deep_links']
+
+    assert row['analysis_state'] == 'analyzed'
+    assert row['mapped_coverage_paths'] == ['android_surface.categories.webview']
+    assert row['missing_coverage_paths'] == [
+        'android_surface.categories.deep_links', 'taint.webview',
+    ]
+    assert 'android_surface.categories.deep_links: coverage not recorded' in row['gap_reasons']
+    assert 'taint.webview: coverage not recorded' in row['gap_reasons']
+    assert row['proof_status'] == 'not_proven'
+
+
 def test_review_ledger_maps_serialization_and_logging_as_bounded_static_only():
     ledger = review_surface_ledger({
         'manifest': {'static_status': 'completed', 'candidate_count': 1,
@@ -555,6 +570,21 @@ def test_review_surface_ledger_is_in_json_and_markdown_reports():
     assert 'Review-surface ledger' in markdown
     assert 'storage_backup_logging' in markdown
     assert 'no analyzer mapped to this surface' in markdown
+
+
+def test_reports_render_missing_mapped_coverage_paths():
+    coverage = {'android_surface': {'categories': {
+        'webview': {'static_status': 'analyzed_heuristically', 'candidate_count': 0},
+    }}}
+    report = ReportEngine()._prepare_data({'scan_id': 'gap-fixture', 'coverage': coverage})
+    markdown = ReportEngine()._generate_markdown(report)
+    assert 'android_surface.categories.deep_links: coverage not recorded' in markdown
+    assert 'taint.webview: coverage not recorded' in markdown
+
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+    professional = ProfessionalReportExporter().generate_report([], scan_metadata={'coverage': coverage})
+    assert 'android_surface.categories.deep_links: coverage not recorded' in professional
+    assert 'taint.webview: coverage not recorded' in professional
 
 
 def test_markdown_report_exposes_bounded_static_trace_as_unverified_candidate():

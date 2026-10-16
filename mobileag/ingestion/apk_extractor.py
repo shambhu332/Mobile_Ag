@@ -6,6 +6,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version as package_version
 import shutil
 import re
+import stat
 import struct
 import zipfile
 import xml.etree.ElementTree as ET
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from config.settings import Settings
+from mobileag.analysis.bounded_sources import SourceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ _MAX_SMALI_WALK_ENTRIES = 100_000
 _MAX_DEX_CLASS_DESCRIPTORS = 100_000
 _MAX_TOTAL_DEX_CLASS_DESCRIPTORS = 200_000
 _MAX_DEX_DESCRIPTOR_BYTES = 4096
+_MAX_PACKAGE_MANIFEST_BYTES = 8 * 1024 * 1024
 
 class APKExtractor:
     """
@@ -73,61 +76,61 @@ class APKExtractor:
         """
         if root.is_symlink() or not root.is_dir():
             return {"status": "unavailable", "count": None}
-        count = entries = 0
-        try:
-            for current, dirs, files in os.walk(root, followlinks=False):
-                dirs[:] = [name for name in dirs if not (Path(current) / name).is_symlink()]
-                entries += len(dirs) + len(files)
-                if entries > _MAX_SMALI_WALK_ENTRIES:
-                    return {"status": "capped", "count": count}
-                for name in files:
-                    candidate = Path(current) / name
-                    if name.endswith(".smali") and not candidate.is_symlink() and candidate.is_file():
-                        count += 1
-            return {"status": "measured_output_inventory", "count": count}
-        except OSError:
-            return {"status": "incomplete", "count": count}
+        inventory = SourceInventory(max_entries=_MAX_SMALI_WALK_ENTRIES,
+                                    max_file_bytes=1, max_total_bytes=1)
+        count = sum(1 for _ in inventory.paths(root, {".smali"}))
+        if inventory.coverage["limits_reached"]:
+            return {"status": "capped", "count": count}
+        if inventory.coverage["source_files_skipped"]:
+            return {"status": "incomplete", "count": None}
+        return {"status": "measured_output_inventory", "count": count}
 
     @staticmethod
     def _read_smali_class_descriptors(root: Path) -> dict[str, Any]:
         """Read only bounded .class directives from regular Apktool outputs."""
         if root.is_symlink() or not root.is_dir():
             return {"status": "unavailable", "count": None, "descriptors": None}
-        descriptors = set(); entries = files_seen = 0
+        descriptors = set()
+        files_seen = 0
         directive = re.compile(rb"(?m)^\s*\.class\s+(?:[^\r\n]*\s)?(L[^.;\[\r\n]+;)\s*(?:#.*)?$")
-        try:
-            for current, dirs, files in os.walk(root, followlinks=False):
-                dirs[:] = [name for name in dirs if not (Path(current) / name).is_symlink()]
-                entries += len(dirs) + len(files)
-                if entries > _MAX_SMALI_WALK_ENTRIES:
-                    return {"status": "capped", "count": len(descriptors), "descriptors": None}
-                for name in files:
-                    candidate = Path(current) / name
-                    if not name.endswith(".smali") or candidate.is_symlink() or not candidate.is_file():
-                        continue
-                    files_seen += 1
-                    with candidate.open("rb") as stream:
-                        prefix = stream.read(64 * 1024)
-                    matches = directive.findall(prefix)
-                    if len(matches) != 1:
-                        return {"status": "incomplete_class_directive_inventory",
-                                "count": files_seen, "descriptors": None}
-                    try:
-                        descriptor = matches[0].decode("utf-8", errors="strict")
-                    except UnicodeDecodeError:
-                        return {"status": "unsupported_smali_class_encoding",
-                                "count": files_seen, "descriptors": None}
-                    if not APKExtractor._valid_class_descriptor(descriptor):
-                        return {"status": "invalid_smali_class_descriptor",
-                                "count": files_seen, "descriptors": None}
-                    if descriptor in descriptors:
-                        return {"status": "duplicate_smali_class_descriptor",
-                                "count": files_seen, "descriptors": None}
-                    descriptors.add(descriptor)
-            return {"status": "measured_smali_class_descriptors", "count": files_seen,
-                    "descriptors": descriptors}
-        except (OSError, UnicodeDecodeError):
+        inventory = SourceInventory(max_entries=_MAX_SMALI_WALK_ENTRIES,
+                                    max_file_bytes=1, max_total_bytes=1)
+        for candidate in inventory.paths(root, {".smali"}):
+            files_seen += 1
+            try:
+                fd = os.open(candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                             | getattr(os, "O_NONBLOCK", 0))
+                with os.fdopen(fd, "rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        return {"status": "incomplete", "count": files_seen,
+                                "descriptors": None}
+                    prefix = stream.read(64 * 1024)
+            except OSError:
+                return {"status": "incomplete", "count": files_seen,
+                        "descriptors": None}
+            matches = directive.findall(prefix)
+            if len(matches) != 1:
+                return {"status": "incomplete_class_directive_inventory",
+                        "count": files_seen, "descriptors": None}
+            try:
+                descriptor = matches[0].decode("utf-8", errors="strict")
+            except UnicodeDecodeError:
+                return {"status": "unsupported_smali_class_encoding",
+                        "count": files_seen, "descriptors": None}
+            if not APKExtractor._valid_class_descriptor(descriptor):
+                return {"status": "invalid_smali_class_descriptor",
+                        "count": files_seen, "descriptors": None}
+            if descriptor in descriptors:
+                return {"status": "duplicate_smali_class_descriptor",
+                        "count": files_seen, "descriptors": None}
+            descriptors.add(descriptor)
+
+        if inventory.coverage["limits_reached"]:
+            return {"status": "capped", "count": len(descriptors), "descriptors": None}
+        if inventory.coverage["source_files_skipped"]:
             return {"status": "incomplete", "count": files_seen, "descriptors": None}
+        return {"status": "measured_smali_class_descriptors", "count": files_seen,
+                "descriptors": descriptors}
 
     @staticmethod
     def _read_dex_class_descriptors(archive: zipfile.ZipFile, member: zipfile.ZipInfo) -> dict[str, Any]:
@@ -745,14 +748,20 @@ class APKExtractor:
 
     def _parse_package_name(self, manifest_path: Path) -> str:
         """Parses the package name from the AndroidManifest.xml."""
-        if not manifest_path.exists():
-            logger.warning("AndroidManifest.xml not found.")
-            return "unknown"
-        
         try:
-            tree = ET.parse(manifest_path)
-            root = tree.getroot()
+            fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                details = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(details.st_mode)
+                        or details.st_size > _MAX_PACKAGE_MANIFEST_BYTES):
+                    raise ValueError("Manifest is not a regular file or exceeds the size limit")
+                raw = stream.read(_MAX_PACKAGE_MANIFEST_BYTES + 1)
+            if len(raw) > _MAX_PACKAGE_MANIFEST_BYTES:
+                raise ValueError("Manifest exceeds the size limit")
+            if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                raise ValueError("Manifest DTD/entity declarations are unsupported")
+            root = ET.fromstring(raw)
             return root.attrib.get("package", "unknown")
         except Exception as e:
-            logger.error(f"Failed to parse manifest for package name: {e}")
+            logger.warning("Manifest package name was not safely parsed: %s", type(e).__name__)
             return "unknown"

@@ -164,6 +164,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      adb shell am start -W -a android.intent.action.VIEW -d "<payload>"
      ```
   4. Correlate with `logcat` dumps, WebView navigation events, and process crash logs to verify vulnerability execution.
+* **Execution gate**: Direct `DeepLinkFuzzer` calls require an explicit callable just-in-time scope guard as well as an explicit serial; missing, false, or raising guards block before device access. Runtime observations remain `not_proven` and do not establish exploitability.
 
 ### 4.2 ContentProvider Fuzzer & Traversal Tester
 * **Objective**: Test exported ContentProviders for directory traversal and SQL injection vulnerabilities.
@@ -1104,3 +1105,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    diff checks passing. The boolean is an operator assertion, not verification
    that a device actually contains synthetic-only data; live testing remains
    subject to scope and fixture review.
+
+   The lower-level deep-link launch helper now rejects a missing/non-callable
+   just-in-time scope guard before logcat or ADB access. Existing synthetic
+   dynamic-matrix tests now supply the guard explicitly, and a negative control
+   confirms an unguarded call reaches neither device adapter. Focused runtime
+   tests passed (**8 passed**); full pytest passed (**1,179 passed**, 55.99 s),
+   with compile and diff checks passing. This enforces a caller-provided scope
+   decision, not the correctness of that caller's authorization or live-device
+   exploitability.

@@ -32,11 +32,9 @@ class DeepLinkFuzzer:
 
     @staticmethod
     def _check_scope_guard(guard) -> None:
-        """Fail closed when a supplied scope guard explicitly denies access."""
-        if guard is None:
-            return
+        """Fail closed unless a just-in-time scope guard authorizes the action."""
         if not callable(guard):
-            raise PermissionError("Deep-link scope guard is invalid")
+            raise PermissionError("Deep-link scope guard is required")
         try:
             allowed = guard()
         except Exception as exc:

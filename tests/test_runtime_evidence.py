@@ -45,7 +45,9 @@ async def test_link_diagnostics_do_not_invent_proof(monkeypatch,scenario):
     adb=SimpleNamespace(_exec_cmd=AsyncMock(return_value=(1 if scenario=='launch_failed' else 0,b'synthetic launch',b'')),get_logcat_dump=AsyncMock(side_effect=[before,after]))
     fuzzer=DeepLinkFuzzer(adb)
     monkeypatch.setattr(fuzzer,'generate_fuzz_payloads',lambda *args:[{'uri':'fixture://route?token=synthetic-private','category':'fixture','cwe':'CWE-755'}])
-    rows,findings=await fuzzer.fuzz_deep_links('synthetic-serial','org.example.fixture',['fixture://route?token=synthetic-private'])
+    rows,findings=await fuzzer.fuzz_deep_links(
+        'synthetic-serial','org.example.fixture',['fixture://route?token=synthetic-private'],guard=lambda: None,
+    )
     assert rows[0]['proof_state']=='not_proven' and rows[0]['attacker_context']=='adb_shell_diagnostic'
     assert 'synthetic-private' not in str(rows)+str(findings)
     assert bool(findings)==(scenario=='new_target')

@@ -118,3 +118,17 @@ def test_locate_config_path_from_manifest(auditor):
         located = auditor.locate_config_path(str(root))
         assert located is not None
         assert located.name == "my_custom_network_config.xml"
+
+
+def test_network_security_config_rejects_dtd_and_entity_declarations(auditor, tmp_path):
+    path = tmp_path / "network_security_config.xml"
+    path.write_text(
+        '<!DOCTYPE network-security-config [<!ENTITY domain "synthetic.example">]>'
+        '<network-security-config><domain-config cleartextTrafficPermitted="true">'
+        '<domain>&domain;</domain></domain-config></network-security-config>',
+        encoding="utf-8",
+    )
+
+    assert auditor.audit_file(path) == []
+    assert auditor.coverage["static_status"] == "partial"
+    assert "configuration file could not be safely read within configured limits" in auditor.coverage["limitations"]

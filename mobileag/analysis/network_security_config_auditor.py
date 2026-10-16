@@ -42,6 +42,14 @@ class NetworkSecurityConfigAuditor:
             raise ValueError("XML file exceeds safe size limit")
         return data
 
+    @classmethod
+    def _parse_bounded_xml(cls, path: Path, limit: int = 2*1024*1024) -> ET.Element:
+        """Parse bounded Android XML without accepting DTD/entity declarations."""
+        raw = cls._read_bounded(path, limit)
+        if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+            raise ValueError("DTD/entity declarations are unsupported")
+        return ET.fromstring(raw)
+
     def locate_config_path(
         self,
         decompiled_dir: str,
@@ -70,7 +78,7 @@ class NetworkSecurityConfigAuditor:
 
         if manifest_file.exists():
             try:
-                root_elem = ET.fromstring(self._read_bounded(manifest_file))
+                root_elem = self._parse_bounded_xml(manifest_file)
                 app_elem = root_elem.find("application")
                 if app_elem is not None:
                     attr_val = app_elem.attrib.get(f"{{{ANDROID_NS}}}networkSecurityConfig", "")
@@ -116,7 +124,7 @@ class NetworkSecurityConfigAuditor:
             return []
 
         try:
-            root = ET.fromstring(self._read_bounded(path))
+            root = self._parse_bounded_xml(path)
         except ET.ParseError as e:
             logger.error(f"Failed to parse Network Security Configuration XML at {path}: {e}")
             self.coverage.update(static_status="partial", limits_reached=True,

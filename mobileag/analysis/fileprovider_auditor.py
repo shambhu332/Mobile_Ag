@@ -49,6 +49,8 @@ class FileProviderAuditor:
     # Tags considered high risk if mapped to root or broad paths
     DANGEROUS_TAGS = {
         "root-path": "Exposes root filesystem (/); high risk of arbitrary file access across private app sandbox.",
+        "files-path": "Maps the app's internal files directory; review whether the full private files area should be shareable.",
+        "cache-path": "Maps the app's internal cache directory; review whether the full cache area should be shareable.",
         "external-path": "Exposes device external storage (/sdcard); permits shared storage traversal.",
         "external-files-path": "Exposes application-specific external files directory.",
         "external-cache-path": "Exposes application external cache directory.",
@@ -115,7 +117,8 @@ class FileProviderAuditor:
             elif path_val in {".", ""}:
                 if tag in self.DANGEROUS_TAGS:
                     is_dangerous = True
-                    risk_reason = f"{tag} maps to entire parent directory root with empty or '.' path"
+                    risk_reason = (self.DANGEROUS_TAGS[tag] if tag in {"files-path", "cache-path"}
+                                   else f"{tag} maps to entire parent directory root with empty or '.' path")
 
             entry = FileProviderPathEntry(
                 tag=tag,
@@ -132,6 +135,8 @@ class FileProviderAuditor:
                         "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
                     ).hexdigest()[:12].upper(),
                     title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
+                           else f"Review Broad FileProvider Path Configuration ({tag})"
+                           if tag in {"files-path", "cache-path"} and path_val in {".", ""}
                            else f"Insecure FileProvider Path Configuration ({tag})"),
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
@@ -139,7 +144,9 @@ class FileProviderAuditor:
                         "When combined with grantUriPermissions=\"true\", this can allow unauthorized third-party apps "
                         "to read or write sensitive private application sandbox files."
                     ),
-                    severity="INFO" if has_parent_segment else "HIGH" if tag == "root-path" else "MEDIUM",
+                    severity=("INFO" if has_parent_segment or
+                              (tag in {"files-path", "cache-path"} and path_val in {".", ""})
+                              else "HIGH" if tag == "root-path" else "MEDIUM"),
                     file_path=source_path,
                     line_number=1,
                     code_snippet=f"<{child.tag} name=\"{name}\" path=\"{path_val}\" />",

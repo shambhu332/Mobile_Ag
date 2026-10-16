@@ -57,6 +57,19 @@ def test_fileprovider_flags_broad_external_media_root_as_unverified_candidate(pa
     assert "external-media-path" in candidate.metadata["risk_reason"]
 
 
+@pytest.mark.parametrize("tag", ["files-path", "cache-path"])
+@pytest.mark.parametrize("path", ["", "."])
+def test_fileprovider_broad_internal_roots_are_info_candidates(tag, path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><{tag} name="all" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    candidate = result.findings[0]
+    assert candidate.severity == "INFO"
+    assert candidate.status == "UNVERIFIED"
+    assert "app's internal" in candidate.metadata["risk_reason"]
+
+
 def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
     xml_dir = tmp_path / "res" / "xml"
     xml_dir.mkdir(parents=True)

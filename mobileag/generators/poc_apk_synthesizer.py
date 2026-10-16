@@ -36,6 +36,8 @@ class ExploitPocSynthesizer:
                 or evidence.get("basis") != "analyst_attested"
                 or evidence.get("independently_verified") is not False
                 or evidence.get("active") is not True
+                or not isinstance(target_package, str)
+                or len(target_package) > 255
                 or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", target_package)):
             return None
         try:
@@ -56,7 +58,9 @@ class ExploitPocSynthesizer:
         uri = finding.metadata.get("uri_scheme", "myapp://vulnerable/action?redirect=https://attacker.com")
         dotted_identifier = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+"
         if (not isinstance(component, str) or not (re.fullmatch(dotted_identifier, component)
-                or re.fullmatch(dotted_identifier + r"/[A-Za-z][A-Za-z0-9_.$]*", component))
+                # Kotlin treats '$' as string-template syntax. Keep generated
+                # identifiers to literal-safe Java/Kotlin identifier chars.
+                or re.fullmatch(dotted_identifier + r"/[A-Za-z][A-Za-z0-9_.]*", component))
                 or not isinstance(authority, str) or not re.fullmatch(dotted_identifier, authority)
                 or not isinstance(affinity, str) or not re.fullmatch(dotted_identifier, affinity)
                 or not isinstance(uri, str) or len(uri) > 2048

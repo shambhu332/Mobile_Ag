@@ -13,7 +13,7 @@ import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from typing import Any, Dict, List, Set
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
@@ -76,31 +76,23 @@ class PrivacyManifestAuditor:
             return result
 
         candidates: list[Path] = []
-        tree_entries = 0
+        inventory = SourceInventory(max_entries=self.MAX_TREE_ENTRIES, max_file_bytes=1,
+                                    max_total_bytes=1)
         tree_limited = False
+        for candidate in inventory.paths(base):
+            if candidate.name != "PrivacyInfo.xcprivacy":
+                continue
+            if len(candidates) >= self.MAX_MANIFESTS:
+                tree_limited = True
+                inventory.record_limit("manifest_count")
+                break
+            candidates.append(candidate)
 
-        def record_walk_error(_error: OSError) -> None:
-            result.errors.append("directory_scan_error")
-
-        try:
-            for root, dirs, files in os.walk(base, followlinks=False, onerror=record_walk_error):
-                # Do not recurse through extracted symlink directories.
-                dirs[:] = sorted(d for d in dirs if not (Path(root) / d).is_symlink())
-                tree_entries += len(dirs) + len(files)
-                if tree_entries > self.MAX_TREE_ENTRIES:
-                    tree_limited = True
-                    break
-                if "PrivacyInfo.xcprivacy" in files:
-                    candidate = Path(root) / "PrivacyInfo.xcprivacy"
-                    if candidate.is_symlink():
-                        result.errors.append("symlink_manifest_skipped")
-                        continue
-                    candidates.append(candidate)
-                    if len(candidates) > self.MAX_MANIFESTS:
-                        tree_limited = True
-                        candidates.pop()
-                        break
-        except OSError:
+        if inventory.coverage["limits_reached"]:
+            tree_limited = True
+        if inventory.coverage["source_file_skip_reasons"].get("symlink_entry"):
+            result.errors.append("symlink_entry_skipped")
+        if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
             result.errors.append("directory_scan_error")
 
         candidates.sort(key=lambda path: path.relative_to(base).as_posix())
@@ -296,53 +288,48 @@ class PrivacyManifestAuditor:
             entries = 0
             total_bytes = 0
             limited = False
-            def record_walk_error(_error: OSError) -> None:
-                coverage["errors"].append("source_directory_read_error")
-
-            for root_dir, dirs, files in os.walk(path, followlinks=False, onerror=record_walk_error):
-                dirs[:] = sorted(name for name in dirs if not (Path(root_dir) / name).is_symlink())
-                files.sort()
-                entries += len(dirs) + len(files)
-                if entries > self.MAX_TREE_ENTRIES:
-                    coverage["limits_reached"].append("tree_entries")
+            inventory = SourceInventory(max_entries=self.MAX_TREE_ENTRIES,
+                                        max_file_bytes=1, max_total_bytes=1)
+            for candidate in inventory.paths(path, {".java", ".kt", ".smali"}):
+                if coverage["files_read"] >= self.MAX_ANDROID_SOURCE_FILES:
+                    coverage["limits_reached"].append("source_files")
                     limited = True
                     break
-                for filename in files:
-                    candidate = Path(root_dir) / filename
-                    if candidate.suffix.lower() not in {".java", ".kt", ".smali"}:
-                        continue
-                    if coverage["files_read"] >= self.MAX_ANDROID_SOURCE_FILES:
-                        coverage["limits_reached"].append("source_files")
-                        limited = True
-                        break
-                    try:
-                        fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                        with os.fdopen(fd, "rb") as stream:
-                            info = os.fstat(stream.fileno())
-                            if not stat.S_ISREG(info.st_mode):
-                                coverage["errors"].append("non_regular_source_skipped")
-                                continue
-                            remaining = self.MAX_ANDROID_TOTAL_SOURCE_BYTES - total_bytes
-                            read_limit = min(self.MAX_ANDROID_SOURCE_BYTES, remaining)
-                            if read_limit <= 0:
-                                coverage["limits_reached"].append("total_source_bytes")
-                                limited = True
-                                break
-                            raw = stream.read(read_limit + 1)
-                        if len(raw) > read_limit:
-                            coverage["errors"].append("source_file_truncated")
-                            raw = raw[:read_limit]
-                        total_bytes += len(raw)
-                        coverage["bytes_read"] = total_bytes
-                        coverage["files_read"] += 1
-                        text = raw.decode("utf-8", errors="ignore")
-                        for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
-                            if package in text:
-                                detected_trackers.add(description)
-                    except OSError:
-                        coverage["errors"].append("source_read_error")
-                if limited:
-                    break
+                try:
+                    fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                    with os.fdopen(fd, "rb") as stream:
+                        info = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(info.st_mode):
+                            coverage["errors"].append("non_regular_source_skipped")
+                            continue
+                        remaining = self.MAX_ANDROID_TOTAL_SOURCE_BYTES - total_bytes
+                        read_limit = min(self.MAX_ANDROID_SOURCE_BYTES, remaining)
+                        if read_limit <= 0:
+                            coverage["limits_reached"].append("total_source_bytes")
+                            limited = True
+                            break
+                        raw = stream.read(read_limit + 1)
+                    if len(raw) > read_limit:
+                        coverage["errors"].append("source_file_truncated")
+                        raw = raw[:read_limit]
+                    total_bytes += len(raw)
+                    coverage["bytes_read"] = total_bytes
+                    coverage["files_read"] += 1
+                    text = raw.decode("utf-8", errors="ignore")
+                    for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
+                        if package in text:
+                            detected_trackers.add(description)
+                except OSError:
+                    coverage["errors"].append("source_read_error")
+
+            coverage["tree_entries_examined"] = inventory.coverage["entries_examined"]
+            if inventory.coverage["limits_reached"]:
+                coverage["limits_reached"].append("tree_entries")
+                limited = True
+            if inventory.coverage["source_file_skip_reasons"].get("symlink_entry"):
+                coverage["errors"].append("source_symlink_skipped")
+            if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
+                coverage["errors"].append("source_directory_read_error")
             if limited or coverage["errors"]:
                 coverage["source_tree"] = "partial"
 

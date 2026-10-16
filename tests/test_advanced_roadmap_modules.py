@@ -660,6 +660,21 @@ def test_ios_privacy_manifest_audit_reports_partial_parse_and_keeps_bundle_resul
     assert result.errors == ["manifest_parse_error"]
 
 
+def test_ios_privacy_manifest_inventory_is_entry_bounded(tmp_path):
+    (tmp_path / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps({
+        "NSPrivacyTracking": False, "NSPrivacyTrackingDomains": [],
+        "NSPrivacyAccessedAPITypes": [],
+    }))
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_TREE_ENTRIES = 0
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert result.parse_status == "partial"
+    assert result.manifest_count == 0
+    assert "scan_limit_reached" in result.errors
+
+
 def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = Path(tmp_dir) / "PrivacyInfo.xcprivacy"
@@ -785,4 +800,4 @@ def test_android_data_safety_no_follow_and_source_budget_are_exposed():
     assert coverage["files_read"] == 2
     assert coverage["source_tree"] == "partial"
     assert "source_file_truncated" in coverage["errors"]
-    assert "source_read_error" in coverage["errors"]
+    assert "source_symlink_skipped" in coverage["errors"]

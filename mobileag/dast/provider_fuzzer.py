@@ -21,7 +21,7 @@ from mobileag.reporting.finding import Finding
 class ProviderFuzzResult:
     authority: str
     target_uri: str
-    action: str  # query, read
+    action: str  # query, selection, projection, read
     payload: str
     status: str  # OBSERVATION_* or ACCESS_DENIED/NOT_FOUND/ERROR; never a vulnerability verdict alone
     # Raw provider output can contain private rows; never include it in result records.
@@ -135,14 +135,27 @@ class ContentProviderFuzzer:
         if not self._has_explicit_scope(serial, guard):
             return [ProviderFuzzResult(authority=str(authority)[:self.MAX_AUTHORITY_LENGTH],
                 target_uri="", action="query", payload="", status="BLOCKED_SCOPE")]
+        if (not isinstance(projection_param, str) or len(projection_param) > 512
+                or "\x00" in projection_param):
+            return [ProviderFuzzResult(authority=authority, target_uri="", action="query",
+                payload="", status="INVALID_INPUT")]
 
-        for probe in self.SQLI_PROBES:
+        cases = [("selection", probe) for probe in self.SQLI_PROBES]
+        cases.extend(("projection", probe) for probe in self.SQLI_PROBES)
+        for probe_kind, probe in cases:
             uri = f"content://{authority}"
             if not self._scope_allows(guard):
                 results.append(ProviderFuzzResult(authority=authority, target_uri=uri,
-                    action="query", payload=probe, status="BLOCKED_SCOPE"))
+                    action=probe_kind, payload=probe, status="BLOCKED_SCOPE"))
                 continue
-            cmd = self._adb_command(serial, ["content", "query", "--uri", uri, "--where", f"id={probe}"])
+            remote_args = ["content", "query", "--uri", uri]
+            if probe_kind == "selection":
+                if projection_param:
+                    remote_args.extend(["--projection", projection_param])
+                remote_args.extend(["--where", f"id={probe}"])
+            else:
+                remote_args.extend(["--projection", probe])
+            cmd = self._adb_command(serial, remote_args)
 
             try:
                 returncode, stdout, stderr, output_bytes, output_truncated, timed_out = (
@@ -166,7 +179,7 @@ class ContentProviderFuzzer:
                 results.append(ProviderFuzzResult(
                     authority=authority,
                     target_uri=uri,
-                    action="query",
+                    action=probe_kind,
                     payload=probe,
                     status=status,
                     output_snippet="",
@@ -178,7 +191,7 @@ class ContentProviderFuzzer:
                 results.append(ProviderFuzzResult(
                     authority=authority,
                     target_uri=uri,
-                    action="query",
+                    action=probe_kind,
                     payload=probe,
                     status="TIMEOUT" if isinstance(ex, subprocess.TimeoutExpired) else "ERROR",
                     error_message=type(ex).__name__,

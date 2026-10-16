@@ -132,7 +132,8 @@ def test_provider_fuzzer_traversal_and_sqli_payloads():
     sqli_results = fuzzer.fuzz_provider_sqli(
         "com.example.provider", serial="synthetic-device", guard=scope
     )
-    assert len(sqli_results) == len(ContentProviderFuzzer.SQLI_PROBES)
+    assert len(sqli_results) == 2 * len(ContentProviderFuzzer.SQLI_PROBES)
+    assert {item.action for item in sqli_results} == {"selection", "projection"}
 
 
 def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_arguments(monkeypatch):
@@ -338,6 +339,38 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     assert all(item.output_truncated for item in traversal + sql)
     assert all(item.output_bytes_observed > 100_000 for item in traversal + sql)
     assert "synthetic-provider-private-value" not in json.dumps([item.__dict__ for item in traversal + sql])
+
+
+def test_provider_fuzzer_sqli_covers_projection_and_selection_with_shell_quoting(monkeypatch):
+    import io
+    import shlex
+    import subprocess
+    from mobileag.dast.provider_fuzzer import ContentProviderFuzzer
+
+    commands = []
+    class FakeProcess:
+        def __init__(self, *args, **kwargs):
+            commands.append(args[0])
+            self.stdout = io.BytesIO(b"")
+            self.stderr = io.BytesIO(b"")
+        def wait(self, timeout=None):
+            return 1
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    fuzzer = ContentProviderFuzzer(adb_path="adb")
+    results = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", projection_param="name); SELECT synthetic",
+        serial="synthetic-device", guard=lambda: None,
+    )
+    assert len(results) == 2 * len(fuzzer.SQLI_PROBES)
+    assert {result.action for result in results} == {"selection", "projection"}
+    parsed_commands = [shlex.split(command[4]) for command in commands]
+    assert any("--where" in command for command in parsed_commands)
+    assert any("--projection" in command for command in parsed_commands)
+    assert any("name); SELECT synthetic" in command for command in parsed_commands)
+    assert len(commands) == len(results)
 
 
 def test_poc_synthesizer_task_hijacking_and_provider_sqli():

@@ -182,7 +182,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. Orchestrator persistence accepts only bounded unique Markdown filenames and writes at most 500 guides, each capped at 1 MiB, using private atomic replacement. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
 
 ---
 
@@ -1242,3 +1242,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    target. Focused path tests passed; full-suite and compile results follow.
    This narrows path escape risk but does not make concurrent directory changes
    race-free.
+
+   Scan `state.json` and generated review-only PoC guides now use private,
+   atomic, bounded writes. Guide output is limited to 500 entries / 1 MiB each;
+   filenames must be unique and match a path-safe Markdown pattern. Tests cover
+   symlink replacement, mode, oversize rejection, traversal names, and duplicate
+   names. Focused Orchestrator artifact regressions passed (**5 passed**); full
+   suite and compile results follow. This hardens persistence only; generated
+   guides remain unverified review plans and are never executed here.

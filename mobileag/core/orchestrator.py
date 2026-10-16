@@ -5,6 +5,8 @@ import logging
 import uuid
 import json
 import re
+import os
+import tempfile
 from mobileag.security.privacy import redact
 from mobileag.reporting.report_engine import ReportEngine
 from pathlib import Path
@@ -49,6 +51,11 @@ from mobileag.analysis.il2cpp_auditor import Il2CppAuditor
 from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 from mobileag.analysis.fileprovider_auditor import FileProviderAuditor
+
+
+_MAX_SCAN_STATE_BYTES = 64 * 1024 * 1024
+_MAX_POC_GUIDE_BYTES = 1024 * 1024
+_MAX_POC_GUIDES = 500
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +137,55 @@ class Orchestrator:
             raise ValueError("Scan output directory escapes the selected output root")
         return scan_id, output_path
 
+    @staticmethod
+    def _write_private_artifact(path: Path, payload: bytes, max_bytes: int) -> None:
+        """Atomically write a bounded private artifact without following a link."""
+        if len(payload) > max_bytes:
+            raise ValueError("Scan artifact exceeds its output size limit")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_path, path)
+        except Exception:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+            raise
+
+    @classmethod
+    def _save_poc_guides(cls, output: Path, guides: Any) -> None:
+        """Validate and privately persist a bounded set of review-only guides."""
+        poc_dir = output / "poc_guides"
+        poc_dir.mkdir(exist_ok=True)
+        if not isinstance(guides, list) or len(guides) > _MAX_POC_GUIDES:
+            raise ValueError("Generated PoC guide inventory exceeds the output limit")
+        prepared_guides = []
+        seen_filenames: set[str] = set()
+        for item in guides:
+            if not isinstance(item, dict):
+                raise ValueError("Generated PoC guide entry is invalid")
+            filename = item.get("filename")
+            guide = item.get("poc_guide")
+            if (not isinstance(filename, str) or len(filename) > 128
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,123}\.md", filename)
+                    or not isinstance(guide, str)):
+                raise ValueError("Generated PoC guide fields are invalid")
+            if filename in seen_filenames:
+                raise ValueError("Generated PoC guide filenames must be unique")
+            seen_filenames.add(filename)
+            content = redact(guide).encode("utf-8")
+            if len(content) > _MAX_POC_GUIDE_BYTES:
+                raise ValueError("Generated PoC guide exceeds the output size limit")
+            prepared_guides.append((poc_dir / filename, content))
+        for path, content in prepared_guides:
+            cls._write_private_artifact(path, content, _MAX_POC_GUIDE_BYTES)
+            logger.info("Saved PoC guide: %s", path)
+
     async def scan(
         self,
         apk_path: str,
@@ -208,7 +264,9 @@ class Orchestrator:
         await self._save_outputs(state)
 
         state["current_phase"] = "partial" if state["errors"] else "complete"
-        (output_path / "state.json").write_text(json.dumps(redact(state), indent=2, default=str))
+        state_payload = json.dumps(redact(state), indent=2, default=str,
+                                   ensure_ascii=True, allow_nan=False).encode("utf-8")
+        self._write_private_artifact(output_path / "state.json", state_payload, _MAX_SCAN_STATE_BYTES)
         await _notify("Scan Complete", f"Scan {sid} complete: {candidate_count} unverified review candidates.", 98)
         logger.info(
             "Scan %s complete: %d candidate findings",
@@ -686,13 +744,8 @@ class Orchestrator:
         output = Path(state["output_dir"])
         await ReportEngine().generate_reports(state)
 
-        # Save PoC guides
-        poc_dir = output / "poc_guides"
-        poc_dir.mkdir(exist_ok=True)
-        for item in state.get("generated_poc_guides", []):
-            fp = poc_dir / Path(item["filename"]).name
-            fp.write_text(redact(item["poc_guide"]))
-            logger.info("Saved PoC guide: %s", fp)
+        # Save bounded review-only PoC guides.
+        Orchestrator._save_poc_guides(output, state.get("generated_poc_guides", []))
 
         # Save OASIS SARIF v2.1.0 report for CI/CD integration
         try:

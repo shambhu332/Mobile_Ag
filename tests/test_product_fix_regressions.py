@@ -218,7 +218,12 @@ def test_scan_records_original_hash_and_effective_policy(client):
     uploaded=client.post('/api/upload/apk',files={'file':('synthetic.apk',original)}).json()
     assert client.post('/api/settings',json={'entropy_threshold':3.25}).status_code==200
     with patch.object(web,'Orchestrator') as orchestrator:
-        orchestrator.return_value.scan=AsyncMock(return_value={'package_name':'org.example.synthetic','filtered_findings':[], 'coverage':{'synthetic_fixture':1}})
+        orchestrator.return_value.scan=AsyncMock(return_value={
+            'package_name':'org.example.synthetic','filtered_findings':[],
+            'coverage':{'synthetic_fixture':1},
+            'il2cpp_analysis':{'metadata_version':29,'evidence_kind':'bounded_static_metadata_candidates',
+                               'runtime_status':'not_tested','proof_status':'not_proven','exhaustive':False},
+        })
         response=client.post('/api/scans/run',json={'apk_path':uploaded['file_path']})
     assert response.status_code==200
     scan=client.get('/api/scans/'+response.json()['scan_id']).json()
@@ -226,6 +231,8 @@ def test_scan_records_original_hash_and_effective_policy(client):
     assert scan['analysis_policy']['offline'] is True
     assert scan['analysis_policy']['entropy_threshold']==3.25
     assert scan['analysis_policy']['approved_llm_providers']==[]
+    assert scan['il2cpp_analysis']['metadata_version']==29
+    assert scan['il2cpp_analysis']['proof_status']=='not_proven'
     assert Path(uploaded['file_path']).read_bytes()==original
     assert Path(uploaded['file_path']).stat().st_mode & 0o777 == 0o600
 

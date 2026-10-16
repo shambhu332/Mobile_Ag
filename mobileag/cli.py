@@ -10,6 +10,8 @@ from rich.panel import Panel
 
 from config.settings import get_settings
 from mobileag.core.orchestrator import Orchestrator
+from mobileag.reporting.artifact_writer import write_private_artifact
+from mobileag.security.privacy import redact
 
 console = Console()
 
@@ -67,7 +69,8 @@ def scan(app_path: str, output: str, report_format: str, offline: bool, lookup_a
             console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {sarif_file}")
         elif report_format.lower() == "json":
             json_file = out_dir / "report_ios.json"
-            json_file.write_text(json.dumps([f.model_dump() for f in findings], indent=2))
+            report_data = redact([f.model_dump(mode="json") for f in findings])
+            write_private_artifact(json_file, json.dumps(report_data, indent=2, ensure_ascii=True, allow_nan=False))
             console.print(f"\n[bold green]JSON Report saved to:[/] {json_file}")
         else:
             from mobileag.core.state import create_initial_state
@@ -150,14 +153,15 @@ def ios(ipa: str, output: str, report_format: str):
         console.print(f"\n[bold green]SARIF v2.1.0 Report saved to:[/] {sarif_file}")
     elif report_format.lower() == "json":
         json_file = out_dir / "report_ios.json"
-        json_file.write_text(json.dumps([f.model_dump() for f in findings], indent=2))
+        report_data = redact([f.model_dump(mode="json") for f in findings])
+        write_private_artifact(json_file, json.dumps(report_data, indent=2, ensure_ascii=True, allow_nan=False))
         console.print(f"\n[bold green]JSON Report saved to:[/] {json_file}")
     else:
         md_file = out_dir / "report_ios.md"
         md_content = f"# iOS Security Audit Report: {results.get('app_name', 'App')}\n\n"
         for f in findings:
             md_content += f"## [{f.severity.value}] {f.title} ({f.cwe_id})\n- Description: {f.description}\n- File: {f.file_path}\n- Remediation: {f.remediation}\n\n"
-        md_file.write_text(md_content)
+        write_private_artifact(md_file, redact(md_content))
         console.print(f"\n[bold green]Markdown Report saved to:[/] {md_file}")
 
 
@@ -264,7 +268,8 @@ def taint(src: str, output: str):
     out_dir = Path(output)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_file = out_dir / "taint_findings.json"
-    report_file.write_text(json.dumps([f.to_dict() for f in findings], indent=2))
+    report_data = redact([f.to_dict() for f in findings])
+    write_private_artifact(report_file, json.dumps(report_data, indent=2, ensure_ascii=True, allow_nan=False))
 
     console.print(f"\n[bold green]Taint Analysis Complete![/]")
     console.print(f" - Sinks Tainted: [bold red]{len(findings)}[/]")

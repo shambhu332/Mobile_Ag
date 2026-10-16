@@ -302,7 +302,7 @@ evidence.
 
 ### 9.3 Evidence-limited JSON, Markdown, and PDF report artifacts
 * **Objective**: Persist researcher-readable reports without converting unverified candidates into confirmed impact.
-* **Current boundary**: Orchestrator scan IDs are constrained to bounded path-safe names, and the per-scan output directory must not be a symlink or resolve outside the selected root. `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. Other legacy export writers require separate review. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
+* **Current boundary**: Orchestrator scan IDs are constrained to bounded path-safe names, and the per-scan output directory must not be a symlink or resolve outside the selected root. `ReportEngine` writes JSON, Markdown, and PDF under the caller-selected output directory. PDF content is generated from escaped prepared report fields with inline CSS only; all resource fetches are rejected. Artifact names require a bounded path-safe scan ID, and files are written through private-mode temporary files followed by atomic replacement so an existing report symlink is not followed. The PDF HTML and output byte sizes are capped; oversized reports fail explicitly rather than silently truncating findings. `ProfessionalReportExporter` also uses capped private atomic replacement for its Markdown output. CLI-generated JSON/Markdown reports use heuristic redaction and bounded private atomic writes. Pentest checklist planning state is capped, loaded from no-follow regular files, and saved atomically; malformed records do not partially mutate state. Other legacy export writers require separate review. PDF generation/validation is local and does not establish report completeness or PDF-reader compatibility across platforms.
 
 ---
 
@@ -1250,3 +1250,11 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    names. Focused Orchestrator artifact regressions passed (**5 passed**); full
    suite and compile results follow. This hardens persistence only; generated
    guides remain unverified review plans and are never executed here.
+
+   CLI JSON/Markdown output paths now use a shared 32 MiB private atomic writer;
+   CLI finding exports apply the existing heuristic redactor before serialization.
+   Unit regressions cover symlink replacement, private mode, oversize failure,
+   byte payloads, and an end-to-end synthetic taint CLI export with a redacted
+   credential. Focused tests passed (**4 passed**); full-suite and compile
+   results follow. Heuristic redaction can miss unrecognized secrets, and this
+   does not establish report completeness.

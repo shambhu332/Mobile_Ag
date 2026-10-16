@@ -721,3 +721,15 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.
 
+   On 2026-10-16, commit `5c26f4e` carried captured response headers through
+   the bounded API-capture catalog into HAR output, with redaction and capture
+   size accounting; synthetic tests cover benign-header retention and
+   `Set-Cookie` value omission. Commit `7fd1d41` extended the authenticated
+   capture-export route regression to verify the same redaction boundary.
+   Focused tests passed (3 catalog tests; 1 route test), and the pinned Python
+   3.14 full suite passed (**1,136 passed**, 94.94 s after `5c26f4e`; **1,136
+   passed**, 117.04 s after `7fd1d41`). `git diff --check` passed before each
+   commit. The suite emitted existing pytest-asyncio deprecation warnings and
+   async resource warnings. This validates synthetic export behavior only;
+   neither live capture nor target/device testing was performed.
+

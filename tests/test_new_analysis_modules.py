@@ -368,6 +368,23 @@ def test_flutter_engine_analyzer():
         assert res.scan_status == "complete"
 
 
+def test_flutter_engine_scans_bounded_utf16le_printable_strings(tmp_path):
+    lib_dir = tmp_path / "lib" / "arm64-v8a"
+    lib_dir.mkdir(parents=True)
+    binary = lib_dir / "libapp.so"
+    binary.write_bytes(
+        b"\x00" * 16
+        + "https://api.example.test/v2/users/12345".encode("utf-16le")
+        + b"\x00\x00"
+    )
+
+    result = FlutterEngineAnalyzer().analyze_package_directory(tmp_path)
+
+    assert result.is_flutter_app
+    assert result.api_endpoints == ["https://api.example.test/v2/users/{id}"]
+    assert result.extracted_strings_count == 1
+
+
 def test_flutter_analyzer_reports_bounded_binary_truncation_and_skips_symlinks():
     with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as outside_dir:
         root = Path(tmp_dir)

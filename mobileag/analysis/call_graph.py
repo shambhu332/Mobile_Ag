@@ -678,14 +678,57 @@ class SmaliCallGraphEngine:
         returns/throws terminate. Register writes kill prior taint; modeled
         source results flow through move-result* and move-object. Tainted actual
         arguments may seed matching callee p-registers, while bounded static-field,
-        method-return, and array-element summaries propagate values. Instance fields,
-        sanitizers, dynamic dispatch and switch payloads are not modeled. Results
-        are candidates only.
+        method-return, and array-element summaries propagate values. Packed/sparse
+        switch payload targets are traversed, with unresolved or over-limit payloads
+        marking coverage partial. Instance fields, sanitizers, and dynamic dispatch
+        are not modeled. Results are candidates only.
         """
         instructions: list[tuple[int, str]] = []
         labels: dict[str, int] = {}
+        switch_payloads: dict[str, list[str]] = {}
+        payload_label: str | None = None
+        payload_kind: str | None = None
+        pending_label: str | None = None
+        payload_targets: list[str] = []
+        for _line, raw in method.instructions:
+            stripped = raw.strip()
+            if payload_kind:
+                end_directive = ".end " + payload_kind[1:]
+                if stripped == end_directive:
+                    if payload_label:
+                        switch_payloads[payload_label] = payload_targets[:10000]
+                    payload_label = None
+                    payload_kind = None
+                    payload_targets = []
+                elif payload_kind == ".packed-switch":
+                    target = re.fullmatch(r"(:[A-Za-z0-9_$.-]+)", stripped)
+                    if target:
+                        payload_targets.append(target.group(1))
+                else:
+                    target = re.search(r"->\s*(:[A-Za-z0-9_$.-]+)\s*$", stripped)
+                    if target:
+                        payload_targets.append(target.group(1))
+                continue
+            label = re.fullmatch(r"(:[A-Za-z0-9_$.-]+)", stripped)
+            if label:
+                pending_label = label.group(1)
+            elif stripped in {".packed-switch", ".sparse-switch"} or stripped.startswith((".packed-switch ", ".sparse-switch ")):
+                payload_label = pending_label
+                payload_kind = stripped.split()[0]
+                payload_targets = []
+                pending_label = None
+            elif stripped and not stripped.startswith(("#", ".")):
+                pending_label = None
+        inside_switch_payload = False
         for line_no, raw in method.instructions:
             stripped = raw.strip()
+            if inside_switch_payload:
+                if stripped in {".end packed-switch", ".end sparse-switch"}:
+                    inside_switch_payload = False
+                continue
+            if stripped.startswith((".packed-switch ", ".sparse-switch ")):
+                inside_switch_payload = True
+                continue
             label = re.fullmatch(r"(:[A-Za-z0-9_$.-]+)", stripped)
             if label:
                 labels[label.group(1)] = len(instructions)
@@ -704,6 +747,7 @@ class SmaliCallGraphEngine:
             next_index = index + 1
             branch = re.match(r"goto(?:/\d+)?\s+(:[A-Za-z0-9_$.-]+)", text)
             conditional = re.match(r"if-[A-Za-z0-9/-]+\s+.*?,\s*(:[A-Za-z0-9_$.-]+)\s*$", text)
+            switch = re.match(r"(?:packed|sparse)-switch\s+[vp]\d+,\s*(:[A-Za-z0-9_$.-]+)", text)
             if branch:
                 target = labels.get(branch.group(1))
                 if target is not None and target < len(instructions):
@@ -724,8 +768,23 @@ class SmaliCallGraphEngine:
                     successors[index].append(next_index)
             elif text.startswith("goto"):
                 warn(f"unparsed goto in {method.key} at line {_line}")
+            elif switch:
+                payload = switch_payloads.get(switch.group(1))
+                if payload is None or len(payload) >= 10000:
+                    warn(f"unresolved switch payload in {method.key} at line {_line}")
+                else:
+                    for target_label in payload:
+                        target = labels.get(target_label)
+                        if target is not None and target < len(instructions):
+                            successors[index].append(target)
+                        else:
+                            warn(f"unresolved switch case target in {method.key} at line {_line}")
+                    if next_index < len(instructions):
+                        successors[index].append(next_index)
             elif text.startswith(("packed-switch", "sparse-switch")):
-                warn(f"unresolved switch targets in {method.key} at line {_line}")
+                warn(f"unparsed switch instruction in {method.key} at line {_line}")
+                if next_index < len(instructions):
+                    successors[index].append(next_index)
                 if next_index < len(instructions):
                     successors[index].append(next_index)
             elif text.startswith(("return", "throw")):
@@ -1367,7 +1426,7 @@ class SmaliCallGraphEngine:
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
                 "instance fields, precise array indexes/objects, casts, returned heap side effects, builder identity across fields/calls, and polymorphic dispatch are not modeled",
-                "switch payload targets are not resolved",
+                "unresolved or over-limit switch payloads mark coverage partial",
                 "component reachability and manifest authorization are not resolved",
                 "JavascriptInterface annotation does not prove registration, JavaScript enablement, frame origin, target SDK, or a loaded untrusted page",
             ],

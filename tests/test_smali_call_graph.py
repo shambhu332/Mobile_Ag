@@ -30,7 +30,7 @@ def test_smali_call_graph_parsing_and_reachability():
 
 .method public onCreate(Landroid/os/Bundle;)V
     .registers 3
-    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
     move-result-object v0
     const-string v1, "deep_url"
     invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
@@ -903,26 +903,36 @@ def test_smali_conditional_branch_keeps_possible_tainted_path(tmp_path):
                for f in findings)
 
 
-def test_smali_unmodeled_switch_marks_register_flow_coverage_partial(tmp_path):
-    (tmp_path / "Switch.smali").write_text("""
+@pytest.mark.parametrize(("switch_opcode", "payload"), [
+    ("packed-switch", ".packed-switch 0x0\n        :case_0\n    .end packed-switch"),
+    ("sparse-switch", ".sparse-switch\n        0x0 -> :case_0\n    .end sparse-switch"),
+])
+def test_smali_switch_resolves_case_targets_for_register_flow(tmp_path, switch_opcode, payload):
+    (tmp_path / "Switch.smali").write_text(f"""
 .class public Lcom/example/Switch;
-.super Ljava/lang/Object;
+.super Landroid/app/Activity;
 .method public route(I)V
-    .registers 2
-    packed-switch p1, :pswitch_data
+    .registers 5
+    invoke-virtual {{p0}}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {{v0, v1}}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    {switch_opcode} p1, :pswitch_data
     return-void
     :case_0
+    sget-object v3, Lcom/example/Switch;->web:Landroid/webkit/WebView;
+    invoke-virtual {{v3, v2}}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
     :pswitch_data
-    .packed-switch 0x0
-        :case_0
-    .end packed-switch
+    {payload}
 .end method
 """)
     engine = SmaliCallGraphEngine()
-    engine.audit_smali_directory(tmp_path)
-    assert engine.coverage["static_status"] == "partial"
-    assert "unresolved switch targets" in " ".join(engine.coverage["register_dataflow_warnings"])
+    findings = engine.audit_smali_directory(tmp_path)
+    assert any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+    assert engine.coverage["static_status"] != "partial"
+    assert not any("switch" in warning for warning in engine.coverage["register_dataflow_warnings"])
 
 
 def test_smali_call_graph_reflection_resolution():

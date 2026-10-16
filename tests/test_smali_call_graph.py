@@ -1524,3 +1524,30 @@ def test_intent_scheme_is_derived_only_from_tainted_intent(tmp_path):
     assert len(flows) == 1
     assert flows[0].metadata["source_kind"] == "INTENT_SCHEME"
     assert "external" in flows[0].metadata["source_method"]
+
+
+def test_instance_field_read_kills_stale_taint_and_marks_partial_coverage(tmp_path):
+    (tmp_path / "StaleField.smali").write_text('''.class public Lfixture/StaleField;
+.super Landroid/app/Activity;
+.method public open()V
+    .registers 3
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "url"
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    iget-object v2, p0, Lfixture/StaleField;->internalUrl:Ljava/lang/String;
+    sget-object v0, Lfixture/StaleField;->web:Landroid/webkit/WebView;
+    invoke-virtual {v0, v2}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+''', encoding="utf-8")
+
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+
+    assert not [finding for finding in findings
+                if finding.metadata.get("analysis_kind") == "smali_local_register_flow"]
+    assert engine.coverage["static_status"] == "partial"
+    assert any("instance field read value is not modeled" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])

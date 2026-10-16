@@ -751,7 +751,7 @@ class SmaliCallGraphEngine:
         return_value_re = re.compile(r"return(?:-object|-wide)?\s+([vp]\d+)")
         write_re = re.compile(
             r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
-            r"[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
+            r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
             r"(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)\s+([vp]\d+)(?:,|\s|$)"
         )
         while queue and visited_steps < 100000:
@@ -765,6 +765,7 @@ class SmaliCallGraphEngine:
             move_alias = re.match(r"move(?:-object|-wide)?(?:/from16|/16)?\s+([vp]\d+),\s*([vp]\d+)", text)
             array_get = re.match(r"aget(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
             array_put = re.match(r"aput(?:-[a-z]+)?\s+([vp]\d+),\s*([vp]\d+),\s*[vp]\d+", text)
+            instance_get = re.match(r"iget(?:-[a-z0-9/]+)?\s+([vp]\d+),", text)
             static_get = static_get_re.match(text)
             static_put = static_put_re.match(text)
             return_value = return_value_re.match(text)
@@ -845,6 +846,8 @@ class SmaliCallGraphEngine:
             else:
                 pending = frozenset()
                 registers.pop("@pending_return", None)
+                if instance_get:
+                    warn(f"instance field read value is not modeled in {method.key} at line {line_no}")
                 if return_value:
                     return_flows.update(registers.get(return_value.group(1), ()))
                 arithmetic = re.match(
@@ -1132,7 +1135,7 @@ class SmaliCallGraphEngine:
                 else:
                     register_write = re.match(
                         r"(?:const(?:-[a-z]+)?(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
-                        r"[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|"
+                        r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|"
                         r"(?:neg|not)-[a-z]+|(?:add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)"
                         r"\s+([vp]\d+)(?:,|\s|$)", stripped
                     )

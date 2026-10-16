@@ -1167,8 +1167,26 @@ def test_android_data_safety_ignores_sdk_names_in_java_kotlin_comments_and_liter
         source = Path(tmp_dir) / "App.kt"
         source.write_text(
             '// com.google.firebase.analytics.FirebaseAnalytics\n'
-            '/* com.facebook.android */\n'
+            '/* outer /* com.facebook.android */ still hidden */\n'
             'val example = "com.google.firebase.analytics.FirebaseAnalytics"\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        ) == []
+
+
+def test_android_data_safety_ignores_kotlin_raw_string_sdk_lookalikes():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.kt"
+        source.write_text(
+            'val example = """\n'
+            '  com.google.firebase.analytics.FirebaseAnalytics\n'
+            '  com.facebook.android\n'
+            '"""\n',
             encoding="utf-8",
         )
         manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">

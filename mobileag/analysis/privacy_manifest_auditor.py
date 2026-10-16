@@ -38,18 +38,28 @@ def _mask_java_kotlin_comments_and_strings(source: str) -> str:
             blank(index, end)
             index = end
         elif source.startswith("/*", index):
-            end = source.find("*/", index + 2)
-            end = len(source) if end < 0 else end + 2
+            end = index + 2
+            depth = 1
+            while end < len(source) and depth:
+                if source.startswith("/*", end):
+                    depth += 1
+                    end += 2
+                elif source.startswith("*/", end):
+                    depth -= 1
+                    end += 2
+                else:
+                    end += 1
             blank(index, end)
             index = end
         elif source[index] in {'"', "'"}:
             quote = source[index]
-            end = index + 1
+            delimiter = '"""' if quote == '"' and source.startswith('"""', index) else quote
+            end = index + len(delimiter)
             while end < len(source):
-                if source[end] == "\\":
+                if delimiter == quote and source[end] == "\\":
                     end += 2
-                elif source[end] == quote:
-                    end += 1
+                elif source.startswith(delimiter, end):
+                    end += len(delimiter)
                     break
                 else:
                     end += 1

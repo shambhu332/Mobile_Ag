@@ -1,7 +1,11 @@
 """Report generation engine — outputs findings in Markdown, JSON, and PDF formats."""
 
+import html
 import json
 import logging
+import os
+import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -23,6 +27,33 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 class ReportEngine:
     """Generates vulnerability reports from scan state."""
 
+    MAX_PDF_HTML_CHARS = 16 * 1024 * 1024
+    MAX_PDF_BYTES = 64 * 1024 * 1024
+
+    @staticmethod
+    def _safe_scan_id(scan_id: object) -> str:
+        if (not isinstance(scan_id, str) or len(scan_id) > 128
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", scan_id)):
+            raise ValueError("Invalid scan identifier for report artifact paths")
+        return scan_id
+
+    @staticmethod
+    def _atomic_private_write(path: Path, content: bytes) -> None:
+        """Replace a report artifact without following an existing symlink."""
+        fd, temporary_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_path, path)
+        except Exception:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+            raise
+
     def __init__(self):
         self._env: Optional[Environment] = None
         self._init_templates()
@@ -40,8 +71,8 @@ class ReportEngine:
     async def generate_reports(self, state: ScanState) -> None:
         """Generate all report formats and save them to the output directory."""
         output_dir = Path(state["output_dir"])
+        scan_id = self._safe_scan_id(state.get("scan_id"))
         output_dir.mkdir(parents=True, exist_ok=True)
-        scan_id = state["scan_id"]
         
         # Prepare data for templates
         report_data = self._prepare_data(state)
@@ -50,18 +81,88 @@ class ReportEngine:
         
         # Save JSON
         json_path = output_dir / f"report_{scan_id}.json"
-        with json_path.open("w") as f:
-            json.dump(report_data, f, indent=2)
+        self._atomic_private_write(
+            json_path, json.dumps(report_data, indent=2).encode("utf-8")
+        )
         logger.info("Saved JSON report to %s", json_path)
         
         # Save Markdown
         md_path = output_dir / f"report_{scan_id}.md"
         md_content = self._generate_markdown(report_data)
-        md_path.write_text(md_content)
+        self._atomic_private_write(md_path, md_content.encode("utf-8"))
         logger.info("Saved Markdown report to %s", md_path)
+
+        pdf_path = output_dir / f"report_{scan_id}.pdf"
+        pdf_content = self._generate_pdf(report_data)
+        self._atomic_private_write(pdf_path, pdf_content)
+        logger.info("Saved PDF report to %s", pdf_path)
         
         state["report_path"] = str(md_path)
         state["json_report_path"] = str(json_path)
+        state["pdf_report_path"] = str(pdf_path)
+
+    @staticmethod
+    def _pdf_text(value: object) -> str:
+        if value is None:
+            value = "not recorded"
+        return html.escape(str(value), quote=True).replace("\n", "<br>\n")
+
+    def _generate_pdf(self, data: dict) -> bytes:
+        """Render escaped report data into a bounded, offline-only PDF."""
+        from weasyprint import HTML
+
+        app_info = data.get("app_info", {}) if isinstance(data.get("app_info"), dict) else {}
+        stats = data.get("stats", {}) if isinstance(data.get("stats"), dict) else {}
+        findings = data.get("findings", []) if isinstance(data.get("findings"), list) else []
+        blocks = [
+            "<!doctype html><html><head><meta charset='utf-8'><style>",
+            "@page { size: A4; margin: 18mm; } body { font-family: sans-serif; color: #17202a; font-size: 10pt; }",
+            "h1 { color: #17365d; } h2 { border-bottom: 1px solid #7f8c8d; margin-top: 1.5em; }",
+            ".muted { color: #555; } .finding { page-break-inside: avoid; margin: 1em 0; }",
+            "pre, code { white-space: pre-wrap; overflow-wrap: anywhere; }",
+            "</style></head><body>",
+            f"<h1>MobileAg Security Analysis Report</h1><p><b>Package:</b> {self._pdf_text(app_info.get('package_name'))}</p>",
+            f"<p><b>Version:</b> {self._pdf_text(app_info.get('version_name'))} &nbsp; <b>Scan:</b> {self._pdf_text(data.get('scan_id'))}</p>",
+            f"<p class='muted'>Generated: {self._pdf_text(data.get('date'))}</p>",
+            "<h2>Summary</h2><p>Confirmed severity totals exclude unverified candidates. Candidate labels are provisional and are not proof of impact.</p><ul>",
+        ]
+        for severity in ("critical", "high", "medium", "low", "info"):
+            blocks.append(f"<li>Confirmed {severity.title()}: {self._pdf_text(stats.get(severity, 0))}</li>")
+        blocks.extend([
+            f"<li>Unverified candidates: {self._pdf_text(stats.get('unverified_candidates', 0))}</li>",
+            f"<li>Total findings: {self._pdf_text(stats.get('total', len(findings)))}</li></ul>",
+            "<h2>Coverage and proof boundaries</h2><p>Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven.</p>",
+        ])
+        coverage_gaps = data.get("coverage_gaps", [])
+        if isinstance(coverage_gaps, list) and coverage_gaps:
+            blocks.append("<ul>" + "".join(f"<li>{self._pdf_text(item)}</li>" for item in coverage_gaps) + "</ul>")
+        blocks.append("<h2>Findings</h2>")
+        for index, finding in enumerate(findings, 1):
+            if not isinstance(finding, dict):
+                continue
+            blocks.extend([
+                "<section class='finding'>",
+                f"<h3>{index}. {self._pdf_text(finding.get('title'))}</h3>",
+                f"<p><b>Status:</b> {self._pdf_text(finding.get('status'))} &nbsp; <b>Severity:</b> {self._pdf_text(finding.get('severity'))} &nbsp; <b>CWE:</b> {self._pdf_text(finding.get('cwe_id'))}</p>",
+                f"<p><b>Component:</b> {self._pdf_text(finding.get('affected_component'))}</p>",
+                f"<p><b>Description:</b><br>{self._pdf_text(finding.get('description'))}</p>",
+                f"<p><b>Remediation:</b><br>{self._pdf_text(finding.get('remediation'))}</p>",
+                "</section>",
+            ])
+        blocks.append("</body></html>")
+        document = "".join(blocks)
+        if len(document) > self.MAX_PDF_HTML_CHARS:
+            raise ValueError("PDF report exceeds the bounded HTML input limit")
+
+        # The document contains only inline styles and escaped text; rejecting
+        # resource lookups provides a second barrier against accidental fetches.
+        def deny_resource_fetch(_url: str, **_kwargs):
+            raise ValueError("External resources are disabled in PDF reports")
+
+        pdf_content = HTML(string=document, url_fetcher=deny_resource_fetch).write_pdf()
+        if len(pdf_content) > self.MAX_PDF_BYTES:
+            raise ValueError("PDF report exceeds the bounded output limit")
+        return pdf_content
 
     def _prepare_data(self, state: ScanState) -> dict:
         """Extract and format data for reporting."""

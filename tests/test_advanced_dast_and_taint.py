@@ -1176,7 +1176,7 @@ async def test_ui_crawler_crawl_flow():
     </hierarchy>""", b""))
 
     crawler = UICrawler(adb=mock_adb)
-    res = await crawler.crawl_app("emulator-5554", "com.test.app", max_steps=2)
+    res = await crawler.crawl_app("emulator-5554", "com.test.app", max_steps=2, guard=lambda: None)
     assert res["status"] == "blocked"  # Missing package identity is not safe scope.
     assert res["screens_explored"] == 0
     assert res["buttons_clicked"] == res["dialogs_dismissed"] == res["inputs_filled"] == 0

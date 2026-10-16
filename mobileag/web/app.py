@@ -1746,7 +1746,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5)
+        crawl_res = await ui_crawler.crawl_app(serial, pkg, max_steps=5, guard=guard)
         await manager.broadcast({
             "type": "dast_progress",
             "stage": "UI Crawl Complete",

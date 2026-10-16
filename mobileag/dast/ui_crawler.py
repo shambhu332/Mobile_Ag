@@ -35,6 +35,9 @@ class UICrawler:
 
     async def dump_ui_hierarchy(self, serial: str, guard=None) -> str:
         """Dump the current foreground window UIAutomator hierarchy XML."""
+        if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
+                or not callable(guard)):
+            raise PermissionError("UI observation requires an explicit device serial and scope guard")
         # Do not overwrite a user's predictable uidump.xml or read stale output.
         path='/data/local/tmp/mobileag-observe-'+uuid.uuid4().hex+'.xml'
         try:
@@ -48,7 +51,13 @@ class UICrawler:
                 return stdout.decode("utf-8",errors="replace").strip()
             return ""
         finally:
-            await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
+            try:
+                guard()
+                await self.adb._exec_cmd(["-s",serial,"shell","rm","-f",path],timeout=3,output_limit=16384)
+            except Exception as exc:
+                # Revocation can leave only our uniquely named temporary dump;
+                # do not run further device actions once scope is withdrawn.
+                logger.debug("Skipped UI dump cleanup after scope revocation: %s", type(exc).__name__)
 
     def parse_ui_elements(self, xml_content: str) -> list[dict[str, Any]]:
         """Parse UIAutomator XML hierarchy into structured interactable element objects."""
@@ -93,16 +102,14 @@ class UICrawler:
         return elements
 
     async def tap_element(self, serial: str, center: tuple[int, int]) -> None:
-        """Send tap input to element center coordinates."""
-        cx, cy = center
-        if cx > 0 and cy > 0:
-            await self.adb._exec_cmd(["-s", serial, "shell", "input", "tap", str(cx), str(cy)], timeout=3.0)
+        """Disabled: this observer returns plans and never dispatches taps."""
+        logger.warning("UI tap dispatch is disabled; candidate action requires separate review")
+        return None
 
     async def input_text(self, serial: str, text: str) -> None:
-        """Send text input via ADB shell input."""
-        # Sanitize spaces for adb input text
-        escaped = text.replace(" ", "%s")
-        await self.adb._exec_cmd(["-s", serial, "shell", "input", "text", escaped], timeout=3.0)
+        """Disabled: this observer never sends text to the device."""
+        logger.warning("UI text input is disabled; synthetic credential entry requires a separate approved workflow")
+        return None
 
     async def handle_system_dialogs(self, serial, elements):
         """Consent belongs to the operator; never automatically accept it."""
@@ -122,6 +129,15 @@ class UICrawler:
         base = {"package_name": package_name, "device_serial": serial,
                 "screens_explored": 0, "dialogs_dismissed": 0, "inputs_filled": 0,
                 "buttons_clicked": 0, "mode": "observe_only", "planned_actions": []}
+        if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
+                or not isinstance(package_name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)
+                or not callable(guard)):
+            return {**base, "status": "blocked", "reason": "Explicit device, package, and scope guard are required"}
+        try:
+            guard()
+        except Exception:
+            return {**base, "status": "blocked", "reason": "UI observation scope is unavailable or revoked"}
         xml = await self.dump_ui_hierarchy(serial, guard=guard)
         elements = self.parse_ui_elements(xml)
         if not elements:

@@ -124,6 +124,41 @@ async def test_storage_auditor_shared_preferences():
 
 
 @pytest.mark.asyncio
+async def test_storage_auditor_honors_scope_denial_before_shell(monkeypatch):
+    mock_adb = ADBManager()
+    calls = []
+
+    async def forbidden_exec(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("denied storage audit must not invoke shell")
+
+    mock_adb._exec_cmd = forbidden_exec
+    auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=lambda: False)
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_storage_auditor_revocation_prevents_unprivileged_fallback():
+    mock_adb = ADBManager()
+    calls = []
+
+    async def denied_su(*args, **kwargs):
+        calls.append(args[0])
+        return 1, b"", b""
+
+    mock_adb._exec_cmd = denied_su
+    approvals = iter((True, False))
+    auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError):
+        await auditor._run_su_cmd(
+            "synthetic-device", "ls -1 /synthetic", guard=lambda: next(approvals),
+        )
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_storage_auditor_sqlite_databases():
     mock_adb = ADBManager()
     auditor = StorageAuditor(adb=mock_adb)

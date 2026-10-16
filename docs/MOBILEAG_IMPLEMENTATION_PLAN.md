@@ -790,3 +790,10 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    deselected) plus the existing arbitrary-authority denial regression (**1
    passed**, 18 deselected); the full suite passed (**1,148 passed**, 68.47 s).
    These are synthetic shell mocks; no device command was run.
+
+   `StorageAuditor` now honors explicit boolean scope denial at each shell
+   boundary. A denial before execution prevents ADB; a denial after `su`
+   prevents the direct-shell fallback. Focused storage tests passed (**5
+   passed**, 13 deselected), and the full suite passed (**1,150 passed**,
+   70.18 s). All device access was mocked; no rooted or physical device was
+   used. Existing deprecation/resource warnings remain.

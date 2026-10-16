@@ -37,6 +37,19 @@ class StorageAuditor:
         self.adb = adb or ADBManager()
 
     @staticmethod
+    def _check_scope_guard(guard) -> None:
+        if guard is None:
+            return
+        if not callable(guard):
+            raise PermissionError('Storage audit scope guard is invalid')
+        try:
+            allowed = guard()
+        except Exception as exc:
+            raise PermissionError('Storage audit scope guard denied access') from exc
+        if allowed is False:
+            raise PermissionError('Storage audit scope guard denied access')
+
+    @staticmethod
     def _package_path(package_name: str) -> str:
         if not isinstance(package_name, str) or not re.fullmatch(r'[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+', package_name):
             raise ValueError('Invalid Android package name')
@@ -52,16 +65,16 @@ class StorageAuditor:
 
     async def _run_su_cmd(self, serial: str, cmd: str, guard=None) -> str:
         """Run a command under root shell (su) or fallback to run-as."""
-        if guard: guard()
+        self._check_scope_guard(guard)
         # Try su first
         code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", f"su -c '{cmd}'"], timeout=5.0)
-        if guard: guard()
+        self._check_scope_guard(guard)
         if code == 0 and stdout:
             return stdout.decode("utf-8", errors="replace").strip()
 
         # Fallback to direct shell
         code, stdout, _ = await self.adb._exec_cmd(["-s", serial, "shell", cmd], timeout=5.0)
-        if guard: guard()
+        self._check_scope_guard(guard)
         if code == 0 and stdout:
             return stdout.decode("utf-8", errors="replace").strip()
 
@@ -72,7 +85,7 @@ class StorageAuditor:
         findings: list[Finding] = []
         prefs_dir = f"{self._package_path(package_name)}/shared_prefs"
 
-        if guard: guard()
+        self._check_scope_guard(guard)
         list_out = await self._run_su_cmd(serial, f"ls -1 {prefs_dir}", guard)
         if not list_out or "No such file" in list_out or "Permission denied" in list_out:
             return findings
@@ -81,7 +94,7 @@ class StorageAuditor:
 
         for xml_file in xml_files:
             file_path = f"{prefs_dir}/{xml_file}"
-            if guard: guard()
+            self._check_scope_guard(guard)
             content = await self._run_su_cmd(serial, f"cat {shlex.quote(file_path)}", guard)
             if not content:
                 continue
@@ -132,7 +145,7 @@ class StorageAuditor:
         findings: list[Finding] = []
         db_dir = f"{self._package_path(package_name)}/databases"
 
-        if guard: guard()
+        self._check_scope_guard(guard)
         list_out = await self._run_su_cmd(serial, f"ls -1 {db_dir}", guard)
         if not list_out or "No such file" in list_out or "Permission denied" in list_out:
             return findings
@@ -142,7 +155,7 @@ class StorageAuditor:
         for db_file in db_files:
             file_path = f"{db_dir}/{db_file}"
             # Check SQLite header using head -c 16
-            if guard: guard()
+            self._check_scope_guard(guard)
             header = await self._run_su_cmd(serial, f"head -c 16 {shlex.quote(file_path)}", guard)
 
             if "SQLite format 3" in header:
@@ -150,7 +163,7 @@ class StorageAuditor:
                 score, vector = get_default_cvss_for_cwe(cwe)
 
                 # Query table schema if sqlite3 binary is present on rooted emulator
-                if guard: guard()
+                self._check_scope_guard(guard)
                 tables_out = await self._run_su_cmd(
                     serial,
                     f"sqlite3 {shlex.quote(file_path)} 'SELECT name FROM sqlite_master WHERE type=\"table\";' 2>/dev/null", guard
@@ -187,7 +200,7 @@ class StorageAuditor:
         findings: list[Finding] = []
         cache_dir = f"{self._package_path(package_name)}/cache"
 
-        if guard: guard()
+        self._check_scope_guard(guard)
         grep_out = await self._run_su_cmd(
             serial,
             f"grep -rn -E 'Authorization:|Bearer |password' {shlex.quote(cache_dir)} 2>/dev/null | head -n 5", guard
@@ -220,13 +233,13 @@ class StorageAuditor:
 
     async def audit_all_storage(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
         """Run full storage forensics pass across SharedPreferences, Databases, and Cache."""
-        if guard: guard()
+        self._check_scope_guard(guard)
         pref_findings = await self.audit_shared_preferences(serial, package_name, guard)
-        if guard: guard()
+        self._check_scope_guard(guard)
         db_findings = await self.audit_sqlite_databases(serial, package_name, guard)
-        if guard: guard()
+        self._check_scope_guard(guard)
         cache_findings = await self.audit_cache_leakage(serial, package_name, guard)
-        if guard: guard()
+        self._check_scope_guard(guard)
 
         all_findings = pref_findings + db_findings + cache_findings
         return {

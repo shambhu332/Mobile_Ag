@@ -28,6 +28,22 @@ async def test_adb_manager_device_enumeration():
     assert isinstance(devices, list)
 
 
+@pytest.mark.asyncio
+async def test_adb_root_action_requires_sync_scope_guard():
+    mgr = ADBManager()
+    mgr._exec_cmd = AsyncMock(side_effect=AssertionError("Unapproved root action"))
+
+    with pytest.raises(PermissionError, match="explicit scope guard"):
+        await mgr.restart_root("synthetic-device")
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await mgr.restart_root("synthetic-device", guard=async_allow)
+    mgr._exec_cmd.assert_not_awaited()
+
+
 def test_logcat_auditor_sensitive_token_leak():
     auditor = LogcatAuditor()
     log_sample = [
@@ -94,6 +110,7 @@ async def test_intent_fuzzer_crash_capture():
         serial="emulator-5554",
         package_name="com.target.app",
         component_name="com.target.app.VulnActivity",
+        guard=lambda: None,
     )
 
     assert res["crashed"] is True

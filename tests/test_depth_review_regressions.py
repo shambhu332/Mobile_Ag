@@ -147,7 +147,9 @@ async def test_intent_crash_requires_fresh_target_evidence(monkeypatch, scenario
     after = [FATAL, TARGET.replace('org.example.fixture', 'org.other.fixture')] if scenario == 'other_process' else [FATAL, TARGET]
     adb = SimpleNamespace(_exec_cmd=AsyncMock(return_value=(1 if scenario == 'launch_failed' else 0, b'synthetic launch', b'')),
                           get_logcat_dump=AsyncMock(side_effect=[before, after]))
-    result = await IntentFuzzer(adb=adb).exercise_component('synthetic', 'org.example.fixture', '.Entry')
+    result = await IntentFuzzer(adb=adb).exercise_component(
+        'synthetic', 'org.example.fixture', '.Entry', guard=lambda: None,
+    )
     assert result['crashed'] is (scenario == 'new_target')
     if result['findings']:
         assert all(f.cvss_score == 0 and f.status.value == 'UNVERIFIED' for f in result['findings'])
@@ -175,6 +177,21 @@ async def test_intent_explicit_false_scope_denial_blocks_baseline():
     with pytest.raises(PermissionError):
         await IntentFuzzer(adb=adb).exercise_component(
             'synthetic', 'org.example.fixture', '.Entry', guard=lambda: False,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_intent_async_scope_guard_fails_closed_before_baseline():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+
+    async def async_deny():
+        return False
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await IntentFuzzer(adb=adb).exercise_component(
+            'synthetic', 'org.example.fixture', '.Entry', guard=async_deny,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()

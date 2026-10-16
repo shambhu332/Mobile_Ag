@@ -664,6 +664,14 @@ def test_deeplink_fuzzer_requires_explicit_device_and_scope_guard(monkeypatch):
     ).status == "BLOCKED_SCOPE"
     assert len(called) == 3
 
+    async def async_allow():
+        return True
+
+    assert fuzzer.execute_fuzz_case(
+        "https://example.test/path", serial="device-1", guard=async_allow
+    ).status == "BLOCKED_SCOPE"
+    assert len(called) == 3
+
 
 def test_mobile_api_cataloger():
     from mobileag.dast.api_cataloger import MobileApiCataloger, CapturedRequest

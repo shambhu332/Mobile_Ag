@@ -8,6 +8,7 @@ for unhandled runtime exceptions (CWE-755) and credential/token leakage (CWE-532
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Optional
 
@@ -85,14 +86,17 @@ class IntentFuzzer:
         }
 
         def checked_guard():
-            if guard is None:
-                return
             if not callable(guard):
-                raise PermissionError("Device diagnostic scope guard is invalid")
+                raise PermissionError("Device diagnostic scope guard is required")
             try:
                 allowed = guard()
             except Exception as exc:
                 raise PermissionError("Device diagnostic approval revoked") from exc
+            if inspect.isawaitable(allowed):
+                close = getattr(allowed, "close", None)
+                if callable(close):
+                    close()
+                raise PermissionError("Device diagnostic scope guard must be synchronous")
             if allowed is False:
                 raise PermissionError("Device diagnostic approval revoked")
 

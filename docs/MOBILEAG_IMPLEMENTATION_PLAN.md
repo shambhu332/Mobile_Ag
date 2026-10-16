@@ -1668,3 +1668,14 @@ positive/read-only coverage. Focused provider suites passed (**132 passed**);
 full pytest passed (**1,308 passed**, 61.91 s); compileall and
 `git diff --check` passed. No device or provider was queried; the observations
 remain shell-diagnostic candidates, not ordinary-app access proof.
+
+Direct IntentFuzzer component launches, deep-link ADB launches, and `adb root`
+restart now require synchronous scope guards; missing guards cannot authorize
+them and awaitable guards fail closed. Synthetic negative controls confirmed
+no baseline/logcat, ADB launch, or root command occurs for absent/asynchronous
+approval; existing root-revocation route regression confirms HTTP denial still
+propagates and prevents follow-up root verification. Focused intent/root/
+DeepLinkIntentFuzzer tests passed (**159 passed**); full pytest passed
+(**1,310 passed**, 62.55 s); compileall and `git diff --check` passed. No
+physical/emulated device was contacted; root-shell observations are not
+ordinary-app authorization proof.

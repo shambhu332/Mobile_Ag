@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import shutil
@@ -183,9 +184,17 @@ class ADBManager:
     async def restart_root(self, serial: str, guard=None) -> dict[str, Any]:
         """Restart adbd with root permissions on target device."""
         def check_scope():
-            if guard is None:
-                return
-            if not callable(guard) or guard() is False:
+            if not callable(guard):
+                raise PermissionError("ADB root action requires an explicit scope guard")
+            # Let scope-denial exceptions propagate unchanged (for example, a
+            # web route's HTTP 403); any exception still stops before ADB.
+            approved = guard()
+            if inspect.isawaitable(approved):
+                close = getattr(approved, "close", None)
+                if callable(close):
+                    close()
+                raise PermissionError("ADB root action scope guard must be synchronous")
+            if approved is False:
                 raise PermissionError("ADB root action scope is unavailable or revoked")
 
         check_scope()

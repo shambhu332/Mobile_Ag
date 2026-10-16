@@ -153,7 +153,8 @@ class PendingIntentAuditor:
                                     stack: tuple[str, ...] = ()) -> int | None:
         """Evaluate only integer literals, compile-time aliases, and bit operators."""
         expression = expression.strip()
-        if len(stack) > 8 or len(expression) > 512:
+        if (len(stack) > 8 or len(expression) > 512
+                or expression.count("(") > 32 or expression.count(")") > 32):
             return None
         known_flags = {
             "FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT": 0x01000000,
@@ -172,8 +173,12 @@ class PendingIntentAuditor:
         )
         expanded: list[str] = []
         cursor = 0
+        token_count = 0
         for match in tokens.finditer(expression):
             if cursor != match.start():
+                return None
+            token_count += 1
+            if token_count > 256:
                 return None
             cursor = match.end()
             kind = match.lastgroup
@@ -198,16 +203,18 @@ class PendingIntentAuditor:
 
         try:
             tree = ast.parse("".join(expanded), mode="eval")
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError, RecursionError):
             return None
 
-        def evaluate(node: ast.AST) -> int | None:
+        def evaluate(node: ast.AST, depth: int = 0) -> int | None:
+            if depth > 32:
+                return None
             if isinstance(node, ast.Expression):
-                return evaluate(node.body)
+                return evaluate(node.body, depth + 1)
             if isinstance(node, ast.Constant) and type(node.value) is int:
                 return node.value
             if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Invert, ast.UAdd, ast.USub)):
-                value = evaluate(node.operand)
+                value = evaluate(node.operand, depth + 1)
                 if value is None:
                     return None
                 if isinstance(node.op, ast.Invert):
@@ -216,7 +223,7 @@ class PendingIntentAuditor:
             if isinstance(node, ast.BinOp) and isinstance(
                 node.op, (ast.BitOr, ast.BitAnd, ast.BitXor, ast.LShift, ast.RShift, ast.Add, ast.Sub),
             ):
-                left, right = evaluate(node.left), evaluate(node.right)
+                left, right = evaluate(node.left, depth + 1), evaluate(node.right, depth + 1)
                 if left is None or right is None or (isinstance(node.op, (ast.LShift, ast.RShift)) and not 0 <= right <= 63):
                     return None
                 if isinstance(node.op, ast.BitOr): return left | right
@@ -258,7 +265,8 @@ class PendingIntentAuditor:
             final_flags = args[-1] if args else ""
             resolved_flags = self._resolve_flag_symbols(final_flags, aliases)
             numeric_flags = self._resolve_numeric_flag_value(final_flags, aliases)
-            if resolved_flags is None:
+            if (resolved_flags is None
+                    or (not resolved_flags and numeric_flags is None and final_flags.strip())):
                 title = f"Unresolved PendingIntent Flags in {method}()"
                 description = (
                     f"PendingIntent creation at line {content.count(chr(10), 0, match.start()) + 1} has a flags "

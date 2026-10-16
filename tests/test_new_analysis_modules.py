@@ -163,6 +163,16 @@ def test_pending_intent_auditor_decodes_numeric_mutability_bits(tmp_path):
     assert findings[1].id.startswith("PENDING_INTENT_CONFLICTING_FLAGS_")
 
 
+def test_pending_intent_auditor_bounds_numeric_expression_parsing(tmp_path):
+    path = tmp_path / "DeepFlags.java"
+    deep = "~" * 80 + "0"
+    path.write_text(f"PendingIntent.getActivity(ctx, 0, intent, {deep});")
+    findings = PendingIntentAuditor().audit_file(path)
+    assert len(findings) == 1
+    assert findings[0].id.startswith("PENDING_INTENT_FLAGS_UNRESOLVED_")
+    assert findings[0].metadata["flags_resolution"] == "not_resolved"
+
+
 def test_pending_intent_directory_scan_is_bounded_and_skips_symlinks(tmp_path):
     outside = tmp_path.parent / "pending-intent-outside.java"
     outside.write_text("PendingIntent.getActivity(ctx, 0, intent, 0);")

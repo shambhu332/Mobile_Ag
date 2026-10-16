@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlsplit
+
+from packageurl import PackageURL
 
 
 def escape_purl_segment(value: str) -> str:
@@ -21,6 +23,54 @@ def escape_purl_segment(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("PURL segments must be strings")
     return quote(value, safe="._~-", encoding="utf-8", errors="strict")
+
+
+def normalize_package_url(value: str) -> str:
+    """Validate and canonicalize a PURL using the package-url reference parser."""
+    if (not isinstance(value, str) or len(value) > 2048
+            or any(ch.isspace() or ord(ch) < 0x20 for ch in value)
+            or re.search(r"%(?![0-9a-fA-F]{2})", value)):
+        raise ValueError("Invalid package URL syntax or length")
+    try:
+        parts = urlsplit(value)
+        if parts.scheme.lower() != "pkg":
+            raise ValueError("Package URL must use the pkg scheme")
+        qualifier_pairs = parse_qsl(parts.query, keep_blank_values=True, strict_parsing=True,
+                                    max_num_fields=100)
+        qualifier_names = [name.lower() for name, _ in qualifier_pairs]
+        if len(qualifier_names) != len(set(qualifier_names)):
+            raise ValueError("Package URL contains duplicate qualifier names")
+        parsed = PackageURL.from_string(value)
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Package URL"):
+            raise
+        raise ValueError("Invalid package URL syntax") from exc
+    if parsed is None:
+        raise ValueError("Invalid package URL syntax")
+    errors = [item.message for item in parsed.validate()
+              if getattr(item.severity, "value", item.severity) == "error"]
+    if errors:
+        raise ValueError("Invalid package URL: " + "; ".join(errors[:4]))
+    canonical = parsed.to_string()
+    if len(canonical) > 2048:
+        raise ValueError("Invalid package URL syntax or length")
+    return canonical
+
+
+def build_package_url(purl_type: str, name: str, version: Optional[str] = None,
+                      namespace: Optional[str] = None) -> str:
+    """Build a canonical PURL from coordinates without joining untrusted path text."""
+    try:
+        parsed = PackageURL(type=purl_type, namespace=namespace, name=name, version=version)
+        errors = [item.message for item in parsed.validate()
+                  if getattr(item.severity, "value", item.severity) == "error"]
+        if errors:
+            raise ValueError("Invalid package coordinates: " + "; ".join(errors[:4]))
+        return normalize_package_url(parsed.to_string())
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Invalid package coordinates"):
+            raise
+        raise ValueError("Invalid package coordinates") from exc
 
 
 @dataclass
@@ -71,9 +121,7 @@ class MobileSbomGenerator:
         self._validate_text(name, "component name", 1024)
         if version is not None:
             self._validate_text(version, "component version", 256)
-        if (not isinstance(purl, str) or not purl.startswith("pkg:") or len(purl) > 2048
-                or any(ord(ch) < 0x20 or ch.isspace() for ch in purl)):
-            raise ValueError("Invalid package URL scheme or length")
+        purl = normalize_package_url(purl)
         if not isinstance(component_type, str) or component_type not in self.COMPONENT_TYPES:
             raise ValueError(f"Unsupported CycloneDX component type: {component_type!r}")
         if licenses is not None:
@@ -123,10 +171,9 @@ class MobileSbomGenerator:
     ) -> None:
         """Attach an OSV/CVE security advisory to an inventoried component."""
         severity_aliases = {"moderate": "medium"}
-        if (not isinstance(vuln_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", vuln_id)
-                or not isinstance(purl, str) or not purl.startswith("pkg:")
-                or len(purl) > 2048 or any(ord(ch) < 0x20 or ch.isspace() for ch in purl)):
+        if (not isinstance(vuln_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", vuln_id)):
             raise ValueError("Invalid SBOM vulnerability identifier or package URL")
+        purl = normalize_package_url(purl)
         if not isinstance(description, str) or len(description) > 4096 or any(
             ord(ch) < 0x20 and ch not in "\t\n\r" for ch in description
         ):

@@ -409,7 +409,27 @@ def test_sbom_component_metadata_is_bounded_and_typed():
         generator.add_component("native", "1", "pkg:generic/native", component_type="injected")
     with pytest.raises(ValueError, match="package URL"):
         generator.add_component("native", "1", "pkg:generic/bad name")
-    generator.add_component("Bank App", "1.0 beta", "pkg:apk/Bank%20App@1.0%20beta")
+    generator.add_component("Bank App", "1.0 beta", "pkg:generic/Bank%20App@1.0%20beta")
+
+
+def test_sbom_purls_are_reference_parsed_canonical_and_unambiguous():
+    import pytest
+    from mobileag.analysis.sbom_generator import build_package_url, normalize_package_url
+
+    built = build_package_url("maven", namespace="org.example", name="demo app", version="1.0 beta")
+    assert built == "pkg:maven/org.example/demo%20app@1.0%20beta"
+    assert normalize_package_url("pkg:generic/lib/arm64-v8a/libsample.so") == \
+        "pkg:generic/lib/arm64-v8a/libsample.so"
+    for malformed in (
+        "pkg:", "https://example.invalid/pkg", "pkg:generic/@1", "pkg:generic/name%ZZ",
+        "pkg:generic/name?arch=arm64&arch=x86_64", "pkg:generic/name?bad qualifier=value",
+    ):
+        with pytest.raises(ValueError, match="package URL|Package URL"):
+            normalize_package_url(malformed)
+
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="duplicate qualifier"):
+        generator.add_component("bad", "1", "pkg:generic/name?arch=arm64&arch=x86_64")
 
 
 def test_exploit_poc_synthesizer():

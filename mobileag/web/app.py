@@ -683,7 +683,7 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
 async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
     """Export CycloneDX v1.5 SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator, escape_purl_segment
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -699,7 +699,7 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{escape_purl_segment(app_name)}@{escape_purl_segment(version)}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return gen.generate_cyclonedx_json()
@@ -709,7 +709,7 @@ async def get_scan_cyclonedx(scan_id: str) -> dict[str, Any]:
 async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
     """Export CycloneDX v1.5 XML SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator, escape_purl_segment
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -725,7 +725,7 @@ async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{escape_purl_segment(app_name)}@{escape_purl_segment(version)}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return Response(content=gen.generate_cyclonedx_xml(), media_type="application/xml")
@@ -735,7 +735,7 @@ async def get_scan_cyclonedx_xml(scan_id: str) -> Response:
 async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
     """Export SPDX 2.3 SBOM."""
     scan = await get_scan_details(scan_id)
-    from mobileag.analysis.sbom_generator import MobileSbomGenerator, escape_purl_segment
+    from mobileag.analysis.sbom_generator import MobileSbomGenerator, build_package_url, escape_purl_segment
     app_name = scan.get("app_name") or scan.get("package_name") or "MobileApp"
     version = scan.get("version") or "1.0.0"
     gen = MobileSbomGenerator(app_name=app_name, app_version=version)
@@ -751,7 +751,7 @@ async def get_scan_spdx(scan_id: str) -> dict[str, Any]:
         gen.add_component(
             name=app_name,
             version=version,
-            purl=f"pkg:apk/{escape_purl_segment(app_name)}@{escape_purl_segment(version)}",
+            purl=build_package_url("generic", name=app_name, version=version),
             component_type="application",
         )
     return gen.generate_spdx_json()

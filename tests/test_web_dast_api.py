@@ -44,6 +44,23 @@ def test_captured_api_exports_require_session_and_mark_inventory(monkeypatch, cl
     assert "synthetic-export-cookie" not in har.text
 
 
+def test_empty_scan_sbom_exports_use_a_valid_generic_application_purl(monkeypatch, client):
+    import importlib
+    web = importlib.import_module("mobileag.web.app")
+    scan = {"scan_id": "synthetic-purl", "app_name": "org.example.demo", "version": "2.1.0",
+            "package_name": "org.example.demo", "dependencies": []}
+    monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value=scan))
+
+    cyclonedx = client.get("/api/scans/synthetic-purl/cyclonedx")
+    assert cyclonedx.status_code == 200
+    component = cyclonedx.json()["components"][0]
+    assert component["type"] == "application"
+    assert component["purl"] == "pkg:generic/org.example.demo@2.1.0"
+    spdx = client.get("/api/scans/synthetic-purl/spdx")
+    assert spdx.status_code == 200
+    assert spdx.json()["packages"][0]["externalRefs"][0]["referenceLocator"] == component["purl"]
+
+
 def test_dast_devices_endpoint(client):
     response = client.get("/api/dast/devices")
     assert response.status_code == 200

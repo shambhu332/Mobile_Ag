@@ -981,6 +981,23 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    from `not_run` (rather than rendering an empty object as if it were tested).
    This is a bounded automated check, not a complete WCAG conformance claim.
 
+   SBOM PURL handling now uses pinned `packageurl-python==0.17.6` rather than
+   accepting any string prefixed with `pkg:`. Component and advisory references
+   are parsed, validated, and canonicalized; malformed percent escapes,
+   duplicate qualifier names, invalid coordinates, and non-`pkg` schemes are
+   rejected. Maven/npm PURLs are built from structured coordinates, while app
+   fallback identities use `generic` instead of confusing Android app records
+   with package-manager `apk` packages. This follows the upstream
+   [PURL core specification](https://github.com/package-url/purl-spec) and its
+   [Python parser](https://github.com/package-url/packageurl-python); it does
+   not prove that package coordinates or vulnerability matches are authentic.
+   Focused SBOM/API tests passed (**149 passed across the focused runs**); full
+   pytest passed (**1,171 passed**, 66.22 s), with compilation and
+   `git diff --check` passing. The full suite is synthetic/mocked and not an
+   inventory recall claim. `pip check` also reports unrelated conflicts in
+   optional preinstalled tools in the shared environment, so that auxiliary
+   environment check is not clean.
+
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.
    It confirmed no page errors, no XSS marker execution, no external requests,

@@ -66,6 +66,7 @@ class MobileTokenSessionAuditor:
     )
 
     MAX_TOKEN_CHARS = 64 * 1024
+    MAX_AUTHORIZATION_HEADER_CHARS = MAX_TOKEN_CHARS + 16
     MAX_JWT_SEGMENT_CHARS = 16 * 1024
     MAX_TRANSACTIONS = 10_000
     MAX_HEADERS_PER_TRANSACTION = 100
@@ -457,8 +458,6 @@ class MobileTokenSessionAuditor:
             if len(auth_headers) > 1:
                 duplicate_authorization_headers += 1
                 header_incomplete = True
-            if header_incomplete:
-                header_input_incomplete += 1
             status_code = getattr(tx, "response_status", 200)
             if type(status_code) is not int or not 100 <= status_code <= 599:
                 status_code = None
@@ -469,8 +468,11 @@ class MobileTokenSessionAuditor:
             auth_header = auth_headers[0] if auth_headers else ""
             if not isinstance(auth_header, str):
                 auth_header = ""
-            if len(auth_header) > self.MAX_TOKEN_CHARS + 16:
+            if len(auth_header) > self.MAX_AUTHORIZATION_HEADER_CHARS:
                 auth_header = ""
+                header_incomplete = True
+            if header_incomplete:
+                header_input_incomplete += 1
             token = ""
             auth_scheme, separator, auth_value = auth_header.partition(" ")
             if separator and auth_scheme.lower() == "bearer":

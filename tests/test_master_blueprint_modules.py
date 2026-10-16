@@ -1218,6 +1218,15 @@ def test_token_session_auditor_bounds_header_review_and_marks_ambiguous_auth():
     assert auditor.last_coverage["max_headers_per_transaction"] == 100
     assert "synthetic-hidden-token" not in str(auditor.last_coverage)
 
+    oversized_value = "synthetic-oversized-token-" + "x" * 65_536
+    auditor.audit_transactions([CapturedRequest(
+        "GET", "https://api.example.invalid/profile",
+        headers={"Authorization": oversized_value},
+    )])
+    assert auditor.last_coverage["status"] == "partial"
+    assert auditor.last_coverage["header_input_incomplete_transactions"] == 1
+    assert oversized_value not in str(auditor.last_coverage)
+
     auditor.audit_transactions([CapturedRequest(
         "GET", "https://api.example.invalid/profile",
         headers={"Authorization": "Bearer synthetic-one", "authorization": "Bearer synthetic-two"},

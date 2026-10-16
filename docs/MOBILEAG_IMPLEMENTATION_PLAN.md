@@ -1303,3 +1303,14 @@ passed with `tests/test_android_surface_coverage.py` (**34 passed**); full pytes
 passed (**1,231 passed**, 61.16 s); compileall and `git diff --check` passed.
 This makes the summary agree with analyzer coverage, not a claim of complete
 call-graph or taint coverage.
+
+The Orchestrator now synchronizes each successful analyzer's engine summary
+with that analyzer's `static_status` when present (Android surface retains its
+category-level WebView summary). This prevents partial scans from appearing
+fully completed and distinguishes an offline-blocked OSV lookup from the local
+dependency inventory: engine status reflects inventory coverage while
+`lookup_status` remains `skipped_offline`. Synthetic tests cover partial
+Dependency and Network Security Config statuses. Focused tests passed (**34
+passed**); full pytest passed (**1,231 passed**, 60.15 s); compileall and
+`git diff --check` passed. This validates summary consistency on fixtures, not
+real APK coverage.

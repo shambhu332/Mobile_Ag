@@ -177,6 +177,8 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     worker=Orchestrator(Settings(_env_file=None,offline=True,enable_deep_taint=False))
     for target,method in [(worker._manifest_auditor,'audit'),(worker._secret_scanner,'scan'),(worker._code_reviewer,'review'),(worker._native_analyzer,'analyze'),(worker._dependency_scanner,'scan'),(worker._nsc_auditor,'audit_directory_async'),(worker._bin_protection,'audit_directory_async'),(worker._rn_scanner,'scan_directory_async')]:
         monkeypatch.setattr(target,method,AsyncMock(return_value=[]))
+    worker._dependency_scanner.coverage={'static_status':'partial','lookup_status':'skipped_offline'}
+    worker._nsc_auditor.coverage={'static_status':'partial'}
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
     monkeypatch.setattr(worker._flutter_engine, 'analyze_package_directory', lambda _: SimpleNamespace(
         is_flutter_app=True, api_endpoints=['https://api.fixture.invalid/v1/flutter']))
@@ -201,6 +203,9 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['coverage']['manifest']['exhaustive'] is False
     assert result['coverage']['manifest']['runtime_status']=='not_tested'
     assert result['coverage']['engines']['smali_call_graph']=='partial'
+    assert result['coverage']['engines']['dependencies']=='partial'
+    assert result['coverage']['engines']['nsc']=='partial'
+    assert result['coverage']['dependencies']['lookup_status']=='skipped_offline'
     assert result['raw_findings'][0]['status']=='UNVERIFIED'
     assert result['il2cpp_analysis']['reconstructed_classes']==['Fixture']
     assert result['il2cpp_analysis']['reconstructed_methods']==[{'name':'reviewOnly'}]

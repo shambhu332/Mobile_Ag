@@ -716,6 +716,13 @@ class Orchestrator:
                 f_count = len(result)
             elif hasattr(result, "findings"):
                 f_count = len(getattr(result, "findings", []))
+            # Keep the summary engine map consistent with each analyzer's
+            # fail-closed coverage state. Android surface uses category-level
+            # coverage and intentionally retains its WebView summary above.
+            if name != "android_surface":
+                engine_coverage = state.get("coverage", {}).get(name)
+                if isinstance(engine_coverage, dict) and "static_status" in engine_coverage:
+                    engines[name] = engine_coverage["static_status"]
             logger.info("[Stage 2] %s: %d findings", name, f_count)
 
         # Deterministic Smali Call Graph reachability audit

@@ -165,8 +165,7 @@ class SmartUICrawler:
         for el in elements:
             if el.semantic_role == "permission_allow":
                 return CrawlerDecision(action="WAIT", explanation=(
-                    f"Permission/consent prompt requires explicit operator review: "
-                    f"{el.text or el.content_desc}"
+                    "Permission/consent prompt detected; explicit operator review is required."
                 ))
 
         # Priority 2: Fill empty username fields
@@ -212,7 +211,7 @@ class SmartUICrawler:
                 return CrawlerDecision(
                     action="CLICK",
                     target_bounds=el.bounds,
-                    explanation=f"Tapping submit button: {el.text or el.resource_id}",
+                    explanation="Tapping an approved submit control; raw UI text is omitted.",
                 )
 
         # Priority 5: If screen has been visited many times (> 3), press BACK to escape loop
@@ -237,7 +236,8 @@ class SmartUICrawler:
             return CrawlerDecision(
                 action="CLICK",
                 target_bounds=target.bounds,
-                explanation=f"Exploring clickable element: {target.text or target.resource_id or target.class_name}",
+                explanation=(f"Exploring an approved clickable element ({target.resource_id or target.class_name}); "
+                             "raw UI text is omitted."),
             )
 
         return CrawlerDecision(action="WAIT", explanation="No actionable UI elements detected.")

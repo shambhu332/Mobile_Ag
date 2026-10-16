@@ -708,6 +708,41 @@ def test_smart_ui_crawler():
     assert "explicit operator approval" in decision4.explanation
 
 
+def test_smart_ui_crawler_omits_raw_labels_from_decision_explanations():
+    private_label = "synthetic-user@example.invalid"
+    permission = SmartUICrawler()
+    decision = permission.decide_next_action(
+        "com.example.app.MainActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        f'text="Allow {private_label}" resource-id="permission_allow_button" '
+        'clickable="true" bounds="[0,0][10,10]" /></hierarchy>',
+    )
+    assert decision.action == "WAIT"
+    assert private_label not in decision.explanation
+    assert private_label not in str(permission.visited_states)
+
+    exploratory = SmartUICrawler(allow_exploratory_clicks=True)
+    private_button_text = "Private Account Recovery 847291"
+    decision = exploratory.decide_next_action(
+        "com.example.app.MainActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        f'text="{private_button_text}" clickable="true" bounds="[0,0][10,10]" '
+        '/></hierarchy>',
+    )
+    assert decision.action == "CLICK"
+    assert private_button_text not in decision.explanation
+
+    submit = SmartUICrawler(allow_form_submit=True)
+    decision = submit.decide_next_action(
+        "com.example.app.LoginActivity",
+        '<hierarchy><node class="android.widget.Button" '
+        'text="Confirm synthetic-user@example.invalid" resource-id="submit" '
+        'clickable="true" bounds="[0,0][10,10]" /></hierarchy>',
+    )
+    assert decision.action == "CLICK"
+    assert "synthetic-user@example.invalid" not in decision.explanation
+
+
 def test_smart_ui_crawler_requires_opt_in_for_back_navigation():
     xml = '<hierarchy rotation="0" />'
     default_crawler = SmartUICrawler()

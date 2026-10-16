@@ -245,7 +245,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Inputs matching `user|email|phone` or `pass|pin|secret` may be filled only with researcher-supplied synthetic values and an explicit `allow_test_credential_entry` opt-in; otherwise return `WAIT`.
      - Permission/consent buttons matching `allow|grant|accept` are recognized but must return `WAIT` for operator review; never auto-consent or tap them.
   3. **State Hashing & Loop Prevention**:
-     - Compute a truncated SHA-256 state key over the activity and sorted resource IDs (or short visible labels for elements without IDs); raw labels are not persisted by the state counter.
+     - Compute a truncated SHA-256 state key over the activity and sorted resource IDs (or short visible labels for elements without IDs); raw labels are not persisted by the state counter or copied into action explanations.
      - Track visited state counts. Repeated-state `BACK` navigation, exploratory taps, and form submission are separate opt-ins; defaults return `WAIT`.
 
 ---
@@ -1068,3 +1068,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    with compile and diff checks passing. This improves one lexical heuristic;
    the inventory remains incomplete and does not establish effective root
    detection or absence of root checks.
+
+   Smart UI crawler decisions no longer copy hierarchy text/content descriptions
+   into permission, submit, or exploratory-click explanations; the loop counter
+   continues to retain only truncated state digests. Synthetic negative controls
+   place a synthetic email and account-recovery label in UI text and confirm
+   they are absent from returned explanations/state keys. Focused crawler tests
+   passed (**5 passed**); full pytest passed (**1,176 passed**, 64.82 s), with
+   compile and diff checks passing. Parsed hierarchy objects remain transiently
+   available to classifier logic, and no device-side crawler run was performed.

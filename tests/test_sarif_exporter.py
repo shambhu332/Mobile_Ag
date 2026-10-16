@@ -1,11 +1,15 @@
 """Unit tests for OASIS SARIF v2.1.0 Exporter."""
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from mobileag.reporting.finding import Finding, Severity
 from mobileag.reporting.sarif_exporter import SARIFExporter
+from mobileag.reporting.sarif_importer import SarifImportError, validate_sarif_document
 
 
 def test_sarif_generation_and_export():
@@ -59,3 +63,25 @@ def test_sarif_generation_and_export():
         assert r1["level"] == "error"
         assert r1["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "AndroidManifest.xml"
         assert r1["locations"][0]["physicalLocation"]["region"]["startLine"] == 42
+        validate_sarif_document(sarif_data)
+
+
+def test_sarif_export_replaces_symlink_atomically_with_private_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        victim = root / "victim.txt"
+        victim.write_text("unchanged")
+        output = root / "out.sarif"
+        output.symlink_to(victim)
+
+        SARIFExporter.export_to_file([], output)
+
+        assert victim.read_text() == "unchanged"
+        assert not output.is_symlink()
+        assert json.loads(output.read_text())["version"] == "2.1.0"
+        assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_sarif_export_rejects_oversized_result_inventory():
+    with pytest.raises(SarifImportError, match="inventory exceeds limits"):
+        SARIFExporter.generate_sarif([{}] * 5001)

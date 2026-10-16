@@ -15,6 +15,14 @@ from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_roo
 from mobileag.reporting.finding import Finding
 
 
+class _UnexpectedRootElement(Exception):
+    """Internal signal used to distinguish a wrong root from malformed XML."""
+
+
+class _XMLNestingLimit(Exception):
+    """Internal signal for bounded parser depth exhaustion."""
+
+
 @dataclass
 class FileProviderPathEntry:
     tag: str
@@ -37,6 +45,9 @@ class FileProviderAuditor:
     """Audits FileProvider path configuration XML files for dangerous storage exposure."""
 
     MAX_XML_CHARS = 1024 * 1024
+    MAX_XML_DEPTH = 64
+    MAX_PATH_ENTRIES = 5000
+    MAX_ATTRIBUTE_CHARS = 256
 
     def __init__(self) -> None:
         self.coverage: Dict[str, Any] = {
@@ -57,10 +68,48 @@ class FileProviderAuditor:
         "external-media-path": "Exposes application external media directories.",
     }
 
+    @staticmethod
+    def _iter_path_children(xml_content: str):
+        """Yield direct children using a pull parser and discard completed subtrees."""
+        parser = ET.XMLPullParser(events=("start", "end"))
+        root = None
+        depth = 0
+
+        def completed(events):
+            nonlocal root, depth
+            for event, element in events:
+                if event == "start":
+                    if depth == 0:
+                        root = element
+                        if root.tag.rsplit("}", 1)[-1] != "paths":
+                            raise _UnexpectedRootElement
+                    if depth >= FileProviderAuditor.MAX_XML_DEPTH:
+                        raise _XMLNestingLimit
+                    depth += 1
+                else:
+                    if depth == 2:
+                        yield element
+                        element.clear()
+                        if root is not None:
+                            root.clear()
+                    depth -= 1
+
+        for offset in range(0, len(xml_content), 4096):
+            parser.feed(xml_content[offset:offset + 4096])
+            yield from completed(parser.read_events())
+        parser.close()
+        yield from completed(parser.read_events())
+        if root is None:
+            raise ET.ParseError("no XML root element")
+
     def audit_xml_content(self, xml_content: str, source_path: str = "res/xml/file_paths.xml") -> FileProviderAuditResult:
         """Parse FileProvider XML content and audit configured path mappings."""
         result = FileProviderAuditResult(xml_path=source_path)
 
+        if not isinstance(xml_content, str):
+            result.parse_status = "invalid"
+            result.error_code = "xml_input_type"
+            return result
         if len(xml_content) > self.MAX_XML_CHARS:
             result.parse_status = "invalid"
             result.error_code = "xml_size_limit"
@@ -74,96 +123,110 @@ class FileProviderAuditor:
             result.error_code = "xml_dtd_entity_rejected"
             return result
 
+        # Cap both result amplification and attacker-controlled strings copied
+        # into findings. These limits are coverage boundaries, not evidence
+        # that omitted entries are safe.
         try:
-            root = ET.fromstring(xml_content)
+            for entry_index, child in enumerate(self._iter_path_children(xml_content)):
+                if entry_index >= self.MAX_PATH_ENTRIES:
+                    result.parse_status = "partial"
+                    result.error_code = "xml_path_entry_limit"
+                    break
+                tag = child.tag.lower()
+                name = child.attrib.get("name", "")
+                path_val = child.attrib.get("path", "")
+                if (len(name) > self.MAX_ATTRIBUTE_CHARS
+                        or len(path_val) > self.MAX_ATTRIBUTE_CHARS):
+                    result.parse_status = "partial"
+                    result.error_code = "xml_path_attribute_limit"
+                    continue
+
+                is_dangerous = False
+                risk_reason = ""
+                # A literal parent segment may broaden the configured directory
+                # after filesystem normalization. This remains a review candidate:
+                # this parser cannot establish canonicalization, URI grants, or
+                # caller reachability.
+                has_parent_segment = ".." in path_val.split("/")
+                path_is_root = all(part in {"", "."} for part in path_val.split("/"))
+
+                if has_parent_segment:
+                    is_dangerous = True
+                    risk_reason = "path contains a '..' segment; review the normalized configured root and provider canonicalization"
+                elif tag == "root-path" and path_is_root:
+                    is_dangerous = True
+                    risk_reason = "root-path exposes root filesystem (/)"
+                elif tag == "root-path":
+                    # A narrower root-relative mapping is not equivalent to the
+                    # entire filesystem. Record it for review without claiming
+                    # broad exposure solely from the tag name.
+                    risk_reason = "root-path maps a restricted root-relative subdirectory; review grants and resolved files"
+                elif tag == "external-path" and path_is_root:
+                    is_dangerous = True
+                    risk_reason = "external-path configured with root or current directory (.) exposing all external storage"
+                elif path_is_root:
+                    if tag in self.DANGEROUS_TAGS:
+                        is_dangerous = True
+                        risk_reason = (self.DANGEROUS_TAGS[tag] if tag in {"files-path", "cache-path"}
+                                       else f"{tag} maps to entire parent directory root with empty or '.' path")
+
+                entry = FileProviderPathEntry(
+                    tag=tag,
+                    name=name,
+                    path=path_val,
+                    is_dangerous=is_dangerous,
+                    risk_reason=risk_reason or self.DANGEROUS_TAGS.get(tag, "Standard path mapping"),
+                )
+                result.entries.append(entry)
+
+                if is_dangerous:
+                    finding = Finding(
+                        id="FILEPROVIDER-" + hashlib.sha256(
+                            "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
+                        ).hexdigest()[:12].upper(),
+                        title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
+                               else f"Review Broad FileProvider Path Configuration ({tag})"
+                               if tag in {"files-path", "cache-path"} and path_is_root
+                               else f"Insecure FileProvider Path Configuration ({tag})"),
+                        description=(
+                            f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
+                            f"(name='{name}', path='{path_val}'). {entry.risk_reason}. "
+                            "This XML candidate alone does not establish exposure. A recipient can access a file only if "
+                            "the effective provider implementation can construct/serve its URI and the app issues an "
+                            "applicable read or write URI grant (or exposes equivalent access); actual file scope and "
+                            "caller reachability require separate review."
+                        ),
+                        severity=("INFO" if has_parent_segment or
+                                  (tag in {"files-path", "cache-path"} and path_is_root)
+                                  else "HIGH" if tag == "root-path" else "MEDIUM"),
+                        file_path=source_path,
+                        line_number=1,
+                        code_snippet=f"<{child.tag} name=\"{name}\" path=\"{path_val}\" />",
+                        cwe_id="CWE-22",
+                        owasp_category="M1: Improper Platform Usage",
+                        status="UNVERIFIED",
+                        metadata={
+                            "tag": tag,
+                            "name": name,
+                            "path": path_val,
+                            "risk_reason": risk_reason,
+                        },
+                    )
+                    result.findings.append(finding)
+
+        except _UnexpectedRootElement:
+            result.parse_status = "invalid"
+            result.error_code = "unexpected_root_element"
+            result.entries.clear()
+            result.findings.clear()
+        except _XMLNestingLimit:
+            result.parse_status = "partial"
+            result.error_code = "xml_depth_limit"
         except ET.ParseError:
             result.parse_status = "invalid"
             result.error_code = "xml_parse_error"
-            return result
-
-        if root.tag.rsplit("}", 1)[-1] != "paths":
-            result.parse_status = "invalid"
-            result.error_code = "unexpected_root_element"
-            return result
-
-        # Common root is <paths>
-        for child in root:
-            tag = child.tag.lower()
-            name = child.attrib.get("name", "")
-            path_val = child.attrib.get("path", "")
-
-            is_dangerous = False
-            risk_reason = ""
-            # A literal parent segment may broaden the configured directory
-            # after filesystem normalization. This remains a review candidate:
-            # this parser cannot establish canonicalization, URI grants, or
-            # caller reachability.
-            has_parent_segment = ".." in path_val.split("/")
-            path_is_root = all(part in {"", "."} for part in path_val.split("/"))
-
-            if has_parent_segment:
-                is_dangerous = True
-                risk_reason = "path contains a '..' segment; review the normalized configured root and provider canonicalization"
-            elif tag == "root-path" and path_is_root:
-                is_dangerous = True
-                risk_reason = "root-path exposes root filesystem (/)"
-            elif tag == "root-path":
-                # A narrower root-relative mapping is not equivalent to the
-                # entire filesystem. Record it for review without claiming
-                # broad exposure solely from the tag name.
-                risk_reason = "root-path maps a restricted root-relative subdirectory; review grants and resolved files"
-            elif tag == "external-path" and path_is_root:
-                is_dangerous = True
-                risk_reason = "external-path configured with root or current directory (.) exposing all external storage"
-            elif path_is_root:
-                if tag in self.DANGEROUS_TAGS:
-                    is_dangerous = True
-                    risk_reason = (self.DANGEROUS_TAGS[tag] if tag in {"files-path", "cache-path"}
-                                   else f"{tag} maps to entire parent directory root with empty or '.' path")
-
-            entry = FileProviderPathEntry(
-                tag=tag,
-                name=name,
-                path=path_val,
-                is_dangerous=is_dangerous,
-                risk_reason=risk_reason or self.DANGEROUS_TAGS.get(tag, "Standard path mapping"),
-            )
-            result.entries.append(entry)
-
-            if is_dangerous:
-                finding = Finding(
-                    id="FILEPROVIDER-" + hashlib.sha256(
-                        "\0".join((source_path, tag, name, path_val)).encode("utf-8", errors="replace")
-                    ).hexdigest()[:12].upper(),
-                    title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
-                           else f"Review Broad FileProvider Path Configuration ({tag})"
-                           if tag in {"files-path", "cache-path"} and path_is_root
-                           else f"Insecure FileProvider Path Configuration ({tag})"),
-                    description=(
-                        f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
-                        f"(name='{name}', path='{path_val}'). {entry.risk_reason}. "
-                        "This XML candidate alone does not establish exposure. A recipient can access a file only if "
-                        "the effective provider implementation can construct/serve its URI and the app issues an "
-                        "applicable read or write URI grant (or exposes equivalent access); actual file scope and "
-                        "caller reachability require separate review."
-                    ),
-                    severity=("INFO" if has_parent_segment or
-                              (tag in {"files-path", "cache-path"} and path_is_root)
-                              else "HIGH" if tag == "root-path" else "MEDIUM"),
-                    file_path=source_path,
-                    line_number=1,
-                    code_snippet=f"<{child.tag} name=\"{name}\" path=\"{path_val}\" />",
-                    cwe_id="CWE-22",
-                    owasp_category="M1: Improper Platform Usage",
-                    status="UNVERIFIED",
-                    metadata={
-                        "tag": tag,
-                        "name": name,
-                        "path": path_val,
-                        "risk_reason": risk_reason,
-                    },
-                )
-                result.findings.append(finding)
+            result.entries.clear()
+            result.findings.clear()
 
         return result
 

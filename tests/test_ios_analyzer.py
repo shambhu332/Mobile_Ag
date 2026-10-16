@@ -139,6 +139,79 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
     assert candidate.metadata["proof_status"] == "not_proven"
 
 
+def test_ios_ipa_pipeline_reviews_framework_symbols_against_its_own_manifest(tmp_path, monkeypatch):
+    ipa_path = tmp_path / "FrameworkFixture.ipa"
+    extract_dir = tmp_path / "framework-extract"
+    with zipfile.ZipFile(ipa_path, "w") as archive:
+        app = "Payload/FrameworkFixture.app/"
+        archive.writestr(app + "Info.plist", plistlib.dumps({
+            "CFBundleIdentifier": "org.example.synthetic",
+            "CFBundleExecutable": "FrameworkFixture",
+        }))
+        archive.writestr(app + "PrivacyInfo.xcprivacy", plistlib.dumps({
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+            }],
+        }))
+        archive.writestr(app + "FrameworkFixture", struct.pack(
+            "<IIIIIIII", MH_MAGIC_64, 0, 0, 2, 0, 0, MH_PIE, 0) + b"\x00" * 80)
+        framework = app + "Frameworks/SyntheticAnalytics.framework/"
+        archive.writestr(framework + "SyntheticAnalytics", struct.pack(
+            "<IIIIIIII", MH_MAGIC_64, 0, 0, 2, 0, 0, MH_PIE, 0) + b"\x00" * 80)
+        archive.writestr(framework + "PrivacyInfo.xcprivacy", plistlib.dumps({
+            "NSPrivacyAccessedAPITypes": [],
+        }))
+
+    def parse_synthetic_binary(_self, path):
+        symbols = ["_standardUserDefaults"] if Path(path).parent.name == "SyntheticAnalytics.framework" else []
+        return MachoAnalysisResult(is_macho=True, parse_status="parsed", symbol_names=symbols)
+
+    monkeypatch.setattr(MachoBinaryParser, "parse_binary", parse_synthetic_binary)
+    report = IOSSecurityAnalyzer().audit_ipa(ipa_path, extract_dir)
+
+    review = report["privacy_manifest"]["framework_binary_api_symbol_reviews"]
+    assert len(review) == 1
+    assert review[0]["manifest_state"] == "parsed"
+    assert review[0]["candidate_categories"] == [{
+        "category": "NSPrivacyAccessedAPITypeUserDefaults",
+        "symbol_markers": ["standardUserDefaults"],
+    }]
+    assert review[0]["undeclared_review_candidates"] == review[0]["candidate_categories"]
+    assert report["coverage"]["framework_privacy_api_symbol_review"] == "analyzed_heuristically"
+    framework_finding = next(f for f in report["findings"]
+                             if f.affected_component == "SyntheticAnalytics embedded framework")
+    assert framework_finding.status == FindingStatus.UNVERIFIED
+    assert framework_finding.metadata["manifest_state"] == "parsed"
+    assert framework_finding.id != "IOS_PRIVACY_API_SYMBOL_REVIEW_UserDefaults"
+    assert "SyntheticAnalytics embedded framework symbol table" in framework_finding.description
+    assert "SyntheticAnalytics embedded framework PrivacyInfo.xcprivacy" in framework_finding.description
+
+
+def test_ios_framework_symbol_inventory_reports_candidate_cap(tmp_path, monkeypatch):
+    from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
+
+    app_dir = tmp_path / "Synthetic.app"
+    for name in ("Alpha", "Beta"):
+        framework = app_dir / "Frameworks" / f"{name}.framework"
+        framework.mkdir(parents=True)
+        (framework / name).write_bytes(b"synthetic")
+    monkeypatch.setattr(
+        MachoBinaryParser, "parse_binary",
+        lambda _self, _path: MachoAnalysisResult(is_macho=True, parse_status="parsed", symbol_names=["_stat"]),
+    )
+    analyzer = IOSSecurityAnalyzer()
+    analyzer.MAX_FRAMEWORK_SYMBOL_BINARIES = 1
+
+    reports, _findings, coverage = analyzer._audit_ios_framework_api_symbols(
+        app_dir, PrivacyManifestAuditor())
+
+    assert len(reports) == 1
+    assert coverage["binary_candidates"] == 2
+    assert coverage["binaries_analyzed"] == 1
+    assert coverage["status"] == "partial"
+    assert coverage["limit_reasons"] == {"framework_binary_count": 1}
+
+
 def test_ios_advanced_api_and_keychain_audit():
     analyzer = IOSSecurityAnalyzer()
 

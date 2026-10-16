@@ -34,6 +34,36 @@ def test_fileprovider_auditor_detects_dangerous_root_path():
     assert first_id == second_id
 
 
+def test_openapi_export_replaces_symlink_atomically_with_private_file(tmp_path):
+    import json
+    import os
+    from mobileag.dast.api_cataloger import MobileApiCataloger
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("unchanged")
+    output = tmp_path / "openapi.json"
+    output.symlink_to(victim)
+
+    saved = MobileApiCataloger().save_openapi(output)
+
+    assert saved == output
+    assert victim.read_text() == "unchanged"
+    assert not output.is_symlink()
+    assert json.loads(output.read_text())["openapi"] == "3.0.0"
+    assert os.stat(output).st_mode & 0o077 == 0
+
+
+def test_openapi_export_size_cap_fails_before_destination_write(tmp_path, monkeypatch):
+    import pytest
+    import mobileag.dast.api_cataloger as api_cataloger
+
+    output = tmp_path / "openapi.json"
+    monkeypatch.setattr(api_cataloger, "_MAX_OPENAPI_BYTES", 10)
+    with pytest.raises(ValueError, match="size limit"):
+        api_cataloger.MobileApiCataloger().save_openapi(output)
+    assert not output.exists()
+
+
 def test_fileprovider_parent_path_is_review_candidate_not_exploit_claim():
     result = FileProviderAuditor().audit_xml_content(
         '<paths><files-path name="reports" path="reports/../" />'
@@ -128,6 +158,53 @@ def test_fileprovider_parser_bounds_direct_xml_input_and_validates_root():
     assert wrong_root.error_code == "unexpected_root_element"
 
 
+def test_fileprovider_parser_caps_path_entries_and_marks_partial_coverage():
+    xml = "<paths>" + "<files-path name='n' path='subdir'/>" * (
+        FileProviderAuditor.MAX_PATH_ENTRIES + 1) + "</paths>"
+
+    result = FileProviderAuditor().audit_xml_content(xml)
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_path_entry_limit"
+    assert len(result.entries) == FileProviderAuditor.MAX_PATH_ENTRIES
+
+
+def test_fileprovider_parser_does_not_retain_oversized_path_attributes():
+    oversized_path = "x" * (FileProviderAuditor.MAX_ATTRIBUTE_CHARS + 1)
+    result = FileProviderAuditor().audit_xml_content(
+        f"<paths><root-path name='root' path='{oversized_path}'/></paths>")
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_path_attribute_limit"
+    assert result.entries == []
+    assert result.findings == []
+
+
+def test_fileprovider_streaming_parse_discards_candidates_if_tail_is_malformed():
+    result = FileProviderAuditor().audit_xml_content(
+        "<paths><root-path name='root' path='.'/></paths><broken>")
+
+    assert result.parse_status == "invalid"
+    assert result.error_code == "xml_parse_error"
+    assert result.entries == []
+    assert result.findings == []
+
+
+def test_fileprovider_parser_rejects_non_string_input():
+    result = FileProviderAuditor().audit_xml_content(None)
+
+    assert result.parse_status == "invalid"
+    assert result.error_code == "xml_input_type"
+
+
+def test_fileprovider_streaming_parser_caps_nested_xml_depth():
+    nested = "<x>" * FileProviderAuditor.MAX_XML_DEPTH + "</x>" * FileProviderAuditor.MAX_XML_DEPTH
+    result = FileProviderAuditor().audit_xml_content(f"<paths><files-path name='n' path='x'>{nested}</files-path></paths>")
+
+    assert result.parse_status == "partial"
+    assert result.error_code == "xml_depth_limit"
+
+
 @pytest.mark.parametrize("declaration", [
     '<!DOCTYPE paths [<!ENTITY marker "synthetic">]>',
     '<!DOCTYPE paths SYSTEM "file:///tmp/researcher-controlled-nonexistent">',
@@ -185,13 +262,15 @@ def test_provider_fuzzer_traversal_and_sqli_payloads():
     fuzzer = ContentProviderFuzzer(adb_path="echo")
     scope = lambda: None
     results = fuzzer.fuzz_provider_traversal(
-        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope,
+        synthetic_data_confirmed=True,
     )
     assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
-    assert any("databases" in r.target_uri for r in results)
+    assert all("mobileag_synthetic_canary" in r.target_uri for r in results)
 
     sqli_results = fuzzer.fuzz_provider_sqli(
-        "com.example.provider", serial="synthetic-device", guard=scope
+        "com.example.provider", serial="synthetic-device", guard=scope,
+        synthetic_data_confirmed=True,
     )
     assert len(sqli_results) == 2 * len(ContentProviderFuzzer.SQLI_PROBES)
     assert {item.action for item in sqli_results} == {"selection", "projection"}
@@ -222,12 +301,23 @@ def test_provider_fuzzer_requires_scoped_device_and_quotes_remote_shell_argument
     assert len(invalid) == 1 and invalid[0].status == "INVALID_INPUT"
     assert called == []
 
+    unconfirmed_traversal = fuzzer.fuzz_provider_traversal(
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=lambda: None,
+    )
+    unconfirmed_query = fuzzer.fuzz_provider_sqli(
+        "com.example.provider", serial="synthetic-device", guard=lambda: None,
+    )
+    assert [result.status for result in unconfirmed_traversal] == ["BLOCKED_SYNTHETIC_SCOPE"]
+    assert [result.status for result in unconfirmed_query] == ["BLOCKED_SYNTHETIC_SCOPE"]
+    assert called == []
+
     guarded_calls = []
     def guard():
         guarded_calls.append(True)
 
     results = fuzzer.fuzz_provider_traversal(
         "com.example.provider", "com.example.app", serial="synthetic-device", guard=guard,
+        synthetic_data_confirmed=True,
     )
     assert len(results) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
     assert len(called) == len(ContentProviderFuzzer.TRAVERSAL_PAYLOADS)
@@ -255,9 +345,11 @@ def test_provider_fuzzer_honors_explicit_scope_guard_denial(monkeypatch):
 
     traversal = fuzzer.fuzz_provider_traversal(
         "com.example.provider", "com.example.app", serial="synthetic-device", guard=deny_scope,
+        synthetic_data_confirmed=True,
     )
     sql = fuzzer.fuzz_provider_sqli(
         "com.example.provider", serial="synthetic-device", guard=deny_scope,
+        synthetic_data_confirmed=True,
     )
     assert traversal and all(result.status == "BLOCKED_SCOPE" for result in traversal)
     assert sql and all(result.status == "BLOCKED_SCOPE" for result in sql)
@@ -306,6 +398,36 @@ def test_bola_candidate_extraction_rejects_query_id_control_and_whitespace_value
     )
 
     assert candidates == ["order_1", "valid_123"]
+
+
+def test_bola_candidate_query_keys_use_identifier_tokens_not_substrings():
+    candidates = BolaFuzzer().extract_resource_candidates(
+        "https://api.example.test/v1/resources?grid=blue&valid_id=item_123&orderId=order_456"
+    )
+
+    assert candidates == ["item_123", "order_456"]
+
+
+def test_bola_result_redacts_short_credentials_in_sensitive_path_segments():
+    import json
+
+    fuzzer = BolaFuzzer()
+    endpoint = (
+        "https://synthetic-user:synthetic-password@api.example.test/v1/auth/%74oken/short-live-secret"
+        "?access_token=query-secret#fragment-secret"
+    )
+    result = fuzzer.evaluate_response_discrepancy(
+        endpoint=endpoint, method="GET", resource_id="short-live-secret",
+        status_code=200, response_body="synthetic response",
+    )
+
+    assert result.endpoint == "https://api.example.test/v1/auth/%74oken/{redacted}"
+    serialized = json.dumps(result.__dict__)
+    for secret in (
+        "synthetic-user", "synthetic-password", "short-live-secret",
+        "query-secret", "fragment-secret",
+    ):
+        assert secret not in serialized
 
 
 def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
@@ -459,10 +581,12 @@ def test_provider_fuzzer_success_is_observation_not_vulnerability(monkeypatch):
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     scope_guard = lambda: None
     traversal = fuzzer.fuzz_provider_traversal(
-        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope_guard
+        "com.example.provider", "com.example.app", serial="synthetic-device", guard=scope_guard,
+        synthetic_data_confirmed=True,
     )
     sql = fuzzer.fuzz_provider_sqli(
-        "com.example.provider", serial="synthetic-device", guard=scope_guard
+        "com.example.provider", serial="synthetic-device", guard=scope_guard,
+        synthetic_data_confirmed=True,
     )
     assert traversal[0].status == "OBSERVED_READABLE"
     assert sql[0].status == "QUERY_RESULT_OBSERVED"
@@ -489,6 +613,7 @@ def test_provider_sqli_permission_denial_precedes_sql_error_wording(monkeypatch)
     monkeypatch.setattr(provider_module.subprocess, "Popen", FakeProcess)
     results = ContentProviderFuzzer(adb_path="adb").fuzz_provider_sqli(
         "com.example.provider", serial="synthetic-device", guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
 
     assert results
@@ -517,7 +642,7 @@ def test_provider_fuzzer_sqli_covers_projection_and_selection_with_shell_quoting
     fuzzer = ContentProviderFuzzer(adb_path="adb")
     results = fuzzer.fuzz_provider_sqli(
         "com.example.provider", projection_param="name); SELECT synthetic",
-        serial="synthetic-device", guard=lambda: None,
+        serial="synthetic-device", guard=lambda: None, synthetic_data_confirmed=True,
     )
     assert len(results) == 2 * len(fuzzer.SQLI_PROBES)
     assert {result.action for result in results} == {"selection", "projection"}
@@ -948,6 +1073,25 @@ def test_openapi_catalog_redacts_short_and_percent_encoded_token_like_segments()
 
     assert MobileApiCataloger._path_template("/v1/users/AbC123xy") == "/v1/users/{id1}"
     assert MobileApiCataloger._path_template("/v1/users/Ab%31Cd%32Ef") == "/v1/users/{id1}"
+
+
+def test_openapi_catalog_redacts_digit_bearing_prefixed_resource_ids():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "GET", "https://api.example.test/v1/users/usr_98472/orders/order_123"))
+    spec = catalog.export_openapi_json()
+    assert "/v1/users/{id1}/orders/{id2}" in spec["paths"]
+    encoded = json.dumps(spec)
+    assert "usr_98472" not in encoded and "order_123" not in encoded
+    # Hard negatives: ordinary route words without digits remain literal.
+    assert MobileApiCataloger._path_template("/v1/users/me") == "/v1/users/me"
+    assert MobileApiCataloger._path_template("/v1/orders/recent") == "/v1/orders/recent"
+    assert MobileApiCataloger._path_template("/v1/resource/item-00005-slug") == "/v1/resource/item-00005-slug"
+    # Percent-encoded ASCII is decoded for classification, not route output.
+    assert MobileApiCataloger._path_template("/v1/users/%75sr%5F98472") == "/v1/users/{id1}"
 
 
 def test_openapi_schema_redacts_dynamic_json_object_keys():

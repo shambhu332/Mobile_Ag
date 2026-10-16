@@ -55,6 +55,8 @@ class MachOSecurityHeaders:
 
 class IOSSecurityAnalyzer:
     MAX_PAYLOAD_ENTRIES = 20_000
+    MAX_FRAMEWORK_SYMBOL_BINARIES = 32
+    MAX_FRAMEWORK_SYMBOL_BYTES = 64 * 1024 * 1024
     """Enterprise Static Security Analyzer for iOS IPA Archives."""
 
     def __init__(self) -> None:
@@ -479,6 +481,119 @@ class IOSSecurityAnalyzer:
 
         return headers, findings
 
+    def _audit_ios_framework_api_symbols(self, app_dir: str | Path, privacy_auditor) -> tuple[list[dict[str, Any]], list[Finding], dict[str, Any]]:
+        """Review symbols in a bounded set of embedded framework executables.
+
+        Framework candidates are matched only to manifests within their own
+        framework bundle. Names remain static review indicators, never proof
+        of reachable API use or platform non-compliance.
+        """
+        from mobileag.analysis.bounded_sources import SourceInventory
+        from mobileag.analysis.macho_parser import MachoBinaryParser
+
+        app_root = Path(app_dir)
+        inventory = SourceInventory(
+            max_entries=50_000, max_file_bytes=MachoBinaryParser.MAX_BINARY_BYTES,
+            max_total_bytes=self.MAX_FRAMEWORK_SYMBOL_BYTES,
+        )
+        reports: list[dict[str, Any]] = []
+        findings: list[Finding] = []
+        seen_frameworks: set[str] = set()
+        binary_candidates = 0
+        bytes_considered = 0
+        errors: list[str] = []
+        for candidate in inventory.paths(app_root):
+            framework_root = next(
+                (parent for parent in candidate.parents if parent.suffix.lower() == ".framework"), None
+            )
+            if (framework_root is None or candidate.parent != framework_root
+                    or candidate.name != framework_root.stem):
+                continue
+            relative_binary = candidate.relative_to(app_root).as_posix()
+            if relative_binary in seen_frameworks:
+                continue
+            seen_frameworks.add(relative_binary)
+            binary_candidates += 1
+            if len(reports) >= self.MAX_FRAMEWORK_SYMBOL_BINARIES:
+                inventory.record_limit("framework_binary_count")
+                break
+            try:
+                details = candidate.lstat()
+                if not stat.S_ISREG(details.st_mode) or details.st_size > MachoBinaryParser.MAX_BINARY_BYTES:
+                    errors.append("framework_binary_type_or_size")
+                    continue
+                if bytes_considered + details.st_size > self.MAX_FRAMEWORK_SYMBOL_BYTES:
+                    inventory.record_limit("framework_binary_total_bytes")
+                    break
+                bytes_considered += details.st_size
+            except OSError:
+                errors.append("framework_binary_stat_error")
+                continue
+
+            parsed = MachoBinaryParser().parse_binary(candidate)
+            if not parsed.is_macho:
+                errors.append("framework_binary_not_parsed")
+                reports.append({
+                    "binary": relative_binary, "status": parsed.parse_status,
+                    "manifest_state": "not_checked", "candidate_count": 0,
+                })
+                continue
+
+            manifest_result = privacy_auditor.audit_ios_privacy_manifest(framework_root)
+            categories = manifest_result.declared_api_categories
+            if manifest_result.parse_status == "invalid":
+                manifest_state = "invalid"
+            elif manifest_result.parse_status == "partial":
+                manifest_state = "partial"
+            elif manifest_result.has_privacy_manifest:
+                manifest_state = "parsed"
+            else:
+                manifest_state = "absent"
+            if manifest_state in {"invalid", "partial"}:
+                errors.append("framework_manifest_" + manifest_state)
+            review = privacy_auditor.audit_ios_binary_api_symbols(
+                parsed.symbol_names, categories, app_manifest_state=manifest_state,
+                binary_path=relative_binary, binary_parse_status=parsed.parse_status,
+                component_name=f"{framework_root.stem} embedded framework",
+                finding_id_scope=relative_binary,
+            )
+            review_findings = review.pop("findings")
+            findings.extend(review_findings)
+            reports.append({
+                "binary": relative_binary,
+                "framework_manifest_paths": manifest_result.manifest_paths,
+                "framework_manifest_errors": manifest_result.errors,
+                **review,
+            })
+
+        limits = inventory.coverage
+        status = ("partial" if limits["limits_reached"] or limits["source_files_skipped"] or errors
+                  or any(report["status"] == "partial" or report["status"].startswith("not_analyzed")
+                         for report in reports)
+                  else "analyzed_heuristically" if reports else "not_analyzed")
+        coverage = {
+            "status": status,
+            "binary_candidates": binary_candidates,
+            "binaries_analyzed": sum(
+                report.get("status") in {"analyzed_heuristically", "partial"} for report in reports
+            ),
+            "limits": {
+                "framework_binaries": self.MAX_FRAMEWORK_SYMBOL_BINARIES,
+                "aggregate_binary_bytes": self.MAX_FRAMEWORK_SYMBOL_BYTES,
+                "tree_entries": inventory.max_entries,
+                "per_binary_bytes": inventory.max_file_bytes,
+            },
+            "bytes_considered": bytes_considered,
+            "entries_examined": limits["entries_examined"],
+            "limits_reached": limits["limits_reached"],
+            "limit_reasons": limits["limit_reasons"],
+            "errors": sorted(set(errors)),
+            "runtime_status": "not_tested",
+            "proof_status": "not_proven",
+            "exhaustive": False,
+        }
+        return reports, findings, coverage
+
     def audit_ipa(self, ipa_path: str | Path, temp_extract_dir: str | Path) -> dict[str, Any]:
         """Run complete static analysis pipeline on an iOS IPA file."""
         extracted = self.extract_ipa(ipa_path, temp_extract_dir)
@@ -560,6 +675,12 @@ class IOSSecurityAnalyzer:
             )
             all_findings.extend(api_symbol_review.pop("findings"))
             privacy_manifest_summary["binary_api_symbol_review"] = api_symbol_review
+            framework_reviews, framework_findings, framework_coverage = (
+                self._audit_ios_framework_api_symbols(extracted["app_dir"], p_auditor)
+            )
+            all_findings.extend(framework_findings)
+            privacy_manifest_summary["framework_binary_api_symbol_reviews"] = framework_reviews
+            privacy_manifest_summary["framework_api_symbol_review_coverage"] = framework_coverage
             for manifest_index, manifest in enumerate(p_res.manifests, start=1):
                 if manifest["tracking_enabled"] is True and not manifest["tracking_domains"]:
                     all_findings.append(Finding(
@@ -587,6 +708,7 @@ class IOSSecurityAnalyzer:
             "findings_count": len(all_findings),
             "coverage": {"info_plist":"parsed", "binary_format":"mach_o_64" if macho_headers.is_macho else "unsupported",
                          "symbols":"byte_string_heuristic", "privacy_api_symbol_review": privacy_manifest_summary.get("binary_api_symbol_review", {}).get("status", "not_analyzed"),
+                         "framework_privacy_api_symbol_review": privacy_manifest_summary.get("framework_api_symbol_review_coverage", {}).get("status", "not_analyzed"),
                          "entitlements":"not_assessed", "runtime":"not_assessed"},
             "errors": [] if macho_headers.is_macho else ["Unsupported or truncated executable; binary security was not assessed"],
             "findings": all_findings,

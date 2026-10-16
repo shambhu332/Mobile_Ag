@@ -342,11 +342,29 @@ async def test_deeplink_fuzzer_runtime_fuzz():
     mock_adb.get_logcat_dump = AsyncMock(side_effect=[[],target_logs]*5)
 
     fuzzer = DeepLinkFuzzer(adb=mock_adb)
-    results, findings = await fuzzer.fuzz_deep_links("emulator-5554", "com.test.app", ["testapp://router"])
+    results, findings = await fuzzer.fuzz_deep_links(
+        "emulator-5554", "com.test.app", ["testapp://router"], guard=lambda: None,
+    )
     assert len(results) >= 4
     assert len(findings) >= 1
     assert findings[0].cwe_id == "CWE-755"
     assert findings[0].status.value == "UNVERIFIED" and findings[0].cvss_score == 0
+
+
+@pytest.mark.asyncio
+async def test_deeplink_fuzzer_requires_scope_guard_before_device_access():
+    mock_adb = ADBManager()
+    mock_adb.get_logcat_dump = AsyncMock(return_value=[])
+    mock_adb._exec_cmd = AsyncMock(return_value=(0, b"synthetic", b""))
+    fuzzer = DeepLinkFuzzer(adb=mock_adb)
+
+    with pytest.raises(PermissionError, match="scope guard is required"):
+        await fuzzer.exercise_deep_link(
+            "synthetic-serial", "com.example.fixture", "fixture://canary",
+        )
+
+    mock_adb.get_logcat_dump.assert_not_awaited()
+    mock_adb._exec_cmd.assert_not_awaited()
 
 
 # =============================================================================

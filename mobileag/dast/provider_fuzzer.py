@@ -35,9 +35,9 @@ class ContentProviderFuzzer:
     """Dynamic fuzzer for exported ContentProviders using ADB commands."""
 
     TRAVERSAL_PAYLOADS = [
-        "../../../../../../data/data/{pkg}/databases/{pkg}.db",
-        "../../../../../../data/data/{pkg}/shared_prefs/{pkg}_preferences.xml",
-        "../../../../../../etc/hosts",
+        "../../../../../../data/data/{pkg}/files/mobileag_synthetic_canary.txt",
+        "../../../../../../data/user/0/{pkg}/files/mobileag_synthetic_canary.txt",
+        "../../../../../../data/data/{pkg}/files/mobileag_synthetic_canary.json",
     ]
 
     SQLI_PROBES = [
@@ -54,7 +54,7 @@ class ContentProviderFuzzer:
 
     def fuzz_provider_traversal(
         self, authority: str, package_name: str, timeout: float = 5.0, *,
-        serial: Optional[str] = None, guard=None,
+        serial: Optional[str] = None, guard=None, synthetic_data_confirmed: bool = False,
     ) -> List[ProviderFuzzResult]:
         """Test ContentProvider for path traversal leaks using `content read`."""
         results: List[ProviderFuzzResult] = []
@@ -65,6 +65,9 @@ class ContentProviderFuzzer:
         if not self._has_explicit_scope(serial, guard):
             return [ProviderFuzzResult(authority=str(authority)[:self.MAX_AUTHORITY_LENGTH],
                 target_uri="", action="read", payload="", status="BLOCKED_SCOPE")]
+        if synthetic_data_confirmed is not True:
+            return [ProviderFuzzResult(authority=authority, target_uri="", action="read",
+                payload="", status="BLOCKED_SYNTHETIC_SCOPE")]
         if (not isinstance(package_name, str) or len(package_name) > self.MAX_PACKAGE_LENGTH
                 or not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)):
             return [ProviderFuzzResult(authority=authority, target_uri="", action="read",
@@ -124,7 +127,7 @@ class ContentProviderFuzzer:
 
     def fuzz_provider_sqli(
         self, authority: str, projection_param: str = "", timeout: float = 5.0, *,
-        serial: Optional[str] = None, guard=None,
+        serial: Optional[str] = None, guard=None, synthetic_data_confirmed: bool = False,
     ) -> List[ProviderFuzzResult]:
         """Test ContentProvider projection/selection parameters for SQL injection using `content query`."""
         results: List[ProviderFuzzResult] = []
@@ -135,6 +138,9 @@ class ContentProviderFuzzer:
         if not self._has_explicit_scope(serial, guard):
             return [ProviderFuzzResult(authority=str(authority)[:self.MAX_AUTHORITY_LENGTH],
                 target_uri="", action="query", payload="", status="BLOCKED_SCOPE")]
+        if synthetic_data_confirmed is not True:
+            return [ProviderFuzzResult(authority=authority, target_uri="", action="query",
+                payload="", status="BLOCKED_SYNTHETIC_SCOPE")]
         if (not isinstance(projection_param, str) or len(projection_param) > 512
                 or "\x00" in projection_param):
             return [ProviderFuzzResult(authority=authority, target_uri="", action="query",

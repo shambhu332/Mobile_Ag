@@ -10,6 +10,8 @@ Enables seamless enterprise CI/CD integration:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -17,6 +19,7 @@ from mobileag.reporting.finding import Finding, Severity
 from mobileag.reporting.coverage import review_surface_ledger
 from mobileag import __version__
 from mobileag.security.privacy import redact
+from mobileag.reporting.sarif_importer import MAX_BYTES, MAX_RESULTS, MAX_RULES, SarifImportError, validate_sarif_document
 
 
 class SARIFExporter:
@@ -46,6 +49,8 @@ class SARIFExporter:
         coverage: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Convert findings into a compliant SARIF v2.1.0 JSON report dictionary."""
+        if len(findings) > MAX_RESULTS:
+            raise SarifImportError("SARIF result inventory exceeds limits")
         rules_map: dict[str, dict[str, Any]] = {}
         results: list[dict[str, Any]] = []
 
@@ -87,6 +92,8 @@ class SARIFExporter:
 
             # Register rule if not already present
             if f_id not in rules_map:
+                if len(rules_map) >= MAX_RULES:
+                    raise SarifImportError("SARIF rule inventory exceeds limits")
                 rules_map[f_id] = {
                     "id": f_id,
                     "name": f_title,
@@ -170,7 +177,9 @@ class SARIFExporter:
                 }
             ],
         }
-        return redact(sarif_doc)
+        output = redact(sarif_doc)
+        validate_sarif_document(output)
+        return output
 
     @classmethod
     def export_to_file(
@@ -186,5 +195,20 @@ class SARIFExporter:
         sarif_data = cls.generate_sarif(findings, target_name, scan_id, artifact, coverage)
         out_p = Path(output_path)
         out_p.parent.mkdir(parents=True, exist_ok=True)
-        out_p.write_text(json.dumps(sarif_data, indent=2), encoding="utf-8")
+        payload = json.dumps(sarif_data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        if len(payload) > MAX_BYTES:
+            raise SarifImportError("SARIF output exceeds the report size limit")
+        fd, temp_name = tempfile.mkstemp(prefix=f".{out_p.name}.", suffix=".tmp", dir=out_p.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, out_p)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+            raise
         return out_p

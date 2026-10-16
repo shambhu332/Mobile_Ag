@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import json
 import ipaddress
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, unquote, urlparse
 
@@ -29,6 +32,7 @@ _MAX_CAPTURE_REQUESTS = 10000
 _MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAPTURE_BYTES = 16 * 1024 * 1024
 _MAX_ENDPOINTS = 10000
+_MAX_OPENAPI_BYTES = 16 * 1024 * 1024
 _SUPPORTED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
 _SAFE_MIME_TYPES = {
     "application/json", "application/xml", "application/x-www-form-urlencoded",
@@ -98,6 +102,10 @@ class MobileApiCataloger:
         # this privacy decision, never to construct the exported route.
         opaque_token_segment = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._~-]{24,}$")
         short_mixed_case_id = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{8,23}$")
+        prefixed_resource_id = re.compile(
+            r"(?i)^(?:usr|user|acc|account|ord|order|profile|invoice|document|id)[_-]"
+            r"(?=[A-Za-z0-9_-]{2,}$)(?=.*\d)[A-Za-z0-9_-]+$"
+        )
         email_segment = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
         segments = path.split("/")
         identifier_index = 0
@@ -108,6 +116,8 @@ class MobileApiCataloger:
                     or opaque_token_segment.fullmatch(decoded_segment)
                     or short_mixed_case_id.fullmatch(segment)
                     or short_mixed_case_id.fullmatch(decoded_segment)
+                    or prefixed_resource_id.fullmatch(segment)
+                    or prefixed_resource_id.fullmatch(decoded_segment)
                     or email_segment.fullmatch(segment)):
                 identifier_index += 1
                 segments[index] = f"{{id{identifier_index}}}"
@@ -419,11 +429,28 @@ class MobileApiCataloger:
         validate_openapi_spec(document)
         return document
 
-    def save_openapi(self, output_path: str) -> None:
-        """Save OpenAPI specification to disk."""
+    def save_openapi(self, output_path: str | Path) -> Path:
+        """Atomically save a bounded OpenAPI document without following symlinks."""
         data = self.export_openapi_json()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        payload = json.dumps(data, indent=2, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        if len(payload) > _MAX_OPENAPI_BYTES:
+            raise ValueError("OpenAPI output exceeds the report size limit")
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{out_path.name}.", suffix=".tmp", dir=out_path.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, out_path)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+            raise
+        return out_path
 
     def export_har_json(self) -> Dict[str, Any]:
         """Convert captured HTTP transactions into HAR 1.2 format."""

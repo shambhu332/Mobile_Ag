@@ -1,5 +1,6 @@
 """Synthetic static-review inventories: no device/cloud operations."""
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
@@ -344,6 +345,66 @@ async def test_generate_report_persists_assessment_coverage_in_state(tmp_path):
     await ReportEngine().generate_reports(state)
     assert state['assessment_coverage']=='partial'
     assert 'coverage.secrets.static_status=partial' in state['coverage_gaps']
+    pdf_path=Path(state['pdf_report_path'])
+    assert pdf_path.is_file()
+    assert pdf_path.read_bytes().startswith(b'%PDF-')
+    assert pdf_path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.asyncio
+async def test_report_generation_rejects_path_shaped_scan_ids(tmp_path):
+    output_dir=tmp_path/'reports'
+    state=create_initial_state('../outside','unused',str(output_dir))
+
+    with pytest.raises(ValueError, match='Invalid scan identifier'):
+        await ReportEngine().generate_reports(state)
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_report_generation_replaces_pdf_symlink_without_following_it(tmp_path):
+    output_dir=tmp_path/'reports'
+    output_dir.mkdir()
+    sentinel=tmp_path/'sentinel.txt'
+    sentinel.write_text('researcher-controlled sentinel')
+    pdf_link=output_dir/'report_synthetic.pdf'
+    pdf_link.symlink_to(sentinel)
+    state=create_initial_state('synthetic','unused',str(output_dir))
+
+    await ReportEngine().generate_reports(state)
+
+    assert sentinel.read_text()=='researcher-controlled sentinel'
+    assert not pdf_link.is_symlink()
+    assert pdf_link.read_bytes().startswith(b'%PDF-')
+
+
+def test_pdf_report_escapes_untrusted_markup_and_has_no_external_resources(monkeypatch):
+    captured={}
+
+    class FakeHtml:
+        def __init__(self, *, string, url_fetcher):
+            captured['html']=string
+            captured['url_fetcher']=url_fetcher
+
+        def write_pdf(self):
+            return b'%PDF-synthetic'
+
+    monkeypatch.setattr('weasyprint.HTML', FakeHtml)
+    data={
+        'scan_id':'synthetic', 'date':'now',
+        'app_info':{'package_name':'org.example.synthetic'},
+        'stats':{}, 'coverage_gaps':[],
+        'findings':[{'title':"<img src='http://127.0.0.1:1/probe'>",
+                     'description':'<script>synthetic()</script>'}],
+    }
+
+    pdf=ReportEngine()._generate_pdf(data)
+
+    assert pdf.startswith(b'%PDF-')
+    assert "&lt;img src=&#x27;http://127.0.0.1:1/probe&#x27;&gt;" in captured['html']
+    assert '<img ' not in captured['html'] and '<script>' not in captured['html']
+    assert callable(captured['url_fetcher'])
 
 
 def test_webview_debugging_and_safe_browsing_checks_have_positive_and_negative_controls():

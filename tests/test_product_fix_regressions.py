@@ -249,6 +249,28 @@ def test_scan_repository_rejects_cycles_before_serialization(tmp_path):
     assert repo.get("scan_one") is None
 
 
+def test_repository_settings_and_scope_policy_are_bounded(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    repo.save_settings({"offline": True})
+    repo.save_policy({"methods": ["GET"]})
+
+    monkeypatch.setattr(repository, "MAX_SETTINGS_BYTES", 16)
+    with pytest.raises(ValueError, match="Settings exceeds the storage size limit"):
+        repo.save_settings({"oversized": "x" * 64})
+    assert repo.get_settings() == {"offline": True}
+
+    monkeypatch.setattr(repository, "MAX_POLICY_BYTES", 16)
+    with pytest.raises(ValueError, match="Scope policy exceeds the storage size limit"):
+        repo.save_policy({"origins": ["https://example.invalid/" * 8]})
+    assert repo.get_policy() == {"methods": ["GET"]}
+
+    cyclic = {}
+    cyclic["self"] = cyclic
+    with pytest.raises(ValueError, match="Scope policy contains a cycle"):
+        repo.save_policy(cyclic)
+
+
 def test_scan_records_original_hash_and_effective_policy(client):
     import hashlib
     import io

@@ -21,6 +21,8 @@ MAX_DASHBOARD_SNAPSHOT_BYTES = 64 * 1024 * 1024
 MAX_PERSISTED_INPUT_BYTES = 32 * 1024 * 1024
 MAX_PERSISTED_NODES = 250_000
 MAX_PERSISTED_DEPTH = 64
+MAX_SETTINGS_BYTES = 4 * 1024
+MAX_POLICY_BYTES = 256 * 1024
 
 
 def _bounded_redacted_json(value: dict, *, label: str, output_limit: int) -> tuple[dict, str]:
@@ -36,6 +38,21 @@ def _bounded_redacted_json(value: dict, *, label: str, output_limit: int) -> tup
     if len(raw.encode("utf-8")) > output_limit:
         raise ValueError(f"{label} exceeds the storage size limit")
     return redacted_value, raw
+
+
+def _bounded_config_json(value: dict, *, label: str, output_limit: int) -> str:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    preflight_bounded_structure(
+        value, max_bytes=512 * 1024, max_nodes=4_096, max_depth=16, label=label,
+    )
+    try:
+        raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+    except (TypeError, ValueError, RecursionError):
+        raise ValueError(f"{label} is not valid JSON data") from None
+    if len(raw.encode('utf-8')) > output_limit:
+        raise ValueError(f"{label} exceeds the storage size limit")
+    return raw
 
 
 def private_write(path: Path, value: dict) -> None:
@@ -239,8 +256,9 @@ class ScanRepository:
         return json.loads(row[0]) if row else {}
 
     def save_settings(self, settings):
+        raw = _bounded_config_json(settings, label="Settings", output_limit=MAX_SETTINGS_BYTES)
         with self.connection() as db:
-            db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)', (json.dumps(settings),))
+            db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)', (raw,))
 
     def get_policy(self):
         with self.connection() as db:
@@ -248,8 +266,9 @@ class ScanRepository:
         return json.loads(row[0]) if row else None
 
     def save_policy(self, policy):
+        raw = _bounded_config_json(policy, label="Scope policy", output_limit=MAX_POLICY_BYTES)
         with self.connection() as db:
-            db.execute('INSERT OR REPLACE INTO policies VALUES(1,?)',(json.dumps(policy),))
+            db.execute('INSERT OR REPLACE INTO policies VALUES(1,?)',(raw,))
 
     def purged(self, sid):
         with self.connection() as db:

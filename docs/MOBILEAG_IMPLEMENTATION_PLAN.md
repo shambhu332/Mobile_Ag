@@ -1586,3 +1586,11 @@ oversized documents, non-mutation, and atomic preservation. Focused repository
 regressions passed (**27 passed**); full pytest passed (**1,270 passed**, 61.73
 s); compileall and `git diff --check` passed. SQLite remains local single-user
 metadata, not a tenant-isolated or externally authorized service.
+
+SQLite settings and scope-policy writes now reject non-object, cyclic, deeply
+nested, over-complex, or oversized configuration data before transaction work.
+Serialized caps are 4 KiB for settings and 256 KiB for policy; rejected updates
+preserve prior values. Focused repository tests passed (**28 passed**); full
+pytest passed (**1,271 passed**, 62.12 s); compileall and `git diff --check`
+passed. The web API still relies on its own schema and authorization checks;
+repository caps are defense in depth, not a scope grant.

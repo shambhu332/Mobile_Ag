@@ -411,6 +411,15 @@ execution; it is not a completeness or security result. Both standard Markdown
 and professional report output now render those per-path gap reasons instead
 of showing only the broad surface limitation.
 
+An `explicit_scan_root` normalizer now prevents `None`, empty, and whitespace
+roots from becoming `Path("")` / the process working directory in the
+CodeReviewer, TaintEngine, SecretScanner, NativeAnalyzer, DependencyScanner,
+and FileProvider analyzer entry points. Missing inputs return empty/not-analyzed
+coverage or pass `None` to bounded readers; the regression tests replace scan
+functions with fail-on-call stubs. An explicit `"."` remains a caller-selected
+root. This is not yet a guarantee that every analyzer API or caller handles
+invalid roots identically.
+
 ### Safety and completion boundary
 
 The blueprint's stealth/anti-detection daemon, TLS/certificate-pinning bypass,
@@ -550,6 +559,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
    APIMapper lazy-match and coverage-cap regressions passed the focused APIMapper tests (8) and the full suite (**1,042 passed**, 40.40 s; same expected warning); compilation and `git diff --check` passed. This only measures synthetic bounded enumeration and redacted-route de-duplication.
    Missing-root APIMapper handling passed the focused APIMapper tests (11) and the full suite (**1,045 passed**, 40.00 s; same expected warning); compilation and `git diff --check` passed. The test blocks traversal for empty/whitespace/`None` roots; it does not cover all callers or path-race conditions.
    Rendering of missing coverage paths in standard and professional reports passed focused report tests (5) and the full suite (**1,046 passed**, 41.48 s; same expected warning); compilation and `git diff --check` passed. Synthetic report rendering only; no browser or exported PDF rendering validation is claimed.
+   Missing-root guards for six static analyzers passed `tests/test_empty_scan_roots.py` (10 tests) and the full suite (**1,056 passed**, 41.08 s; same expected warning); compilation and `git diff --check` passed. Tests use fail-on-call scan stubs; other analyzer entry points remain outside this batch.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38774618068` completed successfully on commit `7a85d3a`: 900 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 902 passed and 1 warning (39.04 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

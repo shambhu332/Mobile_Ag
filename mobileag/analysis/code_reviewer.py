@@ -20,7 +20,7 @@ from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.analysis.android_surface import mask_non_code, method_spans
 from mobileag.analysis.source_syntax import call_sites, literal_flag_bits
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +410,11 @@ class CodeReviewer:
     async def review(self, decompiled_path: str, manifest_data: dict[str, Any]) -> list[Finding]:
         """Review decompiled source code for vulnerabilities and return Finding models."""
         logger.info(f"Starting scope-aware code review in: {decompiled_path}")
-        base_path = Path(decompiled_path)
+        base_path = explicit_scan_root(decompiled_path)
+        if base_path is None:
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return []
 
         raw_findings = await asyncio.to_thread(self._sync_scan_source, base_path)
         findings: list[Finding] = []

@@ -7,6 +7,22 @@ from pathlib import Path
 from typing import Callable
 
 
+def explicit_scan_root(directory) -> Path | None:
+    """Normalize a caller-supplied root without treating missing input as cwd."""
+    if directory is None:
+        return None
+    try:
+        raw = os.fspath(directory)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return Path(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 class SourceInventory:
     def __init__(self, max_entries=5000, max_file_bytes=2*1024*1024,
                  max_total_bytes=32*1024*1024):

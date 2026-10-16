@@ -27,7 +27,7 @@ from typing import Any, Optional
 
 from mobileag.analysis.android_surface import mask_non_code, method_spans
 from mobileag.analysis.source_syntax import call_sites, numeric_sql_concatenation
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from mobileag.analysis.java_ast_taint import JavaAstTaintAnalyzer
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
 
@@ -1682,7 +1682,7 @@ class TaintEngine:
     def analyze_directory(self, decompiled_dir: str) -> list[Finding]:
         """Recursively scan all Java and Kotlin source files in a decompiled APK directory."""
         all_findings: list[Finding] = []
-        root_path = Path(decompiled_dir)
+        root_path = explicit_scan_root(decompiled_dir)
         self.ast_coverage.update(files_parsed=0, parse_fallbacks=0,
                                  syntax_error_fallbacks=0, parser_exception_fallbacks=0,
                                  syntax_error_nodes_observed=0,

@@ -17,7 +17,7 @@ import httpx
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
 from mobileag.reporting.cvss import get_default_cvss_for_cwe
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from mobileag.analysis.android_surface import mask_non_code
 
 logger = logging.getLogger(__name__)
@@ -701,7 +701,18 @@ class DependencyScanner:
         """Inventory locally; query OSV only with explicit per-run authorization."""
         logger.info(f"Starting dependency scan in: {decompiled_path}")
         findings: list[Finding] = []
-        base_path = Path(decompiled_path)
+        base_path = explicit_scan_root(decompiled_path)
+        if base_path is None:
+            self._last_dependencies = []
+            self._last_native_libraries = []
+            self.coverage = {
+                "static_status": "not_analyzed", "runtime_status": "not_tested",
+                "proof_status": "not_proven", "exhaustive": False,
+                "native_inventory_status": "not_analyzed", "lookup_status": "not_started",
+                "lookup_authorized": bool(allow_advisory_lookup),
+                "dependency_count": 0, "native_elf_candidates": 0,
+            }
+            return findings
         dependencies = await asyncio.to_thread(self._sync_find_dependencies, base_path)
         self._last_dependencies = dependencies
         native_libraries, native_coverage = await asyncio.to_thread(

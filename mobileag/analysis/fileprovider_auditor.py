@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from mobileag.reporting.finding import Finding
 
 
@@ -150,10 +150,10 @@ class FileProviderAuditor:
     def audit_resource_directory(self, resource_dir: str) -> List[FileProviderAuditResult]:
         """Scan res/xml directories within extracted resources for FileProvider specifications."""
         results: List[FileProviderAuditResult] = []
-        res_path = Path(resource_dir)
+        res_path = explicit_scan_root(resource_dir)
         inventory = SourceInventory(max_entries=5000, max_file_bytes=2 * 1024 * 1024,
                                     max_total_bytes=32 * 1024 * 1024)
-        if not res_path.exists() or res_path.is_symlink():
+        if res_path is None or not res_path.exists() or res_path.is_symlink():
             self.coverage = dict(inventory.coverage)
             self.coverage.update(fileprovider_xml_candidates=0, fileprovider_xml_parse_errors=0,
                                  fileprovider_xml_error_codes={})

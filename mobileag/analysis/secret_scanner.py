@@ -8,7 +8,7 @@ from typing import Any
 from config.llm_config import TaskType
 from mobileag.llm.router import LLMRouter
 from mobileag.reporting.finding import Finding, Severity, FindingStatus
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,11 @@ class SecretScanner:
         """Scan files for hardcoded secrets and weak cryptography."""
         logger.info(f"Starting secret scan in: {decompiled_path}")
         findings: list[Finding] = []
-        base_path = Path(decompiled_path)
+        base_path = explicit_scan_root(decompiled_path)
+        if base_path is None:
+            self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
+                             "proof_status": "not_proven", "exhaustive": False}
+            return findings
         
         # Offload file I/O and regex iteration to worker thread
         raw_secrets, crypto_matches, entropy_matches = await asyncio.to_thread(self._sync_scan_files, base_path)

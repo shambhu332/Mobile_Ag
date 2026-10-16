@@ -1544,3 +1544,12 @@ symlink replacement/rejection, and private mode. Focused worker/session tests
 passed (**24 passed**); full pytest passed (**1,261 passed**, 61.33 s);
 compileall and `git diff --check` passed. This hardens the worker result boundary,
 not the completeness or correctness of the worker's analysis.
+
+Professional Markdown report generation now shares a cycle-aware input preflight
+with SARIF export, caps finding count at 5,000 and pre-render caller data at an
+8 MiB estimated input budget (100,000 nodes / depth 64), before redaction or
+normalization. Oversized, cyclic, and excessive finding inventories fail
+explicitly. Focused report-export tests passed (**10 passed**, including SARIF
+regressions); full pytest passed (**1,264 passed**, 61.26 s); compileall and
+`git diff --check` passed. Output-size enforcement remains in place; other legacy
+export writers still need separate review.

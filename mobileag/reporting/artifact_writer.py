@@ -3,10 +3,56 @@ from __future__ import annotations
 
 import os
 import tempfile
+from enum import Enum
 from pathlib import Path
 
 
 MAX_REPORT_ARTIFACT_BYTES = 32 * 1024 * 1024
+
+
+def preflight_bounded_structure(value, *, max_bytes: int, max_nodes: int,
+                                max_depth: int, label: str = "Input") -> None:
+    """Bound caller-owned data before copying, redacting, or rendering it."""
+    remaining = max_bytes
+    nodes = 0
+    active: set[int] = set()
+    stack = [(value, 0, False)]
+    while stack:
+        item, depth, exiting = stack.pop()
+        if exiting:
+            active.discard(id(item))
+            continue
+        nodes += 1
+        if nodes > max_nodes or depth > max_depth:
+            raise ValueError(f"{label} complexity exceeds limits")
+        if isinstance(item, str):
+            remaining -= len(item) * 4
+        elif isinstance(item, bytes):
+            remaining -= len(item)
+        elif item is None or isinstance(item, (bool, int, float)):
+            continue
+        elif isinstance(item, Enum):
+            stack.append((item.value, depth + 1, False))
+        elif isinstance(item, dict):
+            identity = id(item)
+            if identity in active:
+                raise ValueError(f"{label} contains a cycle")
+            active.add(identity)
+            stack.append((item, depth, True))
+            for key, child in item.items():
+                stack.append((key, depth + 1, False))
+                stack.append((child, depth + 1, False))
+        elif isinstance(item, (list, tuple, set, frozenset)):
+            identity = id(item)
+            if identity in active:
+                raise ValueError(f"{label} contains a cycle")
+            active.add(identity)
+            stack.append((item, depth, True))
+            stack.extend((child, depth + 1, False) for child in item)
+        elif hasattr(item, "__dict__"):
+            stack.append((vars(item), depth + 1, False))
+        if remaining < 0:
+            raise ValueError(f"{label} exceeds the input size limit")
 
 
 def write_private_artifact(path: str | Path, content: str | bytes,

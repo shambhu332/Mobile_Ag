@@ -948,7 +948,7 @@ def test_cyclonedx_xml_generation(tmp_path):
         name="okhttp",
         version="4.9.3",
         purl="pkg:maven/com.squareup.okhttp3/okhttp@4.9.3",
-        hashes={"SHA-256": "abc123def456"},
+        hashes={"sha256": "a" * 64},
         licenses=["Apache-2.0"],
     )
 
@@ -958,7 +958,7 @@ def test_cyclonedx_xml_generation(tmp_path):
     assert "<name>SecureBank</name>" in xml_text
     assert "<name>okhttp</name>" in xml_text
     assert "<purl>pkg:maven/com.squareup.okhttp3/okhttp@4.9.3</purl>" in xml_text
-    assert '<hash alg="SHA-256">abc123def456</hash>' in xml_text
+    assert f'<hash alg="SHA-256">{"a" * 64}</hash>' in xml_text
     assert "<id>Apache-2.0</id>" in xml_text
 
     # Verify parseability

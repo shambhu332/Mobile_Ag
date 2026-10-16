@@ -30,6 +30,12 @@ class SbomComponent:
 class MobileSbomGenerator:
     """Generates CycloneDX and SPDX SBOM representations."""
 
+    HASH_LENGTHS = {
+        "MD5": 32, "SHA-1": 40, "SHA-256": 64, "SHA-384": 96, "SHA-512": 128,
+        "SHA3-256": 64, "SHA3-384": 96, "SHA3-512": 128,
+        "BLAKE2B-256": 64, "BLAKE2B-384": 96, "BLAKE2B-512": 128, "BLAKE3": 64,
+    }
+
     def __init__(self, app_name: str = "MobileApp", app_version: str = "1.0.0"):
         self.app_name = app_name
         self.app_version = app_version
@@ -46,12 +52,28 @@ class MobileSbomGenerator:
         licenses: Optional[List[str]] = None,
     ) -> None:
         """Add a software dependency or native library component."""
+        normalized_hashes: Dict[str, str] = {}
+        for algorithm, digest in (hashes or {}).items():
+            if not isinstance(algorithm, str) or not isinstance(digest, str):
+                raise ValueError("SBOM hash algorithms and digests must be strings")
+            canonical = re.sub(r"[-_]", "", algorithm).upper()
+            canonical = {"SHA1": "SHA-1", "SHA256": "SHA-256", "SHA384": "SHA-384",
+                         "SHA512": "SHA-512", "SHA3256": "SHA3-256", "SHA3384": "SHA3-384",
+                         "SHA3512": "SHA3-512", "BLAKE2B256": "BLAKE2B-256",
+                         "BLAKE2B384": "BLAKE2B-384", "BLAKE2B512": "BLAKE2B-512"}.get(canonical, canonical)
+            expected_length = self.HASH_LENGTHS.get(canonical)
+            if (expected_length is None or len(digest) != expected_length
+                    or not re.fullmatch(r"[0-9a-fA-F]+", digest)):
+                raise ValueError(f"Invalid or unsupported SBOM digest for {algorithm!r}")
+            if canonical in normalized_hashes:
+                raise ValueError(f"Duplicate SBOM hash algorithm: {canonical}")
+            normalized_hashes[canonical] = digest.lower()
         comp = SbomComponent(
             name=name,
             version=version,
             purl=purl,
             component_type=component_type,
-            hashes=hashes or {},
+            hashes=normalized_hashes,
             licenses=licenses or [],
         )
         self.components.append(comp)
@@ -98,7 +120,7 @@ class MobileSbomGenerator:
             if c.version is None:
                 comp_entry.pop("version")
             if c.hashes:
-                comp_entry["hashes"] = [{"alg": k.upper(), "content": v} for k, v in c.hashes.items()]
+                comp_entry["hashes"] = [{"alg": k, "content": v} for k, v in c.hashes.items()]
             if c.licenses:
                 comp_entry["licenses"] = [{"license": {"id": lic}} for lic in c.licenses]
             cyclonedx_components.append(comp_entry)
@@ -243,7 +265,7 @@ class MobileSbomGenerator:
             if c.hashes:
                 hashes_elem = ET.SubElement(comp_elem, "hashes")
                 for alg, h_val in c.hashes.items():
-                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg.upper()})
+                    h_elem = ET.SubElement(hashes_elem, "hash", {"alg": alg})
                     h_elem.text = h_val
 
             if c.licenses:

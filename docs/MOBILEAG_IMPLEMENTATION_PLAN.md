@@ -600,6 +600,13 @@ oversized inputs, and I/O failures make native inventory status partial or
 invalid rather than a clean complete result. This is not exhaustive supply-chain
 inventory and does not establish that a library is loaded or used at runtime.
 
+SBOM component hashes are normalized to supported CycloneDX digest identifiers
+and validated for hexadecimal syntax and algorithm-specific digest length before
+emission. Unsupported algorithms, malformed/truncated digests, and ambiguous
+duplicate aliases fail closed instead of yielding syntactically plausible but
+invalid hash metadata. This validates supplied digest shape, not artifact
+integrity or provenance.
+
 ### Native JNI string-candidate evidence boundary
 
 The JNI helper parses a bounded `.dynsym` table (up to 5,000 records) when

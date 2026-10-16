@@ -374,6 +374,17 @@ def test_mobile_sbom_generator():
     assert len(spdx["packages"]) == 2
 
 
+def test_sbom_rejects_malformed_hash_metadata():
+    import pytest
+    generator = MobileSbomGenerator()
+    with pytest.raises(ValueError, match="Invalid or unsupported SBOM digest"):
+        generator.add_component("native", "1", "pkg:generic/native", hashes={"SHA-256": "abc"})
+    generator.add_component("native", "1", "pkg:generic/native", hashes={"sha256": "A" * 64})
+    assert generator.generate_cyclonedx_json()["components"][0]["hashes"] == [
+        {"alg": "SHA-256", "content": "a" * 64}
+    ]
+
+
 def test_exploit_poc_synthesizer():
     from mobileag.reporting.finding import Finding, Severity, FindingStatus
     from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer

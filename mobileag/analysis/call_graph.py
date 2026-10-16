@@ -1,15 +1,18 @@
-"""Bounded Smali call-path and local register-flow review heuristics.
+"""Bounded Smali call-path and taint may-flow review heuristics.
 
 Parses decompiled DEX / Smali representations to build:
 1. Class Hierarchy and Inheritance Trees (Class -> Superclass & Interfaces)
-2. Whole-Program Inter-Procedural Call Graph (Method -> Invoked Methods)
+2. APK-inventory-scoped call graph (Method -> resolved invoked Methods)
 3. Android Component Lifecycle Entrypoints (onCreate, onReceive, onStartCommand)
 4. Bounded source-API-containing-method to sink-API call-path inventory.
-5. Same-method ``move-result*`` / ``move-object`` register flow candidates.
+5. Same-method register flow and bounded interprocedural argument, static-field,
+   and return-value taint candidates.
 
-Cross-method register/argument flow, branch feasibility, dynamic dispatch and
-effective manifest authorization are not resolved. Lifecycle names alone are
-not externally reachable entrypoint proof.
+This is not whole-program or lifecycle-complete proof: unresolved virtual/interface
+dispatch, branch feasibility, heap/object identity, unsupported instructions,
+platform/library summaries, and effective manifest authorization limit results.
+Budget exhaustion is surfaced as partial coverage. Lifecycle names alone are not
+externally reachable entrypoint proof.
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from mobileag.analysis.bounded_sources import SourceInventory
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 
 @dataclass
@@ -57,8 +57,11 @@ class RaspResilienceAuditor:
 
     def audit_package(self, smali_dir: str | Path) -> ResilienceAssessmentResult:
         """Audit decompiled Smali sources for resilience vectors."""
-        path = Path(smali_dir)
+        path = explicit_scan_root(smali_dir)
         result = ResilienceAssessmentResult()
+        if path is None or path.is_symlink() or not path.is_dir():
+            result.coverage = SourceInventory().coverage
+            return result
 
         total_classes = 0
         obfuscated_classes = 0

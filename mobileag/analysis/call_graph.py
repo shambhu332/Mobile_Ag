@@ -20,6 +20,7 @@ import re
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
+from mobileag.analysis.bounded_sources import explicit_scan_root
 from typing import Any, Optional
 
 from mobileag.reporting.finding import Finding, FindingStatus, Severity
@@ -464,8 +465,8 @@ class SmaliCallGraphEngine:
         self.local_register_flows.clear()
         self.local_register_methods_skipped.clear()
         self.local_register_analysis_warnings.clear()
-        base_path = Path(base_dir)
-        if not base_path.exists():
+        base_path = explicit_scan_root(base_dir)
+        if base_path is None or base_path.is_symlink() or not base_path.exists():
             logger.warning("Smali directory does not exist: %s", base_dir)
             return self.methods
 

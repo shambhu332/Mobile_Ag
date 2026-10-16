@@ -9,6 +9,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from mobileag.analysis.bounded_sources import explicit_scan_root
 from typing import Dict, List, Optional, Set
 
 
@@ -46,7 +47,9 @@ class SymbolResolver:
 
     def index_directory(self, source_dir: str | Path) -> int:
         """Scan and index all Java and Kotlin files in source_dir."""
-        source_path = Path(source_dir)
+        source_path = explicit_scan_root(source_dir)
+        if source_path is None or source_path.is_symlink():
+            return 0
         if not source_path.is_dir():
             return 0
 

@@ -20,6 +20,8 @@ from mobileag.analysis.react_native_scanner import ReactNativeScanner
 from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
 from mobileag.analysis.native_jni_bridge import NativeJniAnalyzer
 from mobileag.analysis.macho_parser import MachoBinaryParser
+from mobileag.analysis.call_graph import SmaliCallGraphEngine
+from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 
 
 @pytest.mark.parametrize("missing", [None, "", "   "])
@@ -122,3 +124,10 @@ def test_framework_and_resource_auditors_reject_missing_roots(monkeypatch, missi
     monkeypatch.setattr("mobileag.analysis.native_jni_bridge.os.walk", unexpected)
     assert NativeJniAnalyzer().audit_package_libraries(missing) == []
     assert MachoBinaryParser().audit_app_bundle(missing) is None
+
+    monkeypatch.setattr(SourceInventory, "read", unexpected)
+    graph = SmaliCallGraphEngine()
+    assert graph.build_graph(missing) == {}
+    assert SymbolResolver().index_directory(missing) == 0
+    rasp = RaspResilienceAuditor().audit_package(missing)
+    assert rasp.coverage["static_status"] == "not_analyzed"

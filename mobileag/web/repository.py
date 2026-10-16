@@ -149,6 +149,11 @@ class ScanRepository:
         return [json.loads(r['document']) for r in rows], total
 
     def triage(self, sid, fid, verdict, notes, expected_revision, evidence=None):
+        if (not isinstance(sid, str) or len(sid) > 128
+                or not isinstance(fid, str) or len(fid) > 256
+                or verdict not in {'CONFIRMED', 'FALSE_POSITIVE', 'DUPLICATE', 'UNVERIFIED'}
+                or not isinstance(notes, str) or len(notes) > 10_000):
+            raise ValueError('Invalid or oversized triage input')
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT document,revision FROM scans WHERE id=?', (sid,)).fetchone()
@@ -170,10 +175,14 @@ class ScanRepository:
             if proof is not None:f["validation_evidence"]=redact(proof)
             elif isinstance(f.get("validation_evidence"),dict):f["validation_evidence"]["active"]=False
             scan['revision'] = revision
+            scan, raw_scan = _bounded_redacted_json(
+                scan, label="Scan document", output_limit=MAX_SCAN_DOCUMENT_BYTES,
+            )
             db.execute('UPDATE scans SET revision=?,document=? WHERE id=?',
-                       (revision, json.dumps(redact(scan)), sid))
+                       (revision, raw_scan, sid))
+            raw_evidence = json.dumps(redact(proof), allow_nan=False) if proof else None
             db.execute('INSERT INTO decisions(scan_id,finding_id,at,verdict,notes,revision,actor,evidence) VALUES(?,?,?,?,?,?,?,?)',
-                       (sid, fid, now, verdict, redact(notes), revision, 'local-operator',json.dumps(redact(proof)) if proof else None))
+                       (sid, fid, now, verdict, redact(notes), revision, 'local-operator', raw_evidence))
         return scan
 
     def history(self, sid):
@@ -189,7 +198,16 @@ class ScanRepository:
 
     def save_test_plan(self, sid, document, expected_revision):
         """Optimistically persist a bounded plan tied to the exact scan artifact."""
-        raw = json.dumps(redact(document), allow_nan=False, separators=(',', ':'))
+        if not isinstance(document, dict):
+            raise ValueError('Test plan must be an object')
+        preflight_bounded_structure(
+            document, max_bytes=512 * 1024, max_nodes=10_000,
+            max_depth=32, label='Test plan',
+        )
+        try:
+            raw = json.dumps(redact(document), allow_nan=False, separators=(',', ':'))
+        except (TypeError, ValueError, RecursionError):
+            raise ValueError('Test plan is not valid JSON data') from None
         if len(raw.encode('utf-8')) > 128 * 1024:
             raise ValueError('Test-plan size limit exceeded')
         with self.connection() as db:

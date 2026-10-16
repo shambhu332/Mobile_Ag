@@ -271,6 +271,31 @@ def test_repository_settings_and_scope_policy_are_bounded(tmp_path, monkeypatch)
         repo.save_policy(cyclic)
 
 
+def test_triage_rejects_post_update_scan_overflow_transactionally(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    original = fixture_scan()
+    repo.save(original)
+    monkeypatch.setattr(repository, "MAX_SCAN_DOCUMENT_BYTES", 512)
+
+    with pytest.raises(ValueError, match="Scan document exceeds the storage size limit"):
+        repo.triage("scan_one", "same-rule", "FALSE_POSITIVE", "x" * 200, 0)
+
+    assert repo.get("scan_one") == original
+    assert repo.history("scan_one") == []
+
+
+def test_test_plan_repository_rejects_cycles_before_serialization(tmp_path):
+    repo = ScanRepository(tmp_path / "metadata")
+    cyclic = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(ValueError, match="Test plan contains a cycle"):
+        repo.save_test_plan("scan_one", cyclic, None)
+
+    assert repo.get_test_plan("scan_one") is None
+
+
 def test_scan_records_original_hash_and_effective_policy(client):
     import hashlib
     import io

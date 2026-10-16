@@ -1594,3 +1594,13 @@ preserve prior values. Focused repository tests passed (**28 passed**); full
 pytest passed (**1,271 passed**, 62.12 s); compileall and `git diff --check`
 passed. The web API still relies on its own schema and authorization checks;
 repository caps are defense in depth, not a scope grant.
+
+Triage and manual test-plan repository mutations now also enforce these
+persistence boundaries: triage rejects malformed identifiers/verdicts and
+oversized notes, then verifies the updated scan still fits before issuing the
+SQL update; overflow rolls back both scan and decision history. Test-plan
+objects are preflighted for cycles/depth/complexity before redaction and JSON
+serialization. Synthetic persistence and guided-assessment tests passed (**68
+passed**); full pytest passed (**1,273 passed**, 61.59 s); compileall and
+`git diff --check` passed. This does not change analyst-attestation semantics or
+authorize test-plan execution.

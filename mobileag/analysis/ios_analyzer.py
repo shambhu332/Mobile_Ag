@@ -654,6 +654,7 @@ class IOSSecurityAnalyzer:
                 "tracking_enabled": p_res.tracking_enabled,
                 "tracking_domains": p_res.tracking_domains,
                 "declared_api_categories": p_res.declared_api_categories,
+                "declared_api_reasons": p_res.declared_api_reasons,
             }
             app_manifest = next((item for item in app_manifest_result.manifests
                                  if item.get("path") == "PrivacyInfo.xcprivacy"), None)

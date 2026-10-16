@@ -836,7 +836,7 @@ def test_privacy_manifest_auditor():
             "NSPrivacyAccessedAPITypes": [
                 {
                     "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
-                    "NSPrivacyAccessedAPITypeReasons": ["CA92.1"],
+                    "NSPrivacyAccessedAPITypeReasons": ["CA92.1", "CA92.2"],
                 }
             ],
         }
@@ -851,6 +851,10 @@ def test_privacy_manifest_auditor():
         assert res.tracking_enabled is True
         assert "analytics.thirdparty.com" in res.tracking_domains
         assert "NSPrivacyAccessedAPITypeUserDefaults" in res.declared_api_categories
+        assert res.declared_api_reasons == [
+            {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "CA92.1"},
+            {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "CA92.2"},
+        ]
         assert res.parse_status == "parsed"
         assert res.manifest_count == 1
         assert res.manifests[0]["path"] == "PrivacyInfo.xcprivacy"
@@ -875,7 +879,8 @@ def test_ios_privacy_manifest_audit_reports_partial_parse_and_keeps_bundle_resul
     assert result.manifest_paths == ["Frameworks/Example.framework/PrivacyInfo.xcprivacy",
                                     "PrivacyInfo.xcprivacy"]
     assert result.manifests == [{"path": "PrivacyInfo.xcprivacy", "tracking_enabled": True,
-                                 "tracking_domains": [], "declared_api_categories": []}]
+                                 "tracking_domains": [], "declared_api_categories": [],
+                                 "declared_api_reasons": []}]
     assert result.tracking_enabled is True
     assert result.errors == ["manifest_parse_error"]
 
@@ -945,6 +950,30 @@ def test_ios_privacy_manifest_caps_domain_category_and_error_outputs(tmp_path):
     assert "tracking_domain_limit_reached" in result.errors
     assert "api_category_limit_reached" in result.errors
     assert "invalid_tracking_domains" in result.errors
+
+
+def test_ios_privacy_manifest_retains_bounded_reason_codes_without_validating_them(tmp_path):
+    path = tmp_path / "PrivacyInfo.xcprivacy"
+    with path.open("wb") as stream:
+        plistlib.dump({
+            "NSPrivacyTracking": False,
+            "NSPrivacyTrackingDomains": [],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.1", "x" * 65, "SYNTHETIC.2"],
+            }],
+        }, stream)
+    auditor = PrivacyManifestAuditor()
+    auditor.MAX_API_REASONS_PER_CATEGORY = 3
+
+    result = auditor.audit_ios_privacy_manifest(tmp_path)
+
+    assert result.parse_status == "partial"
+    assert result.declared_api_reasons == [
+        {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.1"},
+        {"category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.2"},
+    ]
+    assert "invalid_api_reason_codes" in result.errors
 
 
 def test_ios_privacy_manifest_audit_rejects_coerced_boolean_and_symlink_root():

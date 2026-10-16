@@ -1485,3 +1485,12 @@ caps, invalid oversized values, and normal manifest parsing. The full privacy /
 road-map module file passed (**48 passed**); full pytest passed (**1,249
 passed**, 60.56 s); compileall and `git diff --check` passed. This is bounded
 declaration inventory, not Apple compliance or runtime API-use proof.
+
+The iOS manifest parser now also retains bounded
+`NSPrivacyAccessedAPITypeReasons` codes per declared API category and exposes
+them in the IPA report, while flagging malformed/oversized entries as partial.
+It records the supplied values only; it does not validate them against Apple's
+current allowed-reason catalog or infer compliance. Focused privacy-manifest
+tests passed (**7 passed**) and the IPA propagation test passed (**1 passed**);
+full pytest passed (**1,250 passed**, 60.54 s); compileall and
+`git diff --check` passed.

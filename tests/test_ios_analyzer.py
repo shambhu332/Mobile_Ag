@@ -115,7 +115,10 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
         archive.writestr(app + "PrivacyInfo.xcprivacy", plistlib.dumps({
             "NSPrivacyTracking": False,
             "NSPrivacyTrackingDomains": [],
-            "NSPrivacyAccessedAPITypes": [],
+            "NSPrivacyAccessedAPITypes": [{
+                "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+                "NSPrivacyAccessedAPITypeReasons": ["SYNTHETIC.1"],
+            }],
         }))
         archive.writestr(app + "PrivacyFixture", struct.pack(
             "<IIIIIIII", MH_MAGIC_64, 0, 0, 2, 0, 0, MH_PIE, 0) + b"\x00" * 80)
@@ -130,6 +133,9 @@ def test_ios_ipa_pipeline_integrates_app_manifest_symbol_review(tmp_path, monkey
     review = report["privacy_manifest"]["binary_api_symbol_review"]
     assert report["coverage"]["privacy_api_symbol_review"] == "analyzed_heuristically"
     assert review["manifest_state"] == "parsed"
+    assert report["privacy_manifest"]["declared_api_reasons"] == [{
+        "category": "NSPrivacyAccessedAPITypeUserDefaults", "reason_code": "SYNTHETIC.1",
+    }]
     assert review["undeclared_review_candidates"] == [{
         "category": "NSPrivacyAccessedAPITypeFileTimestamp", "symbol_markers": ["stat"],
     }]

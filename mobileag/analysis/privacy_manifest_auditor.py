@@ -26,6 +26,7 @@ class PrivacyManifestResult:
     tracking_enabled: bool = False
     tracking_domains: List[str] = field(default_factory=list)
     declared_api_categories: List[str] = field(default_factory=list)
+    declared_api_reasons: List[Dict[str, object]] = field(default_factory=list)
     undeclared_api_findings: List[Finding] = field(default_factory=list)
     parse_status: str = "absent"
     manifest_count: int = 0
@@ -63,6 +64,9 @@ class PrivacyManifestAuditor:
     MAX_TRACKING_DOMAIN_CHARS = 253
     MAX_API_CATEGORIES = 512
     MAX_API_CATEGORY_CHARS = 256
+    MAX_API_REASON_CODES = 2_048
+    MAX_API_REASONS_PER_CATEGORY = 32
+    MAX_API_REASON_CHARS = 64
     MAX_ERROR_CODES = 64
     MAX_ANDROID_SOURCE_FILES = 5_000
     MAX_ANDROID_SOURCE_BYTES = 2 * 1024 * 1024
@@ -128,6 +132,7 @@ class PrivacyManifestAuditor:
         malformed_count = 0
         domains: set[str] = set()
         categories: set[str] = set()
+        api_reasons: set[tuple[str, str]] = set()
         tracking_flags: list[bool] = []
         for manifest_file in candidates:
             try:
@@ -202,6 +207,7 @@ class PrivacyManifestAuditor:
 
             api_types = data.get("NSPrivacyAccessedAPITypes", [])
             local_categories: set[str] = set()
+            local_api_reasons: set[tuple[str, str]] = set()
             if isinstance(api_types, list):
                 for index, entry in enumerate(api_types):
                     if index >= self.MAX_API_CATEGORIES:
@@ -222,6 +228,27 @@ class PrivacyManifestAuditor:
                         break
                     local_categories.add(category)
                     categories.add(category)
+                    reasons = entry.get("NSPrivacyAccessedAPITypeReasons", [])
+                    if not isinstance(reasons, list):
+                        malformed_count += 1
+                        record_error("invalid_api_reason_codes")
+                        continue
+                    for reason_index, reason in enumerate(reasons):
+                        if reason_index >= self.MAX_API_REASONS_PER_CATEGORY:
+                            record_error("api_reason_limit_reached")
+                            break
+                        if (not isinstance(reason, str) or not reason
+                                or len(reason) > self.MAX_API_REASON_CHARS
+                                or any(ord(char) < 0x20 or ord(char) == 0x7f for char in reason)):
+                            malformed_count += 1
+                            record_error("invalid_api_reason_codes")
+                            continue
+                        identity = (category, reason)
+                        if identity not in api_reasons and len(api_reasons) >= self.MAX_API_REASON_CODES:
+                            record_error("api_reason_limit_reached")
+                            break
+                        api_reasons.add(identity)
+                        local_api_reasons.add(identity)
             else:
                 malformed_count += 1
                 record_error("invalid_api_types")
@@ -230,6 +257,10 @@ class PrivacyManifestAuditor:
                 "tracking_enabled": tracking if isinstance(tracking, bool) else None,
                 "tracking_domains": sorted(safe_domains),
                 "declared_api_categories": sorted(local_categories),
+                "declared_api_reasons": [
+                    {"category": category, "reason_code": reason}
+                    for category, reason in sorted(local_api_reasons)
+                ],
             })
 
         # True means at least one manifest declared tracking; it is not a
@@ -237,6 +268,10 @@ class PrivacyManifestAuditor:
         result.tracking_enabled = any(tracking_flags)
         result.tracking_domains = sorted(domains)
         result.declared_api_categories = sorted(categories)
+        result.declared_api_reasons = [
+            {"category": category, "reason_code": reason}
+            for category, reason in sorted(api_reasons)
+        ]
         result.errors = sorted(error_codes)
         if not candidates:
             result.parse_status = "partial" if result.errors else "absent"

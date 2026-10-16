@@ -251,7 +251,7 @@ class PrivacyManifestAuditor:
         which SDK code executes, or whether data is transmitted/shared.
         """
         findings: List[Finding] = []
-        path = Path(source_tree_dir) if str(source_tree_dir).strip() else None
+        path = explicit_scan_root(source_tree_dir)
         coverage = {
             "manifest_parse": "not_attempted", "manifest_truncated": False,
             "source_tree": "invalid", "files_read": 0, "bytes_read": 0,

@@ -103,6 +103,10 @@ def test_framework_and_resource_auditors_reject_missing_roots(monkeypatch, missi
     assert FlutterEngineAnalyzer().analyze_package_directory(missing).scan_status == "invalid"
     assert Il2CppAuditor().audit_package(missing).scan_status == "invalid"
     assert PrivacyManifestAuditor().audit_ios_privacy_manifest(missing).parse_status == "invalid"
+    safety = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+        '<manifest/>', missing,
+    )
+    assert safety == []
 
     network = NetworkSecurityConfigAuditor()
     monkeypatch.setattr(SourceInventory, "read", unexpected)

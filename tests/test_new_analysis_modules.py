@@ -684,6 +684,8 @@ def test_mobile_api_cataloger():
 
     spec = cataloger.export_openapi_json()
     assert spec["openapi"] == "3.0.0"
+    assert spec["x-mobileag-proof-state"] == "not_proven"
+    assert "not a complete backend contract" in spec["info"]["description"]
     assert "/v1/users" in spec["paths"]
     assert "get" in spec["paths"]["/v1/users"]
     assert "/v1/auth/login" in spec["paths"]

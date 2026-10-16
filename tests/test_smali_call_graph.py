@@ -1028,6 +1028,25 @@ def test_smali_unknown_register_destination_form_marks_coverage_partial(tmp_path
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_register_diagnostics_are_bounded_and_report_truncation(tmp_path):
+    writes = "\n".join("    unsupported-op v0, v1" for _ in range(150))
+    (tmp_path / "ManyUnknownWrites.smali").write_text(f"""
+.class public Lcom/example/ManyUnknownWrites;
+.super Ljava/lang/Object;
+.method public transform()V
+    .registers 3
+{writes}
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert engine.coverage["register_dataflow_warning_count"] == 150
+    assert engine.coverage["register_dataflow_warnings_truncated"] is True
+    assert len(engine.coverage["register_dataflow_warnings"]) == 100
+
+
 def test_smali_unknown_register_write_does_not_keep_stale_source_taint(tmp_path):
     (tmp_path / "UnknownWriteTaint.smali").write_text("""
 .class public Lcom/example/UnknownWriteTaint;

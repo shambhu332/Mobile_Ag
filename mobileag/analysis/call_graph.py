@@ -452,6 +452,9 @@ class SmaliCallGraphEngine:
         self.local_register_flows: list[dict[str, Any]] = []
         self.local_register_methods_skipped: list[str] = []
         self.local_register_analysis_warnings: list[str] = []
+        self.local_register_analysis_warning_count = 0
+        self.local_register_analysis_warnings_truncated = False
+        self.MAX_REGISTER_ANALYSIS_WARNINGS = 100
         self.MAX_INTERPROCEDURAL_METHOD_RUNS = 100_000
         self.MAX_INTERPROCEDURAL_TAINT_FACTS = 100_000
         self.coverage = {"static_status": "not_analyzed", "runtime_status": "not_tested",
@@ -465,6 +468,8 @@ class SmaliCallGraphEngine:
         self.local_register_flows.clear()
         self.local_register_methods_skipped.clear()
         self.local_register_analysis_warnings.clear()
+        self.local_register_analysis_warning_count = 0
+        self.local_register_analysis_warnings_truncated = False
         base_path = explicit_scan_root(base_dir)
         if base_path is None or base_path.is_symlink() or not base_path.exists():
             logger.warning("Smali directory does not exist: %s", base_dir)
@@ -761,8 +766,13 @@ class SmaliCallGraphEngine:
         successors: list[list[int]] = [[] for _ in instructions]
 
         def warn(message: str) -> None:
-            if message not in self.local_register_analysis_warnings:
+            if message in self.local_register_analysis_warnings:
+                return
+            self.local_register_analysis_warning_count += 1
+            if len(self.local_register_analysis_warnings) < self.MAX_REGISTER_ANALYSIS_WARNINGS:
                 self.local_register_analysis_warnings.append(message)
+            else:
+                self.local_register_analysis_warnings_truncated = True
 
         def clear_register_tracking(register: str) -> None:
             registers.pop(register, None)
@@ -1529,7 +1539,10 @@ class SmaliCallGraphEngine:
             local_register_flow_candidates=len(seen_local),
             local_register_methods_skipped=len(self.local_register_methods_skipped),
             skipped_method_keys=self.local_register_methods_skipped[:100],
-            register_dataflow_warnings=self.local_register_analysis_warnings[:100],
+            register_dataflow_warnings=self.local_register_analysis_warnings,
+            register_dataflow_warning_count=self.local_register_analysis_warning_count,
+            register_dataflow_warnings_truncated=self.local_register_analysis_warnings_truncated,
+            register_dataflow_warning_limit=self.MAX_REGISTER_ANALYSIS_WARNINGS,
             register_dataflow_limitations=[
                 "conditional branches are both explored; condition feasibility and sanitizers are not modeled",
                 "instance fields, precise array indexes/objects, casts, returned heap side effects, builder identity across fields/calls, and polymorphic dispatch are not modeled",

@@ -998,6 +998,17 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    optional preinstalled tools in the shared environment, so that auxiliary
    environment check is not clean.
 
+   HAR export now stores only supported HTTP methods; unsupported methods are
+   counted as unmodeled/omitted before request bodies or headers enter the
+   retained capture list. Content-Type header values are restricted to a small
+   explicit media-type allowlist, with parameters and unknown values replaced
+   by `application/octet-stream` in both request/response headers and HAR MIME
+   fields. Synthetic regressions verify that boundary/secret-like values and
+   unsupported methods are not serialized. Focused HAR/catalog regressions
+   passed (**22 passed**); the full suite passed (**1,173 passed**, 68.25 s),
+   with compile and diff checks passing. This hardens bounded exports only; it
+   does not prove arbitrary-secret redaction or real capture coverage.
+
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.
    It confirmed no page errors, no XSS marker execution, no external requests,

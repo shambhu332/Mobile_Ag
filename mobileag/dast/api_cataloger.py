@@ -29,10 +29,37 @@ _MAX_CAPTURE_REQUESTS = 10000
 _MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAPTURE_BYTES = 16 * 1024 * 1024
 _MAX_ENDPOINTS = 10000
+_SUPPORTED_METHODS = {"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
+_SAFE_MIME_TYPES = {
+    "application/json", "application/xml", "application/x-www-form-urlencoded",
+    "application/octet-stream", "multipart/form-data", "text/plain", "text/html", "text/xml",
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+}
 
 
 def _looks_like_dynamic_json_key(value: str) -> bool:
     return any(pattern.fullmatch(value) for pattern in _DYNAMIC_JSON_KEY_PATTERNS)
+
+
+def _safe_content_type(headers: Dict[str, str]) -> str:
+    """Return a validated media type only; discard untrusted parameters/values."""
+    for name, value in headers.items():
+        if (isinstance(name, str) and name.lower() == "content-type"
+                and isinstance(value, str) and value.lower() in _SAFE_MIME_TYPES):
+            return value.lower()
+    return "application/octet-stream"
+
+
+def _redacted_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """Redact sensitive headers and constrain the otherwise-untrusted MIME value."""
+    from mobileag.security.privacy import redact
+
+    result = redact(headers)
+    safe_mime = _safe_content_type(headers)
+    for name in list(result):
+        if name.lower() == "content-type":
+            result[name] = safe_mime
+    return result
 
 
 @dataclass
@@ -200,6 +227,11 @@ class MobileApiCataloger:
             self.unmodeled_requests += 1
             self.omitted_requests += 1
             return
+        normalized_method = req.method.upper()
+        if normalized_method not in _SUPPORTED_METHODS:
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
         if capture_size <= _MAX_CAPTURE_REQUEST_BYTES and self.captured_bytes + capture_size <= _MAX_CAPTURE_BYTES:
             self.captured_requests.append(req)
             self.captured_bytes += capture_size
@@ -239,10 +271,7 @@ class MobileApiCataloger:
             return
 
         path = self._path_template(parsed.path or "/")
-        method = req.method.lower() if isinstance(req.method, str) and len(req.method) <= 16 else ""
-        if method not in {"get", "put", "post", "delete", "options", "head", "patch", "trace"}:
-            self.unmodeled_requests += 1
-            return
+        method = normalized_method.lower()
         # Keep a normalized origin so same-path APIs on different hosts are
         # not silently collapsed. urlparse().netloc may contain userinfo; do
         # not export it.
@@ -403,9 +432,9 @@ class MobileApiCataloger:
 
         entries = []
         for req in self.captured_requests:
-            safe_headers = redact(req.headers)
+            safe_headers = _redacted_headers(req.headers)
             req_headers = [{"name": k, "value": str(v)} for k, v in safe_headers.items()]
-            safe_response_headers = redact(req.response_headers)
+            safe_response_headers = _redacted_headers(req.response_headers)
             response_headers = [{"name": k, "value": str(v)} for k, v in safe_response_headers.items()]
             safe_query = redact(req.query_params)
             query_strings = [{"name": k, "value": str(v)} for k, v in safe_query.items()]
@@ -414,15 +443,14 @@ class MobileApiCataloger:
 
             post_data = None
             if safe_body is not None:
-                content_type = req.headers.get("Content-Type", req.headers.get("content-type", "application/octet-stream"))
                 post_data = {
-                    "mimeType": content_type,
+                    "mimeType": _safe_content_type(safe_headers),
                     "text": safe_body,
                 }
 
             res_content: Dict[str, Any] = {
                 "size": len(safe_response_body.encode("utf-8")) if safe_response_body else 0,
-                "mimeType": "application/json",
+                "mimeType": _safe_content_type(safe_response_headers),
             }
             if safe_response_body is not None:
                 res_content["text"] = safe_response_body

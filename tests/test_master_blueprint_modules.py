@@ -791,6 +791,47 @@ def test_har_exports_redacted_observed_response_headers():
     assert "synthetic-trace-id" in json.dumps(har)
 
 
+def test_har_export_validates_content_type_and_does_not_echo_parameters():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "POST", "https://api.example.test/v1/upload",
+        headers={"Content-Type": "application/json; boundary=synthetic-private-boundary"},
+        body="{}",
+        response_headers={"Content-Type": "application/x-synthetic-mime-secret"},
+        response_body="{}",
+    ))
+    entry = catalog.export_har_json()["log"]["entries"][0]
+    exported = json.dumps(entry)
+    assert "synthetic-private-boundary" not in exported
+    assert "synthetic-mime-secret" not in exported
+    assert entry["request"]["postData"]["mimeType"] == "application/octet-stream"
+    assert {h["value"] for h in entry["request"]["headers"] if h["name"] == "Content-Type"} == {
+        "application/octet-stream"
+    }
+    assert {h["value"] for h in entry["response"]["headers"] if h["name"] == "Content-Type"} == {
+        "application/octet-stream"
+    }
+
+
+def test_har_rejects_unsupported_method_before_retaining_request():
+    import json
+    from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
+
+    catalog = MobileApiCataloger()
+    catalog.ingest_request(CapturedRequest(
+        "SECRET-METHOD", "https://api.example.test/v1/items",
+        body="synthetic body that must not be captured",
+    ))
+    limits = catalog.export_openapi_json()["x-mobileag-capture-limits"]
+    assert limits["unmodeledRequests"] == limits["omittedRequests"] == 1
+    assert catalog.captured_requests == []
+    assert catalog.endpoints == {}
+    assert json.loads(json.dumps(catalog.export_har_json()))["log"]["entries"] == []
+
+
 def test_api_capture_catalog_preserves_response_headers_for_redacted_har():
     from types import SimpleNamespace
     from mobileag.web.app import _captured_api_catalog

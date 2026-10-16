@@ -206,6 +206,28 @@ def test_intent_redirection_ignores_comment_and_string_lookalikes(tmp_path):
     assert IntentRedirectionAuditor().audit_file(source) == []
 
 
+def test_intent_redirection_tracks_only_direct_local_alias_copies(tmp_path):
+    source = tmp_path / "LocalAlias.java"
+    source.write_text('''class Proxy {
+        void directAlias() {
+            Intent target = getIntent().getParcelableExtra("nested");
+            Intent forwarded = target;
+            startActivity(forwarded);
+        }
+        void aliasAfterTrustedOverwrite() {
+            Intent target = getIntent().getParcelableExtra("nested");
+            target = new Intent();
+            Intent forwarded = target;
+            startActivity(forwarded);
+        }
+    }''')
+
+    findings = IntentRedirectionAuditor().audit_file(source)
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+    assert findings[0].metadata["alias_analysis"] == "direct_local_copy_only"
+
+
 def test_intent_redirection_candidate_is_invalidated_by_reassignment(tmp_path):
     source = tmp_path / "Reassignment.java"
     source.write_text('''class Proxy {

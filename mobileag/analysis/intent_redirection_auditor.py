@@ -45,6 +45,10 @@ class IntentRedirectionAuditor:
         lines = content.splitlines()
         extracted_intent_vars: dict[str, tuple[int, int]] = {}
         assignment_pattern = re.compile(r"(?<![=!<>])\b([A-Za-z_$][\w$]*)\s*=(?!=)")
+        direct_alias_rhs = re.compile(
+            r"\s*(?:\(\s*(?:android\.content\.)?Intent\s*\)\s*)?"
+            r"([A-Za-z_$][\w$]*)\s*(?:[;,)]|$)"
+        )
 
         for idx, line in enumerate(lines, 1):
             masked_line = mask_non_code(line)
@@ -64,14 +68,22 @@ class IntentRedirectionAuditor:
                 if (extraction and assignment.group(1) == extraction.group(1)
                         and extraction.start() <= assignment.start() < extraction.end()):
                     continue
-                events.append((assignment.start(), 1, "assign", assignment.group(1)))
+                events.append((assignment.start(), 1, "assign", assignment))
             forward = self.START_ACTIVITY_FORWARD_PATTERN.search(masked_line)
             if forward:
                 events.append((forward.start(), 2, "sink", forward))
 
             for position, _order, kind, event in sorted(events, key=lambda item: (item[0], item[1])):
                 if kind == "assign":
-                    extracted_intent_vars.pop(event, None)
+                    destination = event.group(1)
+                    rhs = masked_line[event.end():]
+                    alias_match = direct_alias_rhs.match(rhs)
+                    source_name = alias_match.group(1) if alias_match else None
+                    source = extracted_intent_vars.get(source_name) if source_name else None
+                    if source is None:
+                        extracted_intent_vars.pop(destination, None)
+                    else:
+                        extracted_intent_vars[destination] = source
                     continue
                 if kind == "extract":
                     extracted_intent_vars[event.group(1)] = (idx, position)
@@ -91,7 +103,7 @@ class IntentRedirectionAuditor:
                             f"Variable '{launched_var}' is syntactically assigned from an Intent Parcelable extra at "
                             f"line {extract_line} and passed to an Intent launch API at line {sink_line}. The candidate "
                             f"is bounded to lexical method '{method_name}', and recognized reassignments invalidate it. "
-                            "This is not AST/control-flow analysis and does not resolve aliases, validation/allowlisting, "
+                            "This is not AST/control-flow analysis and does not resolve complex aliases, validation/allowlisting, "
                             "exported-component reachability, platform permissions, or security impact; review the full code path."
                         ),
                         severity=Severity.INFO,
@@ -106,6 +118,7 @@ class IntentRedirectionAuditor:
                             "method_scope": "bounded_lexical",
                             "method_name": method_name,
                             "reassignment_analysis": "linewise_bounded",
+                            "alias_analysis": "direct_local_copy_only",
                             "validation": "not_resolved",
                             "component_reachability": "not_resolved",
                         },

@@ -1262,7 +1262,7 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    Feedback training-data export now redacts each Qdrant payload, caps traversal
    at 100 pages / 10,000 labeled rows and 16 MiB, and writes through a private
    temporary file before atomic replacement. Synthetic async tests verify
-   credential redaction, destination-symlink replacement, cap failure
-   preservation, and temporary-file cleanup. Focused tests passed (**2
+   credential redaction, destination-symlink replacement, row/page-cap failure
+   preservation, and temporary-file cleanup. Focused tests passed (**3
    passed**); full-suite and compile results follow. This does not establish
    training-data suitability or remove secrets missed by heuristic redaction.

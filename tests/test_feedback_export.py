@@ -60,3 +60,19 @@ async def test_training_export_limit_failure_preserves_existing_output(tmp_path,
 
     assert output.read_text() == "previous complete artifact"
     assert not list(tmp_path.glob(".training.jsonl.*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_training_export_page_cap_stops_nonterminating_scroll(tmp_path, monkeypatch):
+    import mobileag.knowledge.feedback as feedback
+
+    output = tmp_path / "training.jsonl"
+    output.write_text("previous complete artifact")
+    monkeypatch.setattr(feedback, "_MAX_TRAINING_EXPORT_PAGES", 2)
+    engine = _engine([([], "cursor-1"), ([], "cursor-2")])
+
+    await engine.export_training_data(output)
+
+    assert output.read_text() == "previous complete artifact"
+    assert engine.qdrant.client.calls == 2
+    assert not list(tmp_path.glob(".training.jsonl.*.tmp"))

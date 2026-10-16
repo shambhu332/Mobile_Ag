@@ -51,6 +51,9 @@ class MobileTokenSessionAuditor:
         "refresh_token",
         "session_token",
     }
+    SENSITIVE_CLAIM_KEYS_NORMALIZED = {
+        re.sub(r"[^a-z0-9]", "", key.casefold()) for key in SENSITIVE_CLAIM_KEYS
+    }
 
     TOKEN_QUERY_PARAMS = {
         "token",
@@ -167,7 +170,9 @@ class MobileTokenSessionAuditor:
                 safe_payload[claim] = value
         safe_payload["sensitive_claim_names"] = sorted(
             key[:64] for key in payload
-            if isinstance(key, str) and key.lower() in self.SENSITIVE_CLAIM_KEYS
+            if isinstance(key, str)
+            and re.sub(r"[^a-z0-9]", "", key.casefold())
+            in self.SENSITIVE_CLAIM_KEYS_NORMALIZED
         )[:32]
         return {"header": safe_header, "payload": safe_payload, "has_signature": bool(parts[2])}
 

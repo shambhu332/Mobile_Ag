@@ -1514,6 +1514,16 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     assert decoded["header"] == {"alg": "none"}
     assert decoded["payload"]["sensitive_claim_names"] == ["password"]
     assert "supersecretpassword" not in json.dumps(decoded)
+    alias_payload = base64.urlsafe_b64encode(json.dumps({
+        "accessToken": "synthetic-access-secret", "apiKey": "synthetic-key-secret",
+        "ordinary": "synthetic-ordinary-value",
+    }).encode()).decode().rstrip("=")
+    empty_header = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
+    alias_jwt = f"{empty_header}.{alias_payload}.sig"
+    alias_decoded = auditor.decode_jwt(alias_jwt)
+    assert alias_decoded["payload"]["sensitive_claim_names"] == ["accessToken", "apiKey"]
+    assert "synthetic-access-secret" not in json.dumps(alias_decoded)
+    assert "synthetic-key-secret" not in json.dumps(alias_decoded)
     assert auditor._safe_context_url(
         "https://api.example.test/reset/abCDef01234567890123456789012345?x=secret#frag") == (
             "https://api.example.test/reset/{id}")

@@ -508,7 +508,9 @@ names contain credential indicators (`token`, `auth`, `password`, `secret`,
 identifier-like fields. This avoids misclassifying values such as
 `user_token`/`accessToken` as object IDs. It does not establish ownership,
 authorization behavior, or perform requests; path and query identifiers that
-remain candidates still require authorized manual handling.
+remain candidates still require authorized manual handling. Candidate values
+with whitespace or ASCII/C1 control characters are rejected to prevent malformed
+query data from entering identifier lists used by downstream tooling.
 
 The researcher-canary response evaluator now never sets its legacy
 `is_vulnerable` field true: observed canary matches are recorded separately as
@@ -529,6 +531,11 @@ duplicate-ZIP-member warning); `compileall` and `git diff --check` passed.
 The credential-key filter passed focused BOLA tests (**5 passed, 45
 deselected**) and the full suite (**1,071 passed**, 40.04 s; one expected
 synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`
+passed.
+
+Query-ID control/whitespace filtering passed focused BOLA tests (**7 passed,
+45 deselected**) and full suite (**1,073 passed**, 39.90 s; one expected
+synthetic duplicate-ZIP-member warning); compilation and `git diff --check`
 passed.
 
 Fail-closed BOLA verdict-field tests also passed (**5 passed, 45 deselected**)

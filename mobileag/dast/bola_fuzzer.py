@@ -86,6 +86,15 @@ class BolaFuzzer:
             return origin + path
         return path
 
+    @classmethod
+    def _safe_resource_id(cls, value: str) -> bool:
+        """Keep control/whitespace-bearing query values out of ID candidates."""
+        return (
+            isinstance(value, str) and 0 < len(value) <= cls.MAX_CANDIDATE_LENGTH
+            and not any(char.isspace() or ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F
+                        for char in value)
+        )
+
     def extract_resource_candidates(self, url: str) -> List[str]:
         """Identify bounded candidate object IDs from a URL, without network access."""
         if not isinstance(url, str) or len(url) > self.MAX_URL_LENGTH:
@@ -100,7 +109,7 @@ class BolaFuzzer:
 
         # Check path segments
         path_matches = self.ID_PATTERN.findall(parsed.path)
-        candidates.extend(value for value in path_matches if len(value) <= self.MAX_CANDIDATE_LENGTH)
+        candidates.extend(value for value in path_matches if self._safe_resource_id(value))
 
         # Check query params for id keys
         if parsed.query:
@@ -116,7 +125,7 @@ class BolaFuzzer:
                 if key_parts.intersection(self.SENSITIVE_QUERY_KEY_PARTS):
                     continue
                 if (len(key) <= self.MAX_CANDIDATE_LENGTH
-                        and len(value) <= self.MAX_CANDIDATE_LENGTH
+                        and self._safe_resource_id(value)
                         and any(sub in normalized_key for sub in ("id", "account", "user", "order"))):
                     candidates.append(value)
 

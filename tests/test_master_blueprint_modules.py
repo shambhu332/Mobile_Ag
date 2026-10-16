@@ -226,6 +226,15 @@ def test_bola_candidate_extraction_omits_credential_bearing_query_values():
     assert candidates == ["user_123", "user_456", "acc_789", "writer_1"]
 
 
+def test_bola_candidate_extraction_rejects_query_id_control_and_whitespace_values():
+    candidates = BolaFuzzer().extract_resource_candidates(
+        "https://api.example.com/v1/orders/order_1"
+        "?order_id=valid_123&account_id=bad%0aInjected&user_id=two%20words"
+    )
+
+    assert candidates == ["order_1", "valid_123"]
+
+
 def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
     import hashlib
 

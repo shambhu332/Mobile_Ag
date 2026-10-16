@@ -11,7 +11,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
-from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 
 
 @dataclass
@@ -60,72 +60,52 @@ class FlutterEngineAnalyzer:
 
         lib_dir = base_path / "lib"
         assets_dir = base_path / "assets" / "flutter_assets"
-        tree_entries = 0
+        inventory = SourceInventory(max_entries=self.MAX_TREE_ENTRIES, max_file_bytes=1,
+                                    max_total_bytes=1)
         limited = False
 
+        def has_symlink_component(path: Path) -> bool:
+            current = path
+            while current != base_path:
+                if current.is_symlink():
+                    return True
+                current = current.parent
+            return base_path.is_symlink()
+
         # Check for Flutter shared libraries
-        if lib_dir.is_dir() and not lib_dir.is_symlink():
-            for root, dirs, files in os.walk(
-                lib_dir, followlinks=False,
-                onerror=lambda _error: result.scan_errors.append("directory_scan_error"),
-            ):
-                symlink_dirs = [name for name in dirs if (Path(root) / name).is_symlink()]
-                if symlink_dirs:
-                    result.scan_errors.append("symlink_directory_skipped")
-                dirs[:] = sorted(name for name in dirs if not (Path(root) / name).is_symlink())
-                files.sort()
-                tree_entries += len(dirs) + len(files)
-                result.tree_entries_scanned = tree_entries
-                if tree_entries > self.MAX_TREE_ENTRIES:
-                    limited = True
-                    result.scan_errors.append("tree_entry_limit")
-                    break
-                if "libapp.so" in files:
-                    binary = Path(root) / "libapp.so"
-                    if binary.is_symlink():
-                        result.scan_errors.append("symlink_binary_skipped")
-                    else:
-                        result.libapp_present = True
-                        result.is_flutter_app = True
-                        self._extract_strings_from_binary(str(binary), result)
-                if "libflutter.so" in files:
-                    flutter_binary = Path(root) / "libflutter.so"
-                    if flutter_binary.is_symlink():
-                        result.scan_errors.append("symlink_binary_skipped")
-                    else:
-                        result.libflutter_present = True
-                        result.is_flutter_app = True
+        if has_symlink_component(lib_dir):
+            result.scan_errors.append("symlink_library_directory_skipped")
+        elif lib_dir.is_dir():
+            for binary in inventory.paths(lib_dir):
+                if binary.name == "libapp.so":
+                    result.libapp_present = True
+                    result.is_flutter_app = True
+                    self._extract_strings_from_binary(str(binary), result)
+                elif binary.name == "libflutter.so":
+                    result.libflutter_present = True
+                    result.is_flutter_app = True
 
         # Check for Flutter assets
-        if assets_dir.is_dir() and not assets_dir.is_symlink():
+        if has_symlink_component(assets_dir):
+            result.scan_errors.append("symlink_asset_directory_skipped")
+        elif assets_dir.is_dir():
             result.is_flutter_app = True
-            for root, dirs, files in os.walk(
-                assets_dir, followlinks=False,
-                onerror=lambda _error: result.scan_errors.append("directory_scan_error"),
-            ):
-                symlink_dirs = [name for name in dirs if (Path(root) / name).is_symlink()]
-                if symlink_dirs:
-                    result.scan_errors.append("symlink_directory_skipped")
-                dirs[:] = sorted(name for name in dirs if not (Path(root) / name).is_symlink())
-                files.sort()
-                tree_entries += len(dirs) + len(files)
-                result.tree_entries_scanned = tree_entries
-                if tree_entries > self.MAX_TREE_ENTRIES:
+            for candidate in inventory.paths(assets_dir):
+                if len(result.bundled_assets) >= self.MAX_ASSETS:
+                    result.asset_inventory_truncated = True
                     limited = True
-                    result.scan_errors.append("tree_entry_limit")
+                    inventory.record_limit("asset_count")
                     break
-                for filename in files:
-                    candidate = Path(root) / filename
-                    if candidate.is_symlink():
-                        result.scan_errors.append("symlink_asset_skipped")
-                        continue
-                    if len(result.bundled_assets) >= self.MAX_ASSETS:
-                        result.asset_inventory_truncated = True
-                        limited = True
-                        break
-                    result.bundled_assets.append(candidate.relative_to(assets_dir).as_posix())
-                if limited:
-                    break
+                result.bundled_assets.append(candidate.relative_to(assets_dir).as_posix())
+
+        result.tree_entries_scanned = inventory.coverage["entries_examined"]
+        if inventory.coverage["limits_reached"]:
+            limited = True
+            result.scan_errors.append("tree_entry_limit")
+        if inventory.coverage["source_file_skip_reasons"].get("symlink_entry"):
+            result.scan_errors.append("symlink_entry_skipped")
+        if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
+            result.scan_errors.append("directory_scan_error")
 
         result.scan_errors = sorted(set(result.scan_errors))
         result.scan_status = "partial" if limited or result.scan_errors or result.binary_truncated else "complete"

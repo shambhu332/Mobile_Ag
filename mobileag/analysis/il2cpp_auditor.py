@@ -12,7 +12,7 @@ import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from mobileag.analysis.bounded_sources import explicit_scan_root
+from mobileag.analysis.bounded_sources import SourceInventory, explicit_scan_root
 from typing import Dict, List, Optional, Set
 
 
@@ -63,31 +63,24 @@ class Il2CppAuditor:
         metadata_file = base / "assets" / "bin" / "Data" / "Managed" / "Metadata" / "global-metadata.dat"
 
         # Check for libil2cpp.so
-        limited = False
+        inventory = SourceInventory(max_entries=self.MAX_TREE_ENTRIES, max_file_bytes=1,
+                                    max_total_bytes=1)
         if lib_dir.is_symlink():
             result.scan_errors.append("symlink_library_directory_skipped")
         elif lib_dir.is_dir():
-            for root, dirs, files in os.walk(
-                lib_dir, followlinks=False,
-                onerror=lambda _error: result.scan_errors.append("directory_scan_error"),
-            ):
-                symlink_dirs = [name for name in dirs if (Path(root) / name).is_symlink()]
-                if symlink_dirs:
-                    result.scan_errors.append("symlink_directory_skipped")
-                dirs[:] = sorted(name for name in dirs if not (Path(root) / name).is_symlink())
-                files.sort()
-                result.tree_entries_scanned += len(dirs) + len(files)
-                if result.tree_entries_scanned > self.MAX_TREE_ENTRIES:
-                    limited = True
-                    result.scan_errors.append("tree_entry_limit")
-                    break
-                if "libil2cpp.so" in files:
-                    library = Path(root) / "libil2cpp.so"
-                    if library.is_symlink():
-                        result.scan_errors.append("symlink_library_skipped")
-                    else:
-                        result.libil2cpp_present = True
-                        result.is_il2cpp = True
+            for library in inventory.paths(lib_dir):
+                if library.name == "libil2cpp.so":
+                    result.libil2cpp_present = True
+                    result.is_il2cpp = True
+
+        result.tree_entries_scanned = inventory.coverage["entries_examined"]
+        limited = inventory.coverage["limits_reached"]
+        if limited:
+            result.scan_errors.append("tree_entry_limit")
+        if inventory.coverage["source_file_skip_reasons"].get("symlink_entry"):
+            result.scan_errors.append("symlink_entry_skipped")
+        if inventory.coverage["source_file_skip_reasons"].get("directory_read_error"):
+            result.scan_errors.append("directory_scan_error")
 
         # Check for global-metadata.dat
         metadata_parent_symlink = False

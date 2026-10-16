@@ -182,6 +182,22 @@ def test_il2cpp_auditor_bounds_metadata_and_rejects_symlinked_metadata():
     assert linked.global_metadata_present is False
 
 
+def test_il2cpp_library_inventory_is_entry_bounded_and_no_follow(tmp_path):
+    base = tmp_path / "unity"
+    library_dir = base / "lib" / "arm64-v8a"
+    library_dir.mkdir(parents=True)
+    (library_dir / "libil2cpp.so").write_bytes(b"synthetic")
+    analyzer = Il2CppAuditor()
+    analyzer.MAX_TREE_ENTRIES = 1
+
+    result = analyzer.audit_package(base)
+
+    assert result.scan_status == "partial"
+    assert result.tree_entries_scanned == 1
+    assert "tree_entry_limit" in result.scan_errors
+    assert result.libil2cpp_present is False
+
+
 def test_macho_binary_parser():
     with tempfile.TemporaryDirectory() as tmp_dir:
         bin_path = os.path.join(tmp_dir, "TargetApp")

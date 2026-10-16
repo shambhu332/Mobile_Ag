@@ -239,7 +239,7 @@ def test_flutter_analyzer_reports_bounded_binary_truncation_and_skips_symlinks()
     assert result.binary_truncated is True
     assert result.binary_bytes_scanned == 16
     assert result.scan_status == "partial"
-    assert "symlink_binary_skipped" in result.scan_errors
+    assert "symlink_entry_skipped" in result.scan_errors
 
 
 def test_flutter_analyzer_enforces_aggregate_binary_byte_budget():
@@ -259,6 +259,25 @@ def test_flutter_analyzer_enforces_aggregate_binary_byte_budget():
     assert result.binary_truncated is True
     assert result.scan_status == "partial"
     assert "total_binary_byte_limit" in result.scan_errors
+
+
+def test_flutter_inventory_uses_shared_entry_cap_and_rejects_symlinked_asset_parent(tmp_path):
+    root = tmp_path / "bounded"
+    (root / "lib" / "arm64-v8a").mkdir(parents=True)
+    (root / "lib" / "arm64-v8a" / "libapp.so").write_bytes(b"synthetic")
+    external = tmp_path / "external-assets" / "flutter_assets"
+    external.mkdir(parents=True)
+    (external / "AssetManifest.json").write_text("{}", encoding="utf-8")
+    (root / "assets").symlink_to(external.parent, target_is_directory=True)
+    analyzer = FlutterEngineAnalyzer()
+    analyzer.MAX_TREE_ENTRIES = 1
+
+    result = analyzer.analyze_package_directory(root)
+
+    assert result.scan_status == "partial"
+    assert result.tree_entries_scanned == 1
+    assert "tree_entry_limit" in result.scan_errors
+    assert "symlink_asset_directory_skipped" in result.scan_errors
 
 
 def test_flutter_analyzer_caps_printable_strings_and_candidates_with_partial_status():

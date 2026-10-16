@@ -98,6 +98,52 @@ def test_isolated_worker_tree_measurement_counts_regular_file_bytes(tmp_path):
 
     assert _measure_tree(root) == (5, 2)
 
+
+def test_isolated_worker_result_writer_replaces_link_atomically(tmp_path):
+    from mobileag.core import isolated_worker
+
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"preserve":true}', encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.symlink_to(victim)
+
+    isolated_worker._write_result(result, {"ok": True})
+
+    assert victim.read_text(encoding="utf-8") == '{"preserve":true}'
+    assert not result.is_symlink()
+    assert json.loads(result.read_text(encoding="utf-8")) == {"ok": True}
+    assert result.stat().st_mode & 0o077 == 0
+
+
+def test_isolated_worker_result_writer_rejects_oversize_without_replacing(tmp_path, monkeypatch):
+    from mobileag.core import isolated_worker
+
+    result = tmp_path / "result.json"
+    result.write_text('{"old":true}', encoding="utf-8")
+    monkeypatch.setattr(isolated_worker, "MAX_RESULT_BYTES", 8)
+
+    with pytest.raises(ValueError, match="size limit"):
+        isolated_worker._write_result(result, {"too_big": "payload"})
+
+    assert result.read_text(encoding="utf-8") == '{"old":true}'
+    assert list(tmp_path.glob(".result.json.*.tmp")) == []
+
+
+def test_host_worker_result_reader_rejects_symlinks_and_oversize(tmp_path, monkeypatch):
+    jobs = importlib.import_module("mobileag.web.jobs")
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"should_not_read":true}', encoding="utf-8")
+    link = tmp_path / "result.json"
+    link.symlink_to(victim)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        jobs._read_worker_result(link)
+
+    regular = tmp_path / "regular.json"
+    regular.write_text('{"data":"too large"}', encoding="utf-8")
+    monkeypatch.setattr(jobs, "MAX_RESULT_BYTES", 8)
+    with pytest.raises(RuntimeError, match="oversized"):
+        jobs._read_worker_result(regular)
+
 def test_retention_confirm_revision_original_and_tombstone(client):
     document=scan();web.repository().save(document)
     original=web.UPLOAD_DIR/'original.apk';original.write_bytes(b'preserve')

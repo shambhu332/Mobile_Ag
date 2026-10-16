@@ -1534,3 +1534,13 @@ cycle). Focused SARIF tests passed (**7 passed**); full pytest passed (**1,258
 passed**, 60.40 s); compileall and `git diff --check` passed. The repeated-object
 case is an in-memory synthetic regression, not an external SARIF interoperability
 claim.
+
+The isolated worker's final `result.json` transfer is now capped at 16 MiB,
+written through private atomic replacement, and replaced rather than followed if
+the destination is a symlink. The host reads only a no-follow regular file with
+a bounded descriptor-based read and rejects oversized, malformed, or non-object
+results. Synthetic tests cover output overflow (preserving the prior file),
+symlink replacement/rejection, and private mode. Focused worker/session tests
+passed (**24 passed**); full pytest passed (**1,261 passed**, 61.33 s);
+compileall and `git diff --check` passed. This hardens the worker result boundary,
+not the completeness or correctness of the worker's analysis.

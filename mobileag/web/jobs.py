@@ -17,6 +17,39 @@ from mobileag.analysis.bounded_sources import SourceInventory
 PROCESSES = {}
 CANCELLED = set()
 MAX_DISK = 512*1024*1024
+MAX_RESULT_BYTES = 16*1024*1024
+
+
+def _read_worker_result(path: str | Path) -> dict:
+    """Read only a bounded regular result file without following symlinks."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise RuntimeError("Isolated worker result is unavailable") from exc
+    try:
+        details = os.fstat(fd)
+        if not stat.S_ISREG(details.st_mode) or details.st_size > MAX_RESULT_BYTES:
+            raise RuntimeError("Isolated worker result is invalid or oversized")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(64 * 1024, MAX_RESULT_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_RESULT_BYTES:
+                raise RuntimeError("Isolated worker result is invalid or oversized")
+        try:
+            value = json.loads(b"".join(chunks))
+        except (ValueError, UnicodeError):
+            raise RuntimeError("Isolated worker result is invalid") from None
+        if not isinstance(value, dict):
+            raise RuntimeError("Isolated worker result is invalid")
+        return value
+    finally:
+        os.close(fd)
 
 
 def _measure_tree(root: Path, *, max_entries: int = 30_000,
@@ -133,11 +166,9 @@ async def isolated_analysis(artifact, output, sid, settings, progress, timeout=3
         result = work/'result.json'
         if sid in CANCELLED:
             raise RuntimeError('Scan cancelled by operator')
-        if process.returncode or not result.is_file() or result.stat().st_size > 16*1024*1024:
+        if process.returncode or not result.exists():
             raise RuntimeError('Isolated worker failed; check sandbox and tool readiness')
-        state = json.loads(result.read_text())
-        if not isinstance(state,dict):
-            raise RuntimeError('Invalid isolated worker result')
+        state = _read_worker_result(result)
         evidence = work/sid
         if evidence.is_dir() and not evidence.is_symlink():
             # Never publish incomplete output or follow a worker-created link.

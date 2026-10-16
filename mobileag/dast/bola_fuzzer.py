@@ -39,6 +39,10 @@ class BolaFuzzer:
     MAX_CANDIDATES = 100
     MAX_CANDIDATE_LENGTH = 256
     MAX_RESPONSE_CHARS = 1024 * 1024
+    SENSITIVE_QUERY_KEY_PARTS = (
+        "token", "auth", "authorization", "password", "secret", "session", "cookie",
+        "bearer", "credential", "key", "apikey",
+    )
     _UUID = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     _EMAIL = re.compile(r"^[^/@\s]{1,64}@[^/@\s]+\.[^/@\s]+$")
     _OPAQUE_ID = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{24,}$")
@@ -103,9 +107,13 @@ class BolaFuzzer:
             except ValueError:
                 return []
             for key, value in params:
+                normalized_key = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key).casefold()
+                key_parts = set(re.findall(r"[a-z0-9]+", normalized_key))
+                if key_parts.intersection(self.SENSITIVE_QUERY_KEY_PARTS):
+                    continue
                 if (len(key) <= self.MAX_CANDIDATE_LENGTH
                         and len(value) <= self.MAX_CANDIDATE_LENGTH
-                        and any(sub in key.lower() for sub in ("id", "account", "user", "order"))):
+                        and any(sub in normalized_key for sub in ("id", "account", "user", "order"))):
                     candidates.append(value)
 
         return list(dict.fromkeys(candidates))[:self.MAX_CANDIDATES]

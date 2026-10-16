@@ -215,6 +215,17 @@ def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls()
     assert candidates == ["order_1", "acc_1122"]
 
 
+def test_bola_candidate_extraction_omits_credential_bearing_query_values():
+    fuzzer = BolaFuzzer()
+    candidates = fuzzer.extract_resource_candidates(
+        "https://api.example.com/v1/users/user_123"
+        "?user_id=user_456&accountId=acc_789&user_token=synthetic-token"
+        "&accessToken=second-token&authorization=Bearer-secret&author_id=writer_1"
+    )
+
+    assert candidates == ["user_123", "user_456", "acc_789", "writer_1"]
+
+
 def test_bola_response_evidence_hash_is_bounded_and_marks_truncation():
     import hashlib
 

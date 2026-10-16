@@ -500,6 +500,21 @@ and is not automatically run over captured transactions. The JWS signing input
 and HMAC procedure follow [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515.html)
 and [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html).
 
+### BOLA candidate extraction boundary
+
+Offline BOLA resource-ID extraction now excludes query fields whose normalized
+names contain credential indicators (`token`, `auth`, `password`, `secret`,
+`session`, `cookie`, `bearer`, `credential`, or `key`) before selecting
+identifier-like fields. This avoids misclassifying values such as
+`user_token`/`accessToken` as object IDs. It does not establish ownership,
+authorization behavior, or perform requests; path and query identifiers that
+remain candidates still require authorized manual handling.
+
+The credential-key filter passed focused BOLA tests (**5 passed, 45
+deselected**) and the full suite (**1,071 passed**, 40.04 s; one expected
+synthetic duplicate-ZIP-member warning); `compileall` and `git diff --check`
+passed.
+
 ### Native ELF SBOM inventory boundary
 
 The dependency scan now includes `.so` files with valid 32-/64-bit ELF headers

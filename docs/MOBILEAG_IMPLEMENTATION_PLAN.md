@@ -164,7 +164,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      adb shell am start -W -a android.intent.action.VIEW -d "<payload>"
      ```
   4. Correlate with `logcat` dumps, WebView navigation events, and process crash logs to verify vulnerability execution.
-* **Execution gate**: Direct `DeepLinkFuzzer` calls require an explicit callable just-in-time scope guard as well as an explicit serial; missing, false, or raising guards block before device access. Runtime observations remain `not_proven` and do not establish exploitability.
+* **Execution gate**: Direct `DeepLinkFuzzer` calls require an explicit callable just-in-time scope guard as well as an explicit serial; missing, false, or raising guards block before device access. Runtime observations remain `not_proven` and do not establish exploitability. Web DAST fuzz/provider/deep-link request models now cap serial/package/path lengths, activity/URI/authority items, and targeted-extra key/count/value sizes. Synthetic request validation under an exact fake device/package policy rejects over-limit fuzz, provider, and deep-link inputs before any ADB call; this is not a live-device or authorization-effectiveness test.
 
 ### 4.2 ContentProvider Fuzzer & Traversal Tester
 * **Objective**: Test exported ContentProviders for directory traversal and SQL injection vulnerabilities.
@@ -1609,3 +1609,8 @@ Focused telemetry regressions passed (`test_security_regressions.py`: **56
 passed**); full pytest passed (**1,274 passed**, 62.01 s); compileall and
 `git diff --check` passed. This verifies mocked message bounding and routing,
 not production network throughput or runtime event-loss behavior.
+
+Focused DAST request/safety regressions passed (`test_security_regressions.py`:
+**64 passed**); full pytest passed (**1,282 passed**, 62.31 s); compileall and
+`git diff --check` passed. No device command, install, provider query, or
+network request was performed for this batch.

@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from pydantic import ValidationError
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from config.settings import Settings
@@ -78,6 +79,60 @@ def test_upload_unique_validated(client):
     assert Path(a['file_path']).is_relative_to(web.UPLOAD_DIR)
     assert client.post('/api/upload/apk',files={'file':('bad.apk',b'PKbad')}).status_code == 400
     assert len(list(web.UPLOAD_DIR.iterdir())) == 2
+
+
+@pytest.mark.parametrize("payload", [
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {"EXTRA_SYNTHETIC": ["x" * 257]}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {f"EXTRA_{index}": ["value"] for index in range(31)}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "targeted_extras": {"EXTRA": ["value"] * 21}},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "activities": ["A" * 513]},
+    {"serial": "s" * 129, "package_name": "org.example.synthetic"},
+    {"serial": "owned-device", "package_name": "org.example.synthetic",
+     "deeplinks": ["https://example.invalid/" + "x" * 8192]},
+])
+def test_device_fuzz_request_rejects_oversized_target_inputs_before_dispatch(payload):
+    with pytest.raises(ValidationError):
+        web.DastFuzzRequest.model_validate(payload)
+
+
+def test_provider_and_deeplink_requests_bound_each_input_value():
+    with pytest.raises(ValidationError):
+        web.ProviderAuditRequest.model_validate({
+        "serial": "owned-device", "package_name": "org.example.synthetic",
+        "authorities": ["x" * 257],
+    })
+    with pytest.raises(ValidationError):
+        web.DeepLinkAuditRequest.model_validate({
+        "serial": "owned-device", "package_name": "org.example.synthetic",
+        "deep_links": ["https://example.invalid/" + "x" * 8192],
+    })
+
+
+def test_dynamic_api_rejects_oversized_targets_after_exact_scope_gate(monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "owned-device")
+    web.repository().save_policy({
+        "devices": ["owned-device"], "packages": ["org.example.synthetic"],
+        "origins": [], "methods": [],
+        "actions": ["fuzz", "storage", "providers", "deeplinks"],
+    })
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    adb_exec = AsyncMock()
+    monkeypatch.setattr(web.adb_manager, "_exec_cmd", adb_exec)
+    base = {"serial": "owned-device", "package_name": "org.example.synthetic"}
+    responses = [
+        client.post("/api/dast/fuzz", json={**base, "targeted_extras": {"EXTRA": ["x" * 257]}}),
+        client.post("/api/dast/providers", json={**base, "authorities": ["a" * 257]}),
+        client.post("/api/dast/deeplinks", json={**base, "deep_links": ["https://example.invalid/" + "x" * 8192]}),
+    ]
+    assert [response.status_code for response in responses] == [422, 422, 422]
+    adb_exec.assert_not_awaited()
 
 def test_websocket_auth(client):
     with pytest.raises(WebSocketDisconnect):

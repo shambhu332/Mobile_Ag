@@ -25,7 +25,7 @@ from mobileag.reporting.validation import ConfirmationEvidence, EvidenceError
 from mobileag.assessments.test_plan import TestPlanInput as TestPlanRequest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Literal
+from typing import Annotated, Any, Optional, Literal
 
 from contextlib import asynccontextmanager
 
@@ -1145,6 +1145,16 @@ async def update_settings_config(settings: dict[str, Any]) -> dict[str, Any]:
 # =============================================================================
 # DAST (Dynamic Application Security Testing) Endpoints
 # =============================================================================
+BoundedDeviceSerial = Annotated[str, Field(min_length=1, max_length=128)]
+BoundedPackageName = Annotated[str, Field(min_length=3, max_length=256)]
+BoundedActivityName = Annotated[str, Field(min_length=1, max_length=512)]
+BoundedDeepLink = Annotated[str, Field(min_length=1, max_length=8192)]
+BoundedProviderAuthority = Annotated[str, Field(min_length=1, max_length=256)]
+BoundedExtraName = Annotated[str, Field(min_length=1, max_length=256)]
+BoundedExtraValue = Annotated[str, Field(max_length=256)]
+BoundedExtraValues = Annotated[list[BoundedExtraValue], Field(max_length=20)]
+
+
 class DeviceConnectRequest(BaseModel):
     host_port: str = "127.0.0.1:5555"
 
@@ -1176,28 +1186,28 @@ class StorageAuditRequest(BaseModel):
 
 
 class ProviderAuditRequest(BaseModel):
-    serial: str
-    package_name: str
-    authorities: list[str] = Field(max_length=30)
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    authorities: list[BoundedProviderAuthority] = Field(max_length=30)
 
 
 class DastFuzzRequest(BaseModel):
-    serial: str
-    package_name: str
-    apk_path: Optional[str] = None
-    activities: Optional[list[str]] = Field(default=None,max_length=30)
-    deeplinks: Optional[list[str]] = Field(default=None,max_length=30)
-    authorities: Optional[list[str]] = Field(default=None,max_length=30)
-    targeted_extras: Optional[dict[str, list[str]]] = None
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    apk_path: Optional[Annotated[str, Field(max_length=4096)]] = None
+    activities: Optional[list[BoundedActivityName]] = Field(default=None,max_length=30)
+    deeplinks: Optional[list[BoundedDeepLink]] = Field(default=None,max_length=30)
+    authorities: Optional[list[BoundedProviderAuthority]] = Field(default=None,max_length=30)
+    targeted_extras: Optional[dict[BoundedExtraName, BoundedExtraValues]] = Field(default=None, max_length=30)
     audit_storage: bool = True
     audit_memory: bool = False
     crawl_ui: bool = False
 
 
 class DeepLinkAuditRequest(BaseModel):
-    serial: str
-    package_name: str
-    deep_links: list[str] = Field(max_length=30)
+    serial: BoundedDeviceSerial
+    package_name: BoundedPackageName
+    deep_links: list[BoundedDeepLink] = Field(max_length=30)
 
 
 class MemoryAuditRequest(BaseModel):

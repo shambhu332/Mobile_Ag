@@ -334,6 +334,23 @@ async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_ignores_smali_comments_but_keeps_string_constants(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Routes.smali").write_text(
+        '# const-string v0, "/api/v1/commented"\n'
+        'const-string v1, "/api/v1/actual" # note: "/api/v1/inline-comment"\n',
+        encoding="utf-8",
+    )
+
+    endpoints, _findings = await mapper.map_apis(str(tmp_path))
+
+    routes = {endpoint["url"] for endpoint in endpoints}
+    assert "/api/v1/actual" in routes
+    assert "/api/v1/commented" not in routes
+    assert "/api/v1/inline-comment" not in routes
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_finds_java_kotlin_route_literals_without_method_claims(mock_router, tmp_path):
     mapper = APIMapper(mock_router)
     (tmp_path / "Routes.kt").write_text(

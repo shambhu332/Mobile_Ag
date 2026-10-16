@@ -62,6 +62,34 @@ def _mask_java_kotlin_comments(source: str) -> str:
     return "".join(chars)
 
 
+def _mask_smali_comments(source: str) -> str:
+    """Blank Smali # comments without touching quoted string constants."""
+    chars = list(source)
+    index = 0
+    while index < len(source):
+        if source[index] == '"':
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+            continue
+        if source[index] == "#":
+            end = index + 1
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            for position in range(index, end):
+                chars[position] = " "
+            index = end
+            continue
+        index += 1
+    return "".join(chars)
+
+
 class APIMapper:
     """Agent for extracting API endpoints and identifying associated security issues."""
 
@@ -240,6 +268,8 @@ class APIMapper:
                 stem = file_path.stem
                 if file_path.suffix.lower() in {".java", ".kt"}:
                     content = _mask_java_kotlin_comments(content)
+                elif file_path.suffix.lower() == ".smali":
+                    content = _mask_smali_comments(content)
                 
                 # Extract literal Retrofit verb/path declarations. @HTTP is
                 # parsed with a bounded quote-aware scanner to avoid repeated

@@ -2030,9 +2030,18 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
                 seen_nodes.add(f_id)
                 sev = f.get("severity", "MEDIUM").upper()
                 f_color = "#ef4444" if sev in {"CRITICAL", "HIGH"} else "#f59e0b" if sev == "MEDIUM" else "#3b82f6"
+                finding_status = f.get("status", "UNVERIFIED")
+                if finding_status not in {"UNVERIFIED", "CONFIRMED", "FALSE_POSITIVE", "DUPLICATE"}:
+                    finding_status = "UNKNOWN"
+                proof_status = f.get("proof_status") or f.get("proof_state")
+                if proof_status not in {"not_proven", "analyst_recorded", "not_assessed"}:
+                    proof_status = ("not_proven" if finding_status == "UNVERIFIED" else
+                                    "analyst_recorded" if finding_status == "CONFIRMED" else "not_assessed")
                 nodes.append({
                     "id": f_id, "label": (f.get("title") or "Finding")[:25], "group": "vulnerability",
-                    "shape": "diamond", "size": 20, "color": f_color, "finding_id": f_id
+                    "shape": "diamond", "size": 20, "color": f_color, "finding_id": f_id,
+                    "status": finding_status, "proof_status": proof_status,
+                    "title": f"Status: {finding_status} | proof: {proof_status}",
                 })
                 edges.append({"from": "app", "to": f_id, "label": "has_vuln"})
         scan["attack_surface_graph"] = {"nodes": nodes, "edges": edges}

@@ -44,7 +44,8 @@ class _ExportSession(_Session):
             "a": {"scan_id": "scan-a", "package_name": "sample", "version": "1"},
             "rel_type": "HAS_VULNERABILITY",
             "target": {"finding_id": '["scan-a","finding","finding-1"]',
-                       "display_finding_id": "finding-1", "title": "Review candidate"},
+                       "display_finding_id": "finding-1", "title": "Review candidate",
+                       "status": "UNVERIFIED", "proof_status": "not_proven"},
             "target_labels": ["Vulnerability"],
         })
 
@@ -83,6 +84,8 @@ async def test_graph_entities_are_scan_scoped_and_keep_display_values():
     # Finding serialization must use the actual Finding model field, not a missing legacy alias.
     assert finding_params[0]["cwe"] == finding.cwe_id
     assert finding_params[0]["scan_id"] == "scan-a"
+    assert finding_params[0]["status"] == "UNVERIFIED"
+    assert finding_params[0]["proof_status"] == "not_proven"
 
 
 def test_scoped_keys_are_stable_and_type_distinct():
@@ -105,6 +108,9 @@ async def test_visjs_vulnerability_node_carries_original_finding_id():
     assert len(finding_nodes) == 1
     assert finding_nodes[0]["id"] == '["scan-a","finding","finding-1"]'
     assert finding_nodes[0]["finding_id"] == "finding-1"
+    assert finding_nodes[0]["status"] == "UNVERIFIED"
+    assert finding_nodes[0]["proof_status"] == "not_proven"
+    assert "not_proven" in finding_nodes[0]["title"]
 
 
 @pytest.mark.asyncio

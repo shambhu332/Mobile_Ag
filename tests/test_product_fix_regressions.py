@@ -219,7 +219,10 @@ def test_scan_records_original_hash_and_effective_policy(client):
     assert client.post('/api/settings',json={'entropy_threshold':3.25}).status_code==200
     with patch.object(web,'Orchestrator') as orchestrator:
         orchestrator.return_value.scan=AsyncMock(return_value={
-            'package_name':'org.example.synthetic','filtered_findings':[],
+            'package_name':'org.example.synthetic','filtered_findings':[{
+                'id':'synthetic-unverified', 'title':'Synthetic review candidate',
+                'severity':'INFO', 'status':'UNVERIFIED',
+            }],
             'coverage':{'synthetic_fixture':1},
             'il2cpp_analysis':{'metadata_version':29,'evidence_kind':'bounded_static_metadata_candidates',
                                'runtime_status':'not_tested','proof_status':'not_proven','exhaustive':False},
@@ -233,6 +236,10 @@ def test_scan_records_original_hash_and_effective_policy(client):
     assert scan['analysis_policy']['approved_llm_providers']==[]
     assert scan['il2cpp_analysis']['metadata_version']==29
     assert scan['il2cpp_analysis']['proof_status']=='not_proven'
+    graph_finding = next(node for node in scan['attack_surface_graph']['nodes']
+                         if node.get('finding_id') == 'synthetic-unverified')
+    assert graph_finding['status'] == 'UNVERIFIED'
+    assert graph_finding['proof_status'] == 'not_proven'
     assert Path(uploaded['file_path']).read_bytes()==original
     assert Path(uploaded['file_path']).stat().st_mode & 0o777 == 0o600
 

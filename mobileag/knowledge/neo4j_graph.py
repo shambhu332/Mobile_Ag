@@ -117,10 +117,17 @@ class AttackGraph:
         MATCH (a:App {scan_id: $scan_id})
         MERGE (v:Vulnerability {finding_id: $node_key})
         SET v.display_finding_id = $display_finding_id, v.title = $title, v.cwe = $cwe,
-            v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence
+            v.severity = $severity, v.cvss = $cvss, v.confidence = $confidence,
+            v.status = $status, v.proof_status = $proof_status
         MERGE (a)-[:HAS_VULNERABILITY]->(v)
         """
         async with self.driver.session() as session:
+            status = (finding.status.value if hasattr(finding.status, "value")
+                      else str(finding.status))
+            proof_status = finding.metadata.get("proof_status") or finding.metadata.get("proof_state")
+            if proof_status not in {"not_proven", "analyst_recorded", "not_assessed"}:
+                proof_status = ("not_proven" if status == "UNVERIFIED" else
+                                "analyst_recorded" if status == "CONFIRMED" else "not_assessed")
             await session.run(
                 query,
                 scan_id=scan_id,
@@ -130,7 +137,9 @@ class AttackGraph:
                 cwe=finding.cwe_id,
                 severity=finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity),
                 cvss=finding.cvss_score,
-                confidence=finding.confidence
+                confidence=finding.confidence,
+                status=status,
+                proof_status=proof_status,
             )
 
     async def add_api_endpoint(self, scan_id: str, endpoint_data: APIEndpointNode) -> None:
@@ -251,6 +260,11 @@ class AttackGraph:
                                 "color": color_map.get(primary_label, "#94A3B8"),
                                 "finding_id": (target.get("display_finding_id") or target.get("finding_id"))
                                               if primary_label == "Vulnerability" else None,
+                                "status": target.get("status") if primary_label == "Vulnerability" else None,
+                                "proof_status": target.get("proof_status") if primary_label == "Vulnerability" else None,
+                                "title": (f"Status: {target.get('status', 'unknown')} | proof: "
+                                          f"{target.get('proof_status', 'unknown')}")
+                                         if primary_label == "Vulnerability" else None,
                             })
 
                         if a and rel_type:

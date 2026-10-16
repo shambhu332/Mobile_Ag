@@ -190,10 +190,16 @@ def test_dast_fuzz_trigger_endpoint(client):
                 cwe_id="CWE-755",
             )
         ])
+        rejected = client.post("/api/dast/fuzz", json={
+            "serial": "emulator-5554", "package_name": "com.target.testapp",
+            "activities": ["com.target.testapp.MainActivity"],
+        })
+        assert rejected.status_code == 403
         response = client.post("/api/dast/fuzz", json={
             "serial": "emulator-5554",
             "package_name": "com.target.testapp",
             "activities": ["com.target.testapp.MainActivity"],
+            "synthetic_data_confirmed": True,
         })
         assert response.status_code == 200
         data = response.json()

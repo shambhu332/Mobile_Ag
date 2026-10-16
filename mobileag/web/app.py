@@ -1182,6 +1182,7 @@ class DispatchDeeplinkRequest(BaseModel):
     serial: BoundedDeviceSerial
     package_name: BoundedPackageName
     uri: BoundedDeepLink
+    synthetic_data_confirmed: bool = False
 
 
 class StorageAuditRequest(BaseModel):
@@ -1206,12 +1207,14 @@ class DastFuzzRequest(BaseModel):
     audit_storage: bool = True
     audit_memory: bool = False
     crawl_ui: bool = False
+    synthetic_data_confirmed: bool = False
 
 
 class DeepLinkAuditRequest(BaseModel):
     serial: BoundedDeviceSerial
     package_name: BoundedPackageName
     deep_links: list[BoundedDeepLink] = Field(max_length=30)
+    synthetic_data_confirmed: bool = False
 
 
 class MemoryAuditRequest(BaseModel):
@@ -1454,6 +1457,8 @@ async def launch_dast_activity(req: LaunchActivityRequest, request: Request) -> 
 @app.post("/api/dast/deeplink")
 async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest, request: Request) -> dict[str, Any]:
     """Dispatch a custom URI scheme or deep-link to the target device."""
+    if req.synthetic_data_confirmed is not True:
+        raise HTTPException(403, "Confirm researcher-controlled target and synthetic test data")
     def guard():
         from mobileag.web.policy import check_action
         if (time.monotonic() >= app.state.session_deadline or
@@ -1588,13 +1593,18 @@ async def audit_dast_providers(req: ProviderAuditRequest, request: Request) -> d
 @app.post("/api/dast/deeplinks")
 async def audit_dast_deeplinks(req: DeepLinkAuditRequest, request: Request) -> dict[str, Any]:
     """Explicit synthetic link diagnostics; no automatic exploit proof."""
+    if req.synthetic_data_confirmed is not True:
+        raise HTTPException(403, "Confirm researcher-controlled target and synthetic test data")
     from mobileag.web.policy import check_action
     def guard():
         require_current_session(request)
         if not check_device(req.serial) or not check_action(repository().get_policy(),'deeplinks',req.model_dump()):
             raise HTTPException(403,'Deep-link diagnostic scope revoked')
     guard()
-    results, findings = await deeplink_fuzzer.fuzz_deep_links(req.serial, req.package_name, req.deep_links,guard=guard)
+    results, findings = await deeplink_fuzzer.fuzz_deep_links(
+        req.serial, req.package_name, req.deep_links, guard=guard,
+        synthetic_data_confirmed=req.synthetic_data_confirmed,
+    )
     guard()
     f_dicts = redact([f.to_dict() for f in findings])
     remember_findings(f_dicts)
@@ -1839,6 +1849,8 @@ async def fuzz_api_endpoint(req: ApiFuzzRequest) -> dict[str, Any]:
 
 async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
     """Execute dynamic fuzzing, IPC audits, and storage forensics with WebSocket telemetry."""
+    if req.synthetic_data_confirmed is not True:
+        raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
     serial = req.serial
     pkg = req.package_name
 
@@ -1911,7 +1923,10 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        _, dl_findings = await intent_fuzzer.fuzz_deeplinks(serial, pkg, req.deeplinks, guard=guard)
+        _, dl_findings = await intent_fuzzer.fuzz_deeplinks(
+            serial, pkg, req.deeplinks, guard=guard,
+            synthetic_data_confirmed=req.synthetic_data_confirmed,
+        )
         findings.extend(dl_findings)
 
     # Content Provider Auditing
@@ -2003,6 +2018,8 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
 @app.post("/api/dast/fuzz")
 async def trigger_dast_fuzzer(req: DastFuzzRequest, background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """Trigger dynamic activity intent fuzzing and crash monitoring."""
+    if req.synthetic_data_confirmed is not True:
+        raise HTTPException(403, "Confirm researcher-controlled target and synthetic test data")
     if req.serial in DAST_JOBS or len(DAST_JOBS) >= 2:
         raise HTTPException(429, "Device job concurrency limit reached")
     DAST_JOBS.add(req.serial)

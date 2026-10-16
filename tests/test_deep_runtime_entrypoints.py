@@ -35,6 +35,7 @@ def test_legacy_dast_revocation_before_background_stops_device_work(monkeypatch)
     response = client.post('/api/dast/fuzz', json={
         'serial': 'emulator-5554', 'package_name': 'com.example',
         'audit_storage': False, 'audit_memory': False,
+        'synthetic_data_confirmed': True,
     })
     assert response.status_code == 200
     devices.assert_not_awaited()

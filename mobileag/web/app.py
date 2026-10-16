@@ -568,16 +568,47 @@ async def get_scan_resilience(scan_id: str) -> dict[str, Any]:
     """Return heuristic resilience inventory and its bounded-input coverage."""
     scan = await get_scan_details(scan_id)
     out_dir = OUTPUT_DIR / scan_id
-    smali_dir = out_dir / "apktool_out" / "smali"
-    if not smali_dir.exists():
-        smali_dir = out_dir / "apktool" / "smali"
-    if not smali_dir.exists():
-        candidates = list(out_dir.glob("**/smali"))
-        smali_dir = candidates[0] if candidates else smali_dir
+    from mobileag.analysis.bounded_sources import SourceInventory
+
+    # Prefer the two known apktool layouts. The compatibility fallback is
+    # bounded and refuses ambiguous roots instead of materializing an
+    # unbounded recursive glob and arbitrarily choosing its first result.
+    known_roots = [out_dir / "apktool_out" / "smali", out_dir / "apktool" / "smali"]
+    smali_roots = [p for p in known_roots if not p.is_symlink() and p.is_dir()]
+    discovery = {"status": "known_layout", "roots_found": len(smali_roots),
+                 "entries_examined": 0, "limits_reached": False}
+    if len(smali_roots) > 1:
+        discovery["status"] = "not_analyzed_multiple_known_roots"
+    elif not smali_roots:
+        inventory = SourceInventory(max_entries=5000, max_file_bytes=1,
+                                    max_total_bytes=1)
+        roots = set()
+        for path in inventory.paths(out_dir, {".smali"}):
+            for parent in path.parents:
+                if parent == out_dir:
+                    break
+                if parent.name == "smali" or re.fullmatch(r"smali_classes\d+", parent.name):
+                    roots.add(parent)
+                    break
+        discovery = {"status": "bounded_fallback", "roots_found": len(roots),
+                     "entries_examined": inventory.coverage["entries_examined"],
+                     "limits_reached": inventory.coverage["limits_reached"]}
+        if len(roots) == 1 and not inventory.coverage["limits_reached"]:
+            smali_roots = list(roots)
+        else:
+            if inventory.coverage["limits_reached"]:
+                discovery["status"] = "not_analyzed_incomplete_inventory"
+            else:
+                discovery["status"] = "not_analyzed_ambiguous_roots" if roots else "not_analyzed_no_root"
 
     from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
     auditor = RaspResilienceAuditor()
-    res = auditor.audit_package(smali_dir)
+    res = auditor.audit_package(smali_roots[0]) if len(smali_roots) == 1 else auditor.audit_package(None)
+    if discovery["status"] != "known_layout":
+        res.coverage["root_discovery"] = discovery
+        if discovery["status"] != "bounded_fallback":
+            res.coverage["static_status"] = "not_analyzed"
+            res.coverage["exhaustive"] = False
 
     return {
         "scan_id": scan_id,

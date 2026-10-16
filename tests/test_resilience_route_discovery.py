@@ -1,0 +1,48 @@
+"""Bounded source-root discovery for the resilience API route."""
+import importlib
+
+from fastapi.testclient import TestClient
+
+web = importlib.import_module("mobileag.web.app")
+
+
+def _client(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path / "output")
+    web.repository().save({"scan_id": "resilience_fixture", "status": "completed",
+                           "package_name": "org.example.synthetic", "findings": []})
+    return TestClient(web.app, headers={"Authorization": "Bearer " + web.app.state.auth_token})
+
+
+def test_resilience_route_uses_bounded_compatibility_root(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    root = web.OUTPUT_DIR / "resilience_fixture" / "unusual" / "smali"
+    root.mkdir(parents=True)
+    (root / "Example.smali").write_text('.class Lx/Example;\n', encoding="utf-8")
+
+    response = client.get("/api/scans/resilience_fixture/resilience")
+
+    assert response.status_code == 200, response.text
+    coverage = response.json()["coverage"]
+    assert coverage["static_status"] == "analyzed_heuristically"
+    assert coverage["root_discovery"] == {
+        "status": "bounded_fallback", "roots_found": 1,
+        "entries_examined": 3, "limits_reached": False,
+    }
+
+
+def test_resilience_route_does_not_choose_ambiguous_fallback_root(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    scan_dir = web.OUTPUT_DIR / "resilience_fixture"
+    for name in ("first", "second"):
+        root = scan_dir / name / "smali"
+        root.mkdir(parents=True)
+        (root / "Example.smali").write_text('.class Lx/Example;\n', encoding="utf-8")
+
+    response = client.get("/api/scans/resilience_fixture/resilience")
+
+    assert response.status_code == 200, response.text
+    coverage = response.json()["coverage"]
+    assert coverage["static_status"] == "not_analyzed"
+    assert coverage["root_discovery"]["status"] == "not_analyzed_ambiguous_roots"
+    assert coverage["root_discovery"]["roots_found"] == 2
+    assert response.json()["overall_score"] is None

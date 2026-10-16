@@ -182,7 +182,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. Commands and source are never executed by the generator or dynamic-verification adapter. Unsupported/malformed input fails closed. Complete field escaping, independent verification, and proof-grade generation remain incomplete.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. Commands and source are never executed by the generator or dynamic-verification adapter. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. Independent verification and proof-grade generation remain incomplete.
 
 ---
 
@@ -1018,6 +1018,13 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    This closes only the reviewed identifier-interpolation cases: analyst
    attestation is not independent verification, generated PoCs remain
    review-only, and the generator is still not proof-grade.
+
+   A follow-up regression expansion exercises malformed component, authority,
+   task-affinity, URI, affected-component, and finding-ID values, including
+   quote/newline and Kotlin-interpolation shapes. Focused PoC regressions passed
+   (**3 passed**); full pytest passed (**1,173 passed**, 67.23 s), with compile
+   and diff checks passing. This confirms the tested validation paths only; it
+   does not substitute for context-aware escaping or independent verification.
 
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.

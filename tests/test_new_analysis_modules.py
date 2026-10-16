@@ -488,6 +488,19 @@ def test_poc_requires_artifact_bound_analyst_attestation():
     # Kotlin string interpolation syntax must not pass through component validation.
     interpolation = finding.model_copy(update={"metadata": {"component_name": "com.target.app/Proxy$Payload"}})
     assert ExploitPocSynthesizer().synthesize(interpolation, "com.target.app") is None
+    injection_cases = [
+        ("component_name", 'com.target.app/Proxy";id'),
+        ("authority", 'com.target.app.provider";id'),
+        ("task_affinity", "com.target.app\n// injected"),
+        ("uri_scheme", 'myapp://host/path";id'),
+    ]
+    for key, value in injection_cases:
+        hostile = finding.model_copy(update={"metadata": {key: value}})
+        assert ExploitPocSynthesizer().synthesize(hostile, "com.target.app") is None
+    hostile_target = finding.model_copy(update={"affected_component": 'com.target.app.Login";id'})
+    assert ExploitPocSynthesizer().synthesize(hostile_target, "com.target.app") is None
+    hostile_id = finding.model_copy(update={"id": 'INTENT_REDIRECTION\n";id'})
+    assert ExploitPocSynthesizer().synthesize(hostile_id, "com.target.app") is None
 
 
 def test_deeplink_fuzzer_mutations():

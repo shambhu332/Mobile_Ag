@@ -503,6 +503,63 @@ def test_poc_requires_artifact_bound_analyst_attestation():
     assert ExploitPocSynthesizer().synthesize(hostile_id, "com.target.app") is None
 
 
+def test_generated_poc_templates_are_synthetic_canary_only_and_review_only():
+    from mobileag.reporting.finding import Finding, Severity, FindingStatus
+    from mobileag.generators.poc_apk_synthesizer import ExploitPocSynthesizer
+
+    package = "com.target.app"
+    record = {
+        "artifact_sha256": "a" * 64, "package_name": package,
+        "app_version": "1.0", "os_build": "Android synthetic test build",
+        "attacker_context": "ordinary_app", "entry_point": "synthetic fixture",
+        "attacker_control": "researcher controlled input", "sensitive_sink": "synthetic canary",
+        "security_boundary": "synthetic app boundary", "observed_impact": "canary observed",
+        "reproduction_steps": ["run owned fixture", "observe canary"],
+        "positive_control": "positive fixture", "negative_control": "negative fixture",
+        "evidence_refs": ["fixture:positive"], "unprivileged_attacker_confirmed": True,
+        "unmodified_authorization_confirmed": True, "synthetic_data_confirmed": True,
+        "scope_confirmed": True,
+    }
+    evidence = {"basis": "analyst_attested", "independently_verified": False,
+                "active": True, "record": record}
+    cases = [
+        ("INTENT_REDIRECTION_SYNTHETIC", "CWE-926", "intent", {"component_name": f"{package}.Proxy"}),
+        ("DEEP_LINK_SYNTHETIC", "CWE-601", "deep link", {}),
+        ("PENDING_INTENT_SYNTHETIC", "CWE-927", "pending intent", {}),
+        ("FILEPROVIDER_SYNTHETIC", "CWE-22", "file provider", {"authority": f"{package}.files"}),
+        ("TASK_AFFINITY_SYNTHETIC", "CWE-1021", "task affinity", {"task_affinity": f"{package}.task"}),
+        ("CONTENT_PROVIDER_SQLI_SYNTHETIC", "CWE-89", "content provider", {"authority": f"{package}.provider"}),
+    ]
+    synth = ExploitPocSynthesizer()
+    generated = {}
+    for fid, cwe, title, metadata in cases:
+        finding = Finding(id=fid, title=title, description="synthetic test", severity=Severity.HIGH,
+                          status=FindingStatus.CONFIRMED, cwe_id=cwe, metadata=metadata,
+                          validation_evidence=evidence)
+        generated[fid] = synth.synthesize(finding, package)
+        assert generated[fid] is not None
+        assert not generated[fid].adb_command.lstrip().startswith("adb ")
+
+    intent = generated["INTENT_REDIRECTION_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in intent
+    assert "admin_override" not in intent and "PrivateActivity" not in intent
+    deep_link = generated["DEEP_LINK_SYNTHETIC"]
+    assert "mobileag.invalid" in deep_link.explanation
+    pending = generated["PENDING_INTENT_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in pending
+    assert ".send(" not in pending and "GRANT_ALL" not in pending
+    file_provider = generated["FILEPROVIDER_SYNTHETIC"].kotlin_exploit_code
+    assert "mobileag-fixtures/canary.txt" in file_provider
+    assert "ByteArray(64)" in file_provider and "readText()" not in file_provider
+    assert "app.db" not in file_provider and "Stolen Database Content" not in file_provider
+    task = generated["TASK_AFFINITY_SYNTHETIC"]
+    assert "steal credentials" not in task.kotlin_exploit_code.lower()
+    assert "No overlay" in task.explanation
+    provider = generated["CONTENT_PROVIDER_SQLI_SYNTHETIC"].kotlin_exploit_code
+    assert "MOBILEAG_SYNTHETIC_CANARY" in provider
+    assert "Leaked Row" not in provider and "SELECT *" not in provider
+
+
 def test_deeplink_fuzzer_mutations():
     from urllib.parse import parse_qs, urlsplit
     from mobileag.dast.deeplink_intent_fuzzer import DeepLinkIntentFuzzer

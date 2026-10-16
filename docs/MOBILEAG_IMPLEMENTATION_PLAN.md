@@ -182,7 +182,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. Commands and source are never executed by the generator or dynamic-verification adapter. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. Independent verification and proof-grade generation remain incomplete.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. No executable ADB launch/read/query command is emitted. Templates use synthetic canary markers, avoid outputting provider/file contents, omit PendingIntent dispatch, and keep the task-affinity example inert. Deep-link custom URIs are still operator-supplied review data and must be checked before use. Template-interpolated identifiers and URI values are constrained by field-specific allowlists (including Kotlin `$` rejection), and malformed values fail closed; this is not a general-purpose escaping layer. These constraints do not make generated Kotlin independently safe to compile/run or establish vulnerability impact. Independent verification and proof-grade generation remain incomplete.
 
 ---
 
@@ -1025,6 +1025,19 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    (**3 passed**); full pytest passed (**1,173 passed**, 67.23 s), with compile
    and diff checks passing. This confirms the tested validation paths only; it
    does not substitute for context-aware escaping or independent verification.
+
+   PoC templates were then bounded to synthetic-canary review material: no ADB
+   launch/read/query command is generated; FileProvider reads at most 64 bytes
+   from a fixture canary and prints only a boolean; provider output is a canary
+   boolean rather than rows; PendingIntent dispatch is omitted; task-affinity
+   source contains no overlay or credential collection; and the default deep
+   link uses the reserved `.invalid` host. A synthetic regression checks all
+   six categories and rejects raw-content/privileged-action strings. Focused
+   PoC tests passed (**3 passed**); full pytest passed (**1,174 passed**, 65.64
+   s), with compile and diff checks passing. Generated Kotlin is not built or
+   executed by these tests, custom URI metadata remains review data, and this
+   safety hardening does not establish vulnerable behavior or proof-grade
+   coverage.
 
    Full pytest passed (**1,170 passed**, 59.32 s); the isolated Playwright
    regression passed with synthetic fixtures and mocked device/model adapters.

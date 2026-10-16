@@ -7,6 +7,7 @@ against Google Play Data Safety requirements.
 from __future__ import annotations
 
 import os
+import hashlib
 import plistlib
 import re
 import stat
@@ -193,14 +194,15 @@ class PrivacyManifestAuditor:
     def audit_ios_binary_api_symbols(
         self, symbol_names: object, declared_categories: Set[str] | List[str], *,
         app_manifest_state: str, binary_path: str | Path,
-        binary_parse_status: str,
+        binary_parse_status: str, component_name: str = "Main iOS executable",
+        finding_id_scope: str | None = None,
     ) -> Dict[str, Any]:
-        """Compare bounded executable symbol candidates to app-root declarations.
+        """Compare bounded executable symbol candidates to its bundle declarations.
 
         This is a review heuristic: symbol-table presence is not proof that an
         API is called, that it executes, or that Apple requires a reason for
-        that use. Framework binaries and Objective-C message dispatch are not
-        covered by this executable symbol-only comparison.
+        that use. Callers may supply app or framework bundle declarations;
+        Objective-C message dispatch is not covered.
         """
         report: Dict[str, Any] = {
             "status": "not_analyzed", "symbol_count": 0,
@@ -211,7 +213,7 @@ class PrivacyManifestAuditor:
             "exhaustive": False,
             "limitations": [
                 "Mach-O symbol names are candidates, not proof of reachable API calls",
-                "Objective-C message dispatch and embedded frameworks are not covered",
+                "Objective-C message dispatch and binaries outside the analyzed executable are not covered",
                 "No Apple compliance or runtime-use verdict is produced",
             ],
         }
@@ -236,6 +238,8 @@ class PrivacyManifestAuditor:
 
         declared = ({value for value in declared_categories if isinstance(value, str)}
                     if isinstance(declared_categories, (set, list)) else set())
+        manifest_label = ("app-root PrivacyInfo.xcprivacy" if component_name == "Main iOS executable"
+                          else f"{component_name} PrivacyInfo.xcprivacy")
         missing = []
         for category, markers in self.REQUIRED_REASON_APIS.items():
             observed = sorted({marker for marker in markers if any(
@@ -247,14 +251,17 @@ class PrivacyManifestAuditor:
             report["candidate_categories"].append({"category": category, "symbol_markers": observed})
             if category not in declared:
                 missing.append({"category": category, "symbol_markers": observed})
-                manifest_note = ("No app-root PrivacyInfo.xcprivacy declaration was parsed."
+                manifest_note = (f"No {manifest_label} declaration was parsed."
                                  if app_manifest_state == "absent" else
-                                 "The app-root PrivacyInfo.xcprivacy did not declare this category.")
+                                 f"The {manifest_label} did not declare this category.")
                 report["findings"].append(Finding(
-                    id="IOS_PRIVACY_API_SYMBOL_REVIEW_" + category.rsplit("Type", 1)[-1],
+                    id=("IOS_PRIVACY_API_SYMBOL_REVIEW_" + category.rsplit("Type", 1)[-1]
+                        + ("_" + hashlib.sha256(
+                            finding_id_scope.encode("utf-8", errors="replace")
+                        ).hexdigest()[:10] if finding_id_scope else "")),
                     title=f"Review {category} symbol candidates against the iOS Privacy Manifest",
                     description=(
-                        f"The main executable symbol table contains candidate marker(s) "
+                        f"The {component_name} symbol table contains candidate marker(s) "
                         f"{', '.join(observed)} associated with {category}, but {manifest_note} "
                         "Symbol-table presence does not prove a reachable API call or establish that "
                         "a required-reason declaration is legally/platform-required for this binary."
@@ -262,10 +269,10 @@ class PrivacyManifestAuditor:
                     severity=Severity.INFO,
                     status=FindingStatus.UNVERIFIED,
                     cwe_id="CWE-Unknown",
-                    affected_component="Main iOS executable",
+                    affected_component=component_name,
                     file_path=str(binary_path),
                     detection_method="PrivacyManifestAuditor (bounded Mach-O symbol candidate cross-check)",
-                    remediation=("Verify the API use and applicable Apple requirements for this executable; "
+                    remediation=(f"Verify the API use and applicable Apple requirements for {component_name}; "
                                  "if required, add an accurate approved reason in its PrivacyInfo.xcprivacy."),
                     metadata={
                         "evidence_state": "static_candidate",
@@ -279,6 +286,7 @@ class PrivacyManifestAuditor:
                 ))
         report["undeclared_review_candidates"] = missing
         report["status"] = ("partial" if truncated or binary_parse_status not in {"parsed", "complete"}
+                            or app_manifest_state == "partial"
                             else "analyzed_heuristically")
         report["truncated"] = truncated
         report["declared_categories"] = sorted(declared)

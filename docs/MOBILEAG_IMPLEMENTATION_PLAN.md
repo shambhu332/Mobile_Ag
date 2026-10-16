@@ -212,7 +212,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   - `mobileag/dast/token_session_auditor.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
 * **Technical Implementation**:
-  1. Parse bounded JWT header and payload indicators, including an observed `alg=none`; do not infer server acceptance or estimate key entropy/strength from token bytes.
+  1. Parse bounded JWT header and payload indicators, including an observed `alg=none`; reject duplicate JSON object members rather than choosing an ambiguous claim/header value. Do not infer server acceptance or estimate key entropy/strength from token bytes.
   2. Inspect expiration claims (`exp`, `iat`) to detect missing expiration, expired tokens in use, or excessive lifetimes (CWE-613).
   3. Flag cleartext HTTP transmission of authorization tokens (CWE-319) and tokens passed in URL query strings (CWE-598).
   4. Detect session token reuse after logout or de-authentication requests (CWE-613).
@@ -1050,3 +1050,12 @@ The iOS privacy-manifest candidate inventory and Android Data Safety Java/Kotlin
    reported expected synthetic 401/404/503 responses and CSP-blocked inline
    handler control. Browser artifacts were written under `/tmp`, not into the
    repository. No device or commercial model was contacted.
+
+   JWT header/payload decoding now rejects duplicate JSON object member names,
+   preventing the offline parser from silently selecting one of conflicting
+   `alg`/claim values. Synthetic regressions cover duplicate header and payload
+   members; the HMAC helper now classifies such an ambiguous compact token as
+   invalid input. Focused token tests passed (**4 passed**); full pytest passed
+   (**1,174 passed**, 67.10 s), with compile and diff checks passing. This does
+   not verify token acceptance, server policy, token provenance, or live
+   session behavior.

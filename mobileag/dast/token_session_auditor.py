@@ -154,7 +154,16 @@ class MobileTokenSessionAuditor:
             padded = part_b64 + "=" * (-len(part_b64) % 4)
             try:
                 raw_bytes = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
-                value = json.loads(raw_bytes.decode("utf-8"))
+
+                def reject_duplicate_members(pairs):
+                    result = {}
+                    for name, value in pairs:
+                        if name in result:
+                            raise ValueError("duplicate JSON object member")
+                        result[name] = value
+                    return result
+
+                value = json.loads(raw_bytes.decode("utf-8"), object_pairs_hook=reject_duplicate_members)
                 return value if isinstance(value, dict) else None
             except (ValueError, UnicodeError, binascii.Error, RecursionError):
                 return None

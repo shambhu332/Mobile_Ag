@@ -1241,6 +1241,10 @@ def test_token_session_auditor_jwt_claims_and_entropy():
     valid_object = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
     assert auditor.decode_jwt(f"{json_list}.{valid_object}.sig") is None
     assert auditor.decode_jwt(f"{valid_object}.{json_list}.sig") is None
+    duplicate_header = base64.urlsafe_b64encode(b'{"alg":"none","alg":"HS256"}').decode().rstrip("=")
+    duplicate_payload = base64.urlsafe_b64encode(b'{"exp":1,"exp":253402300799}').decode().rstrip("=")
+    assert auditor.decode_jwt(f"{duplicate_header}.{valid_object}.sig") is None
+    assert auditor.decode_jwt(f"{valid_object}.{duplicate_payload}.sig") is None
     assert auditor.audit_token("x" * (auditor.MAX_TOKEN_CHARS + 1)) == []
 
     # A present but non-numeric exp is not misreported as an absent claim.
@@ -1355,7 +1359,7 @@ def test_token_session_auditor_opt_in_hmac_verification_is_local_and_bounded():
     duplicate_header = encode(b'{"alg":"HS256","alg":"HS512"}')
     assert auditor.verify_hmac_jwt_signature(
         f"{duplicate_header}.{payload}.AA", min_key
-    )["status"] == "unsupported_header_parameters"
+    )["status"] == "invalid_compact_token"
     assert "synthetic-research-only-hmac-key" not in json.dumps(
         auditor.verify_hmac_jwt_signature(token, key)
     )

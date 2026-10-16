@@ -465,7 +465,12 @@ class PrivacyManifestAuditor:
         else:
             try:
                 root = ET.fromstring(manifest_content)
-                for element in root.iter():
+                if root.tag.rsplit("}", 1)[-1] != "manifest":
+                    raise ValueError("unexpected manifest root")
+                # Android permission declarations are direct children of the
+                # <manifest> root. Descendant searches can mistake examples or
+                # unrelated nested metadata for effective app permissions.
+                for element in root:
                     tag_name = element.tag.rsplit("}", 1)[-1]
                     if tag_name not in {"uses-permission", "uses-permission-sdk-23"}:
                         continue
@@ -477,6 +482,9 @@ class PrivacyManifestAuditor:
             except ET.ParseError:
                 coverage["manifest_parse"] = "invalid"
                 coverage["errors"].append("manifest_parse_error")
+            except ValueError:
+                coverage["manifest_parse"] = "invalid"
+                coverage["errors"].append("manifest_root_invalid")
         has_location = bool(permissions & {
             "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
         })

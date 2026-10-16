@@ -1162,6 +1162,26 @@ def test_android_data_safety_uses_permission_elements_not_comments_or_substrings
         assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(manifest, tmp_dir) == []
 
 
+def test_android_data_safety_ignores_nested_permission_examples_and_non_manifest_roots():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.java"
+        source.write_text("com.google.firebase.analytics.FirebaseAnalytics", encoding="utf-8")
+        nested = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <application><meta-data><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/></meta-data></application>
+        </manifest>'''
+        auditor = PrivacyManifestAuditor()
+        assert auditor.audit_android_data_safety_discrepancies(nested, tmp_dir) == []
+        not_manifest = '''<example xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </example>'''
+        coverage = {}
+        assert auditor.audit_android_data_safety_discrepancies(
+            not_manifest, tmp_dir, _coverage_out=coverage,
+        ) == []
+        assert coverage["manifest_parse"] == "invalid"
+        assert "manifest_root_invalid" in coverage["errors"]
+
+
 def test_android_data_safety_rejects_manifest_dtd_and_entity_declarations():
     with tempfile.TemporaryDirectory() as tmp_dir:
         source = Path(tmp_dir) / "App.java"

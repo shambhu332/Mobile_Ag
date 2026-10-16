@@ -129,6 +129,34 @@ def test_device_operation_requests_reject_oversized_fields(model, payload):
         model.model_validate(payload)
 
 
+@pytest.mark.parametrize("model,payload", [
+    (web.ApiTestRequest, {"url": "https://example.invalid", "body": "x" * 262145}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "headers": {"X": "v" * 8193}}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "headers": {"X" * 257: "v"}}),
+    (web.ApiTestRequest, {"url": "https://example.invalid", "timeout": 30.1}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_body": "x" * 262145}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_headers": {"X": "v" * 8193}}),
+    (web.ApiFuzzRequest, {"url": "https://example.invalid", "response_status": 700}),
+])
+def test_api_review_requests_reject_oversized_or_invalid_fields(model, payload):
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_api_replay_rejects_oversized_request_before_network(monkeypatch):
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    scoped_request = AsyncMock(side_effect=AssertionError("No request may be sent"))
+    monkeypatch.setattr(web, "scoped_request", scoped_request)
+    response = client.post("/api/apis/test", json={
+        "url": "https://example.invalid/", "method": "POST", "body": "x" * 262145,
+    })
+    assert response.status_code == 422
+    scoped_request.assert_not_awaited()
+
+
 def test_dynamic_api_rejects_oversized_targets_after_exact_scope_gate(monkeypatch):
     monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "owned-device")
     web.repository().save_policy({

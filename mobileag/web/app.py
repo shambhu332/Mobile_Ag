@@ -1153,6 +1153,10 @@ BoundedProviderAuthority = Annotated[str, Field(min_length=1, max_length=256)]
 BoundedExtraName = Annotated[str, Field(min_length=1, max_length=256)]
 BoundedExtraValue = Annotated[str, Field(max_length=256)]
 BoundedExtraValues = Annotated[list[BoundedExtraValue], Field(max_length=20)]
+BoundedHttpHeaders = Annotated[
+    dict[Annotated[str, Field(min_length=1, max_length=256)], Annotated[str, Field(max_length=8192)]],
+    Field(max_length=100),
+]
 
 
 class DeviceConnectRequest(BaseModel):
@@ -1262,21 +1266,21 @@ class ExecuteAdbRequest(BaseModel):
 
 
 class ApiTestRequest(BaseModel):
-    url: str
-    method: str = "GET"
-    headers: Optional[dict[str, str]] = None
-    body: Optional[str] = None
-    timeout: float = 4.0
+    url: str = Field(min_length=1, max_length=8192)
+    method: str = Field(default="GET", min_length=1, max_length=16)
+    headers: Optional[BoundedHttpHeaders] = None
+    body: Optional[str] = Field(default=None, max_length=262144)
+    timeout: float = Field(default=4.0, ge=0.1, le=30.0)
 
 
 class ApiFuzzRequest(BaseModel):
-    url: str
-    method: str = "GET"
-    headers: Optional[dict[str, str]] = None
-    body: Optional[str] = None
-    response_status: int = 200
-    response_headers: Optional[dict[str, str]] = None
-    response_body: Optional[str] = None
+    url: str = Field(min_length=1, max_length=8192)
+    method: str = Field(default="GET", min_length=1, max_length=16)
+    headers: Optional[BoundedHttpHeaders] = None
+    body: Optional[str] = Field(default=None, max_length=262144)
+    response_status: int = Field(default=200, ge=100, le=599)
+    response_headers: Optional[BoundedHttpHeaders] = None
+    response_body: Optional[str] = Field(default=None, max_length=262144)
 
 
 

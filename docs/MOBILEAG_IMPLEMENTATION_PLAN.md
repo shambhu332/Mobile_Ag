@@ -1624,6 +1624,14 @@ full pytest passed (**1,291 passed**, 63.40 s); compileall and
 does not grant device access, validate the ADB destination, or exercise a
 device/target.
 
+The manual API replay and offline API-fuzz request models now bound URL,
+method, headers, bodies, status, and replay timeout values. A synthetic
+oversized replay request returns 422 before the scoped network-request helper
+is called; focused API/security regressions passed (**147 passed**), full
+pytest passed (**1,302 passed**, 61.76 s), and compileall plus
+`git diff --check` passed. This is bounded request validation, not live API
+authorization, a replay test, or proof of server-side access control.
+
 Caller-supplied captured-traffic request and response header maps now bound
 each field name (1-256 characters) and value (up to 8 KiB), in addition to
 the existing per-map entry cap. Synthetic API regressions reject oversized

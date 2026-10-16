@@ -11,6 +11,7 @@ or emulators post-execution to detect:
 from __future__ import annotations
 
 import logging
+import inspect
 import re
 import shlex
 from typing import Any, Optional
@@ -38,14 +39,14 @@ class StorageAuditor:
 
     @staticmethod
     def _check_scope_guard(guard) -> None:
-        if guard is None:
-            return
         if not callable(guard):
-            raise PermissionError('Storage audit scope guard is invalid')
-        try:
-            allowed = guard()
-        except Exception as exc:
-            raise PermissionError('Storage audit scope guard denied access') from exc
+            raise PermissionError('Storage audit scope guard is required')
+        allowed = guard()
+        if inspect.isawaitable(allowed):
+            close = getattr(allowed, 'close', None)
+            if callable(close):
+                close()
+            raise PermissionError('Storage audit scope guard must be synchronous')
         if allowed is False:
             raise PermissionError('Storage audit scope guard denied access')
 

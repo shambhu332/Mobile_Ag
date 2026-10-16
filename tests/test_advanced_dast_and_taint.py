@@ -1213,7 +1213,9 @@ async def test_memory_forensics_secret_detection():
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
 
-    pid, findings = await auditor.audit_process_memory("emulator-5554", "com.test.app")
+    pid, findings = await auditor.audit_process_memory(
+        "emulator-5554", "com.test.app", guard=lambda: None,
+    )
     assert pid == 4567
     assert len(findings) >= 2
     cwes = {f.cwe_id for f in findings}
@@ -1237,7 +1239,9 @@ async def test_memory_forensics_rejects_raw_output_and_never_reads_environment()
 
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
-    indicators = await auditor.extract_memory_indicators("synthetic-device", 1234)
+    indicators = await auditor.extract_memory_indicators(
+        "synthetic-device", 1234, guard=lambda: None,
+    )
     assert indicators == ["JWT Bearer Token"]
     assert len(commands) == 1
     assert "awk" in commands[0]
@@ -1257,6 +1261,17 @@ async def test_memory_forensics_scope_denial_and_revocation_block_shell_commands
 
     mock_adb._exec_cmd = mock_exec
     auditor = MemoryForensicsAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError, match="required"):
+        await auditor.get_process_pid("synthetic-device", "com.test.app")
+    assert calls == []
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor.get_process_pid("synthetic-device", "com.test.app", guard=async_allow)
+    assert calls == []
+
     with pytest.raises(PermissionError):
         await auditor.get_process_pid("synthetic-device", "com.test.app", guard=lambda: False)
     assert calls == []

@@ -168,6 +168,26 @@ async def test_ui_hierarchy_explicit_denial_prevents_device_commands():
 
 
 @pytest.mark.asyncio
+async def test_ui_observation_rejects_async_scope_guard_before_device_access():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from mobileag.dast.ui_crawler import UICrawler
+
+    adb = SimpleNamespace(_exec_cmd=AsyncMock())
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="must be synchronous"):
+        await UICrawler(adb).dump_ui_hierarchy("synthetic-serial", guard=async_allow)
+    report = await UICrawler(adb).crawl_app(
+        "synthetic-serial", "org.example.fixture", guard=async_allow,
+    )
+    assert report["status"] == "blocked"
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_ui_hierarchy_revocation_stops_read_and_cleanup_commands():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

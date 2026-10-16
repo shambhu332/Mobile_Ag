@@ -1679,3 +1679,12 @@ DeepLinkIntentFuzzer tests passed (**159 passed**); full pytest passed
 (**1,310 passed**, 62.55 s); compileall and `git diff --check` passed. No
 physical/emulated device was contacted; root-shell observations are not
 ordinary-app authorization proof.
+
+Storage and memory ADB auditors now require synchronous scope guards at their
+command boundaries; async guards fail closed. The read-only UI observer also
+rejects async guards and returns a blocked crawl result without issuing
+commands. Synthetic controls cover missing/asynchronous storage and memory
+authorization and UI observation. Focused storage/memory/UI tests passed
+(**152 passed**); full pytest passed (**1,311 passed**, 62.23 s); compileall
+and `git diff --check` passed. These are fail-closed mock regressions only;
+no storage, process memory, or UI hierarchy was read from a device.

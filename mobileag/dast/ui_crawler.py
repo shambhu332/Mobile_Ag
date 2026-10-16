@@ -7,6 +7,7 @@ Planned actions are data for explicit operator review, not automatic commands.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import uuid
@@ -45,6 +46,11 @@ class UICrawler:
             allowed = guard()
         except Exception as exc:
             raise PermissionError("UI observation scope is unavailable or revoked") from exc
+        if inspect.isawaitable(allowed):
+            close = getattr(allowed, "close", None)
+            if callable(close):
+                close()
+            raise PermissionError("UI observation scope guard must be synchronous")
         if allowed is False:
             raise PermissionError("UI observation scope is unavailable or revoked")
 

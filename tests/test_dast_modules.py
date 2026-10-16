@@ -134,7 +134,9 @@ async def test_storage_auditor_shared_preferences():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_shared_preferences(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_shared_preferences(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-312"
     assert "user_session.xml" in findings[0].title
@@ -151,8 +153,17 @@ async def test_storage_auditor_honors_scope_denial_before_shell(monkeypatch):
 
     mock_adb._exec_cmd = forbidden_exec
     auditor = StorageAuditor(adb=mock_adb)
+    with pytest.raises(PermissionError, match="required"):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic")
     with pytest.raises(PermissionError):
         await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=lambda: False)
+    assert calls == []
+
+    async def async_allow():
+        return True
+
+    with pytest.raises(PermissionError, match="synchronous"):
+        await auditor._run_su_cmd("synthetic-device", "ls -1 /synthetic", guard=async_allow)
     assert calls == []
 
 
@@ -190,7 +201,9 @@ async def test_storage_auditor_sqlite_databases():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_sqlite_databases(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_sqlite_databases(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-312"
     assert "app_accounts.db" in findings[0].title
@@ -208,11 +221,15 @@ async def test_storage_auditor_cache_and_audit_all():
         return ""
 
     auditor._run_su_cmd = mock_run_su
-    findings = await auditor.audit_cache_leakage(serial="emulator-5554", package_name="com.test.app")
+    findings = await auditor.audit_cache_leakage(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert len(findings) == 1
     assert findings[0].cwe_id == "CWE-524"
 
-    res = await auditor.audit_all_storage(serial="emulator-5554", package_name="com.test.app")
+    res = await auditor.audit_all_storage(
+        serial="emulator-5554", package_name="com.test.app", guard=lambda: None,
+    )
     assert res["total_storage_findings"] == 1
     assert res["cache_findings"] == 1
 

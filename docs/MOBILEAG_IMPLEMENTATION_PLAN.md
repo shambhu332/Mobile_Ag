@@ -1576,3 +1576,13 @@ verify private permissions, collision handling, and synthetic link protection.
 Focused export/import tests passed (**29 passed**); full pytest passed (**1,267
 passed**, 62.15 s); compileall and `git diff --check` passed. AAB output is
 inventory-only and remains non-analysis evidence.
+
+Dashboard scan persistence now preflights JSON structure (32 MiB estimated input,
+250,000 nodes, depth 64), enforces a 64 MiB serialized document cap before the
+SQLite write, and leaves an existing scan untouched on rejection. Legacy
+`dashboard.json` snapshots use the same preflight and a bounded atomic write;
+failed size checks preserve the prior snapshot. Synthetic tests cover cycles,
+oversized documents, non-mutation, and atomic preservation. Focused repository
+regressions passed (**27 passed**); full pytest passed (**1,270 passed**, 61.73
+s); compileall and `git diff --check` passed. SQLite remains local single-user
+metadata, not a tenant-isolated or externally authorized service.

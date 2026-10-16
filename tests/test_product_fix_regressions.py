@@ -207,6 +207,48 @@ def test_private_snapshot_and_database_permissions(tmp_path):
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_scan_repository_rejects_oversized_document_without_replacing_record(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    repo = ScanRepository(tmp_path / "metadata")
+    original = fixture_scan()
+    repo.save(original)
+    monkeypatch.setattr(repository, "MAX_SCAN_DOCUMENT_BYTES", 512)
+    oversized = fixture_scan()
+    oversized["revision"] = 1
+    oversized["extra"] = "synthetic" * 200
+
+    with pytest.raises(ValueError, match="Scan document exceeds the storage size limit"):
+        repo.save(oversized)
+
+    assert repo.get("scan_one") == original
+    assert original.get("revision") == 0
+
+
+def test_private_dashboard_snapshot_is_bounded_and_preserves_previous_file(tmp_path, monkeypatch):
+    repository = importlib.import_module("mobileag.web.repository")
+    path = tmp_path / "scan" / "dashboard.json"
+    private_write(path, fixture_scan())
+    previous = path.read_bytes()
+    monkeypatch.setattr(repository, "MAX_DASHBOARD_SNAPSHOT_BYTES", 128)
+
+    with pytest.raises(ValueError, match="Dashboard snapshot exceeds the storage size limit"):
+        private_write(path, {"scan_id": "synthetic", "data": "x" * 200})
+
+    assert path.read_bytes() == previous
+    assert list(path.parent.glob(".dashboard.json-" + "*")) == []
+
+
+def test_scan_repository_rejects_cycles_before_serialization(tmp_path):
+    repo = ScanRepository(tmp_path / "metadata")
+    document = fixture_scan()
+    document["cycle"] = document
+
+    with pytest.raises(ValueError, match="Scan document contains a cycle"):
+        repo.save(document)
+
+    assert repo.get("scan_one") is None
+
+
 def test_scan_records_original_hash_and_effective_policy(client):
     import hashlib
     import io

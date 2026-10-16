@@ -14,15 +14,40 @@ from pathlib import Path
 from datetime import datetime, timezone
 from mobileag.security.privacy import redact
 from mobileag.reporting.validation import bind_confirmation
+from mobileag.reporting.artifact_writer import preflight_bounded_structure
+
+MAX_SCAN_DOCUMENT_BYTES = 64 * 1024 * 1024
+MAX_DASHBOARD_SNAPSHOT_BYTES = 64 * 1024 * 1024
+MAX_PERSISTED_INPUT_BYTES = 32 * 1024 * 1024
+MAX_PERSISTED_NODES = 250_000
+MAX_PERSISTED_DEPTH = 64
+
+
+def _bounded_redacted_json(value: dict, *, label: str, output_limit: int) -> tuple[dict, str]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    preflight_bounded_structure(
+        value, max_bytes=MAX_PERSISTED_INPUT_BYTES,
+        max_nodes=MAX_PERSISTED_NODES, max_depth=MAX_PERSISTED_DEPTH,
+        label=label,
+    )
+    redacted_value = redact(value)
+    raw = json.dumps(redacted_value, allow_nan=False, default=str, indent=2)
+    if len(raw.encode("utf-8")) > output_limit:
+        raise ValueError(f"{label} exceeds the storage size limit")
+    return redacted_value, raw
 
 
 def private_write(path: Path, value: dict) -> None:
+    _, raw = _bounded_redacted_json(
+        value, label="Dashboard snapshot", output_limit=MAX_DASHBOARD_SNAPSHOT_BYTES,
+    )
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, name = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
     temporary = Path(name)
     try:
         with os.fdopen(fd, 'w') as out:
-            json.dump(redact(value), out, indent=2, default=str)
+            out.write(raw)
             out.flush()
             os.fsync(out.fileno())
         temporary.replace(path)
@@ -75,9 +100,14 @@ class ScanRepository:
             db.close()
 
     def save(self, scan: dict) -> dict:
-        scan = redact(scan)
+        if not isinstance(scan, dict):
+            raise ValueError("Scan document must be an object")
+        scan = dict(scan)
         sid = scan['scan_id']
         scan.setdefault('revision', 0)
+        scan, raw = _bounded_redacted_json(
+            scan, label="Scan document", output_limit=MAX_SCAN_DOCUMENT_BYTES,
+        )
         with self.connection() as db:
             # Worker snapshots must not overwrite a newer analyst revision.
             db.execute('BEGIN IMMEDIATE')
@@ -86,7 +116,7 @@ class ScanRepository:
                 return json.loads(old['document'])
             db.execute('INSERT OR REPLACE INTO scans VALUES(?,?,?,?,?)',
                        (sid, scan.get('created_at', ''), scan.get('status', 'unknown'),
-                        scan['revision'], json.dumps(scan, default=str)))
+                        scan['revision'], raw))
         return scan
 
     def get(self, sid: str) -> dict | None:

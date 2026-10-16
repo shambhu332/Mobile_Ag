@@ -632,6 +632,8 @@ class IOSSecurityAnalyzer:
                         "swift_type_field_candidates": m_res.swift_type_field_candidates,
                         "swift_protocol_metadata_status": m_res.swift_protocol_metadata_status,
                         "swift_protocol_name_candidates": m_res.swift_protocol_name_candidates,
+                        "swift_conformance_metadata_status": m_res.swift_conformance_metadata_status,
+                        "swift_conformance_candidates": m_res.swift_conformance_candidates,
                         "crypto_frameworks": m_res.crypto_frameworks,
                         "api_endpoints": m_res.api_endpoints,
                     }

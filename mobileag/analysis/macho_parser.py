@@ -41,6 +41,8 @@ class MachoAnalysisResult:
     swift_type_metadata_status: str = "not_attempted"
     swift_protocol_name_candidates: List[str] = field(default_factory=list)
     swift_protocol_metadata_status: str = "not_attempted"
+    swift_conformance_candidates: List[Dict[str, str]] = field(default_factory=list)
+    swift_conformance_metadata_status: str = "not_attempted"
     binary_truncated: bool = False
     candidate_output_truncated: bool = False
 
@@ -266,10 +268,15 @@ class MachoBinaryParser:
             for name in slice_result.swift_protocol_name_candidates:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
+            for item in slice_result.swift_conformance_candidates:
+                if item not in result.swift_conformance_candidates and len(result.swift_conformance_candidates) < 1000:
+                    result.swift_conformance_candidates.append(item)
             if slice_result.swift_protocol_metadata_status != "not_attempted":
                 result.swift_protocol_metadata_status = "parsed" if result.swift_protocol_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_protocol_metadata_status == "parsed" else "partial"
             if slice_result.swift_type_metadata_status != "not_attempted":
                 result.swift_type_metadata_status = "parsed" if result.swift_type_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_type_metadata_status == "parsed" else "partial"
+            if slice_result.swift_conformance_metadata_status != "not_attempted":
+                result.swift_conformance_metadata_status = "parsed" if result.swift_conformance_metadata_status in {"not_attempted", "parsed"} and slice_result.swift_conformance_metadata_status == "parsed" else "partial"
             result.parse_errors.extend(f"slice {index}: {error}" for error in slice_result.parse_errors)
         result.parse_status = "complete" if statuses and all(status == "not_attempted" for status in statuses) else (
             "complete" if statuses and all(status == "complete" for status in statuses) else "partial"
@@ -334,6 +341,7 @@ class MachoBinaryParser:
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
         self._extract_swift_protocol_names(data, result, endian)
+        self._extract_swift_conformances(data, result, endian)
 
     def _extract_swift_type_names(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
         """Inventory bounded Swift nominal type names; this is not type reconstruction."""
@@ -490,6 +498,73 @@ class MachoBinaryParser:
                 if name not in result.swift_protocol_name_candidates and len(result.swift_protocol_name_candidates) < 1000:
                     result.swift_protocol_name_candidates.append(name)
 
+    def _extract_swift_conformances(self, data: bytes, result: MachoAnalysisResult, endian: str) -> None:
+        """Inventory direct Swift nominal-type/protocol conformance name pairs only."""
+        sections = [s for s in result.sections if s.get("name") == "__swift5_proto"]
+        if not sections:
+            return
+        result.swift_conformance_metadata_status = "parsed"
+        examined = 0
+
+        def descriptor_name(offset: int, expected_kinds: set[int]) -> Optional[str]:
+            if offset < 0 or offset > len(data) - 12:
+                return None
+            flags = struct.unpack_from(endian + "I", data, offset)[0]
+            if (flags & 0x1f) not in expected_kinds:
+                return None
+            rel = struct.unpack_from(endian + "i", data, offset + 8)[0]
+            name_offset = offset + 8 + rel
+            if name_offset < 0 or name_offset >= len(data):
+                return None
+            end = data.find(b"\0", name_offset, min(len(data), name_offset + 256))
+            if end < 0:
+                return None
+            try:
+                name = data[name_offset:end].decode("utf-8", errors="strict")
+            except UnicodeDecodeError:
+                return None
+            if not name or any(ord(char) < 0x20 or ord(char) == 0x7f for char in name):
+                return None
+            return name
+
+        for section in sections:
+            offset, size = section.get("offset"), section.get("size")
+            if (not isinstance(offset, int) or not isinstance(size, int) or size % 4
+                    or size > 4 * 10000 or offset < 0 or offset > len(data)
+                    or size > len(data) - offset):
+                result.swift_conformance_metadata_status = "partial"
+                continue
+            for entry in range(offset, offset + size, 4):
+                examined += 1
+                if examined > 10000:
+                    result.swift_conformance_metadata_status = "partial"
+                    return
+                relative = struct.unpack_from(endian + "i", data, entry)[0]
+                if relative & 1:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                record = entry + relative
+                if record < 0 or record > len(data) - 16:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                protocol_relative, type_relative = struct.unpack_from(endian + "ii", data, record)
+                # Low tag bits mark indirection/ObjC forms; follow only untagged direct references.
+                if protocol_relative & 3 or type_relative & 3:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                protocol = descriptor_name(record + protocol_relative, {3})
+                type_name = descriptor_name(record + 4 + type_relative, {16, 17, 18})
+                if protocol is None or type_name is None:
+                    result.swift_conformance_metadata_status = "partial"
+                    continue
+                candidate = {"type_name": type_name, "protocol_name": protocol}
+                if candidate in result.swift_conformance_candidates:
+                    continue
+                if len(result.swift_conformance_candidates) < 1000:
+                    result.swift_conformance_candidates.append(candidate)
+                else:
+                    result.swift_conformance_metadata_status = "partial"
+
     def _parse_segment_32(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:
         if command_size < 56:
@@ -633,6 +708,7 @@ class MachoBinaryParser:
         self._extract_section_contents(data, result)
         self._extract_swift_type_names(data, result, endian)
         self._extract_swift_protocol_names(data, result, endian)
+        self._extract_swift_conformances(data, result, endian)
 
     def _parse_segment_64(self, data: bytes, cursor: int, command_size: int,
                           endian: str, result: MachoAnalysisResult) -> None:

@@ -574,6 +574,39 @@ def test_macho_parser_inventories_direct_swift_protocol_descriptors(tmp_path):
     assert result.swift_protocol_name_candidates == ["Displayable"]
 
 
+def test_macho_parser_inventories_direct_swift_conformance_name_pairs(tmp_path):
+    section_offset = 32 + 152
+    metadata = bytearray(56)
+    struct.pack_into("<i", metadata, 0, 4)  # section entry -> conformance record
+    struct.pack_into("<ii", metadata, 4, 16, 32)  # direct protocol and type descriptor refs
+    struct.pack_into("<I", metadata, 20, 3)  # protocol context descriptor
+    struct.pack_into("<i", metadata, 28, 28)  # protocol name relative to descriptor+8
+    struct.pack_into("<I", metadata, 40, 17)  # struct context descriptor
+    struct.pack_into("<i", metadata, 48, 19)  # type name relative to descriptor+8
+    # Store distinct names after both descriptors.
+    metadata[56:67] = b"Renderable\0"
+    metadata[67:73] = b"Shape\0"
+    segment = struct.pack("<II16sQQQQiiII", 0x19, 152, b"__TEXT", 0x1000,
+                          len(metadata), section_offset, len(metadata), 7, 5, 1, 0)
+    proto_section = struct.pack("<16s16sQQIIIIIIII", b"__swift5_proto", b"__TEXT",
+                                0x2000, 4, section_offset, 0, 0, 0, 0, 0, 0, 0)
+    command = segment + proto_section
+    header = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+    binary = tmp_path / "SwiftConformance"
+    binary.write_bytes(header + command + metadata)
+    result = MachoBinaryParser().parse_binary(binary)
+    assert result.swift_conformance_metadata_status == "parsed"
+    assert result.swift_conformance_candidates == [{"type_name": "Shape", "protocol_name": "Renderable"}]
+
+    malformed = bytearray(binary.read_bytes())
+    struct.pack_into("<i", malformed, section_offset + 4, 17)  # tagged/indirect protocol reference
+    malformed_path = tmp_path / "SwiftConformanceTagged"
+    malformed_path.write_bytes(malformed)
+    rejected = MachoBinaryParser().parse_binary(malformed_path)
+    assert rejected.swift_conformance_metadata_status == "partial"
+    assert rejected.swift_conformance_candidates == []
+
+
 def test_macho_parser_reads_bounded_fat_architecture_slices(tmp_path):
     import struct
 

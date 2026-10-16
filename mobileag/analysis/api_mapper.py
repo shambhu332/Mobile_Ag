@@ -18,7 +18,10 @@ class APIMapper:
         """Initialize the API mapper with an LLM router."""
         self.router = router
         self.retrofit_pattern = re.compile(r'@(GET|POST|PUT|DELETE|PATCH)\(\s*"([^"]+)"\s*\)')
-        self.url_pattern = re.compile(r'https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[a-zA-Z0-9._/?%&=-]*)?')
+        self.url_pattern = re.compile(
+            r'https?://(?:\[[0-9A-Fa-f:.]+\]|[a-zA-Z0-9.-]+)'
+            r'(?::\d+)?(?:/[a-zA-Z0-9._/?%&=+-]*)?'
+        )
         # Decompiled APKs are not always available as Java/Kotlin: obfuscated
         # apps and cross-platform bundles often leave useful route literals in
         # Smali, XML/JSON resources, JS bundles, or Dart output. These are

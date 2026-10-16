@@ -210,6 +210,24 @@ async def test_api_mapper_requires_environment_label_in_hostname(mock_router):
 
 
 @pytest.mark.asyncio
+async def test_api_mapper_recognizes_bracketed_ipv6_cleartext_url(mock_router, tmp_path):
+    mapper = APIMapper(mock_router)
+    (tmp_path / "Ipv6Url.java").write_text(
+        'String endpoint = "http://[2001:db8::10]:8080/api/v1/profile";\n',
+        encoding="utf-8",
+    )
+
+    _endpoints, findings = await mapper.map_apis(str(tmp_path))
+
+    candidates = [finding for finding in findings if "Cleartext" in finding.title]
+    assert len(candidates) == 1
+    assert "http://[2001:db8::10]:8080/api/v1/profile" in candidates[0].title
+    assert candidates[0].file_path == "Ipv6Url.java"
+    assert candidates[0].line_number == 1
+    assert candidates[0].status.value == "UNVERIFIED"
+
+
+@pytest.mark.asyncio
 async def test_api_mapper_finds_route_literals_in_smali_as_unverified_inventory(mock_router):
     mapper = APIMapper(mock_router)
     with tempfile.TemporaryDirectory() as tmpdir:

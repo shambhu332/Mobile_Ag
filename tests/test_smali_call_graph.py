@@ -961,6 +961,30 @@ def test_smali_malformed_switch_payload_marks_coverage_partial(tmp_path):
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_over_limit_switch_payload_marks_coverage_partial(tmp_path):
+    cases = "\n".join(f"        {index} -> :case_0" for index in range(10_001))
+    (tmp_path / "OverLimitSwitch.smali").write_text(f"""
+.class public Lcom/example/OverLimitSwitch;
+.super Ljava/lang/Object;
+.method public route(I)V
+    .registers 2
+    sparse-switch p1, :switch_data
+    return-void
+    :case_0
+    return-void
+    :switch_data
+    .sparse-switch
+{cases}
+    .end sparse-switch
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("malformed or over-limit switch payload" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_unmodeled_invoke_form_marks_register_flow_partial(tmp_path):
     (tmp_path / "CustomInvoke.smali").write_text("""
 .class public Lcom/example/CustomInvoke;

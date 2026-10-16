@@ -572,6 +572,21 @@ def test_review_surface_ledger_is_in_json_and_markdown_reports():
     assert 'no analyzer mapped to this surface' in markdown
 
 
+def test_reports_render_missing_mapped_coverage_paths():
+    coverage = {'android_surface': {'categories': {
+        'webview': {'static_status': 'analyzed_heuristically', 'candidate_count': 0},
+    }}}
+    report = ReportEngine()._prepare_data({'scan_id': 'gap-fixture', 'coverage': coverage})
+    markdown = ReportEngine()._generate_markdown(report)
+    assert 'android_surface.categories.deep_links: coverage not recorded' in markdown
+    assert 'taint.webview: coverage not recorded' in markdown
+
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+    professional = ProfessionalReportExporter().generate_report([], scan_metadata={'coverage': coverage})
+    assert 'android_surface.categories.deep_links: coverage not recorded' in professional
+    assert 'taint.webview: coverage not recorded' in professional
+
+
 def test_markdown_report_exposes_bounded_static_trace_as_unverified_candidate():
     report = ReportEngine()._prepare_data({
         'scan_id': 'fixture', 'coverage': {},

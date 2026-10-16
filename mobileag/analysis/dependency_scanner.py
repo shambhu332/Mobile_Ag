@@ -750,6 +750,10 @@ class DependencyScanner:
                 findings.extend(res[:available])
                 self._lookup_results["findings_omitted"] += max(0, len(res) - available)
             elif isinstance(res, Exception):
+                # gather(return_exceptions=True) prevents one task from
+                # cancelling peers, but an unexpected task-level failure must
+                # still make the advisory coverage status incomplete.
+                self._lookup_results["failed"] += 1
                 logger.error(f"Dependency scan task error: {res}")
 
         self.coverage.update(self._lookup_results)

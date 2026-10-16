@@ -223,6 +223,24 @@ async def test_osv_response_with_oversized_body_is_rejected(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_osv_unexpected_lookup_task_failure_is_counted_as_failed_coverage(tmp_path, monkeypatch):
+    from mobileag.analysis.dependency_scanner import DependencyScanner
+
+    scanner = DependencyScanner(LLMRouter(Settings(_env_file=None, offline=False)))
+    (tmp_path/'build.gradle').write_text('implementation "test:library:1"')
+
+    async def fail_unexpectedly(*args, **kwargs):
+        raise RuntimeError("synthetic task failure")
+
+    monkeypatch.setattr(scanner, "_query_osv_package", fail_unexpectedly)
+    with patch('httpx.AsyncClient', return_value=_MockClientContext(MagicMock())):
+        assert await scanner.scan(str(tmp_path), allow_advisory_lookup=True) == []
+    assert scanner.coverage['lookup_status'] == 'failed'
+    assert scanner.coverage['failed'] == 1
+    assert scanner.coverage['successful'] == 0
+
+
+@pytest.mark.asyncio
 async def test_osv_vulnerability_count_is_capped_and_reported_partial(tmp_path):
     from mobileag.analysis.dependency_scanner import DependencyScanner
 

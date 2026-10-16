@@ -1413,3 +1413,12 @@ named `query`, `mutation`, or `subscription` inside a selection set. Focused
 static/dynamic GraphQL tests passed (**11 passed**); full pytest passed
 (**1,245 passed**, 61.00 s); compileall and `git diff --check` passed. The
 scanner remains lexical and does not validate the complete GraphQL grammar.
+
+Opt-in OSV batch processing now counts unexpected task-level exceptions as
+failed advisory lookups before deriving `lookup_status`; `gather()` continues
+to isolate peer requests, but those failures can no longer leave coverage
+incorrectly marked `completed`. A synthetic task-failure regression and the OSV
+suite passed (**8 passed**); full pytest passed (**1,246 passed**, 62.26 s);
+compileall and `git diff --check` passed. This validates reporting for the
+injected failure path, not OSV availability, advisory freshness, or package
+inventory completeness.

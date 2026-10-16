@@ -1527,3 +1527,10 @@ depth are capped; cyclic or over-budget inputs fail with non-echoing errors.
 Focused SARIF exporter tests passed (**5 passed**). This protects the export
 boundary against oversized/cyclic caller data but does not validate upstream
 capture completeness or all legacy report writers.
+
+SARIF preflight regressions now also exercise explicit node/depth exhaustion
+and shared acyclic object references (accepted rather than misclassified as a
+cycle). Focused SARIF tests passed (**7 passed**); full pytest passed (**1,258
+passed**, 60.40 s); compileall and `git diff --check` passed. The repeated-object
+case is an in-memory synthetic regression, not an external SARIF interoperability
+claim.

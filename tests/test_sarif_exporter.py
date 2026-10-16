@@ -98,3 +98,19 @@ def test_sarif_export_rejects_cyclic_input_before_projection():
     finding["metadata"] = finding
     with pytest.raises(SarifImportError, match="cycle"):
         SARIFExporter.generate_sarif([finding])
+
+
+def test_sarif_preflight_enforces_node_and_nesting_budgets(monkeypatch):
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_NODES", 4)
+    with pytest.raises(SarifImportError, match="complexity"):
+        SARIFExporter._preflight_input([{"a": [1, 2]}])
+
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_NODES", 100)
+    monkeypatch.setattr(SARIFExporter, "MAX_INPUT_DEPTH", 2)
+    with pytest.raises(SarifImportError, match="complexity"):
+        SARIFExporter._preflight_input([[[["deep"]]]])
+
+
+def test_sarif_preflight_allows_shared_acyclic_input():
+    shared = {"synthetic": "value"}
+    SARIFExporter._preflight_input([shared, shared])

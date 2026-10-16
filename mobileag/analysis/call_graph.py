@@ -832,6 +832,7 @@ class SmaliCallGraphEngine:
         write_re = re.compile(
             r"(?:const(?:-[a-z0-9]+)*(?:/\w+)?|move-exception|new-instance|new-array|move(?:-wide)?(?:/\w+)?|"
             r"iget(?:-[a-z0-9/]+)?|[as]get(?:-[a-z]+)?|array-length|instance-of|cmp[a-z]*|(?:neg|not)-[a-z]+|"
+            r"(?:int|long|float|double)-to-(?:int|long|float|double|byte|char|short)|"
             r"(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr)-[a-z0-9/]+)\s+([vp]\d+)(?:,|\s|$)"
         )
         while queue and visited_steps < 100000:
@@ -953,12 +954,18 @@ class SmaliCallGraphEngine:
                     r"(?:rsub|add|sub|mul|div|rem|and|or|xor|shl|shr|ushr|neg|not)-[a-z0-9]+(?:/2addr|/lit\d+)?\s+.+",
                     text,
                 )
+                conversion = re.match(
+                    r"(?:int|long|float|double)-to-(?:int|long|float|double|byte|char|short)\s+([vp]\d+),\s*([vp]\d+)",
+                    text,
+                )
                 arithmetic_traces: set[tuple[str, int, str, str]] = set()
                 if arithmetic:
                     operands = re.findall(r"[vp]\d+", text)
                     source_registers = operands if "/2addr" in text.split(None, 1)[0] else operands[1:]
                     for source_register in source_registers:
                         arithmetic_traces.update(registers.get(source_register, ()))
+                if conversion:
+                    arithmetic_traces.update(registers.get(conversion.group(2), ()))
                 write = write_re.match(text)
                 unknown_register_write = re.match(r"[A-Za-z][A-Za-z0-9/-]*\s+[vp]\d+\s*,", text)
                 if (unknown_register_write and not write and not array_put and not instance_put

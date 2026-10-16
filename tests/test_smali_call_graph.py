@@ -1001,6 +1001,31 @@ def test_smali_unknown_register_destination_form_marks_coverage_partial(tmp_path
                for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_primitive_conversion_preserves_intent_extra_taint(tmp_path):
+    (tmp_path / "PrimitiveConversion.smali").write_text("""
+.class public Lcom/example/PrimitiveConversion;
+.super Landroid/app/Activity;
+.method public onCreate()V
+    .registers 8
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    const-string v1, "count"
+    const/4 v2, 0x0
+    invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+    move-result v3
+    int-to-long v4, v3
+    invoke-static {v4, v5}, Ljava/lang/Long;->toString(J)Ljava/lang/String;
+    move-result-object v6
+    sget-object v1, Lcom/example/PrimitiveConversion;->web:Landroid/webkit/WebView;
+    invoke-virtual {v1, v6}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+    return-void
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    findings = engine.audit_smali_directory(tmp_path)
+    assert any(f.metadata.get("analysis_kind") == "smali_local_register_flow" for f in findings)
+
+
 def test_smali_call_graph_reflection_resolution():
     engine = SmaliCallGraphEngine()
 

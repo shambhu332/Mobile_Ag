@@ -1741,3 +1741,13 @@ and hierarchy dump and confirms the second shell command is not issued. The
 focused revocation/guard checks passed (**2 passed**); full pytest passed
 (**1,316 passed**, 63.26 s). Compilation and `git diff --check` also passed;
 this remains synthetic authorization-boundary evidence, not device behavior.
+
+Corrected the `bola_fuzzer.py` module header, which inaccurately claimed to
+replay account-A requests using account-B credentials. The implemented module
+only extracts offline identifier candidates and compares researcher-supplied
+observations; it sends no requests and cannot verify ownership or authorization.
+A regression checks the canary result remains an unverified candidate without
+retaining the response body or request headers. Focused BOLA tests passed (**9
+passed**); full pytest passed (**1,316 passed**, 63.71 s), compileall and
+`git diff --check` passed. Neither this documentation correction nor the
+offline test establishes live BOLA behavior.

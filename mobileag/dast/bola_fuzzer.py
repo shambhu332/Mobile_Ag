@@ -1,7 +1,8 @@
-"""Automated Broken Object Level Authorization (BOLA/IDOR) Dual-Session Replay Fuzzer.
+"""Offline BOLA/IDOR candidate extraction and supplied-observation comparison.
 
-Replays authenticated requests belonging to User A using User B's credentials to detect
-authorization bypasses and object leaks (OWASP API Security Top 10 API1:2023).
+This module never sends requests, accepts session credentials, or verifies
+resource ownership or server authorization. A synthetic canary match is an
+unverified review lead only.
 """
 from __future__ import annotations
 

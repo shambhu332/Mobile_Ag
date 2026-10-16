@@ -436,6 +436,14 @@ def test_bola_fuzzer_candidate_extraction_and_discrepancy():
     candidates = fuzzer.extract_resource_candidates(url)
     assert "usr_98472" in candidates
     assert "acc_1122" in candidates
+    result=fuzzer.evaluate_response_discrepancy(
+        endpoint=url,method="GET",resource_id="usr_98472",status_code=200,
+        response_body='{"owner":"mobileag-test-owner-marker"}',
+        user_a_marker="mobileag-test-owner-marker",
+    )
+    assert result.candidate_observed is True
+    assert result.is_vulnerable is False and result.proof_status=='not_proven'
+    assert result.response_body_preview=='' and result.request_headers=={}
 
 
 def test_bola_candidate_extraction_fails_closed_on_unbounded_or_malformed_urls():

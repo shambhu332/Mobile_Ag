@@ -7,6 +7,7 @@ screen state hashes to prevent navigation loops.
 from __future__ import annotations
 
 import hashlib
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
@@ -61,6 +62,9 @@ class SmartUICrawler:
             return elements
         if len(xml_content) > self.MAX_HIERARCHY_CHARS:
             self.last_parse_status = "too_large"
+            return elements
+        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_content, flags=re.IGNORECASE):
+            self.last_parse_status = "unsafe_declaration"
             return elements
         if not xml_content or "<hierarchy" not in xml_content:
             self.last_parse_status = "empty"

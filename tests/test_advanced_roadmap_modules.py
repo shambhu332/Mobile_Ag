@@ -475,6 +475,11 @@ def test_smart_ui_crawler_fails_closed_on_large_or_truncated_hierarchies():
     assert decision.action == "WAIT"
     assert "incomplete" in decision.explanation
 
+    entity_xml = ('<!DOCTYPE hierarchy [<!ENTITY label "synthetic">]>'
+                  '<hierarchy><node text="&label;" clickable="true" /></hierarchy>')
+    assert crawler.decide_next_action("Activity", entity_xml).action == "WAIT"
+    assert crawler.last_parse_status == "unsafe_declaration"
+
 
 def test_ui_crawler_factory_propagates_smart_crawler_opt_ins():
     crawler = UICrawler().get_smart_crawler(

@@ -577,6 +577,35 @@ def test_openapi_catalog_rejects_unbounded_query_metadata():
     assert list(spec["paths"]) == ["/v1/good"]
 
 
+def test_openapi_catalog_bounds_har_retention_without_discarding_endpoint_model(monkeypatch):
+    import mobileag.dast.api_cataloger as api_cataloger
+
+    monkeypatch.setattr(api_cataloger, "_MAX_CAPTURE_BYTES", 800)
+    catalog = api_cataloger.MobileApiCataloger()
+    request = api_cataloger.CapturedRequest(
+        "POST", "https://api.example.test/v1/items", body="x" * 100,
+    )
+    catalog.ingest_request(request)
+    catalog.ingest_request(request)
+
+    spec = catalog.export_openapi_json()
+    limits = spec["x-mobileag-capture-limits"]
+    assert len(catalog.captured_requests) == 1
+    assert limits["omittedRequests"] == 1
+    assert limits["maxCaptureBytes"] == 800
+    assert limits["capturedBytesEstimate"] <= 800
+    assert "/v1/items" in spec["paths"]
+    assert len(catalog.export_har_json()["log"]["entries"]) == 1
+
+    monkeypatch.setattr(api_cataloger, "_MAX_CAPTURE_REQUEST_BYTES", 200)
+    oversized = api_cataloger.MobileApiCataloger()
+    oversized.ingest_request(request)
+    oversized_spec = oversized.export_openapi_json()
+    assert oversized.captured_requests == []
+    assert oversized_spec["x-mobileag-capture-limits"]["omittedRequests"] == 1
+    assert "/v1/items" in oversized_spec["paths"]
+
+
 def test_openapi_catalog_normalizes_default_http_ports():
     from mobileag.dast.api_cataloger import CapturedRequest, MobileApiCataloger
 

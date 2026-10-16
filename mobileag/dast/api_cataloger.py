@@ -25,6 +25,10 @@ _DYNAMIC_JSON_KEY_PATTERNS = (
 
 _MAX_QUERY_FIELDS = 100
 _MAX_QUERY_NAME_LENGTH = 256
+_MAX_CAPTURE_REQUESTS = 10000
+_MAX_CAPTURE_REQUEST_BYTES = 2 * 1024 * 1024
+_MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+_MAX_ENDPOINTS = 10000
 
 
 def _looks_like_dynamic_json_key(value: str) -> bool:
@@ -50,6 +54,7 @@ class MobileApiCataloger:
         self.version = version
         self.endpoints: Dict[str, Dict[str, Any]] = {}
         self.captured_requests: List[CapturedRequest] = []
+        self.captured_bytes = 0
         self.omitted_requests = 0
         self.unmodeled_requests = 0
         self.invalid_urls = 0
@@ -116,7 +121,7 @@ class MobileApiCataloger:
 
     @staticmethod
     def _parse_json_schema(body: Optional[str]) -> Optional[Dict[str, Any]]:
-        if not isinstance(body, str) or len(body.encode("utf-8", errors="replace")) > 1024 * 1024:
+        if not isinstance(body, str) or len(body) > 1024 * 1024:
             return None
         try:
             return MobileApiCataloger._json_schema(json.loads(body))
@@ -140,12 +145,53 @@ class MobileApiCataloger:
                 variants[json.dumps(option, sort_keys=True)] = option
         return {"oneOf": [variants[key] for key in sorted(variants)]}
 
+    @staticmethod
+    def _estimate_capture_size(req: CapturedRequest) -> Optional[int]:
+        """Conservative byte upper-bound estimate without copying large strings."""
+        if (not isinstance(req, CapturedRequest) or not isinstance(req.method, str)
+                or len(req.method) > 16
+                or not isinstance(req.url, str) or not isinstance(req.headers, dict)
+                or not isinstance(req.query_params, dict)
+                or type(req.response_status) is not int
+                or not 100 <= req.response_status <= 599
+                or (req.body is not None and not isinstance(req.body, str))
+                or (req.response_body is not None and not isinstance(req.response_body, str))):
+            return None
+        if len(req.headers) > _MAX_QUERY_FIELDS or len(req.query_params) > _MAX_QUERY_FIELDS:
+            return None
+        size = 128 + 4 * (len(req.method) + len(req.url))
+        for mapping in (req.headers, req.query_params):
+            for key, value in mapping.items():
+                if (not isinstance(key, str) or not isinstance(value, str)
+                        or len(key) > _MAX_QUERY_NAME_LENGTH):
+                    return None
+                size += 4 * (len(key) + len(value)) + 16
+        for value in (req.body, req.response_body):
+            if value is not None:
+                size += 4 * len(value) + 16
+        return size
+
     def ingest_request(self, req: CapturedRequest) -> None:
         """Process and index an intercepted request."""
-        if len(self.captured_requests) >= 10000:
+        if len(self.captured_requests) >= _MAX_CAPTURE_REQUESTS:
             self.omitted_requests += 1
             return
-        self.captured_requests.append(req)
+        capture_size = self._estimate_capture_size(req)
+        if capture_size is None:
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        if len(req.url) > 8192:
+            self.invalid_urls += 1
+            self.unmodeled_requests += 1
+            self.omitted_requests += 1
+            return
+        if capture_size <= _MAX_CAPTURE_REQUEST_BYTES and self.captured_bytes + capture_size <= _MAX_CAPTURE_BYTES:
+            self.captured_requests.append(req)
+            self.captured_bytes += capture_size
+        else:
+            # Keep endpoint modeling independent of bounded HAR retention.
+            self.omitted_requests += 1
         if not isinstance(req.url, str) or len(req.url) > 8192:
             self.invalid_urls += 1
             self.unmodeled_requests += 1
@@ -207,6 +253,9 @@ class MobileApiCataloger:
         query_names.update(name for name, _ in parsed_query)
         query_signature = tuple(sorted(query_names))
         key = f"{method}:{server_url}:{path}:{json.dumps(query_signature)}"
+        if len(self.endpoints) >= _MAX_ENDPOINTS and key not in self.endpoints:
+            self.unmodeled_requests += 1
+            return
         if key not in self.endpoints:
             self.endpoints[key] = {
                 "method": method,
@@ -316,7 +365,10 @@ class MobileApiCataloger:
             },
             "paths": paths,
             "x-mobileag-capture-limits": {
-                "maxRequests": 10000,
+                "maxRequests": _MAX_CAPTURE_REQUESTS,
+                "maxRequestBytes": _MAX_CAPTURE_REQUEST_BYTES,
+                "maxCaptureBytes": _MAX_CAPTURE_BYTES,
+                "capturedBytesEstimate": self.captured_bytes,
                 "omittedRequests": self.omitted_requests,
                 "unmodeledRequests": self.unmodeled_requests,
                 "invalidURLs": self.invalid_urls,

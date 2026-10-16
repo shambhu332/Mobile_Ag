@@ -465,6 +465,52 @@ async def test_analysis_resource_routing(tmp_path):
     obj._nsc_auditor.audit_directory_async.assert_awaited_once_with(str(resources))
     obj._pending_intent_auditor.audit_directory.assert_called_once_with(str(java), target_sdk=35)
 
+@pytest.mark.asyncio
+async def test_framework_probe_coverage_reaches_scan_state(tmp_path):
+    from types import SimpleNamespace
+    obj=Orchestrator(Settings(_env_file=None,offline=True))
+    state=create_initial_state('synthetic','unused',str(tmp_path))
+    state.update(decompiled_path=str(tmp_path), resource_path=str(tmp_path), smali_path=str(tmp_path),
+                 manifest_data={'components':[]})
+    for attr,method in [('_manifest_auditor','audit'),('_secret_scanner','scan'),('_code_reviewer','review'),
+                         ('_native_analyzer','analyze'),('_dependency_scanner','scan'),('_taint_engine','analyze_directory_async'),
+                         ('_nsc_auditor','audit_directory_async'),('_bin_protection','audit_directory_async'),
+                         ('_rn_scanner','scan_directory_async')]:
+        setattr(getattr(obj,attr),method,AsyncMock(return_value=[]))
+    obj._api_mapper.map_apis=AsyncMock(return_value=([],[]))
+    obj._call_graph_engine.audit_smali_directory=MagicMock(return_value=[])
+    obj._pending_intent_auditor.audit_directory=MagicMock(return_value=[])
+    obj._intent_redirection_auditor.audit_directory=MagicMock(return_value=[])
+    obj._native_jni_analyzer.audit_package_libraries=MagicMock(return_value=[])
+    obj._fileprovider_auditor.audit_resource_directory=MagicMock(return_value=[])
+    obj._privacy_manifest_auditor.audit_android_data_safety_package=MagicMock(return_value={'findings':[],'coverage':{}})
+    obj._il2cpp_auditor.audit_package=MagicMock(return_value=SimpleNamespace(scan_status='complete'))
+    obj._flutter_engine.analyze_package_directory=MagicMock(return_value=SimpleNamespace(
+        is_flutter_app=True, scan_status='complete', api_endpoints=['https://api.invalid'], named_routes=['/login'],
+        bundled_assets=[], potential_secrets=[], scan_errors=[], candidate_output_truncated=False))
+    obj._hermes_analyzer.audit_package_bundles=MagicMock(return_value=[SimpleNamespace(
+        is_hermes=True, scan_status='complete', api_endpoints=['https://rn.invalid'], secrets=[], scan_errors=[],
+        candidate_output_truncated=False)])
+    await obj._run_analysis(state)
+    for name in ('flutter','hermes'):
+        coverage=state['coverage'][name]
+        assert coverage['static_status']=='analyzed_heuristically'
+        assert coverage['runtime_status']=='not_tested' and coverage['proof_status']=='not_proven'
+        assert coverage['exhaustive'] is False
+        assert coverage['analysis_kind']=='bounded_printable_string_candidates'
+    assert state['coverage']['flutter']['candidate_count']==2
+    assert state['coverage']['hermes']['endpoint_candidate_count']==1
+    assert {ep['source_engine'] for ep in state['api_endpoints']} >= {'flutter','hermes'}
+
+def test_framework_probe_coverage_marks_truncated_as_partial():
+    from types import SimpleNamespace
+    from mobileag.core.orchestrator import _framework_probe_coverage
+    coverage=_framework_probe_coverage('flutter',SimpleNamespace(
+        is_flutter_app=True,scan_status='complete',binary_truncated=True,api_endpoints=[],named_routes=[],
+        bundled_assets=[],potential_secrets=[],scan_errors=[]))
+    assert coverage['static_status']=='partial'
+    assert coverage['candidate_output_truncated'] is True
+
 def test_deeplink_schema(tmp_path):
     from mobileag.ingestion.manifest_parser import ManifestParser
     manifest=tmp_path/'AndroidManifest.xml'

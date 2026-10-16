@@ -60,6 +60,41 @@ _MAX_POC_GUIDES = 500
 logger = logging.getLogger(__name__)
 
 
+def _framework_probe_coverage(kind: str, results: Any) -> dict[str, Any]:
+    """Summarize bounded Flutter/Hermes string probes without implying completeness."""
+    items = results if isinstance(results, list) else [results]
+    items = [item for item in items if item is not None]
+    errors = [str(error)[:200] for item in items
+              for error in (getattr(item, "scan_errors", []) or [])[:20]]
+    status_values = [getattr(item, "scan_status", "unknown") for item in items]
+    truncated = any(bool(getattr(item, attr, False)) for item in items for attr in
+                    ("binary_truncated", "asset_inventory_truncated", "candidate_output_truncated",
+                     "scan_truncated"))
+    scanned = all(status == "complete" for status in status_values) if items else True
+    active = any(bool(getattr(item, "is_flutter_app" if kind == "flutter" else "is_hermes", False))
+                 for item in items)
+    endpoints = sum(len(getattr(item, "api_endpoints", []) or []) for item in items)
+    routes = sum(len(getattr(item, "named_routes", []) or []) for item in items)
+    assets = sum(len(getattr(item, "bundled_assets", []) or []) for item in items)
+    secrets = sum(len(getattr(item, "potential_secrets" if kind == "flutter" else "secrets", []) or [])
+                  for item in items)
+    static_status = ("partial" if not scanned or truncated or errors else
+                     "analyzed_heuristically" if active else "not_applicable")
+    limitations = ["bounded printable-string/metadata probe only; no semantic framework decompilation",
+                   "endpoint strings are candidates; HTTP method, reachability, and runtime behavior are unknown",
+                   "runtime validation not performed; no exploit proof"]
+    if kind == "flutter":
+        limitations.append("Dart snapshot reconstruction, route-table parsing, and call-flow analysis are not implemented")
+    else:
+        limitations.append("Hermes bytecode disassembly, function/control-flow parsing, and source reconstruction are not implemented")
+    return {"static_status": static_status, "runtime_status": "not_tested", "proof_status": "not_proven",
+            "exhaustive": False, "analysis_kind": "bounded_printable_string_candidates",
+            "scan_statuses": status_values, "candidate_count": endpoints + routes + assets + secrets,
+            "endpoint_candidate_count": endpoints, "route_candidate_count": routes,
+            "asset_candidate_count": assets, "secret_marker_candidate_count": secrets,
+            "candidate_output_truncated": truncated, "scan_errors": errors, "limitations": limitations}
+
+
 class Orchestrator:
     """Main scan orchestrator that coordinates all agents through a pipeline.
 
@@ -434,7 +469,7 @@ class Orchestrator:
                         "proof_status": "not_proven", "exhaustive": False,
                         "limitations": ["manifest auditor failed; component review is incomplete"],
                     }
-                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp"}:
+                if name in {"secrets", "code_review", "api_mapping", "native", "dependencies", "taint", "nsc", "binary_protection", "react_native", "fileprovider", "intent_redirection", "pending_intent", "data_safety", "il2cpp", "flutter", "hermes"}:
                     state["coverage"][name] = {
                         "static_status": "incomplete", "runtime_status": "not_tested",
                         "proof_status": "not_proven", "exhaustive": False,
@@ -487,6 +522,8 @@ class Orchestrator:
                 for lib_res in result:
                     all_findings.extend(lib_res.findings)
             elif name == "flutter":
+                state["coverage"][name] = _framework_probe_coverage(name, result)
+                engines[name] = state["coverage"][name]["static_status"]
                 if getattr(result, "is_flutter_app", False):
                     for ep in getattr(result, "api_endpoints", []):
                         state.setdefault("api_endpoints", []).append({
@@ -494,6 +531,8 @@ class Orchestrator:
                             "evidence_type": "embedded_url_candidate", "source_engine": "flutter",
                         })
             elif name == "hermes":
+                state["coverage"][name] = _framework_probe_coverage(name, result)
+                engines[name] = state["coverage"][name]["static_status"]
                 for h_res in (result or []):
                     if getattr(h_res, "is_hermes", False):
                         for ep in getattr(h_res, "api_endpoints", []):

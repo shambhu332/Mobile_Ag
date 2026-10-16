@@ -935,6 +935,29 @@ def test_smali_switch_resolves_case_targets_for_register_flow(tmp_path, switch_o
     assert not any("switch" in warning for warning in engine.coverage["register_dataflow_warnings"])
 
 
+def test_smali_malformed_switch_payload_marks_coverage_partial(tmp_path):
+    (tmp_path / "MalformedSwitch.smali").write_text("""
+.class public Lcom/example/MalformedSwitch;
+.super Ljava/lang/Object;
+.method public route(I)V
+    .registers 2
+    sparse-switch p1, :switch_data
+    return-void
+    :case_0
+    return-void
+    :switch_data
+    .sparse-switch
+        not-a-key -> :case_0
+    .end sparse-switch
+.end method
+""")
+    engine = SmaliCallGraphEngine()
+    engine.audit_smali_directory(tmp_path)
+    assert engine.coverage["static_status"] == "partial"
+    assert any("malformed or over-limit switch payload" in warning
+               for warning in engine.coverage["register_dataflow_warnings"])
+
+
 def test_smali_call_graph_reflection_resolution():
     engine = SmaliCallGraphEngine()
 

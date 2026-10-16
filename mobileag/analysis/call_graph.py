@@ -685,29 +685,48 @@ class SmaliCallGraphEngine:
         """
         instructions: list[tuple[int, str]] = []
         labels: dict[str, int] = {}
-        switch_payloads: dict[str, list[str]] = {}
+        switch_payloads: dict[str, tuple[list[str], bool]] = {}
         payload_label: str | None = None
         payload_kind: str | None = None
         pending_label: str | None = None
         payload_targets: list[str] = []
+        payload_invalid = False
         for _line, raw in method.instructions:
             stripped = raw.strip()
             if payload_kind:
                 end_directive = ".end " + payload_kind[1:]
                 if stripped == end_directive:
                     if payload_label:
-                        switch_payloads[payload_label] = payload_targets[:10000]
+                        switch_payloads[payload_label] = (payload_targets[:10000], payload_invalid)
                     payload_label = None
                     payload_kind = None
                     payload_targets = []
+                    payload_invalid = False
                 elif payload_kind == ".packed-switch":
+                    if not stripped or stripped.startswith("#"):
+                        continue
                     target = re.fullmatch(r"(:[A-Za-z0-9_$.-]+)", stripped)
                     if target:
-                        payload_targets.append(target.group(1))
+                        if len(payload_targets) < 10000:
+                            payload_targets.append(target.group(1))
+                        else:
+                            payload_invalid = True
+                    else:
+                        payload_invalid = True
                 else:
-                    target = re.search(r"->\s*(:[A-Za-z0-9_$.-]+)\s*$", stripped)
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    target = re.fullmatch(
+                        r"[+-]?(?:0x[0-9A-Fa-f]+|[0-9]+)\s*->\s*(:[A-Za-z0-9_$.-]+)",
+                        stripped,
+                    )
                     if target:
-                        payload_targets.append(target.group(1))
+                        if len(payload_targets) < 10000:
+                            payload_targets.append(target.group(1))
+                        else:
+                            payload_invalid = True
+                    else:
+                        payload_invalid = True
                 continue
             label = re.fullmatch(r"(:[A-Za-z0-9_$.-]+)", stripped)
             if label:
@@ -716,6 +735,7 @@ class SmaliCallGraphEngine:
                 payload_label = pending_label
                 payload_kind = stripped.split()[0]
                 payload_targets = []
+                payload_invalid = False
                 pending_label = None
             elif stripped and not stripped.startswith(("#", ".")):
                 pending_label = None
@@ -770,21 +790,22 @@ class SmaliCallGraphEngine:
                 warn(f"unparsed goto in {method.key} at line {_line}")
             elif switch:
                 payload = switch_payloads.get(switch.group(1))
-                if payload is None or len(payload) >= 10000:
+                if payload is None:
                     warn(f"unresolved switch payload in {method.key} at line {_line}")
                 else:
-                    for target_label in payload:
+                    payload_targets, invalid = payload
+                    if invalid:
+                        warn(f"malformed or over-limit switch payload in {method.key} at line {_line}")
+                    for target_label in payload_targets:
                         target = labels.get(target_label)
                         if target is not None and target < len(instructions):
                             successors[index].append(target)
                         else:
                             warn(f"unresolved switch case target in {method.key} at line {_line}")
-                    if next_index < len(instructions):
-                        successors[index].append(next_index)
-            elif text.startswith(("packed-switch", "sparse-switch")):
-                warn(f"unparsed switch instruction in {method.key} at line {_line}")
                 if next_index < len(instructions):
                     successors[index].append(next_index)
+            elif text.startswith(("packed-switch", "sparse-switch")):
+                warn(f"unparsed switch instruction in {method.key} at line {_line}")
                 if next_index < len(instructions):
                     successors[index].append(next_index)
             elif text.startswith(("return", "throw")):

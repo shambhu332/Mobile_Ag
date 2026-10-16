@@ -458,7 +458,7 @@ def test_dast_launch_rechecks_scope_after_activity_dispatch(client, monkeypatch)
     web = importlib.import_module("mobileag.web.app")
     calls = []
 
-    async def revoke_launch_scope(serial, component):
+    async def revoke_launch_scope(serial, component, guard=None):
         calls.append((serial, component))
         policy = web.repository().get_policy()
         policy["actions"] = [action for action in policy["actions"] if action != "launch"]

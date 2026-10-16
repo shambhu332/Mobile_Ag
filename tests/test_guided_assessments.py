@@ -193,7 +193,7 @@ async def test_local_model_dns_cannot_resolve_outside_loopback(monkeypatch):
 async def test_non_replacing_install_command_never_uses_r_or_g(setup):
     svc,apk,result,driver,token=setup
     web.adb_manager._exec_cmd.return_value=(0,b'Success',b'')
-    await web.adb_manager.install_apk('emulator-5554',str(apk),grant_permissions=False,replace=False)
+    await web.adb_manager.install_apk('emulator-5554',str(apk),grant_permissions=False,replace=False,guard=lambda: True)
     args=web.adb_manager._exec_cmd.call_args[0][0]
     assert '-r' not in args and '-g' not in args
 

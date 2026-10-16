@@ -82,8 +82,8 @@ class AndroidDriver:
             return parse_snapshot(out.decode(errors='replace'),self.package)
         finally:
             await self.adb._exec_cmd(['-s',self.serial,'shell','rm','-f',path],timeout=3,output_limit=16384)
-    async def launch(self,component):
-        result=await self.adb.launch_activity(self.serial,component)
+    async def launch(self,component,guard=None):
+        result=await self.adb.launch_activity(self.serial,component,guard=guard)
         if result['status']!='success':raise ValueError('Application launch failed or timed out')
     async def act(self,action,element=None):
         await self.foreground()

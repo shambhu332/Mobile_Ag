@@ -1430,7 +1430,7 @@ async def install_dast_apk(req: InstallApkRequest, request: Request) -> dict[str
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     guard()
-    res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions)
+    res = await adb_manager.install_apk(req.serial, str(path), req.grant_permissions, guard=guard)
     guard()
     return res
 
@@ -1446,7 +1446,7 @@ async def launch_dast_activity(req: LaunchActivityRequest, request: Request) -> 
             raise HTTPException(403, "Activity launch scope is unavailable or revoked")
 
     guard()
-    res = await adb_manager.launch_activity(req.serial, req.component)
+    res = await adb_manager.launch_activity(req.serial, req.component, guard=guard)
     guard()
     return res
 
@@ -1884,7 +1884,7 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
             "timestamp": datetime.now().isoformat(),
         })
         guard()
-        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False)
+        await adb_manager.install_apk(serial, req.apk_path, grant_permissions=False, guard=guard)
 
     # Activity intent fuzzing (with targeted extras if provided)
     acts = req.activities or []

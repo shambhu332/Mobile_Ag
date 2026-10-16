@@ -1688,3 +1688,12 @@ authorization and UI observation. Focused storage/memory/UI tests passed
 (**152 passed**); full pytest passed (**1,311 passed**, 62.23 s); compileall
 and `git diff --check` passed. These are fail-closed mock regressions only;
 no storage, process memory, or UI hierarchy was read from a device.
+
+Direct APK installation and activity-launch helpers now also require a
+synchronous scope guard at their ADB command boundary, with rechecks before
+and after dispatch. Web routes and guided assessment execution pass guards
+bound to current session and policy state; missing/asynchronous guards fail
+closed. Focused helper/workflow regressions passed (**85 passed**); full pytest
+passed (**1,312 passed**, 63.74 s), compileall and `git diff --check` passed.
+No device was contacted. This establishes mocked authorization-boundary
+behavior, not target-device execution or vulnerability proof.

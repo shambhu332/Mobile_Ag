@@ -209,8 +209,23 @@ class ADBManager:
             "is_rooted": is_root,
         }
 
-    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = False, replace: bool = False) -> dict[str, Any]:
+    @staticmethod
+    def _check_mutation_guard(guard) -> None:
+        """Require a synchronous, current authorization check before device mutation."""
+        if not callable(guard):
+            raise PermissionError("ADB device mutation requires an explicit scope guard")
+        approved = guard()
+        if inspect.isawaitable(approved):
+            close = getattr(approved, "close", None)
+            if callable(close):
+                close()
+            raise PermissionError("ADB mutation scope guard must be synchronous")
+        if approved is False:
+            raise PermissionError("ADB mutation scope is unavailable or revoked")
+
+    async def install_apk(self, serial: str, apk_path: str | Path, grant_permissions: bool = False, replace: bool = False, guard=None) -> dict[str, Any]:
         """Install an APK onto the target device, optionally auto-granting permissions."""
+        self._check_mutation_guard(guard)
         apk_p = Path(apk_path).resolve()
         if not apk_p.exists():
             return {"status": "error", "message": f"APK not found: {apk_p}"}
@@ -222,7 +237,9 @@ class ADBManager:
             cmd.append("-g")
         cmd.append(str(apk_p))
 
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd, timeout=30.0)
+        self._check_mutation_guard(guard)
         out_str = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         success = code == 0 and "Success" in out_str
         return {
@@ -231,10 +248,13 @@ class ADBManager:
             "apk": apk_p.name
         }
 
-    async def launch_activity(self, serial: str, component: str) -> dict[str, Any]:
+    async def launch_activity(self, serial: str, component: str, guard=None) -> dict[str, Any]:
         """Launch an activity component (e.g. 'com.app/.MainActivity') via am start."""
+        self._check_mutation_guard(guard)
         cmd = ["-s", serial, "shell", "am", "start", "-W", "-n", component]
+        self._check_mutation_guard(guard)
         code, stdout, stderr = await self._exec_cmd(cmd, timeout=15.0)
+        self._check_mutation_guard(guard)
         output = (stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")).strip()
         return {
             "status": "success" if code == 0 and not any(marker in output for marker in ("Error:", "Error type", "Exception", "Status: timeout")) else "failed",

@@ -112,18 +112,26 @@ class AssessmentService:
                 if req.dast:
                     doc['stages']['dast']['status']='running';self.persist(doc)
                     if req.install_if_absent:
+                        def install_guard():
+                            self.guard(doc,token)
+                            if not check_action(self.repository().get_policy(),'install',{'serial':req.serial,'package_name':req.package_name}):
+                                raise PermissionError('Install scope revoked')
                         self.guard(doc,token)
-                        if not check_action(self.repository().get_policy(),'install',{'serial':req.serial,'package_name':req.package_name}):raise PermissionError('Install scope revoked')
+                        install_guard()
                         code,present,_=await self.adb._exec_cmd(['-s',req.serial,'shell','pm','path',req.package_name],output_limit=16384)
                         if code not in {0,1}:raise ValueError('Installed package state unavailable')
                         if present.strip():raise ValueError('Refusing to replace an existing package; install-if-absent only')
                         self.guard(doc,token)
-                        result=await self.adb.install_apk(req.serial,str(apk),grant_permissions=False,replace=False)
+                        result=await self.adb.install_apk(req.serial,str(apk),grant_permissions=False,replace=False,guard=install_guard)
                         if result['status']!='success':raise ValueError('Install failed or timed out')
                     if req.launch:
+                        def launch_guard():
+                            self.guard(doc,token)
+                            if not check_action(self.repository().get_policy(),'launch',{'serial':req.serial,'component':req.component}):
+                                raise PermissionError('Launch scope revoked')
                         self.guard(doc,token)
-                        if not check_action(self.repository().get_policy(),'launch',{'serial':req.serial,'component':req.component}):raise PermissionError('Launch scope revoked')
-                        result=await self.adb.launch_activity(req.serial,req.component)
+                        launch_guard()
+                        result=await self.adb.launch_activity(req.serial,req.component,guard=launch_guard)
                         if result['status']!='success':raise ValueError('Launch failed')
                     self.guard(doc,token)
                     auto=await self.automation().create(CreateRun(serial=req.serial,package_name=req.package_name,component=req.component,

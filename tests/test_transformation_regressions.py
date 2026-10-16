@@ -302,7 +302,19 @@ async def test_launch_rejects_zero_exit_android_error():
     from unittest.mock import AsyncMock
     manager = ADBManager()
     manager._exec_cmd = AsyncMock(return_value=(0, b'Error type 3\nError: Activity class does not exist.', b''))
-    assert (await manager.launch_activity('owned-device', 'org.example/.Main'))['status'] == 'failed'
+    assert (await manager.launch_activity('owned-device', 'org.example/.Main', guard=lambda: True))['status'] == 'failed'
+
+@pytest.mark.asyncio
+async def test_adb_install_and_launch_fail_closed_without_sync_scope_guard(tmp_path):
+    from mobileag.dast.adb_manager import ADBManager
+    from unittest.mock import AsyncMock
+    apk=tmp_path/'fixture.apk';apk.write_bytes(b'synthetic')
+    manager=ADBManager();manager._exec_cmd=AsyncMock(return_value=(0,b'Success',b''))
+    with pytest.raises(PermissionError):await manager.install_apk('owned-device',apk)
+    with pytest.raises(PermissionError):await manager.launch_activity('owned-device','org.example/.Main')
+    async def async_guard():return True
+    with pytest.raises(PermissionError):await manager.launch_activity('owned-device','org.example/.Main',guard=async_guard)
+    manager._exec_cmd.assert_not_awaited()
 
 def test_dependency_constraints_have_no_local_artifact_references():
     from pathlib import Path

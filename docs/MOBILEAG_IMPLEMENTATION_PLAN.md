@@ -1,56 +1,52 @@
 # MobileAg Master Technical Architecture & Implementation Blueprint
 
 ## Purpose and Scope
-This document provides an exhaustive, step-by-step technical implementation roadmap for expanding the **MobileAg** mobile security testing and assessment platform. It bridges the capabilities of commercial market leaders (**NowSecure**, **Oversecured**, **Appknox**, **Data Theorem**, **Guardsquare**, **Ostorlab**, and **Approov**) into MobileAg’s local-first, evidence-bound architecture.
+This document records an audited implementation plan for the **MobileAg** local-first mobile security assessment platform. It does not claim feature parity with commercial products, exhaustive coverage, or production readiness. Scope and completion claims are bounded by the evidence recorded below.
 
-Every section details:
-- **Architectural Design & Purpose**
-- **Exact File Locations & Target Modules**
-- **Technical Algorithms & Data Flow**
-- **Integration Points with MobileAg Core**
+Depending on the section, this plan records implementation areas, evidence status,
+coverage limits, and outstanding safety or external-validation gates.
 
 ---
 
 ```
 MobileAg Master Blueprint Architecture
 ├── 1. Advanced Static Analysis & Taint Tracking
-│   ├── Inter-Procedural & Cross-File Call Graph Engine
-│   ├── Component Lifecycle-Aware Flow Tracing
+│   ├── Bounded Inter-Procedural Smali Call Graph and Taint Candidates
+│   ├── Bounded Android Callback/Intent Flow Candidates
 │   └── Android IPC Vulnerability Auditing (PendingIntent, FileProvider, Task Hijacking)
 ├── 2. Multi-Framework & Non-Dalvik Binary Analysis
-│   ├── Flutter Dart Snapshot Symbol & String Extractor
-│   ├── React Native Hermes (.hbc) Bytecode Decompiler
-│   ├── Unity IL2CPP Reconstructor (Metadata + libil2cpp.so)
-│   └── iOS Mach-O & Swift Metadata Analyzer
+│   ├── Flutter Snapshot String Candidates (Not a Dart Decompiler)
+│   ├── React Native Hermes (.hbc) String Candidates (Not a Decompiler)
+│   ├── Bounded Unity IL2CPP Metadata Candidates
+│   └── Bounded iOS Mach-O & Swift Metadata Candidates
 ├── 3. Advanced Dynamic Instrumentation & Frida Harness
-│   ├── Universal Stealth & Port-Randomized Frida Daemon
-│   ├── Multi-Layer TLS/SSL Unpinning (Java, Native BoringSSL, Flutter)
-│   ├── In-Memory Crypto & Key Lifecycle Harvester
-│   └── Runtime Memory Forensics & Cleartext Cache Auditor
+│   ├── Transparent, Explicitly Scoped Runtime Observation
+│   ├── TLS Configuration Review (No Pinning Bypass)
+│   ├── Cryptographic API Metadata Review (No Key/Plaintext Capture)
+│   └── Non-Destructive Memory/Storage Exposure Review (No Secret Collection)
 ├── 4. Automated IPC Fuzzing & Exploit PoC Synthesis
 │   ├── Dynamic Deep Link & Custom Scheme Mutation Fuzzer
 │   ├── ContentProvider Traversal & Injection Fuzzer
-│   └── Compilable Exploit PoC Generator (Oversecured/OVAA Parity)
+│   └── Review-Only PoC Output (Never Execution Authorization)
 ├── 5. Mobile Backend API & Token Security Engine
 │   ├── Automated API Cataloger & OpenAPI 3.0 / HAR Exporter
-│   ├── Automated BOLA / IDOR Dual-Session Replay Fuzzer
+│   ├── Offline Dual-Session Observation Evaluator (Replay Not Implemented)
 │   └── Mobile Token & Session Lifecycle Auditor
-├── 6. Binary Hardening & RASP Resilience Scoring
-│   ├── 6-Vector MASVS-RESILIENCE Scoring Engine
-│   ├── Obfuscation Ratio & Control Flow Flattening Calculator
-│   └── Anti-Tampering, Anti-Debugging & Root Evasion Evaluator
-├── 7. Autonomous Dynamic UI Exploration (Smart Crawler)
-│   ├── Semantic UI Form Filling (Credentials, Search, Forms)
-│   ├── OS Permission & Biometric Prompt Bypass
+├── 6. Binary Hardening & RASP/Resilience Candidate Inventory
+│   ├── Bounded RASP/Resilience Candidate Inventory (No Aggregate Score)
+│   └── Static Anti-Tampering/Debugging Indicator Review
+├── 7. Researcher-Guided UI Observation (Smart Crawler)
+│   ├── Researcher-Guided Synthetic Form Handling
+│   ├── Consent-Aware Permission/Prompt Handling (No Bypass)
 │   └── UI State Hashing & Loop Prevention
 ├── 8. Mobile SBOM, Supply Chain & Privacy Manifests
-│   ├── Standardized CycloneDX v1.5 & SPDX 2.3 Generators
-│   ├── Real-Time OSV Advisory Enrichment (Offline / Authorized Online)
+│   ├── CycloneDX v1.5 & SPDX 2.3 Inventory Generators
+│   ├── Opt-In OSV Advisory Lookup (Offline by Default; Unverified)
 │   └── Apple Privacy Manifest (PrivacyInfo.xcprivacy) & Google Play Data Safety Auditor
-└── 9. Dashboard, Telemetry & Reporting Engine
+└── 9. Dashboard, Bounded Telemetry & Reporting
     ├── WebSocket/SSE Real-Time Telemetry Stream
     ├── Interactive Attack Surface Graph Visualization (Vis.js / Neo4j)
-    └── Enterprise Exporting (SARIF 2.1.0, Executive PDF, Professional Markdown)
+    └── SARIF 2.1.0, PDF and Markdown Exports
 ```
 
 ---
@@ -135,47 +131,19 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ---
 
-## 3. Dynamic Instrumentation & Runtime Frida Harness
+## 3. Transparent Dynamic Instrumentation & Runtime Validation
 
-### 3.1 Universal Stealth Instrumentation Daemon
-* **Objective**: Run dynamic Frida tests reliably without triggering commercial anti-Frida or anti-debugging defenses.
-* **Target Files**:
-  - `mobileag/dast/frida_stealth.py` (New)
-  - `mobileag/dast/frida_runner.py` (Enhancement)
-  - `mobileag/dast/adb_manager.py` (Enhancement)
-* **Technical Implementation**:
-  1. **Binary Renaming & Socket Randomization**:
-     - Automatically push a randomized-name binary (e.g., `mag_daemon_8492`) via ADB.
-     - Bind to an ephemeral Unix domain socket or non-standard port instead of default TCP `27042`.
-  2. **Thread & Memory Camouflage**:
-     - Inject an early initialization hook that patches `pthread_create` to rename `gum-js-loop` threads.
-     - Intercept `/proc/self/maps` and `/proc/self/status` reads to mask Frida-related memory mappings (`frida-agent.so`).
+### 3.1 Authorized, visible instrumentation
+* **Objective**: Support reproducible runtime observations only on an explicitly authorized package/build and researcher-selected device.
+* **Safe scope**: Require an explicit device serial, package validation, just-in-time scope guard, operator approval, and preserved tool/build provenance. Report instrumentation state and failures honestly; do not conceal the agent, evade anti-debugging/anti-analysis controls, rename artifacts to avoid detection, or camouflage threads, sockets, or process memory.
 
-### 3.2 Universal Multi-Engine TLS/SSL Unpinning
-* **Objective**: Enable full proxy interception across Java, native C++, and Flutter network stacks.
-* **Target Files**:
-  - `mobileag/dast/unpinning_engine.py` (New)
-  - `mobileag/generators/templates/frida/unpinning.js` (Enhancement)
-* **Technical Implementation**:
-  1. **Java Layer**:
-     - Hook `javax.net.ssl.TrustManagerFactory.getTrustManagers()`.
-     - Hook `okhttp3.CertificatePinner.check()`.
-     - Bypass `NetworkSecurityConfigProvider`.
-  2. **Native C/C++ Layer**:
-     - Hook OpenSSL/BoringSSL verification callbacks (`SSL_CTX_set_custom_verify`, `SSL_set_verify`).
-  3. **Flutter Engine**:
-     - Scan memory for `ssl_crypto_x509_session_verify_cert_chain` in `libflutter.so` and patch the return value to bypass pinning.
+### 3.2 TLS configuration review (no pinning bypass)
+* **Objective**: Identify configured trust and certificate-pinning behavior without disabling it.
+* **Safe scope**: Review Android Network Security Config and application/framework configuration statically. Network capture is allowed only for a researcher-controlled test build that explicitly trusts the lab CA. Do not hook or patch certificate-verification callbacks, change trust decisions, scan/patch Flutter binaries, or claim complete traffic visibility when pinning prevents capture. Missing traffic is an evidence gap, not a reason to bypass the control.
 
-### 3.3 In-Memory Cryptography & Key Harvester
-* **Objective**: Extract live encryption keys, initialization vectors, and plaintext payloads at runtime.
-* **Target Files**:
-  - `mobileag/dast/crypto_harvester.py` (New)
-* **Technical Implementation**:
-  1. Hook `javax.crypto.Cipher.init(int opmode, Key key, AlgorithmParameterSpec params)`:
-     - Log algorithm name, mode (flagging `ECB`), and key size.
-     - Capture raw key bytes from `SecretKeySpec.getEncoded()`.
-  2. Hook `javax.crypto.Cipher.doFinal(byte[] input)` to capture unencrypted plaintext data before it is encrypted or after it is decrypted.
-  3. Hook `net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase` to harvest local database encryption passwords.
+### 3.3 Cryptographic API metadata review (no key/plaintext harvesting)
+* **Objective**: Record bounded cryptographic-use metadata for an authorized synthetic test case.
+* **Safe scope**: If separately approved, record algorithm/mode, key-size metadata, call counts, and source-location context only. Never record raw keys, initialization vectors, decrypted/encrypted plaintext, database passwords, or user data. Prefer static API/configuration analysis; require output redaction and retention limits for any runtime metadata. This does not establish key entropy, data confidentiality, or cryptographic correctness.
 
 ---
 
@@ -209,43 +177,34 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
      - Projection/Selection SQLi: `content://<authority>/users --projection "* FROM users WHERE 1=1 --"`
   3. Verify whether file descriptors or database rows are leaked without required permissions.
 
-### 4.3 Automated Exploit PoC Generator (Oversecured / OVAA Parity)
-* **Objective**: Generate standalone, compilable exploit code proving the real-world impact of discovered vulnerabilities.
+### 4.3 Review-Only PoC Output (Not Execution Authorization)
+* **Objective**: Provide bounded review material for eligible, analyst-attested findings without claiming independent proof or authorizing execution.
 * **Target Files**:
   - `mobileag/generators/poc_apk_synthesizer.py` (New)
   - `mobileag/generators/templates/poc/` (Templates)
-* **Technical Implementation**:
-  1. For every confirmed high-severity IPC flaw, synthesize a complete Android exploit module:
-     - Standalone Kotlin/Java activity source code.
-     - `AndroidManifest.xml` targeting the vulnerable component.
-     - Exact `Intent` construction with extras, flags, and URI parameters.
-  2. Output both a standalone `.kt` script and a ready-to-run ADB exploit command line.
+* **Boundary**: Current generator output is a review artifact. Generation requires active structured analyst attestation bound to the exact package; it is not independently verified. Commands and source are never executed by the generator or dynamic-verification adapter. Unsupported/malformed input fails closed. Complete field escaping, independent verification, and proof-grade generation remain incomplete.
 
 ---
 
 ## 5. Mobile Backend API & Token Security Engine
 
-### 5.1 Dynamic API Cataloger & OpenAPI 3.0 Exporter
-* **Objective**: Map the entire attack surface of backend APIs utilized by the mobile application.
+### 5.1 Observed API Catalog & OpenAPI 3.0 Exporter
+* **Objective**: Produce a bounded, redacted inventory of observed or statically declared API candidates; this is not the entire backend contract.
 * **Target Files**:
   - `mobileag/dast/api_cataloger.py` (New)
   - `mobileag/dast/traffic_auditor.py` (Enhancement)
 * **Technical Implementation**:
-  1. Capture all HTTP/HTTPS transactions routed through `mobileag/dast/mitm_proxy.py`.
+  1. Retain only bounded traffic actually observed by supported capture paths. HTTPS interception is not implemented; use only an explicitly configured researcher-controlled test build where appropriate.
   2. Deduplicate requests by method, host, path template, and query parameter signatures.
   3. Infer request/response JSON schemas and auto-generate an **OpenAPI 3.0 specification (`openapi.json`)**.
   4. Flag "Shadow APIs" (undocumented endpoints seen in traffic that are not declared in mobile code).
 
-### 5.2 Automated BOLA / IDOR Dual-Session Replay Fuzzer
-* **Objective**: Automatically detect Broken Object Level Authorization across mobile APIs.
+### 5.2 Offline BOLA / IDOR Dual-Session Observation Evaluator
+* **Objective**: Compare researcher-supplied observations for a synthetic canary; automated request replay and server-side authorization verification are not implemented.
 * **Target Files**:
   - `mobileag/dast/bola_fuzzer.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
-* **Technical Implementation**:
-  1. Accept two authorized test session tokens from the Test Plan (`Session_A` and `Session_B`).
-  2. Identify API endpoints containing resource identifiers (e.g., `/api/v2/orders/94821` or `?account_id=104`).
-  3. Replay requests for User A's resources using User B's authentication tokens.
-  4. If the server returns HTTP 200 with User A's private data, generate a verified BOLA/IDOR finding with full HTTP request/response evidence.
+* **Boundary**: Offline extraction returns identifier candidates only. The evaluator compares already-supplied account-A/account-B responses and requires a synthetic canary in both successful controls before labeling an observation as a candidate. It never accepts or replays session tokens, stores raw response bodies, or emits a verified BOLA verdict. Any live replay requires separate target authorization, researcher-controlled accounts/data, scope review, and independent evidence.
 
 ### 5.3 Mobile Token & Session Lifecycle Auditor
 * **Objective**: Audit mobile authentication tokens, JWT lifecycle claims, cleartext transmission, and session revocation.
@@ -253,7 +212,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   - `mobileag/dast/token_session_auditor.py` (New)
   - `mobileag/dast/api_security_tester.py` (Enhancement)
 * **Technical Implementation**:
-  1. Parse JWT header and payload claims to flag insecure algorithm `none` (CWE-347) and weak symmetric keys (CWE-327).
+  1. Parse bounded JWT header and payload indicators, including an observed `alg=none`; do not infer server acceptance or estimate key entropy/strength from token bytes.
   2. Inspect expiration claims (`exp`, `iat`) to detect missing expiration, expired tokens in use, or excessive lifetimes (CWE-613).
   3. Flag cleartext HTTP transmission of authorization tokens (CWE-319) and tokens passed in URL query strings (CWE-598).
   4. Detect session token reuse after logout or de-authentication requests (CWE-613).
@@ -262,28 +221,18 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ---
 
-## 6. Binary Hardening & RASP Resilience Scoring
+## 6. Binary Hardening & RASP/Resilience Candidate Inventory
 
-### 6.1 6-Vector MASVS-RESILIENCE Scoring Engine
-* **Objective**: Benchmark binary resilience against reverse engineering and tampering (Guardsquare/Promon parity).
+### 6.1 Bounded Static Resilience Indicator Review (No Aggregate Score)
+* **Objective**: Inventory bounded Smali names/strings as manual-review leads. No MASVS conformance, protection effectiveness, or product-parity score is produced.
 * **Target Files**:
   - `mobileag/analysis/rasp_resilience_auditor.py` (New)
   - `mobileag/analysis/binary_protection_auditor.py` (Enhancement)
-* **Technical Implementation**:
-  Compute an aggregate **Resilience Score (0–100%)** based on six automated checks:
-
-| Vector | Technical Metric | Evaluation Standard |
-| :--- | :--- | :--- |
-| **Identifier Obfuscation** | Ratio of short/scrambled identifiers (`a.b.c()`) vs. human-readable names. | MASVS-RESILIENCE-1 |
-| **Control Flow Complexity** | Cyclomatic complexity and presence of switch-based state dispatchers. | MASVS-RESILIENCE-2 |
-| **String Pool Entropy** | Shannon entropy calculation across string pools to detect string encryption. | MASVS-RESILIENCE-3 |
-| **Anti-Root / Jailbreak** | Presence of heuristic checks for `su`, Magisk, Zygisk, and root packages. | MASVS-RESILIENCE-4 |
-| **Anti-Debugging** | Enforcement of `debuggable="false"` and native `ptrace(PTRACE_TRACEME)` calls. | MASVS-RESILIENCE-5 |
-| **Tamper Resistance** | Verification of APK signature check calls (`PackageManager.GET_SIGNATURES`). | MASVS-RESILIENCE-6 |
+* **Current boundary**: The analyzer inventories bounded Smali strings/names and reports coverage; it withholds aggregate/per-vector scores and control-flow conclusions. Candidate indicators do not prove that controls are reachable, effective, or resistant to an attacker.
 
 ---
 
-## 7. Autonomous Dynamic UI Exploration (Smart Crawler)
+## 7. Researcher-Guided UI Observation (Smart Crawler)
 
 ### 7.1 Semantic UI Form Filling & Navigation
 * **Objective**: Replace dumb random monkey clicks with intelligent UI exploration that can navigate authentication forms and permission prompts.
@@ -301,10 +250,10 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ---
 
-## 8. Mobile SBOM, Supply Chain & Privacy Compliance
+## 8. Mobile SBOM, Supply Chain Inventory & Privacy Declaration Review
 
 ### 8.1 Standardized CycloneDX v1.5 & SPDX 2.3 Exporter
-* **Objective**: Generate enterprise-grade Software Bill of Materials for mobile applications.
+* **Objective**: Generate bounded, interoperable SBOM inventory documents; schema validity and coverage limits do not establish complete dependency inventory or supply-chain assurance.
 * **Target Files**:
   - `mobileag/analysis/sbom_generator.py` (New)
   - `mobileag/analysis/dependency_scanner.py` (Enhancement)
@@ -315,7 +264,7 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
   4. Query the Open Source Vulnerabilities (OSV) database to attach known CVEs to inventoried components.
 
 ### 8.2 Privacy Manifest & Google Play Data Safety Auditor
-* **Objective**: Verify compliance with Apple Privacy Manifests and Google Play Data Safety declarations.
+* **Objective**: Compare bounded static declaration evidence with selected manifest/source indicators for manual privacy review; do not claim legal or platform-policy compliance.
 * **Target Files**:
   - `mobileag/analysis/privacy_manifest_auditor.py` (New)
 * **Technical Implementation**:
@@ -329,25 +278,19 @@ Traditional Dalvik-only decompilers fail when analyzing modern cross-platform ap
 
 ## 9. Dashboard, Telemetry & Enterprise Reporting
 
-### 9.1 Real-Time WebSocket Telemetry Streaming
-* **Objective**: Provide live visual feedback of dynamic testing progress on the web dashboard.
+### 9.1 Session-Scoped WebSocket Telemetry
+* **Objective**: Deliver authenticated scan-scoped telemetry already emitted by supported workflows; this is not a complete event bus for every tool.
 * **Target Files**:
   - `mobileag/web/app.py` (Enhancement)
   - `mobileag/web/static/telemetry.js` (Enhancement)
-* **Technical Implementation**:
-  1. Implement a FastAPI WebSocket route (`/ws/scans/{scan_id}/telemetry`).
-  2. Stream real-time events: tool execution status, Frida hook detections, captured HTTP requests, and crawler screenshots.
+* **Current boundary**: `/ws/scans/{scan_id}/telemetry` and an authenticated legacy aggregate stream exist. Per-scan subscription isolation is covered synthetically. Frida hook events, captured request bodies, screenshots, production-scale delivery, and loss/replay guarantees are not established and must not be claimed.
 
 ### 9.2 Interactive Attack Surface Graph (Vis.js / Neo4j)
-* **Objective**: Visualize relationships between components, permissions, deep links, and APIs.
+* **Objective**: Visualize currently modeled component/finding/API-candidate associations; do not label co-occurrence as data flow or an exploit chain.
 * **Target Files**:
   - `mobileag/knowledge/neo4j_graph.py` (Enhancement)
   - `mobileag/web/static/interface.js` (Enhancement)
-* **Technical Implementation**:
-  1. Render an interactive network graph of the mobile application:
-     - Nodes: Activities, Services, ContentProviders, Receivers, API Endpoints, Local Databases.
-     - Edges: Intents, URI Grants, Network Calls, Data Flows.
-  2. Highlight vulnerable paths in red with click-to-expand evidence panels.
+* **Current boundary**: Graph nodes and edges reflect available stored associations. Explicit Intent, URI-grant, network-call, source/sink, and validated vulnerable-path edges are not implemented. Click-through finding evidence is available for modeled findings; no path should be colored or described as vulnerable without independent path evidence.
 
 Graph exports now allowlist legacy vulnerability lifecycle/proof labels before
 placing them in Vis.js node tooltip text; missing or unexpected values render as

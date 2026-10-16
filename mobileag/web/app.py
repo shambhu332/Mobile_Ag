@@ -60,7 +60,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import httpx
 
 from config.settings import get_settings
@@ -1257,6 +1257,15 @@ class DeclaredApiEndpoint(BaseModel):
 class TrafficAuditRequest(BaseModel):
     transactions: list[CapturedTransaction] = Field(default_factory=list, max_length=100)
     declared_endpoints: list[str | DeclaredApiEndpoint] = Field(default_factory=list, max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def bound_aggregate_input(cls, value):
+        preflight_bounded_structure(
+            value, max_bytes=2 * 1024 * 1024, max_nodes=100_000,
+            max_depth=8, label="Traffic audit request",
+        )
+        return value
 
 
 

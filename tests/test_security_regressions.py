@@ -157,6 +157,25 @@ def test_api_replay_rejects_oversized_request_before_network(monkeypatch):
     scoped_request.assert_not_awaited()
 
 
+def test_traffic_audit_rejects_aggregate_input_before_analysis(monkeypatch):
+    client = TestClient(web.app, headers={
+        "Authorization": "Bearer " + web.app.state.auth_token,
+        "Host": "localhost",
+    })
+    analyze = MagicMock(side_effect=AssertionError("Oversized input must not reach analysis"))
+    monkeypatch.setattr(web.traffic_auditor, "audit_transactions", analyze)
+    oversized = {
+        "transactions": [
+            {"url": "https://api.example.invalid/", "request_body": "x" * 100000,
+             "response_body": "y" * 100000}
+            for _ in range(3)
+        ]
+    }
+    response = client.post("/api/dast/traffic/audit", json=oversized)
+    assert response.status_code == 422
+    analyze.assert_not_called()
+
+
 def test_dynamic_api_rejects_oversized_targets_after_exact_scope_gate(monkeypatch):
     monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "owned-device")
     web.repository().save_policy({

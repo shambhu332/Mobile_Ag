@@ -1639,3 +1639,12 @@ names/values before traffic analysis; focused traffic/API tests passed (**66
 passed**), full pytest passed (**1,294 passed**, 62.51 s), and compileall plus
 `git diff --check` passed. This is input-size validation only; traffic remains
 synthetic and no target requests are generated.
+
+The synthetic traffic-audit endpoint now preflights the aggregate caller-owned
+structure (2 MiB conservative string-size estimate, 100,000 nodes, depth 8)
+before Pydantic field construction and analysis, complementing per-field and
+collection limits. An oversized aggregate accepted by the 1 MiB web request
+gate is rejected with 422 and never reaches `TrafficAuditor`; focused API/
+security tests passed (**148 passed**), full pytest passed (**1,303 passed**,
+62.77 s), and compileall plus `git diff --check` passed. This protects local
+offline processing only; it does not add captured data or make live requests.

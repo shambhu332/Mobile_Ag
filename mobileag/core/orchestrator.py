@@ -415,12 +415,18 @@ class Orchestrator:
             elif name == "flutter":
                 if getattr(result, "is_flutter_app", False):
                     for ep in getattr(result, "api_endpoints", []):
-                        state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                        state.setdefault("api_endpoints", []).append({
+                            "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                            "evidence_type": "embedded_url_candidate", "source_engine": "flutter",
+                        })
             elif name == "hermes":
                 for h_res in (result or []):
                     if getattr(h_res, "is_hermes", False):
                         for ep in getattr(h_res, "api_endpoints", []):
-                            state.setdefault("api_endpoints", []).append({"url": ep, "method": "GET"})
+                            state.setdefault("api_endpoints", []).append({
+                                "url": ep, "method": "UNKNOWN", "requires_auth": None,
+                                "evidence_type": "embedded_url_candidate", "source_engine": "hermes",
+                            })
             elif name == "il2cpp":
                 state["il2cpp_analysis"] = {
                     "scan_status": getattr(result, "scan_status", "unknown"),

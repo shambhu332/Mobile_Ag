@@ -1,5 +1,6 @@
 """Synthetic static-review inventories: no device/cloud operations."""
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
 from config.settings import Settings
@@ -176,6 +177,10 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     for target,method in [(worker._manifest_auditor,'audit'),(worker._secret_scanner,'scan'),(worker._code_reviewer,'review'),(worker._native_analyzer,'analyze'),(worker._dependency_scanner,'scan'),(worker._nsc_auditor,'audit_directory_async'),(worker._bin_protection,'audit_directory_async'),(worker._rn_scanner,'scan_directory_async')]:
         monkeypatch.setattr(target,method,AsyncMock(return_value=[]))
     monkeypatch.setattr(worker._api_mapper,'map_apis',AsyncMock(return_value=([],[])))
+    monkeypatch.setattr(worker._flutter_engine, 'analyze_package_directory', lambda _: SimpleNamespace(
+        is_flutter_app=True, api_endpoints=['https://api.fixture.invalid/v1/flutter']))
+    monkeypatch.setattr(worker._hermes_analyzer, 'audit_package_bundles', lambda _: [SimpleNamespace(
+        is_hermes=True, api_endpoints=['https://api.fixture.invalid/v1/hermes'])])
     monkeypatch.setattr(worker._il2cpp_auditor, 'audit_package', lambda _: Il2CppAnalysisResult(
         is_il2cpp=True, metadata_version=29, metadata_tables_status='parsed',
         metadata_definitions_status='parsed', reconstructed_classes=['Fixture'],
@@ -195,6 +200,11 @@ async def test_orchestrator_runs_surface_review_and_tracks_failure(tmp_path,monk
     assert result['il2cpp_analysis']['proof_status']=='not_proven'
     assert result['il2cpp_analysis']['runtime_status']=='not_tested'
     assert result['il2cpp_analysis']['exhaustive'] is False
+    embedded = {item['source_engine']: item for item in result['api_endpoints']}
+    for engine in ('flutter', 'hermes'):
+        assert embedded[engine]['method'] == 'UNKNOWN'
+        assert embedded[engine]['requires_auth'] is None
+        assert embedded[engine]['evidence_type'] == 'embedded_url_candidate'
     monkeypatch.setattr(worker._android_surface,'analyze',AsyncMock(side_effect=RuntimeError('synthetic failure')))
     result=await worker._run_analysis(create_initial_state('synthetic2','unused',str(tmp_path)))
     assert result['coverage']['engines']['android_surface']=='incomplete'

@@ -61,6 +61,19 @@ def test_report_engine_bounds_findings_and_artifact_output(tmp_path, monkeypatch
     assert destination.read_bytes() == b"previous"
 
 
+def test_report_engine_atomic_writer_replaces_symlink_without_touching_target(tmp_path):
+    import os
+    from mobileag.reporting.report_engine import ReportEngine
+
+    victim=tmp_path/'victim.txt';victim.write_text('untouched')
+    destination=tmp_path/'report.json';destination.symlink_to(victim)
+    ReportEngine._atomic_private_write(destination,b'{"synthetic":true}')
+    assert not destination.is_symlink()
+    assert destination.read_bytes()==b'{"synthetic":true}'
+    assert victim.read_text()=='untouched'
+    assert os.stat(destination).st_mode & 0o077 == 0
+
+
 def test_exclusive_private_artifact_is_bounded_private_and_no_overwrite(tmp_path):
     from mobileag.reporting.artifact_writer import create_private_artifact_exclusive
 

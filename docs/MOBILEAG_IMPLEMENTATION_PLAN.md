@@ -1751,3 +1751,12 @@ retaining the response body or request headers. Focused BOLA tests passed (**9
 passed**); full pytest passed (**1,316 passed**, 63.71 s), compileall and
 `git diff --check` passed. Neither this documentation correction nor the
 offline test establishes live BOLA behavior.
+
+Report artifact review also confirmed that the ReportEngine's atomic writer
+replaces a report-file symlink without modifying its target and leaves the
+replacement private (`0600`); a regression now locks that behavior in. The
+focused ReportEngine/SARIF/professional-report artifact checks passed (**6
+passed**); full pytest passed (**1,317 passed**, 63.35 s), compileall and
+`git diff --check` passed. Parent-directory race resistance and every
+non-report export path remain separate review items. The test used only a
+temporary synthetic fixture.

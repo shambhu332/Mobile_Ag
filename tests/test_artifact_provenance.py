@@ -379,6 +379,25 @@ def test_initial_state_has_empty_artifact_provenance():
     assert state["artifact_provenance"] == {}
 
 
+def test_extractor_package_name_probe_rejects_unsafe_manifest_xml(tmp_path, monkeypatch):
+    extractor = object.__new__(APKExtractor)
+    manifest = tmp_path / "AndroidManifest.xml"
+    manifest.write_text(
+        '<!DOCTYPE manifest [<!ENTITY pkg "expanded.synthetic">]>'
+        '<manifest package="&pkg;"/>', encoding="utf-8")
+    assert extractor._parse_package_name(manifest) == "unknown"
+
+    target = tmp_path / "target.xml"
+    target.write_text('<manifest package="org.example.synthetic"/>', encoding="utf-8")
+    link = tmp_path / "linked-manifest.xml"
+    link.symlink_to(target)
+    assert extractor._parse_package_name(link) == "unknown"
+
+    manifest.write_text('<manifest package="org.example.synthetic"/>', encoding="utf-8")
+    monkeypatch.setattr("mobileag.ingestion.apk_extractor._MAX_PACKAGE_MANIFEST_BYTES", 8)
+    assert extractor._parse_package_name(manifest) == "unknown"
+
+
 def test_decompiler_diagnostic_summary_is_count_only_and_downgrades_unsupported_markers():
     from mobileag.ingestion.apk_extractor import _TOOL_DIAGNOSTIC_MARKERS
 

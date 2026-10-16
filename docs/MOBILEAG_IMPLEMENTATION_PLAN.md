@@ -388,7 +388,9 @@ they do not establish APK framework-detection completeness.
 
 The decoded Android manifest ingestion path now reads only a no-follow regular
 file, enforces an 8 MiB XML input cap, and rejects DTD/entity declarations
-before ElementTree parsing. Its referenced FileProvider XML inventory likewise
+before ElementTree parsing. The APK extractor's separate package-name probe
+now applies the same file type, size, and DTD/entity safeguards (returning
+`unknown` on rejected input). Its referenced FileProvider XML inventory likewise
 uses a bounded no-follow read (64 KiB) and rejects DTD/entities before parsing.
 Synthetic tests cover DTD/entity, oversize, and final-symlink cases. This does
 not harden every XML consumer or make extraction ancestor directories
@@ -534,6 +536,7 @@ Timeline & Execution Inventory [audited 2026-10-15; NOT COMPLETE]
    Referenced FileProvider XML hardening then passed focused provider-path tests (4), manifest/surface tests (59), and the full suite (**1,035 passed**, 39.92 s; same expected warning); compilation and `git diff --check` passed. This verifies bounded no-follow read and DTD/entity rejection only for covered fixtures.
    The Android automation snapshot DTD/entity guard passed its focused test (1), the automation suite (23), and the full suite (**1,036 passed**, 40.30 s; same expected warning); compilation and `git diff --check` passed. No device actions were run.
    Network Security Configuration DTD/entity rejection passed its focused suite (4) and the full suite (**1,037 passed**, 39.66 s; same expected warning); compilation and `git diff --check` passed. Coverage is explicitly partial on rejected input; no platform TLS behavior was exercised.
+   The APK extractor's package-name manifest probe passed artifact-provenance tests (20) and the full suite (**1,038 passed**, 39.98 s; same expected warning); compilation and `git diff --check` passed. Synthetic tests cover DTD, final symlink, and reduced-size-cap rejection; no untrusted APK was processed in this validation.
 2. **Synthetic regressions**: Tests exercise selected fixtures and mocks only. GitHub Actions run `38774618068` completed successfully on commit `7a85d3a`: 900 passed, 2 skipped, 1 warning. The workflow's pinned dependency installation, accuracy checks, reproducible wheel, asset verification, installed-wheel smoke, and synthetic browser suite passed. Browser checks used synthetic loopback services, no device, APK, or live target. Separately, the local pinned Python 3.14 environment reported 902 passed and 1 warning (39.04 s); CI skips two tests. No measured false-positive/false-negative rate or zero-leakage claim is established. SBOM regression tests use hash-pinned local CycloneDX 1.5 JSON/XSD, SPDX/JSF imported schema files, and SPDX 2.3 JSON schema fixtures. Provenance, upstream URLs, licenses, and expected digests are documented in `tests/fixtures/sbom_schemas/README.md`; the CycloneDX XSD import is resolver-mapped to a pinned local file with lxml network access disabled.
 3. **Evidence semantics**: Several current workflows preserve candidate/observation distinctions, but no claim is made that every analyzer or stage has independently verified fail-closed behavior. See the release gates above.
 4. **Scope boundary**: No APK, device, API origin, or researcher-controlled account was supplied for live validation in this task; no dynamic target testing was performed.

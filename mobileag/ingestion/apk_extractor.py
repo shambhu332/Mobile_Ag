@@ -6,6 +6,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version as package_version
 import shutil
 import re
+import stat
 import struct
 import zipfile
 import xml.etree.ElementTree as ET
@@ -28,6 +29,7 @@ _MAX_SMALI_WALK_ENTRIES = 100_000
 _MAX_DEX_CLASS_DESCRIPTORS = 100_000
 _MAX_TOTAL_DEX_CLASS_DESCRIPTORS = 200_000
 _MAX_DEX_DESCRIPTOR_BYTES = 4096
+_MAX_PACKAGE_MANIFEST_BYTES = 8 * 1024 * 1024
 
 class APKExtractor:
     """
@@ -745,14 +747,20 @@ class APKExtractor:
 
     def _parse_package_name(self, manifest_path: Path) -> str:
         """Parses the package name from the AndroidManifest.xml."""
-        if not manifest_path.exists():
-            logger.warning("AndroidManifest.xml not found.")
-            return "unknown"
-        
         try:
-            tree = ET.parse(manifest_path)
-            root = tree.getroot()
+            fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                details = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(details.st_mode)
+                        or details.st_size > _MAX_PACKAGE_MANIFEST_BYTES):
+                    raise ValueError("Manifest is not a regular file or exceeds the size limit")
+                raw = stream.read(_MAX_PACKAGE_MANIFEST_BYTES + 1)
+            if len(raw) > _MAX_PACKAGE_MANIFEST_BYTES:
+                raise ValueError("Manifest exceeds the size limit")
+            if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                raise ValueError("Manifest DTD/entity declarations are unsupported")
+            root = ET.fromstring(raw)
             return root.attrib.get("package", "unknown")
         except Exception as e:
-            logger.error(f"Failed to parse manifest for package name: {e}")
+            logger.warning("Manifest package name was not safely parsed: %s", type(e).__name__)
             return "unknown"

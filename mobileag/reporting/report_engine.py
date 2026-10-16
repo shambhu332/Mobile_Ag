@@ -126,6 +126,18 @@ class ReportEngine:
             f"<li>Total findings: {self._pdf_text(stats.get('total', len(findings)))}</li></ul>",
             "<h2>Coverage and proof boundaries</h2><p>Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven.</p>",
         ])
+        il2cpp = data.get("il2cpp_analysis", {})
+        if isinstance(il2cpp, dict) and il2cpp:
+            blocks.extend([
+                "<h2>Bounded Unity IL2CPP metadata candidates</h2>",
+                "<p>Parsed metadata names are static candidates; method/type signatures, bodies, and runtime reachability are not reconstructed.</p><ul>",
+                f"<li>Scan status: {self._pdf_text(il2cpp.get('scan_status', 'not_recorded'))}</li>",
+                f"<li>Metadata version: {self._pdf_text(il2cpp.get('metadata_version', 'not_recorded'))}</li>",
+                f"<li>Type definitions: {self._pdf_text(il2cpp.get('type_definitions_count', 0))}</li>",
+                f"<li>Method definitions: {self._pdf_text(il2cpp.get('method_definitions_count', 0))}</li>",
+                f"<li>Candidate output truncated: {self._pdf_text(il2cpp.get('candidate_output_truncated', False))}</li>",
+                "<li>Runtime: not tested; proof: not proven</li></ul>",
+            ])
         coverage_gaps = data.get("coverage_gaps", [])
         if isinstance(coverage_gaps, list) and coverage_gaps:
             blocks.append("<ul>" + "".join(f"<li>{self._pdf_text(item)}</li>" for item in coverage_gaps) + "</ul>")
@@ -264,6 +276,8 @@ class ReportEngine:
             "findings": findings,
             "api_endpoints": state.get("api_endpoints", []),
             "crypto_api_inventory": state.get("crypto_api_inventory", []),
+            "il2cpp_analysis": state.get("il2cpp_analysis", {}),
+            "il2cpp_analysis": state.get("il2cpp_analysis", {}),
             "errors": state.get("errors", []),
             "coverage": state.get("coverage", {}),
             "review_surface_ledger": review_surface_ledger(state.get("coverage", {})),
@@ -346,6 +360,30 @@ class ReportEngine:
     @staticmethod
     def _coverage_markdown(data):
         rows=['\n## Coverage and proof boundaries\n', 'Analysis is not exhaustive. Zero candidates is not a security verdict. Structured confirmation is analyst-attested, not independently proven by the tool.']
+        il2cpp = data.get('il2cpp_analysis', {})
+        if isinstance(il2cpp, dict) and il2cpp:
+            rows.append('\n### Bounded Unity IL2CPP metadata candidates\n')
+            rows.append('The following parsed metadata names are static candidates only; signatures, types, method bodies, and runtime reachability are not reconstructed.\n')
+            rows.append('```json\n')
+            rows.append(ReportEngine._report_json({
+                'scan_status': il2cpp.get('scan_status', 'not_recorded'),
+                'metadata_version': il2cpp.get('metadata_version'),
+                'metadata_tables_status': il2cpp.get('metadata_tables_status', 'not_recorded'),
+                'metadata_definitions_status': il2cpp.get('metadata_definitions_status', 'not_recorded'),
+                'type_definitions_count': il2cpp.get('type_definitions_count', 0),
+                'method_definitions_count': il2cpp.get('method_definitions_count', 0),
+                'classes': il2cpp.get('reconstructed_classes', [])[:50]
+                if isinstance(il2cpp.get('reconstructed_classes'), list) else [],
+                'fields': il2cpp.get('reconstructed_fields', [])[:100]
+                if isinstance(il2cpp.get('reconstructed_fields'), list) else [],
+                'methods': il2cpp.get('reconstructed_methods', [])[:100]
+                if isinstance(il2cpp.get('reconstructed_methods'), list) else [],
+                'candidate_output_truncated': bool(il2cpp.get('candidate_output_truncated', False)),
+                'runtime_status': il2cpp.get('runtime_status', 'not_tested'),
+                'proof_status': il2cpp.get('proof_status', 'not_proven'),
+                'exhaustive': False,
+            }))
+            rows.append('\n```\n')
         ledger = data.get('review_surface_ledger', {})
         if ledger:
             rows.append('\n### Review-surface ledger\n')

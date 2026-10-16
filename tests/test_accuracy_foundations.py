@@ -422,6 +422,47 @@ def test_report_errors_cannot_produce_gap_free_assessment():
     assert report['assessment_coverage'] == 'partial'
 
 
+def test_report_exports_bounded_il2cpp_metadata_as_static_candidates(monkeypatch):
+    engine = ReportEngine()
+    prepared = engine._prepare_data({
+        'scan_id': 'unity-fixture', 'coverage': {},
+        'il2cpp_analysis': {
+            'scan_status': 'partial', 'metadata_version': 29,
+            'metadata_tables_status': 'parsed', 'metadata_definitions_status': 'partial',
+            'type_definitions_count': 1, 'method_definitions_count': 2,
+            'reconstructed_classes': ['fixture.GameManager'],
+            'reconstructed_fields': [{'declaring_type': 'fixture.GameManager', 'field_name': 'state'}],
+            'reconstructed_methods': [{'declaring_type': 'fixture.GameManager',
+                                       'method_name': 'load', 'parameter_count': 0,
+                                       'parameter_names': []}],
+            'candidate_output_truncated': True,
+        },
+    })
+
+    assert prepared['il2cpp_analysis']['reconstructed_classes'] == ['fixture.GameManager']
+    markdown = engine._coverage_markdown(prepared)
+    assert 'Bounded Unity IL2CPP metadata candidates' in markdown
+    assert 'fixture.GameManager' in markdown
+    assert 'method bodies, and runtime reachability are not reconstructed' in markdown
+    assert '"proof_status": "not_proven"' in markdown
+
+    import weasyprint
+    rendered = {}
+
+    class SyntheticHTML:
+        def __init__(self, *, string, url_fetcher):
+            rendered['html'] = string
+            rendered['url_fetcher'] = url_fetcher
+
+        def write_pdf(self):
+            return b'%PDF-synthetic'
+
+    monkeypatch.setattr(weasyprint, 'HTML', SyntheticHTML)
+    assert engine._generate_pdf(prepared) == b'%PDF-synthetic'
+    assert 'Bounded Unity IL2CPP metadata candidates' in rendered['html']
+    assert 'Runtime: not tested; proof: not proven' in rendered['html']
+
+
 def test_review_surface_ledger_maps_only_recorded_analyzers_and_fails_closed():
     ledger = review_surface_ledger({
         'manifest': {'static_status': 'completed', 'runtime_status': 'not_tested',

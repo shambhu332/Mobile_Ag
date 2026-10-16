@@ -72,6 +72,16 @@ def test_fileprovider_broad_internal_roots_are_info_candidates(tag, path):
     assert "app's internal" in candidate.metadata["risk_reason"]
 
 
+@pytest.mark.parametrize("path", ["./", ".//.", "///"])
+def test_fileprovider_normalizes_equivalent_broad_root_spellings(path):
+    result = FileProviderAuditor().audit_xml_content(
+        f'<paths><files-path name="all" path="{path}" /></paths>')
+
+    assert len(result.findings) == 1
+    assert result.findings[0].severity == "INFO"
+    assert result.findings[0].status == "UNVERIFIED"
+
+
 def test_fileprovider_resource_scan_is_bounded_unique_and_reports_parse_errors(tmp_path):
     xml_dir = tmp_path / "res" / "xml"
     xml_dir.mkdir(parents=True)

@@ -99,11 +99,12 @@ class FileProviderAuditor:
             # this parser cannot establish canonicalization, URI grants, or
             # caller reachability.
             has_parent_segment = ".." in path_val.split("/")
+            path_is_root = all(part in {"", "."} for part in path_val.split("/"))
 
             if has_parent_segment:
                 is_dangerous = True
                 risk_reason = "path contains a '..' segment; review the normalized configured root and provider canonicalization"
-            elif tag == "root-path" and path_val in {".", "", "/"}:
+            elif tag == "root-path" and path_is_root:
                 is_dangerous = True
                 risk_reason = "root-path exposes root filesystem (/)"
             elif tag == "root-path":
@@ -111,10 +112,10 @@ class FileProviderAuditor:
                 # entire filesystem. Record it for review without claiming
                 # broad exposure solely from the tag name.
                 risk_reason = "root-path maps a restricted root-relative subdirectory; review grants and resolved files"
-            elif tag == "external-path" and (path_val in {".", "", "/"}):
+            elif tag == "external-path" and path_is_root:
                 is_dangerous = True
                 risk_reason = "external-path configured with root or current directory (.) exposing all external storage"
-            elif path_val in {".", ""}:
+            elif path_is_root:
                 if tag in self.DANGEROUS_TAGS:
                     is_dangerous = True
                     risk_reason = (self.DANGEROUS_TAGS[tag] if tag in {"files-path", "cache-path"}
@@ -136,7 +137,7 @@ class FileProviderAuditor:
                     ).hexdigest()[:12].upper(),
                     title=(f"Review FileProvider Parent-Path Segment ({tag})" if has_parent_segment
                            else f"Review Broad FileProvider Path Configuration ({tag})"
-                           if tag in {"files-path", "cache-path"} and path_val in {".", ""}
+                           if tag in {"files-path", "cache-path"} and path_is_root
                            else f"Insecure FileProvider Path Configuration ({tag})"),
                     description=(
                         f"FileProvider configuration in '{source_path}' declares a '{tag}' mapping "
@@ -147,7 +148,7 @@ class FileProviderAuditor:
                         "caller reachability require separate review."
                     ),
                     severity=("INFO" if has_parent_segment or
-                              (tag in {"files-path", "cache-path"} and path_val in {".", ""})
+                              (tag in {"files-path", "cache-path"} and path_is_root)
                               else "HIGH" if tag == "root-path" else "MEDIUM"),
                     file_path=source_path,
                     line_number=1,

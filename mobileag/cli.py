@@ -195,8 +195,9 @@ def diff(old: str, new: str, output: str):
 @main.command()
 @click.option("--host", default="127.0.0.1", help="Host address to bind to")
 @click.option("--port", default=8080, help="Port to listen on", type=int)
-def web(host: str, port: int):
-    """Launch the MobileAg Enterprise AppSec Dashboard."""
+@click.option("--ui", is_flag=True, help="Enable the local browser workspace at /ui")
+def web(host: str, port: int, ui: bool = False):
+    """Launch the MobileAg API."""
     import socket
     from mobileag.web.app import run_server
 
@@ -219,14 +220,14 @@ def web(host: str, port: int):
             console.print(f"[bold yellow]Notice:[/] Port {port} is in use. Auto-switching to port [bold green]{actual_port}[/].")
 
     console.print(Panel.fit(
-        f"[bold cyan]MobileAg Enterprise AppSec Dashboard[/]\n"
-        f"URL: [link=http://{host}:{actual_port}]http://{host}:{actual_port}[/link]",
+        f"[bold cyan]MobileAg API[/]\n"
+        f"Listening on http://{host}:{actual_port} (interactive API docs disabled)",
         border_style="cyan"
     ))
     try:
-        run_server(host=host, port=actual_port)
+        run_server(host=host, port=actual_port, ui=ui)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Web dashboard stopped.[/]")
+        console.print("\n[yellow]Web API stopped.[/]")
 
 
 @main.command()
@@ -243,7 +244,7 @@ def web(host: str, port: int):
 def dast(package: str, serial: str | None, apk: str | None, activities: str | None, deeplinks: str | None, authorities: str | None, audit_storage: bool, audit_memory: bool, crawl_ui: bool, output: str):
     """Run dynamic application security testing (DAST) on connected emulator or device."""
     raise click.ClickException(
-        "Legacy full DAST suite disabled: use individually approved actions in the local dashboard; "
+        "Legacy full DAST suite disabled: use individually approved API actions; "
         "no device was selected or contacted."
     )
 

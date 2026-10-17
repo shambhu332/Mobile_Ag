@@ -119,13 +119,10 @@ def test_plan_baseline_must_have_hash_and_planned_comparison_rechecks_frozen_bin
     assert client.get("/api/scans/plan_current/planned-comparison").status_code == 409
 
 
-def test_plan_editor_uses_saved_artifact_bound_comparison_not_free_form_baseline():
-    script = Path(__file__).resolve().parents[1] / "mobileag/web/static/test-plan-ui.js"
-    script = script.read_text()
-    assert "/planned-comparison" in script
-    assert "if(dirty)" in script
-    assert "!planSaved" in script
-    assert "/comparison/${encodeURIComponent(baseline.value.trim())}" not in script
+def test_browser_plan_editor_assets_are_not_shipped():
+    web_root=Path(__file__).resolve().parents[1] / "mobileag/web"
+    assert not (web_root / "static").exists()
+    assert not (web_root / "templates").exists()
 
 
 def test_test_plan_migration_and_retention_are_local_and_scan_bound(client):

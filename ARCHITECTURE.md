@@ -115,10 +115,12 @@ Mobile_Ag/
 │   │   ├── finding.py
 │   │   ├── masvs.py
 │   │   └── report_engine.py
-│   └── web/                 # Enterprise Web Security Dashboard
+│   ├── studio/              # Opt-in offline browser client (--ui)
+│   │   └── assets/          # HTML, CSS, JS; no external assets
+│   └── web/                 # Authenticated local API
 │       ├── app.py
-│       └── templates/
-│           └── index.html
+│       ├── security.py
+│       └── repository.py
 ├── tests/                   # Automated Unit & Integration Test Suite
 ├── docker-compose.yml       # Neo4j & Qdrant Services setup
 ├── pyproject.toml           # Project Dependencies
@@ -136,3 +138,7 @@ Mobile_Ag/
 | **Phase 3** | Candidate annotation | Optional reachability/sanitizer/model/history signals annotate and rank candidates; they do not prove or remove findings. Unavailable/skipped stages must be recorded. |
 | **Phase 4** | Explicit dynamic actions | ADB/device, API and traffic actions require exact authorization and selection. Root/shell output, instrumentation or a crash is not ordinary-app exploit proof. |
 | **Phase 5** | Evidence & reporting | Coverage-aware Markdown/JSON/SARIF, local dashboard, structured analyst evidence, version diff, and optional attack-surface knowledge integrations. Candidate severity labels remain provisional until validated. |
+
+## Opt-in Studio workflow bridge
+
+`mobileag web --ui` serves packaged local assets only. The authenticated `studio/routes.py` catalog reflects registered API schemas; browser previews and explicit approvals do not replace server authorization. Advanced controls cover supported assessment, automation, evidence, source and configuration workflows. Upload adapters reuse existing CLI engines; `studio/jobs.py` runs source-ZIP taint and two-APK comparison in the existing offline namespace/resource boundary through `studio/worker.py`, without an unsafe fallback. Browser scans stay offline and host/secret provisioning stays terminal-managed. See [workflow coverage and verification](docs/studio-parity-2026-10-17/README.md).

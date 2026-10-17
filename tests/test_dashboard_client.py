@@ -10,7 +10,6 @@ from click.testing import CliRunner
 
 from mobileag.dashboard.client import DashboardClient, DashboardError, local_origin, safe_endpoint
 from mobileag.dashboard.commands import dashboard
-from mobileag.dashboard.navigator import permitted_request
 
 TOKEN = 'synthetic-dashboard-token-only'
 
@@ -85,19 +84,6 @@ def test_curl_failures_do_not_echo_sensitive_raw_exception(failure):
     assert TOKEN not in str(error.value)
 
 
-def test_browser_policy_blocks_external_writes_and_device_gets():
-    origin = 'http://127.0.0.1:8080'
-    assert permitted_request(origin, origin+'/api/scans?limit=1&summaries=true', 'GET')
-    assert permitted_request(origin, origin+'/static/workspace.js', 'GET')
-    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/resilience', 'GET')
-    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/test-plan', 'GET')
-    assert permitted_request(origin, origin+'/api/scans/scan_synthetic/findings/synthetic-finding/poc', 'GET')
-    for url, method in [(origin+'/api/scans/run', 'POST'), (origin+'/api/settings', 'PUT'),
-                        ('https://evil.invalid/', 'GET'), (origin+'/api/dast/logcat?serial=test', 'GET'),
-                        (origin+'/api/scans/scan_synthetic/findings/synthetic-finding/feedback', 'GET')]:
-        assert not permitted_request(origin, url, method)
-
-
 def test_cli_environment_connection_never_echoes_token(monkeypatch):
     monkeypatch.setenv('MOBILEAG_API_TOKEN', TOKEN)
     with patch.object(DashboardClient, 'get', return_value={'status_code': 200, 'data': {'status': 'ok'}}):
@@ -111,32 +97,3 @@ def test_cli_private_prompt_used_when_no_environment_token(monkeypatch):
     with patch.object(DashboardClient, 'get', return_value={'status_code': 200}):
         result = CliRunner().invoke(dashboard, ['api'], input=TOKEN+'\n')
     assert result.exit_code == 0 and TOKEN not in result.output
-
-
-def test_browser_redirect_rejected_before_following_chain():
-    from mobileag.dashboard.navigator import read_only_route
-    from unittest.mock import Mock
-    route = Mock()
-    route.request.url = 'http://127.0.0.1:8080/api/status'
-    route.request.method = 'GET'
-    response = route.fetch.return_value
-    response.status = 302
-    blocked = []
-    read_only_route('http://127.0.0.1:8080', blocked, route)
-    route.fetch.assert_called_once_with(max_redirects=0, timeout=10000)
-    route.abort.assert_called_once()
-    route.fulfill.assert_not_called()
-    response.dispose.assert_called_once()
-    assert blocked == [{'kind': 'redirect', 'method': 'GET'}]
-
-
-def test_browser_write_blocked_before_transport():
-    from mobileag.dashboard.navigator import read_only_route
-    from unittest.mock import Mock
-    route = Mock()
-    route.request.url = 'http://127.0.0.1:8080/api/scans/run'
-    route.request.method = 'POST'
-    blocked = []
-    read_only_route('http://127.0.0.1:8080', blocked, route)
-    route.fetch.assert_not_called()
-    route.abort.assert_called_once()

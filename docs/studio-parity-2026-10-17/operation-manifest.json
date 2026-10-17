@@ -1,0 +1,888 @@
+{
+  "operations": [
+    {
+      "id": "POST /api/scans/{scan_id}/cancel",
+      "method": "POST",
+      "path": "/api/scans/{scan_id}/cancel",
+      "title": "Cancel Scan",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/scans/{scan_id}/retry",
+      "method": "POST",
+      "path": "/api/scans/{scan_id}/retry",
+      "title": "Retry Scan",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/status",
+      "method": "GET",
+      "path": "/api/status",
+      "title": "Get System Status",
+      "group": "Configuration",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/readiness",
+      "method": "GET",
+      "path": "/api/readiness",
+      "title": "Get Readiness",
+      "group": "Configuration",
+      "effect": "explicit environment or graph probe",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/graph/status",
+      "method": "GET",
+      "path": "/api/graph/status",
+      "title": "Get Graph Status",
+      "group": "Configuration",
+      "effect": "explicit environment or graph probe",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans",
+      "method": "GET",
+      "path": "/api/scans",
+      "title": "List Scans",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}",
+      "title": "Get Scan Details",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/source",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/source",
+      "title": "Get Scan Source",
+      "group": "Source & taint",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/source/files",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/source/files",
+      "title": "Get Scan Source Files",
+      "group": "Source & taint",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/source/search",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/source/search",
+      "title": "Search Scan Source",
+      "group": "Source & taint",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/comparison/{baseline_scan_id}",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/comparison/{baseline_scan_id}",
+      "title": "Compare Scan To Baseline",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/planned-comparison",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/planned-comparison",
+      "title": "Compare Scan To Planned Baseline",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/graph",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/graph",
+      "title": "Get Scan Graph",
+      "group": "Scans & comparison",
+      "effect": "explicit environment or graph probe",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/sarif",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/sarif",
+      "title": "Get Scan Sarif",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/apis",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/apis",
+      "title": "Get Scan Apis",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/resilience",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/resilience",
+      "title": "Get Scan Resilience",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/cyclonedx",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/cyclonedx",
+      "title": "Get Scan Cyclonedx",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/cyclonedx.xml",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/cyclonedx.xml",
+      "title": "Get Scan Cyclonedx Xml",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/spdx",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/spdx",
+      "title": "Get Scan Spdx",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/openapi",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/openapi",
+      "title": "Get Scan Openapi",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/har",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/har",
+      "title": "Get Scan Har",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/tokens/audit",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/tokens/audit",
+      "title": "Audit Scan Tokens",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/findings/{finding_id}/poc",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/findings/{finding_id}/poc",
+      "title": "Get Finding Poc",
+      "group": "Evidence & plans",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/findings/{finding_id}/feedback",
+      "method": "POST",
+      "path": "/api/findings/{finding_id}/feedback",
+      "title": "Submit Feedback",
+      "group": "Evidence & plans",
+      "effect": "disabled",
+      "disabled_reason": "Legacy unscoped triage is retired. Use scan-scoped feedback."
+    },
+    {
+      "id": "POST /api/scans/{scan_id}/findings/{finding_id}/feedback",
+      "method": "POST",
+      "path": "/api/scans/{scan_id}/findings/{finding_id}/feedback",
+      "title": "Submit Scan Feedback",
+      "group": "Evidence & plans",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/decisions",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/decisions",
+      "title": "Scan Decisions",
+      "group": "Evidence & plans",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/test-plan",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/test-plan",
+      "title": "Get Scan Test Plan",
+      "group": "Evidence & plans",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "PUT /api/scans/{scan_id}/test-plan",
+      "method": "PUT",
+      "path": "/api/scans/{scan_id}/test-plan",
+      "title": "Save Scan Test Plan",
+      "group": "Evidence & plans",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/copilot",
+      "method": "POST",
+      "path": "/api/copilot",
+      "title": "Query Copilot",
+      "group": "Evidence & plans",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/agents",
+      "method": "GET",
+      "path": "/api/agents",
+      "title": "List Agents",
+      "group": "Configuration",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scope",
+      "method": "GET",
+      "path": "/api/scope",
+      "title": "Get Scope",
+      "group": "Configuration",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/scope",
+      "method": "POST",
+      "path": "/api/scope",
+      "title": "Save Scope",
+      "group": "Configuration",
+      "effect": "changes authorization policy",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/scans/{scan_id}/retention",
+      "method": "GET",
+      "path": "/api/scans/{scan_id}/retention",
+      "title": "Retention Preview",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/scans/{scan_id}/purge",
+      "method": "POST",
+      "path": "/api/scans/{scan_id}/purge",
+      "title": "Purge Scan",
+      "group": "Scans & comparison",
+      "effect": "destructive",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/settings",
+      "method": "GET",
+      "path": "/api/settings",
+      "title": "Get Settings Config",
+      "group": "Configuration",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/settings",
+      "method": "POST",
+      "path": "/api/settings",
+      "title": "Update Settings Config",
+      "group": "Configuration",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dashboard/capabilities",
+      "method": "GET",
+      "path": "/api/dashboard/capabilities",
+      "title": "Capabilities",
+      "group": "Scans & comparison",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dashboard/read",
+      "method": "POST",
+      "path": "/api/dashboard/read",
+      "title": "Read",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/devices",
+      "method": "GET",
+      "path": "/api/dast/devices",
+      "title": "Get Dast Devices",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/preflight",
+      "method": "GET",
+      "path": "/api/preflight",
+      "title": "Get Preflight",
+      "group": "Configuration",
+      "effect": "explicit environment or graph probe",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/frida/status",
+      "method": "GET",
+      "path": "/api/dast/frida/status",
+      "title": "Get Frida Status",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/frida/presets/{script_type}",
+      "method": "GET",
+      "path": "/api/frida/presets/{script_type}",
+      "title": "Preview Frida Preset",
+      "group": "Scans & comparison",
+      "effect": "disabled",
+      "disabled_reason": "Disabled by backend: runtime hook previews are retired."
+    },
+    {
+      "id": "POST /api/dast/connect",
+      "method": "POST",
+      "path": "/api/dast/connect",
+      "title": "Connect Dast Device",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/root",
+      "method": "POST",
+      "path": "/api/dast/root",
+      "title": "Restart Dast Root",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/install",
+      "method": "POST",
+      "path": "/api/dast/install",
+      "title": "Install Dast Apk",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/launch",
+      "method": "POST",
+      "path": "/api/dast/launch",
+      "title": "Launch Dast Activity",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/deeplink",
+      "method": "POST",
+      "path": "/api/dast/deeplink",
+      "title": "Dispatch Dast Deeplink",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/execute_adb",
+      "method": "POST",
+      "path": "/api/dast/execute_adb",
+      "title": "Execute Adb Command",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/logcat",
+      "method": "GET",
+      "path": "/api/dast/logcat",
+      "title": "Get Dast Logcat",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/logcat/clear",
+      "method": "POST",
+      "path": "/api/dast/logcat/clear",
+      "title": "Clear Dast Logcat",
+      "group": "Device diagnostics",
+      "effect": "disabled",
+      "disabled_reason": "Disabled by backend: preserve original device logs."
+    },
+    {
+      "id": "POST /api/dast/screenshot",
+      "method": "POST",
+      "path": "/api/dast/screenshot",
+      "title": "Capture Dast Screenshot",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/storage",
+      "method": "POST",
+      "path": "/api/dast/storage",
+      "title": "Audit Dast Storage",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/providers",
+      "method": "POST",
+      "path": "/api/dast/providers",
+      "title": "Audit Dast Providers",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/deeplinks",
+      "method": "POST",
+      "path": "/api/dast/deeplinks",
+      "title": "Audit Dast Deeplinks",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/memory",
+      "method": "POST",
+      "path": "/api/dast/memory",
+      "title": "Audit Dast Memory",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/crawl",
+      "method": "POST",
+      "path": "/api/dast/crawl",
+      "title": "Crawl Dast Ui",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/frida",
+      "method": "POST",
+      "path": "/api/dast/frida",
+      "title": "Deploy Dast Frida",
+      "group": "Device diagnostics",
+      "effect": "disabled",
+      "disabled_reason": "Disabled by backend: hook deployment and bypasses are retired."
+    },
+    {
+      "id": "POST /api/dast/traffic/audit",
+      "method": "POST",
+      "path": "/api/dast/traffic/audit",
+      "title": "Audit Dast Traffic",
+      "group": "API & traffic",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/api-capture/start",
+      "method": "POST",
+      "path": "/api/dast/api-capture/start",
+      "title": "Start Api Capture",
+      "group": "API & traffic",
+      "effect": "scoped network or proxy operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/api-capture/stop",
+      "method": "POST",
+      "path": "/api/dast/api-capture/stop",
+      "title": "Stop Api Capture",
+      "group": "API & traffic",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/api-capture/transactions",
+      "method": "GET",
+      "path": "/api/dast/api-capture/transactions",
+      "title": "Get Api Capture Transactions",
+      "group": "API & traffic",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/api-capture/openapi",
+      "method": "GET",
+      "path": "/api/dast/api-capture/openapi",
+      "title": "Get Api Capture Openapi",
+      "group": "API & traffic",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/dast/api-capture/har",
+      "method": "GET",
+      "path": "/api/dast/api-capture/har",
+      "title": "Get Api Capture Har",
+      "group": "API & traffic",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/api-capture/audit",
+      "method": "POST",
+      "path": "/api/dast/api-capture/audit",
+      "title": "Audit Api Capture",
+      "group": "API & traffic",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/analysis/taint",
+      "method": "POST",
+      "path": "/api/analysis/taint",
+      "title": "Analyze Taint",
+      "group": "Source & taint",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/apis/test",
+      "method": "POST",
+      "path": "/api/apis/test",
+      "title": "Test Api Endpoint",
+      "group": "API & traffic",
+      "effect": "scoped network or proxy operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/apis/fuzz",
+      "method": "POST",
+      "path": "/api/apis/fuzz",
+      "title": "Fuzz Api Endpoint",
+      "group": "API & traffic",
+      "effect": "scoped network or proxy operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/dast/fuzz",
+      "method": "POST",
+      "path": "/api/dast/fuzz",
+      "title": "Trigger Dast Fuzzer",
+      "group": "Device diagnostics",
+      "effect": "explicit device access; shell/root may be device-wide",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/upload/apk",
+      "method": "POST",
+      "path": "/api/upload/apk",
+      "title": "Upload Apk",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/scans/run",
+      "method": "POST",
+      "path": "/api/scans/run",
+      "title": "Trigger Scan",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/capabilities",
+      "method": "GET",
+      "path": "/api/automation/capabilities",
+      "title": "Capabilities",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/runs",
+      "method": "GET",
+      "path": "/api/automation/runs",
+      "title": "Runs",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/automation/runs",
+      "method": "POST",
+      "path": "/api/automation/runs",
+      "title": "Create",
+      "group": "Automation",
+      "effect": "approved automation state/device/API operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/runs/{rid}",
+      "method": "GET",
+      "path": "/api/automation/runs/{rid}",
+      "title": "Get",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/automation/runs/{rid}/observe",
+      "method": "POST",
+      "path": "/api/automation/runs/{rid}/observe",
+      "title": "Observe",
+      "group": "Automation",
+      "effect": "approved automation state/device/API operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/automation/runs/{rid}/execute",
+      "method": "POST",
+      "path": "/api/automation/runs/{rid}/execute",
+      "title": "Execute",
+      "group": "Automation",
+      "effect": "approved automation state/device/API operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/automation/runs/{rid}/cancel",
+      "method": "POST",
+      "path": "/api/automation/runs/{rid}/cancel",
+      "title": "Cancel",
+      "group": "Automation",
+      "effect": "approved automation state/device/API operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/automation/runs/{rid}/captures",
+      "method": "POST",
+      "path": "/api/automation/runs/{rid}/captures",
+      "title": "Captures",
+      "group": "Automation",
+      "effect": "approved automation state/device/API operation",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/runs/{rid}/report",
+      "method": "GET",
+      "path": "/api/automation/runs/{rid}/report",
+      "title": "Final Report",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/runs/{rid}/export",
+      "method": "GET",
+      "path": "/api/automation/runs/{rid}/export",
+      "title": "Export",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/automation/runs/{rid}/screens/{sid}/layout",
+      "method": "GET",
+      "path": "/api/automation/runs/{rid}/screens/{sid}/layout",
+      "title": "Layout",
+      "group": "Automation",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/assessments/providers",
+      "method": "GET",
+      "path": "/api/assessments/providers",
+      "title": "Providers",
+      "group": "Guided assessments",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/assessments",
+      "method": "GET",
+      "path": "/api/assessments",
+      "title": "List Runs",
+      "group": "Guided assessments",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/assessments",
+      "method": "POST",
+      "path": "/api/assessments",
+      "title": "Start",
+      "group": "Guided assessments",
+      "effect": "starts selected static, API, device and optional model stages",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/assessments/{rid}",
+      "method": "GET",
+      "path": "/api/assessments/{rid}",
+      "title": "Get",
+      "group": "Guided assessments",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/assessments/{rid}/authorization-evidence",
+      "method": "POST",
+      "path": "/api/assessments/{rid}/authorization-evidence",
+      "title": "Authorization Evidence",
+      "group": "Guided assessments",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/assessments/{rid}/cancel",
+      "method": "POST",
+      "path": "/api/assessments/{rid}/cancel",
+      "title": "Cancel",
+      "group": "Guided assessments",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/studio/import/sarif",
+      "method": "POST",
+      "path": "/api/studio/import/sarif",
+      "title": "Import SARIF candidates",
+      "group": "Imports & inventory",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/studio/import/mobsf",
+      "method": "POST",
+      "path": "/api/studio/import/mobsf",
+      "title": "Import MobSF JSON candidates",
+      "group": "Imports & inventory",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/studio/inventory/aab",
+      "method": "POST",
+      "path": "/api/studio/inventory/aab",
+      "title": "Inventory an Android App Bundle",
+      "group": "Imports & inventory",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/studio/taint/source-archive",
+      "method": "POST",
+      "path": "/api/studio/taint/source-archive",
+      "title": "Analyze uploaded source directory ZIP",
+      "group": "Source & taint",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "POST /api/studio/compare/apks",
+      "method": "POST",
+      "path": "/api/studio/compare/apks",
+      "title": "Compare two uploaded APK versions",
+      "group": "Scans & comparison",
+      "effect": "local computation or persisted state change",
+      "disabled_reason": null
+    },
+    {
+      "id": "GET /api/studio/scans/{scan_id}/report",
+      "method": "GET",
+      "path": "/api/studio/scans/{scan_id}/report",
+      "title": "Download JSON or Markdown report",
+      "group": "Reports & exports",
+      "effect": "read or export local evidence",
+      "disabled_reason": null
+    }
+  ],
+  "cli_mapping": [
+    {
+      "command": "scan / ios",
+      "ui": "New assessment + Reports & exports",
+      "status": "offline browser equivalent; CLI cloud/advisory flags intentionally unavailable"
+    },
+    {
+      "command": "diff",
+      "ui": "Scans & comparison",
+      "status": "stored scan comparison or isolated two-APK comparison"
+    },
+    {
+      "command": "taint",
+      "ui": "Source & taint",
+      "status": "source snippet, isolated uploaded-source archive, or APK scan taint; no arbitrary host directory access"
+    },
+    {
+      "command": "import-sarif",
+      "ui": "Imports & inventory",
+      "status": "same bounded importer; download candidate projection"
+    },
+    {
+      "command": "import-mobsf-json",
+      "ui": "Imports & inventory",
+      "status": "same bounded importer; download candidate projection"
+    },
+    {
+      "command": "inventory-aab",
+      "ui": "Imports & inventory",
+      "status": "same bounded inventory; temporary upload removed"
+    },
+    {
+      "command": "dashboard api",
+      "ui": "Advanced tools",
+      "status": "authenticated parameter forms and result downloads"
+    },
+    {
+      "command": "web",
+      "ui": "server lifecycle",
+      "status": "launch/host/token environment remain terminal-managed"
+    },
+    {
+      "command": "dast",
+      "ui": "Device diagnostics / Guided assessments",
+      "status": "legacy full suite stays disabled; scoped individual actions available"
+    }
+  ]
+}

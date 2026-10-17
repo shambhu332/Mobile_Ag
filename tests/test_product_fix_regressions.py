@@ -85,18 +85,18 @@ def test_settings_durable_and_cloud_requires_approval(client,monkeypatch):
     assert client.get('/api/settings').json()['entropy_threshold']==3.25
 
 
-def test_browser_script_boundary_and_packaged_assets():
+def test_web_api_only_no_anonymous_ui_or_static_assets():
     anon=TestClient(web.app)
-    r=anon.get('/')
-    assert r.status_code==200
-    assert 'script-src' in r.headers['content-security-policy']
-    script_policy=r.headers['content-security-policy'].split('script-src',1)[1].split(';',1)[0]
-    assert 'unsafe-inline' not in script_policy and 'unsafe-eval' not in script_policy
-    assert r.headers['x-frame-options']=='DENY'
-    assert anon.get('/static/dashboard.js').status_code==200
-    assert anon.get('/static/theme.js').status_code==200
-    assert anon.get('/api/scans').status_code==200  # Root bootstrapped the HttpOnly browser session.
-    assert TestClient(web.app).get('/api/scans').status_code==401  # No root bootstrap or bearer key.
+    assert anon.get('/').status_code==401
+    assert anon.get('/docs').status_code==401
+    assert anon.get('/redoc').status_code==401
+    assert anon.get('/static/dashboard.js').status_code==401
+    auth=TestClient(web.app,headers={'Authorization':'Bearer '+web.app.state.auth_token})
+    assert auth.get('/').status_code==404
+    assert auth.get('/docs').status_code==404
+    assert auth.get('/redoc').status_code==404
+    assert auth.get('/static/dashboard.js').status_code==404
+    assert auth.get('/api/scans').status_code==200
 
 
 @pytest.mark.asyncio
@@ -351,8 +351,7 @@ def test_provider_status_matches_effective_approval():
     assert settings.model_copy(update={'offline':True}).enabled_providers==[]
 
 
-def test_unknown_field_content_does_not_reintroduce_inline_js():
-    from re import search
+def test_unknown_field_content_does_not_reintroduce_web_ui():
     root=Path(web.__file__).parent
-    for path in [root/'templates'/'index.html',*list((root/'static').glob('*.js'))]:
-        assert search(r'(?<!data-)\bon(?:click|change|input|keydown|drop|dragover|dragleave)\s*=',path.read_text()) is None
+    assert not (root/'templates').exists()
+    assert not (root/'static').exists()

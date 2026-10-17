@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "browser": "155.0.8059.12",
+  "desktop": "1440x1100",
+  "mobile_widths": [
+    390,
+    320
+  ],
+  "page_errors": [],
+  "accessibility": [
+    {
+      "view": "disconnected",
+      "violations": []
+    },
+    {
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "view": "evidence-dialog",
+      "violations": []
+    },
+    {
+      "view": "upload-dialog",
+      "violations": []
+    },
+    {
+      "view": "mobile-390",
+      "violations": []
+    },
+    {
+      "view": "mobile-320",
+      "violations": []
+    }
+  ],
+  "external_requests": [],
+  "posts": [
+    "/api/upload/apk",
+    "/api/scans/run",
+    "/api/scans/run"
+  ],
+  "scan_execution": "intercepted synthetic 409 and 200; no real engine/device/API testing",
+  "screenshots": "synthetic fixtures, not real findings",
+  "checks": [
+    "disconnected state",
+    "real bearer authentication",
+    "memory-only token",
+    "real scan reads",
+    "search",
+    "finding source rendered as text",
+    "coverage",
+    "SARIF download",
+    "read-only scope/system",
+    "real archive staging",
+    "consent gate",
+    "safe scan payload",
+    "invalid file rejection",
+    "run error",
+    "successful submission/reset",
+    "responsive navigation",
+    "disconnect",
+    "invalid token"
+  ]
+}

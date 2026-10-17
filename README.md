@@ -6,7 +6,7 @@
 
 [Quick start](#quick-start) · [Architecture](#architecture) · [System design](#system-design) · [Security model](#security-model-and-scope) · [API capture](#dynamic-api-discovery-and-capture) · [Testing](#validation-and-tests) · [Contributing](CONTRIBUTING.md)
 
-MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting, a local operator dashboard, and separately authorized device/API workflows. It helps a researcher inventory attack surfaces and prioritize manual review. It is **not** an autonomous exploit verifier, a guarantee of complete analysis, or authorization to test an app/backend.
+MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting, a local API, and separately authorized device/API workflows. It helps a researcher inventory attack surfaces and prioritize manual review. It is **not** an autonomous exploit verifier, a guarantee of complete analysis, or authorization to test an app/backend.
 
 > **Research boundary:** Test only applications, devices, and backend origins you own or are explicitly authorized to assess. Use researcher-controlled accounts and synthetic data. Static candidates and captured traffic do not prove server-side vulnerabilities. The project is private and has no selected project-level license; dependency licenses do not license this repository.
 
@@ -15,7 +15,7 @@ MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting,
 - **Android static review:** APK extraction/decompilation, artifact/build metadata and hashes, manifest/component review, source/resource rules, API route inventory, secret/config candidates, native and cross-platform artifact review, dependency inventory, and bounded source-to-sink heuristics.
 - **iOS static review:** IPA/Info.plist, ATS, Mach-O and related static checks through the iOS analyzer.
 - **Coverage-aware findings:** Markdown, JSON and SARIF outputs retain candidate status, provenance, static/runtime/proof state, parser/coverage limits, and analyst evidence boundaries.
-- **Local dashboard and API:** Authenticated local session, upload/review/scan workflow, report/history and triage, scoped settings, guided assessments, and local evidence views.
+- **Local API:** Bearer-authenticated scan, reporting, evidence, settings, and scoped workflow endpoints. No web UI is shipped.
 - **Explicit dynamic operations:** individually approved ADB/device diagnostics, selected-package observation and scoped API replay. Dynamic actions are separate from a static APK scan and require exact scope.
 - **API discovery/capture:** static route literals plus opt-in loopback HTTP capture of researcher-generated traffic; inspect redacted transactions and run offline heuristics against the capture.
 - **Optional integrations:** approved CLI-only cloud LLM review, explicit OSV advisory lookup, and optional Neo4j/Qdrant services. Their presence does not establish that a stage ran or that a finding is true.
@@ -44,7 +44,7 @@ MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting,
 flowchart TB
   OP[Researcher / local operator]
   CLI[CLI: scan, iOS, diff, import, inventory]
-  UI[Local dashboard]
+  CLIENT[CLI / API client]
   API[FastAPI routes + session/security middleware]
   JOB[Isolated analysis worker]
   ING[Validated APK/IPA ingestion]
@@ -62,8 +62,8 @@ flowchart TB
   EXT[Optional OSV / LLM / Neo4j / Qdrant]
 
   OP --> CLI
-  OP --> UI
-  UI --> API
+  OP --> CLIENT
+  CLIENT --> API
   CLI --> ING
   API --> JOB
   JOB --> ING --> DEC --> ORCH --> STATIC --> REVIEW --> REPORT
@@ -72,12 +72,12 @@ flowchart TB
   REPORT --> OUT
   API --> DEVICE
   API --> REPLAY
-  UI -. explicit start/stop .-> PROXY --> AUDIT --> API
+  CLIENT -. explicit start/stop .-> PROXY --> AUDIT --> API
   REVIEW -. explicit CLI consent only .-> EXT
   STATIC -. explicit advisory lookup only .-> EXT
 ```
 
-The diagram shows logical boundaries, not a claim that every optional integration is enabled. Web static analysis is isolated in a worker; the authenticated dashboard does not silently inherit provider credentials or turn an APK upload into a live test. Device/API work is a distinct operator-controlled path.
+The diagram shows logical boundaries, not a claim that every optional integration is enabled. Web static analysis is isolated in a worker; the authenticated API does not silently inherit provider credentials or turn an APK upload into a live test. Device/API work is a distinct operator-controlled path.
 
 ### Component responsibilities
 
@@ -89,7 +89,7 @@ The diagram shows logical boundaries, not a claim that every optional integratio
 | Static analysis | `mobileag/analysis/` | Manifest, API, secrets, code, taint, crypto API metadata, native, dependency, network-security, framework and platform checks. Results are bounded review candidates. |
 | Candidate annotation | `mobileag/filters/`, `mobileag/llm/` | Optional heuristic prioritization or explicitly approved model review; annotations do not prove exploitability or silently erase candidates. |
 | Dynamic testing | `mobileag/dast/`, `mobileag/security/network.py` | Device diagnostics, traffic auditing/capture, route cataloging, explicit replay and selected narrow test helpers. Exact scope is enforced at action/network boundaries. |
-| Web application | `mobileag/web/`, `mobileag/dashboard/` | Authenticated local API/UI, scope policy, isolated jobs, scan/evidence persistence, reporting and interaction. Browser scripts are not separate security principals. |
+| Web application | `mobileag/web/`, `mobileag/dashboard/` | Bearer-authenticated local API, scope policy, isolated jobs, scan/evidence persistence, and reporting. The legacy browser bundles remain removed. A new offline browser workspace is available explicitly with `mobileag web --ui`; API-only startup remains the default. |
 | Reporting/evidence | `mobileag/reporting/` | Finding schema, coverage, reports, SARIF interchange/import, structured analyst confirmation and provenance. |
 | Optional knowledge | `mobileag/knowledge/` | Neo4j/Qdrant adapters and feedback abstractions. Not required for the standard offline scan. |
 | Regression and docs | `tests/`, `docs/` | Synthetic, isolated checks; workflow evidence; schemas and roadmap. Tests do not certify field recall or absence of vulnerabilities. |
@@ -103,7 +103,7 @@ For a lower-level architecture inventory, see [`ARCHITECTURE.md`](ARCHITECTURE.m
 ```mermaid
 sequenceDiagram
   actor Analyst
-  participant CLI as CLI or Dashboard
+  participant CLI as CLI / API client
   participant Gate as Scope / upload / job gate
   participant Worker as Isolated worker
   participant Extract as APK/IPA extractor
@@ -121,7 +121,7 @@ sequenceDiagram
   Note over Analyst,Store: Uploading or reviewing a scan does not start DAST.
 ```
 
-1. **Select an artifact.** The CLI or dashboard receives an APK/IPA. Dashboard upload is staging, not consent to scan or test.
+1. **Select an artifact.** The CLI or authenticated API receives an APK/IPA. Upload is staging, not consent to scan or test.
 2. **Validate and identify.** Input/archive bounds, artifact identity and tool metadata are recorded. APK splits, unsupported content and extraction failures may limit coverage.
 3. **Extract/decompile.** Android uses configured JADX/APKTool tools; parsers are not perfect and obfuscation/native code may reduce visibility. iOS uses the IPA analyzer.
 4. **Analyze.** Independent engines inspect bounded inputs. The orchestrator captures per-engine status and errors; it does not convert missing coverage into a pass.
@@ -138,7 +138,7 @@ Dynamic actions do not follow automatically from a static scan. The operator sep
 - **Trusted control plane:** local operator session, environment ceilings, persisted scope, server-side validation and worker policy.
 - **Evidence:** values may be redacted before persistence/export; captures can still contain sensitive metadata, so keep the data directory protected and test only with synthetic accounts.
 - **External egress:** disabled for offline scans. Cloud source review is restricted to explicit CLI consent/configuration; web workers do not receive provider keys. OSV lookups are separately explicit. See [configuration and data handling](#configuration-and-data-handling).
-- **Scope is conjunctive:** persisted UI scope can narrow, never enlarge, the server environment allowlists. API replay and capture also validate server-side destination/method constraints; the UI is not the security boundary.
+- **Scope is conjunctive:** persisted scope can narrow, never enlarge, the server environment allowlists. API replay and capture also validate server-side destination/method constraints; the client is not the security boundary.
 
 ## Quick start
 
@@ -146,8 +146,8 @@ Dynamic actions do not follow automatically from a static scan. The operator sep
 
 - Python 3.11+ (project metadata); use a supported, tested environment from [`requirements/validated-python314.txt`](requirements/validated-python314.txt) for closest CI parity.
 - `jadx` and `apktool` installed and available in `PATH` for Android APK extraction/decompilation.
-- For dashboard web static jobs: Linux bubblewrap (`bwrap`) and a working ordinary-user systemd manager/user cgroup. Missing isolation fails closed. Use **Settings → Check local readiness**.
-- Optional: Android SDK Platform Tools (`adb`) for device workflows; Frida Python/server only for the explicitly approved Frida diagnostic path; Chromium/Playwright for browser regressions.
+- For web API static jobs: Linux bubblewrap (`bwrap`) and a working ordinary-user systemd manager/user cgroup. Missing isolation fails closed. Use **Settings → Check local readiness**.
+- Optional: Android SDK Platform Tools (`adb`) for device workflows; Frida Python/server only for the explicitly approved Frida diagnostic path.
 
 ### Install and launch
 
@@ -157,10 +157,10 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e '.[test]'
 [ -f .env ] || cp .env.example .env
-python -m mobileag.cli web --host 127.0.0.1 --port 8080
+MOBILEAG_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-Open the local URL printed by the CLI. The browser receives an automatic same-origin `HttpOnly; SameSite=Strict` session cookie; no session token is shown in the terminal, requested in the UI, or exposed to page JavaScript. API authorization and the eight-hour server-side session deadline remain enforced. `MOBILEAG_API_TOKEN` is optional for programmatic bearer clients, not needed for the browser. Use one local operator and one loopback worker; remote/multi-user hosting is unsupported.
+The server exposes an authenticated API only; there is no browser UI. Configure a researcher-managed `MOBILEAG_API_TOKEN` for API clients and keep the service bound to loopback. Requests require a bearer token; the session lifetime and authorization checks remain enforced.
 
 Data is stored under the current working directory by default, or `MOBILEAG_DATA_DIR` when configured. Preserve original artifacts and user data; do not place secrets in test fixtures.
 
@@ -168,7 +168,6 @@ Data is stored under the current working directory by default, or `MOBILEAG_DATA
 
 ```bash
 python -m pip install -e '.[frida]'      # optional Frida bindings
-python -m pip install -e '.[dashboard]'  # optional Playwright version for browser work
 ```
 
 ## CLI workflows
@@ -198,7 +197,7 @@ python -m mobileag.cli import-sarif --input external.sarif --output imported-can
 python -m mobileag.cli import-mobsf-json --input mobsf-report.json --output imported-mobsf-candidates.json
 ```
 
-The `dast` CLI command is deliberately disabled. Use individual approved dashboard actions instead; it will not pick a device, install an app or contact a target. Android scan exit status indicates pipeline completion/error, not whether findings exist. A completed scan can still have partial coverage.
+The `dast` CLI command is deliberately disabled. Use individual approved API actions instead; it will not pick a device, install an app or contact a target. Android scan exit status indicates pipeline completion/error, not whether findings exist. A completed scan can still have partial coverage.
 
 `--offline` prevents LLM/OSV requests. OSV lookups are disabled unless a scan explicitly includes `--lookup-advisories`; that sends supported parsed dependency coordinates and exact versions to OSV. Do not combine `--offline` and `--lookup-advisories`. Lockfile/dependency support is bounded and incomplete; APKs often omit build-time metadata.
 
@@ -242,7 +241,7 @@ During APK analysis, the API mapper inventories recognized Retrofit annotations,
 The optional authenticated capture proxy listens on loopback `127.0.0.1:8082` and requires `MOBILEAG_PROXY_TOKEN`. It forwards researcher-generated HTTP requests only when the origin and method match the persisted `api_capture` scope and server origin ceiling. It records bounded/redacted transactions for inspection and offline traffic heuristics.
 
 1. Configure server allowlists and proxy token (example below).
-2. In dashboard **Authorized scope**, enter exact authorized backend origins, allowed methods, and enable the `api_capture` action. The UI scope cannot expand server scope.
+2. In API persisted scope, enter exact authorized backend origins, allowed methods, and enable the `api_capture` action. Persisted scope cannot expand the server allowlist.
 3. Explicitly start capture through the authenticated `/api/dast/api-capture/start` route.
 4. Configure a controlled client to use the loopback proxy and proxy bearer credential; exercise only authorized flows with synthetic accounts/data.
 5. Inspect `/api/dast/api-capture/transactions`, run `/api/dast/api-capture/audit`, then stop capture.
@@ -251,11 +250,11 @@ The workflow is operator-driven. It does not launch an APK, configure Android pr
 
 ### Explicit API replay
 
-The dashboard replay path requires exact server-approved origins and methods. Destination resolution is validated/pinned, TLS verification stays enabled, redirects are not followed, and response size/time are bounded. API replay is an actual network action: inspect the exact URL/method/body and account context before approving it. A successful request or a `200` response alone does not prove an access-control flaw.
+The API replay path requires exact server-approved origins and methods. Destination resolution is validated/pinned, TLS verification stays enabled, redirects are not followed, and response size/time are bounded. API replay is an actual network action: inspect the exact URL/method/body and account context before approving it. A successful request or a `200` response alone does not prove an access-control flaw.
 
 ## Device diagnostics
 
-Set exact server-side scope before using the dashboard:
+Set exact server-side scope before using the API:
 
 ```bash
 export MOBILEAG_ALLOWED_DEVICES='emulator-5554'
@@ -263,7 +262,7 @@ export MOBILEAG_ALLOWED_DEVICES='emulator-5554'
 export MOBILEAG_ALLOWED_CONNECT='127.0.0.1:5555'
 ```
 
-Select a specific researcher-controlled device; no first-device/implicit target selection. UI observation is intended to be read-only; it does not consent, enter credentials or tap through account flows. Device actions require individual scope and current session checks. Root/shell/Frida output is privileged diagnostic evidence and is **not** proof that an ordinary app can achieve the same access. No automated root/SSL bypass is implemented. Frida checks require optional bindings, compatible server and an already running app; script generation or initialization is not an exploit result.
+Select a specific researcher-controlled device; no first-device/implicit target selection. Read-only observation does not consent, enter credentials or tap through account flows. Device actions require individual scope and current session checks. Root/shell/Frida output is privileged diagnostic evidence and is **not** proof that an ordinary app can achieve the same access. No automated root/SSL bypass is implemented. Frida checks require optional bindings, compatible server and an already running app; script generation or initialization is not an exploit result.
 
 ## Evidence, coverage, and interpretation
 
@@ -289,14 +288,14 @@ Dynamic scope is explicit and conjunctive:
 - `MOBILEAG_ALLOWED_DEVICES`: exact device serials;
 - `MOBILEAG_ALLOWED_CONNECT`: exact approved TCP connection hosts/ports, only if needed;
 - `MOBILEAG_ALLOWED_ORIGINS`: exact HTTP(S) origins (including non-default port);
-- persisted dashboard scope: may narrow server ceilings, including devices/packages/origins/methods/actions;
+- persisted server scope: may narrow server ceilings, including devices/packages/origins/methods/actions;
 - explicit operator session and per-action confirmation.
 
 An empty dynamic scope means static-only. Private/local network targets additionally need `MOBILEAG_ALLOW_PRIVATE_TARGETS=1`; do not enable it casually. Never point the tool at unrelated targets, broad CIDRs, third-party services or production customer data without explicit authorization.
 
 ### Local deployment assumptions
 
-The dashboard is designed for a loopback, single-user research lab. It is not a multi-tenant security boundary. Keep it bound to `127.0.0.1`, protect the host and data directory, use a strong secret where configured, and do not expose it through a public reverse proxy. The browser session cookie is HttpOnly/SameSite and scoped to the local origin; CLI/API clients may use the optional bearer key. Browser hiding/disabled controls are not authorization; server policy and network gates are authoritative.
+The API is designed for a loopback, single-user research lab. It is not a multi-tenant security boundary. Keep it bound to `127.0.0.1`, protect the host and data directory, use a strong secret where configured, and do not expose it through a public reverse proxy. Use bearer credentials for API clients; server policy and network gates are authoritative.
 
 ### Example environment
 
@@ -312,12 +311,12 @@ MOBILEAG_ALLOWED_ORIGINS=https://api.example.test
 MOBILEAG_ALLOW_PRIVATE_TARGETS=false
 ```
 
-Only set origins/devices after authorization. Proxy capture additionally requires persisted scope with `api_capture`, exact origins and allowed methods. Never reuse app passwords, API keys or bearer tokens as the dashboard/proxy session secrets.
+Only set origins/devices after authorization. Proxy capture additionally requires persisted scope with `api_capture`, exact origins and allowed methods. Never reuse app passwords, API keys or bearer tokens as the API/proxy secrets.
 
 ## Configuration and data handling
 
-- **Default/offline posture:** configure `OFFLINE=true` for deterministic local analysis. Dashboard workers are offline and do not receive cloud provider keys.
-- **LLM providers:** only configure providers/destinations approved for the source being reviewed. CLI cloud review is an explicit egress decision; source snippets may contain secrets or proprietary logic. Dashboard optional AI review is separately consented and metadata-only as implemented. LLM content is advisory and not a verifier.
+- **Default/offline posture:** configure `OFFLINE=true` for deterministic local analysis. API-triggered workers are offline and do not receive cloud provider keys.
+- **LLM providers:** only configure providers/destinations approved for the source being reviewed. CLI cloud review is an explicit egress decision; source snippets may contain secrets or proprietary logic. API optional AI review is separately consented and metadata-only as implemented. LLM content is advisory and not a verifier.
 - **OSV:** only explicit `--lookup-advisories` sends parsed supported Maven/npm coordinates and versions. It is not whole dependency resolution.
 - **Proxy/replay:** only authorized origins/methods; captured data is redacted but still sensitive. Store reports and captures in a restricted directory and delete them under your retention policy.
 - **Optional databases:** Neo4j/Qdrant are not needed for baseline analysis. Configure strong credentials before `docker compose up -d`; compose binds ports to loopback. Historical feedback is not proof of model training/vector synchronization.
@@ -337,10 +336,9 @@ Additional bounded checks:
 python scripts/evaluate-sast-benchmark.py
 python scripts/evaluate-smali-flow-benchmark.py
 python scripts/check-reproducible-wheel.py
-python scripts/verify-dashboard-assets.py
 ```
 
-The two micro-benchmarks cover only their labeled synthetic cases; metrics are not whole-app detection recall. For an isolated synthetic browser regression, see [`CONTRIBUTING.md`](CONTRIBUTING.md) and `tests/browser_product_regression.py`. The compiled Android regression uses a synthetic APK; the Genymotion fixture regression requires an explicitly approved test emulator. Old/rooted emulator results validate integration only, not ordinary-app exploitability on a current device.
+The two micro-benchmarks cover only their labeled synthetic cases; metrics are not whole-app detection recall. The compiled Android regression uses a synthetic APK; the Genymotion fixture regression requires an explicitly approved test emulator. Old/rooted emulator results validate integration only, not ordinary-app exploitability on a current device.
 
 Passing tests prove only the tested implementation paths and fixtures. Production-device, representative APK corpus, external interoperability, and manual accessibility acceptance are separate validation gates. The latest project validation workflow badge is informative; verify CI run status before making release claims.
 
@@ -356,7 +354,7 @@ Mobile_Ag/
 │   ├── assessments/        Guided assessment/test-plan models and services
 │   ├── automation/         Explicit workflow/task orchestration
 │   ├── core/               Scan orchestration and state
-│   ├── dashboard/          Dashboard API/UI routes and commands
+│   ├── dashboard/          API routes and CLI commands
 │   ├── dast/               Device, traffic, proxy and runtime modules
 │   ├── diffing/            Version comparison
 │   ├── filters/            Candidate annotation/ranking signals
@@ -378,7 +376,7 @@ Mobile_Ag/
 
 - Static discovery is heuristic, bounded and dependent on extraction/parser coverage. No tool can establish completeness from a clean report alone.
 - Dynamic testing is not automatic; this README's capture proxy handles HTTP only and does not configure a device or decrypt TLS.
-- The legacy all-in-one DAST CLI is disabled. Use individually scoped dashboard actions.
+- The legacy all-in-one DAST CLI is disabled. Use individually scoped API actions.
 - API fuzz/replay capabilities are deliberately constrained; authenticated cross-account authorization testing still needs explicit, safe setup and human interpretation.
 - Web app is single-user/local-first; remote multi-user hosting is unsupported.
 - Some security checks are inventory/rule heuristics, not deep semantic analysis. Native/reflection/dynamic code paths and complex frameworks may be missed.
@@ -405,3 +403,22 @@ Small documentation, accessibility, evidence-quality and synthetic-test improvem
 - [Report schemas](docs/schemas/README.md)
 - [Scoped API capture workflow](docs/API_CAPTURE_WORKFLOW.md)
 - [Current API matrix](docs/product-security-review-2026-10-05/CURRENT_API_MATRIX.md)
+
+## Optional browser workspace
+
+Launch the new local, Djini-inspired static-review workspace with:
+
+```bash
+# Enter a privately configured server token without putting it in shell history.
+read -rsp 'MobileAg API token: ' MOBILEAG_API_TOKEN; echo
+export MOBILEAG_API_TOKEN
+mobileag web --ui --host 127.0.0.1 --port 8080
+```
+
+Open the `/ui` URL printed by the server (normally `http://127.0.0.1:8080/ui`) and connect using the same token. The token stays only in the tab's memory. Without `--ui`, the server stays API-only.
+
+The workspace supports archive staging and explicitly approved offline static scans, finding/evidence inspection, coverage/provenance and report downloads. **Advanced tools** adds reviewed forms for the supported API workflows: guided assessments, automation, scoped device/API diagnostics, scope/settings editing, analyst decisions, source/graph investigation and live events. CLI adapters add SARIF/MobSF imports, AAB inventory, uploaded-source taint and two-APK comparison. Uploading never starts a scan. Disconnect clears this tab; it does not revoke the server token or cancel jobs.
+
+See the [workflow coverage matrix and validation boundaries](docs/studio-parity-2026-10-17/README.md). Browser scans stay offline; server setup, provider secrets and CLI cloud/advisory flags remain terminal-managed. Retired unsafe operations stay disabled.
+
+See [architecture review and design](docs/studio-2026-10-17/REVIEW.md) and [screenshots, validation and limitations](docs/studio-2026-10-17/README.md). No demo results or external assets are shipped.

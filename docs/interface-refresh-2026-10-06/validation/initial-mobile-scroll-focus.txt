@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/home/shambhu/Desktop/Mobile_Ag/tests/browser_product_regression.py", line 402, in <module>
-    if __name__=='__main__':main()
-                            ~~~~^^
-  File "/home/shambhu/Desktop/Mobile_Ag/tests/browser_product_regression.py", line 383, in main
-    assert not result['mobile_a11y'][view], result['mobile_a11y'][view]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError: [{'id': 'scrollable-region-focusable', 'impact': 'serious', 'nodes': ['<div class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto max-h-[640px]">']}]

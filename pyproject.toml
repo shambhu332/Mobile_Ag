@@ -6,12 +6,11 @@ build-backend = "setuptools.build_meta"
 include = ["mobileag*", "config*"]
 
 [tool.setuptools.package-data]
-mobileag = ["data/*.json", "web/templates/*.html", "web/static/*.js", "web/static/*.css", "web/static/vendor/*", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
+mobileag = ["studio/assets/*.html", "studio/assets/*.css", "studio/assets/*.js", "data/*.json", "reporting/templates/*.j2", "generators/templates/**/*.j2"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "build", "lxml"]
 frida = ["frida"]
-dashboard = ["playwright==1.63.0"]
 
 [project]
 name = "mobileag"

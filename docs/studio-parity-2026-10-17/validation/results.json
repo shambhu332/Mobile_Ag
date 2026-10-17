@@ -1,0 +1,152 @@
+{
+  "status": "passed",
+  "advanced": {
+    "operation_forms": 93,
+    "checks": [
+      "all 93 operation forms render without execution",
+      "retired hooks stay disabled",
+      "review invalidated on input edit; real bounded scope save",
+      "analysis settings persisted",
+      "provider setup without credential storage",
+      "real SARIF import + download",
+      "real MobSF import",
+      "real AAB inventory",
+      "real source snippet analysis",
+      "real device scope denial",
+      "real API scope denial",
+      "real scan-scoped triage and optional evidence fields",
+      "Markdown export",
+      "guided assessment payload intercepted",
+      "exact automation approval + memory-only private input intercepted",
+      "cancel request intercepted",
+      "retry request intercepted",
+      "real hash-bound source listing/read/search",
+      "real graph inventory renderer",
+      "real scan-specific authenticated WebSocket",
+      "logs view shows scan events and fails closed without approved device scope",
+      "synthetic scoped logcat renderer; request intercepted before ADB"
+    ],
+    "mocked_mutations": [
+      "/api/assessments",
+      "/api/automation/runs/auto_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/execute",
+      "/api/scans/scan_fixture_0/cancel",
+      "/api/scans/scan_fixture_0/retry"
+    ],
+    "actual_device_or_target_network_actions": 0,
+    "expected_posts": [
+      "/api/scope",
+      "/api/settings",
+      "/api/studio/import/sarif",
+      "/api/studio/import/mobsf",
+      "/api/studio/inventory/aab",
+      "/api/analysis/taint",
+      "/api/dast/root",
+      "/api/apis/test",
+      "/api/scans/scan_fixture_0/findings/finding_0/feedback",
+      "/api/assessments",
+      "/api/automation/runs/auto_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/execute",
+      "/api/scans/scan_fixture_0/cancel",
+      "/api/scans/scan_fixture_0/retry",
+      "/api/scope"
+    ]
+  },
+  "browser": "155.0.8059.12",
+  "desktop": "1440x1100",
+  "mobile_widths": [
+    390,
+    320
+  ],
+  "page_errors": [],
+  "accessibility": [
+    {
+      "view": "disconnected",
+      "violations": []
+    },
+    {
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "view": "evidence-dialog",
+      "violations": []
+    },
+    {
+      "view": "upload-dialog",
+      "violations": []
+    },
+    {
+      "view": "advanced-controls",
+      "violations": []
+    },
+    {
+      "view": "logs-no-device-scope",
+      "violations": []
+    },
+    {
+      "view": "logs-synthetic-preview",
+      "violations": []
+    },
+    {
+      "view": "source-graph-telemetry",
+      "violations": []
+    },
+    {
+      "view": "advanced-mobile-390",
+      "violations": []
+    },
+    {
+      "view": "advanced-mobile-320",
+      "violations": []
+    },
+    {
+      "view": "mobile-390",
+      "violations": []
+    },
+    {
+      "view": "mobile-320",
+      "violations": []
+    }
+  ],
+  "external_requests": [],
+  "posts": [
+    "/api/upload/apk",
+    "/api/scans/run",
+    "/api/scans/run",
+    "/api/scope",
+    "/api/settings",
+    "/api/studio/import/sarif",
+    "/api/studio/import/mobsf",
+    "/api/studio/inventory/aab",
+    "/api/analysis/taint",
+    "/api/dast/root",
+    "/api/apis/test",
+    "/api/scans/scan_fixture_0/findings/finding_0/feedback",
+    "/api/assessments",
+    "/api/automation/runs/auto_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/execute",
+    "/api/scans/scan_fixture_0/cancel",
+    "/api/scans/scan_fixture_0/retry",
+    "/api/scope"
+  ],
+  "scan_execution": "intercepted synthetic 409 and 200; no real engine/device/API testing",
+  "screenshots": "synthetic fixtures, not real findings",
+  "checks": [
+    "disconnected state",
+    "real bearer authentication",
+    "memory-only token",
+    "real scan reads",
+    "search",
+    "finding source rendered as text",
+    "coverage",
+    "SARIF download",
+    "read-only scope/system",
+    "real archive staging",
+    "consent gate",
+    "safe scan payload",
+    "invalid file rejection",
+    "run error",
+    "successful submission/reset",
+    "responsive navigation",
+    "disconnect",
+    "invalid token"
+  ]
+}

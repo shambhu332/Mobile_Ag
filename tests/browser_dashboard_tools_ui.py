@@ -46,11 +46,12 @@ def main():
                     context.route('**/*',guard)
                     page=context.new_page();page.on('pageerror',lambda error:result['page_errors'].append(str(error)))
                     page.goto(origin,wait_until='domcontentloaded')
-                    page.locator('#session-token').fill('synthetic-local-only');page.locator('#session-token').press('Enter')
                     wait(page,'currentScan?.scan_id === "scan_synthetic"')
                     page.locator('#dashboard-tools-open').click();page.locator('#dashboard-tools-dialog').wait_for(state='visible')
                     wait(page,'!document.querySelector("#dashboard-read-run").disabled')
-                    assert 'Connected' in page.locator('#dashboard-session-label').inner_text()
+                    assert 'Local session' in page.locator('#dashboard-session-label').inner_text()
+                    assert page.locator('#session-token').count()==0
+                    assert page.evaluate("document.cookie.includes('mobileag_session')") is False
                     page.locator('#dashboard-verify').click();wait(page,'document.querySelector("#dashboard-session-state").textContent.includes("verified now")')
                     for transport in ('httpx','curl'):
                         page.locator('#dashboard-read-transport').select_option(transport)
@@ -110,17 +111,16 @@ def main():
                     }''')
                     page.locator('#dashboard-read-run').click()
                     assert page.locator('#dashboard-read-run').is_disabled()
-                    page.locator('#dashboard-disconnect').click()
+                    page.evaluate("window.dispatchEvent(new Event('workspace-session-invalidated'))")
                     page.evaluate('''() => {window.resolveSyntheticRead({json:async()=>({status_code:200,transport:'httpx',data:{marker:'stale-private-marker'}})});
                         window.fetch=window.savedDashboardFetch;delete window.savedDashboardFetch;delete window.resolveSyntheticRead;
                     }''')
                     result['disconnect_blocks_stale_response']='passed'
                     assert 'Disconnected' in page.locator('#dashboard-session-label').inner_text()
-                    assert page.evaluate('accessToken')==''
+                    assert page.evaluate('localSessionActive') is False
                     assert 'Result cleared' in page.locator('#dashboard-read-result').inner_text()
                     page.locator('#dashboard-tools-open').click();assert page.locator('#dashboard-read-run').is_disabled()
-                    page.locator('#dashboard-connect').click();page.locator('#session-token').fill('synthetic-local-only');page.locator('#session-token').press('Enter')
-                    wait(page,'document.querySelector("#dashboard-session-label").textContent.startsWith("Connected")')
+                    page.reload();wait(page,'document.querySelector("#dashboard-session-label").textContent.startsWith("Local session")')
                     assert page.evaluate('localStorage.length')==0
                     assert not result['page_errors'],result
                     assert not result['blocked_requests'],result

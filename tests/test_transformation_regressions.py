@@ -57,17 +57,18 @@ def test_session_expiration_rotation_and_logout(client,monkeypatch,capsys):
     monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()+100)
     old=web.app.state.auth_token
     result=client.post('/api/session/rotate');assert result.status_code==200
-    new=result.json()['token'];assert new!=old
+    assert result.json().get('token') is None and result.json()['status']=='rotated'
+    assert 'httponly' in result.headers['set-cookie'].lower()
     assert client.get('/api/settings').status_code==401
-    client.headers['Authorization']='Bearer '+new
+    client.headers.pop('Authorization')
     assert client.get('/api/settings').status_code==200
     monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()-1)
     assert client.get('/api/settings').status_code==401
     monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()+100)
     assert client.post('/api/session/logout').status_code==200
     assert client.get('/api/settings').status_code==401
-    # Do not persist the terminal reconnect token in any evidence.
-    assert 'after logout' in capsys.readouterr().out
+    # Rotation/logout no longer disclose replacement tokens in server output.
+    assert 'after logout' not in capsys.readouterr().out
 
 
 def test_isolated_worker_tree_measurement_enforces_bounded_no_follow_inventory(tmp_path):

@@ -133,7 +133,7 @@
   }
 
   let uploading = false;
-  const connected = () => typeof accessToken === 'string' && Boolean(accessToken);
+  const connected = () => Boolean(localSessionActive);
 
   function updateUploadControls() {
     const disabled = uploading || !connected();

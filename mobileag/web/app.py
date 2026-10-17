@@ -31,12 +31,9 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(application):
-    # Direct uvicorn launches must also announce the local access mechanism.
+    # Browser sessions are issued as same-origin HttpOnly cookies; never print them.
     if not getattr(application.state,'token_announced',False):
-        if os.environ.get('MOBILEAG_API_TOKEN'):
-            print('MobileAg uses configured MOBILEAG_API_TOKEN; enter that local access key, not a GitHub/app/API credential.',flush=True)
-        else:
-            print('Session access token (paste into dashboard): '+application.state.auth_token,flush=True)
+        print('Browser access uses a local HttpOnly session cookie; no token entry is required.', flush=True)
         application.state.token_announced=True
     await recover_interrupted_jobs()
     automation_service().store().recover()
@@ -255,7 +252,13 @@ async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) ->
     try:
         try:
             await websocket.accept()
-            auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            from mobileag.web.security import browser_session_cookie
+            websocket_headers = getattr(websocket, 'headers', {})
+            cookie_token = browser_session_cookie({'cookie': websocket_headers.get('cookie', '')})
+            if cookie_token and authorized(cookie_token, app.state.auth_token):
+                auth = {'token': cookie_token}
+            else:
+                auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
             if (time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict)
                     or not authorized(auth.get("token"), app.state.auth_token)):
                 await websocket.close(code=1008)
@@ -1106,24 +1109,26 @@ async def save_scope(value: dict):
 
 
 @app.post("/api/session/rotate")
-async def rotate_session():
+async def rotate_session(response: Response, request: Request):
     app.state.auth_token = secrets.token_urlsafe(32)
     app.state.session_deadline = time.monotonic()+8*3600
     for ws in list(manager.active_connections):
         await ws.close(code=1008)
         manager.disconnect(ws)
-    return {'token':app.state.auth_token,'expires_in':8*3600}
+    response.set_cookie('mobileag_session', app.state.auth_token, max_age=8*3600, path='/',
+                        httponly=True, secure=request.url.scheme == 'https', samesite='strict')
+    return {'status':'rotated','expires_in':8*3600}
 
 
 @app.post("/api/session/logout")
-async def logout_session():
+async def logout_session(response: Response):
     app.state.auth_token = secrets.token_urlsafe(32)
     app.state.session_deadline = time.monotonic()+8*3600
     for ws in list(manager.active_connections):
         await ws.close(code=1008)
         manager.disconnect(ws)
-    print('MobileAg new local session token (after logout): '+app.state.auth_token, flush=True)
-    return {'status':'logged_out','reconnect':'Use the new token displayed in the server terminal'}
+    response.delete_cookie('mobileag_session', path='/', httponly=True, samesite='strict')
+    return {'status':'logged_out','reconnect':'Reload the dashboard to start a new local browser session'}
 
 
 @app.get("/api/scans/{scan_id}/retention")
@@ -2385,10 +2390,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     print(f"=======================================================\n")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
-    if not os.environ.get("MOBILEAG_API_TOKEN"):
-        print(f"Session access token (paste into dashboard): {app.state.auth_token}")
-    else:
-        print("Using configured MOBILEAG_API_TOKEN; enter that local workbench access key.")
+    print("Browser access uses an HttpOnly, same-site local session cookie; no token entry is required.")
     app.state.token_announced=True
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 

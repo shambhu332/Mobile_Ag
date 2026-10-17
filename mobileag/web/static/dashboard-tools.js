@@ -3,31 +3,27 @@
   const make=(tag,text,parent)=>{const el=document.createElement(tag);el.textContent=text||'';parent?.append(el);return el;};
   const button=(text,parent,run)=>{const el=make('button',text,parent);el.type='button';el.addEventListener('click',run);return el;};
   const toolbar=document.getElementById('workspace-tools');
-  let connected=Boolean(accessToken), generation=0, pending=false, capabilities=null, previousFocus=null, tourIndex=-1;
+  let connected=Boolean(localSessionActive), generation=0, pending=false, capabilities=null, previousFocus=null, tourIndex=-1;
   const opener=button('',toolbar,open);opener.id='dashboard-tools-open';opener.setAttribute('aria-haspopup','dialog');opener.setAttribute('aria-controls','dashboard-tools-dialog');
   const badge=make('span','',opener);badge.id='dashboard-session-label';badge.setAttribute('role','status');
   const dialog=make('dialog','',document.body);dialog.id='dashboard-tools-dialog';dialog.className='ui-dialog dashboard-tools';dialog.setAttribute('aria-labelledby','dashboard-tools-title');
   const header=make('div','',dialog);header.className='dashboard-tools-header';
   const titleBlock=make('div','',header);make('p','LOCAL WORKSPACE',titleBlock).className='dashboard-eyebrow';make('h2','Session & dashboard tools',titleBlock).id='dashboard-tools-title';
   const close=button('Close',header,()=>dialog.close());close.id='dashboard-tools-close';
-  make('p','Connect once in this page, navigate your workspace, and inspect local API state. Opening this panel never starts a scan, model review or device action.',dialog);
+  make('p','This browser receives a same-origin HttpOnly session automatically. Navigation and reads never start a scan, model review or device action.',dialog);
   const grid=make('div','',dialog);grid.className='dashboard-tools-grid';
   const session=make('section','',grid);session.className='dashboard-tool-card';make('h3','01 · Session connection',session);
   const sessionState=make('p','',session);sessionState.id='dashboard-session-state';sessionState.setAttribute('role','status');sessionState.setAttribute('aria-live','polite');
-  make('p','Your token stays in page memory. No URL tokens, cookies, remembered passwords or saved browser profile. The server still enforces expiry and authorization.',session);
+  make('p','The session cookie is HttpOnly and SameSite=Strict; page scripts cannot read it. API authorization and server-side expiry remain enforced.',session);
   const sessionActions=make('div','',session);sessionActions.className='dashboard-tool-actions';
-  const connect=button('Connect / replace token',sessionActions,()=>{dialog.close();showConnectionForm();});connect.id='dashboard-connect';
   const verify=button('Check connection',sessionActions,async()=>{
     const current=generation;verify.disabled=true;
     try{await(await fetch('/api/status')).json();if(current===generation)sessionState.textContent='Connection verified now. This did not start testing.';}
-    catch(error){if(current===generation)sessionState.textContent='Connection unavailable. Reconnect with a current session token.';}
+    catch(error){if(current===generation)sessionState.textContent='Local session unavailable. Reload the dashboard.';}
     finally{verify.disabled=!connected;}
   });verify.id='dashboard-verify';
-  const disconnect=button('Disconnect this page',sessionActions,()=>{
-    accessToken='';if(wsConnection)wsConnection.close();
-    window.dispatchEvent(new Event('workspace-session-invalidated'));
-  });disconnect.id='dashboard-disconnect';
-  make('p','Page disconnect does not cancel running jobs or rotate the server key. Use Configuration → Log out to revoke the server session.',session).className='dashboard-note';
+  button('Reload dashboard session',sessionActions,()=>window.location.reload());
+  make('p','The browser cookie expires after eight hours. Restart the server to invalidate all browser sessions; closing a tab alone does not revoke it.',session).className='dashboard-note';
   const nav=make('section','',grid);nav.className='dashboard-tool-card';make('h3','02 · Navigate without execution',nav);
   make('p','Open a section or follow a five-step review tour. These controls never select devices, approve scope, or press execution buttons.',nav);
   const sections=[['overview','Overview'],['assessment','Start Assessment'],['surface','Attack Surface'],['findings','Findings & Evidence'],['scans','Scan History'],['settings','Configuration'],['dast','Device Diagnostics'],['taint','Taint Dataflow'],['api','API Review'],['automation','Navigation Review'],['agents','Analyzer Capabilities']];
@@ -82,9 +78,9 @@
     catch(error){if(current===generation){capabilities=null;readState.textContent='Dashboard tools unavailable. Reconnect and reopen this panel.';update();}}
   }
   function update(){
-    badge.textContent=(connected?'Connected':'Disconnected')+' · Dashboard tools';opener.dataset.connected=String(connected);
-    sessionState.textContent=connected?'Connected in this page; token is not displayed or saved.':'Disconnected. A current token is required for dashboard reads.';
-    verify.disabled=!connected;disconnect.disabled=!connected;startTour.disabled=!connected;navButtons.forEach(b=>b.disabled=!connected);
+    badge.textContent=(connected?'Local session':'Disconnected')+' · Dashboard tools';opener.dataset.connected=String(connected);
+    sessionState.textContent=connected?'Local browser session active; credential is HttpOnly and not exposed to page scripts.':'Local session unavailable. Reload the dashboard.';
+    verify.disabled=!connected;startTour.disabled=!connected;navButtons.forEach(b=>b.disabled=!connected);
     availability.textContent=!connected?'Disconnected; no server-side tool authority.':!capabilities?'Tool availability not loaded; reopen this panel to check.':!capabilities.local_socket_available?'Unavailable for this server binding; the workbench requires a loopback-capable local socket.':'Local HTTP client available · '+(capabilities.curl_installed?'curl installed (not a health check)':'curl not installed; use HTTP client')+' · redirects blocked.';
     run.disabled=!connected||pending||!capabilities?.local_socket_available;endpoint.disabled=pending;transport.disabled=pending;clear.disabled=pending;copy.disabled=pending;
     curlOption.disabled=!capabilities?.curl_installed;if(curlOption.disabled&&transport.value==='curl')transport.value='httpx';
@@ -92,7 +88,7 @@
   }
   function open(){if(document.querySelector('dialog[open]'))return;previousFocus=document.activeElement;dialog.showModal();close.focus();if(connected)loadCapabilities();update();}
   dialog.addEventListener('close',()=>{if(!document.querySelector('dialog[open]'))previousFocus?.focus();});
-  window.addEventListener('workspace-session-connected',()=>{generation++;connected=Boolean(accessToken);pending=false;capabilities=null;output.textContent='No endpoint read yet.';readState.textContent='Current session connected. No request sent.';update();if(dialog.open)loadCapabilities();});
+  window.addEventListener('workspace-session-connected',()=>{generation++;connected=Boolean(localSessionActive);pending=false;capabilities=null;output.textContent='No endpoint read yet.';readState.textContent='Current local session connected. No request sent.';update();if(dialog.open)loadCapabilities();});
   window.addEventListener('workspace-session-invalidated',()=>{generation++;connected=false;pending=false;capabilities=null;output.textContent='Result cleared after disconnect.';readState.textContent='Session disconnected; no cached response is retained.';tourIndex=-1;tour.hidden=true;update();if(dialog.open)dialog.close();});
   update();
 })();

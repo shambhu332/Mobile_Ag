@@ -95,7 +95,8 @@ def test_browser_script_boundary_and_packaged_assets():
     assert r.headers['x-frame-options']=='DENY'
     assert anon.get('/static/dashboard.js').status_code==200
     assert anon.get('/static/theme.js').status_code==200
-    assert anon.get('/api/scans').status_code==401
+    assert anon.get('/api/scans').status_code==200  # Root bootstrapped the HttpOnly browser session.
+    assert TestClient(web.app).get('/api/scans').status_code==401  # No root bootstrap or bearer key.
 
 
 @pytest.mark.asyncio

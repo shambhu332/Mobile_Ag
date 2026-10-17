@@ -136,8 +136,6 @@ def run_browser(args, url, out, result, wait_condition):
         page.emulate_media(reduced_motion='reduce')
         try:
             page.goto(url, wait_until='domcontentloaded', timeout=90000)
-            page.locator('#session-token').fill('synthetic-local-only')
-            page.locator('#session-token').press('Enter')
             wait_condition(page, 'currentScan?.scan_id === "scan_synthetic"')
             wait_condition(page, 'document.querySelector("#auto-ready-status").textContent.startsWith("Checked ")')
             page.locator('#advanced-tools').evaluate('(element) => element.open = true')
@@ -229,9 +227,7 @@ def run_browser(args, url, out, result, wait_condition):
             assert all(not item['a11y'] for item in result['screens'].values()), result['screens']
             result['passed'] = True
         except Exception:
-            # The connection form may contain a token; never screenshot it.
-            if not page.locator('#session-connect').evaluate('(element) => element.open'):
-                page.screenshot(path=str(out / 'failure.png'))
+            page.screenshot(path=str(out / 'failure.png'))
             raise
         finally:
             context.close()

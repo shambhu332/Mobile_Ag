@@ -144,15 +144,9 @@ def main():
                     page.on('dialog',lambda d:d.accept('synthetic-local-only') if d.type=='prompt' else d.dismiss())
                     page.emulate_media(reduced_motion='reduce')
                     page.goto(url,wait_until='domcontentloaded',timeout=90000)
-                    page.locator('#session-token').wait_for(state='visible')
-                    keyboard_initial_focus=page.locator('#session-token').evaluate('(e) => e === document.activeElement')
-                    page.keyboard.press('Tab')
-                    keyboard_submit_focus=page.locator('#session-connect button').evaluate('(e) => e === document.activeElement')
-                    page.locator('#session-token').fill('invalid-synthetic-token')
-                    page.locator('#session-connect button').click()
-                    page.locator('#session-connect [role=alert]').wait_for(state='visible')
-                    page.locator('#session-token').fill('synthetic-local-only')
-                    page.locator('#session-token').press('Enter')
+                    assert page.locator('#session-token').count()==0
+                    assert page.evaluate("document.cookie.includes('mobileag_session')") is False
+                    assert page.evaluate("document.querySelector('#session-connect')") is None
                     wait_condition(page,'typeof currentScan !== "undefined" && currentScan && currentScan.findings.length === 1')
                     page.evaluate('handleGraphNodeClick({nodes:["scan::synthetic-finding"]})')
                     assert page.evaluate('selectedFindingId')=='synthetic-finding'
@@ -235,7 +229,7 @@ def main():
                         page.locator('#poc-pane-'+pane+' button').first.click()
                         copied[pane]=page.evaluate('navigator.clipboard.readText()')==expected
                     page.locator('#subtab-btn-proof').click();proof=page.locator('#poc-pane-proof').inner_text()
-                    result={'keyboard_connection':{'initial_token_focus':keyboard_initial_focus,'tab_to_submit':keyboard_submit_focus,'enter_submits':not page.locator('#session-connect').evaluate('(e) => e.open')}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
+                    result={'automatic_local_session':{'token_prompt_absent':page.locator('#session-token').count()==0,'browser_cookie_httponly':page.evaluate("document.cookie.includes('mobileag_session')") is False}, 'reduced_motion_media':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), 'browser':browser.version,'source_to_finding':'Real SecretScanner + synthetic Java; not compiled APK/decompiler proof',
                             'poc_generation_is_explicit':poc_generation_is_explicit,
                             'xss_marker_executions':page.evaluate('window.auditXssCount'),'exact_clipboard_copies':copied,
                             'proof_text':proof,'finding_count':page.locator('#kpi-total').inner_text(),'masvs_coverage_view_present':page.locator('#masvs-canvas').count()==1 and page.locator('#masvs-summary-score').count()==1,
@@ -718,7 +712,7 @@ def main():
                     result['a11y_status']='passed' if args.axe else 'not_run'
                     page.screenshot(path=str(out/'fixed-320px.png'))
                     (out/'browser-results.json').write_text(json.dumps(result,indent=2))
-                    assert all(result['keyboard_connection'].values()) and result['reduced_motion_media']
+                    assert all(result['automatic_local_session'].values()) and result['reduced_motion_media']
                     assert result['xss_marker_executions']==result['csp_control_marker_executions']==0
                     assert all(copied.values()) and result['hostile_title_kept_as_text']
                     assert result['inline_handlers']==result['inline_scripts']==0

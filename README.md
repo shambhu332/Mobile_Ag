@@ -160,7 +160,7 @@ python -m pip install -e '.[test]'
 python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-Open the local URL printed by the CLI and authenticate with the session token. Unless `MOBILEAG_API_TOKEN` is configured, the server generates a temporary token. Keep it secret; do not place it in URLs, screenshots, reports or source control. Use one local operator and one loopback worker; remote/multi-user hosting is unsupported.
+Open the local URL printed by the CLI. The browser receives an automatic same-origin `HttpOnly; SameSite=Strict` session cookie; no session token is shown in the terminal, requested in the UI, or exposed to page JavaScript. API authorization and the eight-hour server-side session deadline remain enforced. `MOBILEAG_API_TOKEN` is optional for programmatic bearer clients, not needed for the browser. Use one local operator and one loopback worker; remote/multi-user hosting is unsupported.
 
 Data is stored under the current working directory by default, or `MOBILEAG_DATA_DIR` when configured. Preserve original artifacts and user data; do not place secrets in test fixtures.
 
@@ -296,7 +296,7 @@ An empty dynamic scope means static-only. Private/local network targets addition
 
 ### Local deployment assumptions
 
-The dashboard is designed for a loopback, single-user research lab. It is not a multi-tenant security boundary. Keep it bound to `127.0.0.1`, protect the host and data directory, use a strong secret where configured, and do not expose it through a public reverse proxy. Browser hiding/disabled controls are not authorization; server policy and network gates are authoritative.
+The dashboard is designed for a loopback, single-user research lab. It is not a multi-tenant security boundary. Keep it bound to `127.0.0.1`, protect the host and data directory, use a strong secret where configured, and do not expose it through a public reverse proxy. The browser session cookie is HttpOnly/SameSite and scoped to the local origin; CLI/API clients may use the optional bearer key. Browser hiding/disabled controls are not authorization; server policy and network gates are authoritative.
 
 ### Example environment
 
@@ -305,7 +305,7 @@ Start from `.env.example`; do not commit `.env` or credentials. A minimal offlin
 ```dotenv
 OFFLINE=true
 MOBILEAG_DATA_DIR=/path/to/private/mobileag-data
-MOBILEAG_API_TOKEN=replace-with-a-long-random-local-session-secret
+MOBILEAG_API_TOKEN=replace-with-a-long-random-programmatic-api-secret
 MOBILEAG_PROXY_TOKEN=replace-with-a-separate-random-proxy-secret
 MOBILEAG_ALLOWED_DEVICES=emulator-5554
 MOBILEAG_ALLOWED_ORIGINS=https://api.example.test

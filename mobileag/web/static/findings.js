@@ -191,6 +191,39 @@
       }
     }
 
+    async function browseSourceFiles() {
+      const input = document.getElementById('ast-source-search-query');
+      const status = document.getElementById('ast-source-status');
+      const view = document.getElementById('ast-source-search-results');
+      if (!input || !status || !view || !currentScan?.scan_id) return;
+      const query = input.value.trim();
+      status.textContent = 'Listing bounded decompiler files…';
+      view.replaceChildren();
+      try {
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/files${query ? `?q=${encodeURIComponent(query)}` : ''}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'File inventory is unavailable.');
+        for (const path of result.files || []) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'block w-full text-left px-2 py-1 rounded hover:bg-slate-800 text-sky-300 break-all';
+          button.textContent = path;
+          button.addEventListener('click', () => openFullSourceContext({ file_path: path }));
+          view.append(button);
+        }
+        status.textContent = `${result.file_count} file(s) · ${result.entries_examined} entries · ${result.coverage}${result.truncated ? ' (inventory limit reached)' : ''}`;
+        if (!result.file_count) {
+          const empty = document.createElement('span');
+          empty.className = 'text-slate-500';
+          empty.textContent = 'No matching text files.';
+          view.append(empty);
+        }
+      } catch (error) {
+        status.textContent = String(error?.message || 'File inventory is unavailable.').slice(0, 240);
+      }
+    }
+
     function renderMarkdownSimple(md) {
       if (!md) return '';
       let html = escapeHtml(md);
@@ -338,6 +371,7 @@
             <label for="ast-source-search-query" class="sr-only">Search decompiled source</label>
             <input id="ast-source-search-query" maxlength="120" placeholder="Literal search in decompiled text" class="min-w-0 flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-[11px] text-slate-200" />
             <button ${bindAction('click', runSourceSearch)} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono border border-slate-700">Search</button>
+            <button ${bindAction('click', browseSourceFiles)} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono border border-slate-700">Browse files</button>
           </div>
           <div id="ast-source-search-results" class="max-h-36 overflow-auto font-mono text-[10px]" role="list" aria-label="Source search matches"></div>
           <pre id="ast-source-full" class="hidden max-h-[60vh] overflow-auto whitespace-pre-wrap break-words bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-sky-100"></pre>

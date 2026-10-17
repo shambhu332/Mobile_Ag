@@ -129,6 +129,101 @@
       window.lucide?.createIcons();
     }
 
+    async function openFullSourceContext(finding) {
+      const status = document.getElementById('ast-source-status');
+      const view = document.getElementById('ast-source-full');
+      if (!status || !view || !currentScan?.scan_id || !finding?.file_path) return;
+      status.textContent = 'Loading bounded decompiler source…';
+      view.textContent = '';
+      view.classList.remove('hidden');
+      try {
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source?path=${encodeURIComponent(finding.file_path)}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Source is unavailable for this path.');
+        // Decompiled input is untrusted. Render it only as text, never as HTML.
+        view.textContent = result.content;
+        status.textContent = `${result.path} · ${result.line_count} lines · ${result.size_bytes} bytes · bounded read`;
+        if (Number.isInteger(finding.line_number) && finding.line_number > 0) {
+          const lines = result.content.split('\n');
+          status.textContent += ` · finding line ${finding.line_number}${finding.line_number <= lines.length ? '' : ' (outside returned file)'}`;
+        }
+      } catch (error) {
+        view.classList.add('hidden');
+        status.textContent = String(error?.message || 'Source is unavailable.').slice(0, 240);
+      }
+    }
+
+    async function runSourceSearch() {
+      const input = document.getElementById('ast-source-search-query');
+      const status = document.getElementById('ast-source-status');
+      const view = document.getElementById('ast-source-search-results');
+      if (!input || !status || !view || !currentScan?.scan_id) return;
+      const query = input.value.trim();
+      if (!query || query.length > 120) {
+        status.textContent = 'Enter a literal search term (1–120 characters).';
+        return;
+      }
+      status.textContent = 'Searching bounded decompiler text…';
+      view.replaceChildren();
+      try {
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/search?q=${encodeURIComponent(query)}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Search is unavailable.');
+        for (const match of result.matches || []) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'block w-full text-left px-2 py-1 rounded hover:bg-slate-800 text-sky-300';
+          button.textContent = `${match.path}:${match.line}`;
+          button.addEventListener('click', () => openFullSourceContext({ file_path: match.path, line_number: match.line }));
+          view.append(button);
+        }
+        status.textContent = `${result.match_count} match(es) · ${result.files_examined} files · ${result.bytes_examined} bytes · ${result.coverage}${result.reasons?.length ? ` (${result.reasons.join(', ')})` : ''}`;
+        if (!result.match_count) {
+          const empty = document.createElement('span');
+          empty.className = 'text-slate-500';
+          empty.textContent = 'No matches in examined files.';
+          view.append(empty);
+        }
+      } catch (error) {
+        status.textContent = String(error?.message || 'Search is unavailable.').slice(0, 240);
+      }
+    }
+
+    async function browseSourceFiles() {
+      const input = document.getElementById('ast-source-search-query');
+      const status = document.getElementById('ast-source-status');
+      const view = document.getElementById('ast-source-search-results');
+      if (!input || !status || !view || !currentScan?.scan_id) return;
+      const query = input.value.trim();
+      status.textContent = 'Listing bounded decompiler files…';
+      view.replaceChildren();
+      try {
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/files${query ? `?q=${encodeURIComponent(query)}` : ''}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'File inventory is unavailable.');
+        for (const path of result.files || []) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'block w-full text-left px-2 py-1 rounded hover:bg-slate-800 text-sky-300 break-all';
+          button.textContent = path;
+          button.addEventListener('click', () => openFullSourceContext({ file_path: path }));
+          view.append(button);
+        }
+        status.textContent = `${result.file_count} file(s) · ${result.entries_examined} entries · ${result.coverage}${result.truncated ? ' (inventory limit reached)' : ''}`;
+        if (!result.file_count) {
+          const empty = document.createElement('span');
+          empty.className = 'text-slate-500';
+          empty.textContent = 'No matching text files.';
+          view.append(empty);
+        }
+      } catch (error) {
+        status.textContent = String(error?.message || 'File inventory is unavailable.').slice(0, 240);
+      }
+    }
+
     function renderMarkdownSimple(md) {
       if (!md) return '';
       let html = escapeHtml(md);
@@ -268,6 +363,18 @@
           <div class="bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-amber-300 overflow-x-auto whitespace-pre-wrap">
             <pre><code>${escapeHtml(f.code_snippet || 'No snippet available')}</code></pre>
           </div>
+          <div class="flex items-center gap-2">
+            <button ${bindAction('click', () => openFullSourceContext(f))} ${f.file_path ? '' : 'disabled'} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 text-[10px] font-mono border border-slate-700">Open bounded decompiled file</button>
+            <span id="ast-source-status" role="status" class="text-[10px] text-slate-400 font-mono"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <label for="ast-source-search-query" class="sr-only">Search decompiled source</label>
+            <input id="ast-source-search-query" maxlength="120" placeholder="Literal search in decompiled text" class="min-w-0 flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-[11px] text-slate-200" />
+            <button ${bindAction('click', runSourceSearch)} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono border border-slate-700">Search</button>
+            <button ${bindAction('click', browseSourceFiles)} class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono border border-slate-700">Browse files</button>
+          </div>
+          <div id="ast-source-search-results" class="max-h-36 overflow-auto font-mono text-[10px]" role="list" aria-label="Source search matches"></div>
+          <pre id="ast-source-full" class="hidden max-h-[60vh] overflow-auto whitespace-pre-wrap break-words bg-black/90 p-3 rounded-lg border border-borderSubtle font-mono text-[11px] text-sky-100"></pre>
         </div>
 
         <!-- Pane 6: Remediation Guidance -->

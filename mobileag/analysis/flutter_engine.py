@@ -143,7 +143,11 @@ class FlutterEngineAnalyzer:
         endpoints: Set[str] = set(result.api_endpoints)
         routes: Set[str] = set(result.named_routes)
         strings_scanned = 0
-        string_pattern = b"[\x20-\x7E]{" + str(min_length).encode() + b",}"
+        minimum = str(min_length).encode()
+        string_pattern = (
+            b"(?:[\x20-\x7E]\x00){" + minimum + b",}|"
+            b"[\x20-\x7E]{" + minimum + b",}"
+        )
         for match in re.finditer(string_pattern, data):
             if strings_scanned >= self.MAX_PRINTABLE_STRINGS_PER_BINARY:
                 result.candidate_output_truncated = True
@@ -152,7 +156,10 @@ class FlutterEngineAnalyzer:
             strings_scanned += 1
             raw = match.group(0)
             try:
-                s = raw.decode("utf-8", errors="ignore")
+                if len(raw) % 2 == 0 and raw[1::2] == b"\x00" * (len(raw) // 2):
+                    s = raw.decode("utf-16le", errors="strict")
+                else:
+                    s = raw.decode("utf-8", errors="ignore")
             except Exception:
                 continue
 

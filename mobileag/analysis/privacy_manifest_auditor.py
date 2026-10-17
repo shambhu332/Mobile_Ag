@@ -38,22 +38,59 @@ def _mask_java_kotlin_comments_and_strings(source: str) -> str:
             blank(index, end)
             index = end
         elif source.startswith("/*", index):
-            end = source.find("*/", index + 2)
-            end = len(source) if end < 0 else end + 2
+            end = index + 2
+            depth = 1
+            while end < len(source) and depth:
+                if source.startswith("/*", end):
+                    depth += 1
+                    end += 2
+                elif source.startswith("*/", end):
+                    depth -= 1
+                    end += 2
+                else:
+                    end += 1
             blank(index, end)
             index = end
         elif source[index] in {'"', "'"}:
             quote = source[index]
-            end = index + 1
+            delimiter = '"""' if quote == '"' and source.startswith('"""', index) else quote
+            end = index + len(delimiter)
             while end < len(source):
-                if source[end] == "\\":
+                if delimiter == quote and source[end] == "\\":
                     end += 2
-                elif source[end] == quote:
-                    end += 1
+                elif source.startswith(delimiter, end):
+                    end += len(delimiter)
                     break
                 else:
                     end += 1
             blank(index, min(end, len(source)))
+            index = end
+        else:
+            index += 1
+    return "".join(chars)
+
+
+def _mask_smali_comments(source: str) -> str:
+    """Blank Smali # comments while retaining quoted string constants."""
+    chars = list(source)
+    index = 0
+    while index < len(source):
+        if source[index] == '"':
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+        elif source[index] == "#":
+            end = index + 1
+            while end < len(source) and source[end] not in "\r\n":
+                end += 1
+            for position in range(index, end):
+                chars[position] = " "
             index = end
         else:
             index += 1
@@ -531,6 +568,14 @@ class PrivacyManifestAuditor:
         has_contacts = "android.permission.READ_CONTACTS" in permissions
 
         detected_trackers: Set[str] = set()
+        tracker_patterns = [
+            (re.compile(
+                rf"(?<![A-Za-z0-9_$.])(?:L)?"
+                rf"{re.escape(package).replace(r'\.', r'[./]')}"
+                rf"(?=[./]|[^A-Za-z0-9_$]|$)"
+            ), description)
+            for package, description in self.THIRD_PARTY_TRACKING_SDKS.items()
+        ]
         if path is not None and path.is_dir() and not path.is_symlink():
             coverage["source_tree"] = "complete"
             entries = 0
@@ -563,11 +608,11 @@ class PrivacyManifestAuditor:
                     total_bytes += len(raw)
                     coverage["bytes_read"] = total_bytes
                     coverage["files_read"] += 1
-                    text = _mask_java_kotlin_comments_and_strings(
-                        raw.decode("utf-8", errors="ignore")
-                    )
-                    for package, description in self.THIRD_PARTY_TRACKING_SDKS.items():
-                        if package in text:
+                    decoded = raw.decode("utf-8", errors="ignore")
+                    text = (_mask_smali_comments(decoded) if candidate.suffix.lower() == ".smali"
+                            else _mask_java_kotlin_comments_and_strings(decoded))
+                    for pattern, description in tracker_patterns:
+                        if pattern.search(text):
                             detected_trackers.add(description)
                 except OSError:
                     coverage["errors"].append("source_read_error")

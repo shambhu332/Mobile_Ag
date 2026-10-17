@@ -1167,7 +1167,7 @@ def test_android_data_safety_ignores_sdk_names_in_java_kotlin_comments_and_liter
         source = Path(tmp_dir) / "App.kt"
         source.write_text(
             '// com.google.firebase.analytics.FirebaseAnalytics\n'
-            '/* com.facebook.android */\n'
+            '/* outer /* com.facebook.android */ still hidden */\n'
             'val example = "com.google.firebase.analytics.FirebaseAnalytics"\n',
             encoding="utf-8",
         )
@@ -1177,6 +1177,73 @@ def test_android_data_safety_ignores_sdk_names_in_java_kotlin_comments_and_liter
         assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
             manifest, tmp_dir,
         ) == []
+
+
+def test_android_data_safety_ignores_kotlin_raw_string_sdk_lookalikes():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.kt"
+        source.write_text(
+            'val example = """\n'
+            '  com.google.firebase.analytics.FirebaseAnalytics\n'
+            '  com.facebook.android\n'
+            '"""\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        ) == []
+
+
+def test_android_data_safety_requires_sdk_package_boundaries():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "App.java"
+        source.write_text(
+            "import notcom.google.firebase.analytics.FirebaseAnalytics;\n"
+            "import com.google.firebase.analyticsish.CustomAnalytics;\n",
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+        assert PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        ) == []
+
+        source.write_text(
+            "import com.google.firebase.analytics.FirebaseAnalytics;\n",
+            encoding="utf-8",
+        )
+        findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        )
+        assert len(findings) == 1
+        assert findings[0].metadata["trackers"] == ["Google Firebase Analytics"]
+
+
+def test_android_data_safety_scans_smali_descriptors_and_constants_not_comments():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        source = Path(tmp_dir) / "Analytics.smali"
+        source.write_text(
+            "# com.facebook.android in a comment is not a code marker\n"
+            ".class public Lcom/google/firebase/analytics/FirebaseAnalytics;\n"
+            '.method public test()V\n    const-string v0, "com.adjust.sdk"\n.end method\n',
+            encoding="utf-8",
+        )
+        manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+        </manifest>'''
+
+        findings = PrivacyManifestAuditor().audit_android_data_safety_discrepancies(
+            manifest, tmp_dir,
+        )
+
+    assert len(findings) == 1
+    assert findings[0].metadata["trackers"] == [
+        "Adjust Attribution SDK", "Google Firebase Analytics",
+    ]
 
 
 def test_android_data_safety_ignores_nested_permission_examples_and_non_manifest_roots():

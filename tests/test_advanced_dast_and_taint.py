@@ -344,6 +344,7 @@ async def test_deeplink_fuzzer_runtime_fuzz():
     fuzzer = DeepLinkFuzzer(adb=mock_adb)
     results, findings = await fuzzer.fuzz_deep_links(
         "emulator-5554", "com.test.app", ["testapp://router"], guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
     assert len(results) >= 4
     assert len(findings) >= 1
@@ -361,6 +362,7 @@ async def test_deeplink_fuzzer_requires_scope_guard_before_device_access():
     with pytest.raises(PermissionError, match="scope guard is required"):
         await fuzzer.exercise_deep_link(
             "synthetic-serial", "com.example.fixture", "fixture://canary",
+            synthetic_data_confirmed=True,
         )
 
     mock_adb.get_logcat_dump.assert_not_awaited()
@@ -1316,15 +1318,32 @@ def test_web_deeplinks_endpoint(client):
             [{"scheme_uri": "testapp://", "status_code": 0}],
             [],
         )
+        rejected = client.post("/api/dast/deeplinks", json={
+            "serial": "emulator-5554", "package_name": "com.test.app",
+            "deep_links": ["testapp://"],
+        })
+        assert rejected.status_code == 403
+        mock_fuzz.assert_not_called()
         response = client.post("/api/dast/deeplinks", json={
             "serial": "emulator-5554",
             "package_name": "com.test.app",
             "deep_links": ["testapp://"],
+            "synthetic_data_confirmed": True,
         })
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
         assert len(data["results"]) == 1
+
+
+def test_web_deeplink_dispatch_requires_synthetic_data_confirmation(client):
+    with patch("mobileag.web.app.intent_fuzzer.exercise_component") as dispatch:
+        response = client.post("/api/dast/deeplink", json={
+            "serial": "emulator-5554", "package_name": "com.test.app",
+            "uri": "testapp://synthetic",
+        })
+        assert response.status_code == 403
+        dispatch.assert_not_awaited()
 
 
 def test_web_memory_endpoint(client):

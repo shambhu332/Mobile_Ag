@@ -47,6 +47,7 @@ async def test_link_diagnostics_do_not_invent_proof(monkeypatch,scenario):
     monkeypatch.setattr(fuzzer,'generate_fuzz_payloads',lambda *args:[{'uri':'fixture://route?token=synthetic-private','category':'fixture','cwe':'CWE-755'}])
     rows,findings=await fuzzer.fuzz_deep_links(
         'synthetic-serial','org.example.fixture',['fixture://route?token=synthetic-private'],guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
     assert rows[0]['proof_state']=='not_proven' and rows[0]['attacker_context']=='adb_shell_diagnostic'
     assert 'synthetic-private' not in str(rows)+str(findings)
@@ -66,7 +67,22 @@ async def test_revocation_during_baseline_blocks_launch(monkeypatch):
     adb.get_logcat_dump.side_effect=revoke
     def guard():
         if not valid:raise PermissionError('synthetic revoked')
-    with pytest.raises(PermissionError):await DeepLinkFuzzer(adb).exercise_deep_link('synthetic','org.example.fixture','fixture://route',guard=guard)
+    with pytest.raises(PermissionError):await DeepLinkFuzzer(adb).exercise_deep_link(
+        'synthetic','org.example.fixture','fixture://route',guard=guard,
+        synthetic_data_confirmed=True,
+    )
+    adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_synthetic_data_confirmation_blocks_before_device_access():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    with pytest.raises(PermissionError, match="synthetic test data"):
+        await DeepLinkFuzzer(adb).exercise_deep_link(
+            "synthetic-serial", "org.example.fixture", "fixture://canary",
+            guard=lambda: None,
+        )
+    adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
 
 
@@ -80,6 +96,7 @@ async def test_explicit_false_scope_guard_blocks_before_baseline():
         await DeepLinkFuzzer(adb).exercise_deep_link(
             'synthetic-serial', 'org.example.fixture', 'fixture://route',
             guard=lambda: False,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
@@ -95,6 +112,7 @@ async def test_async_scope_guard_is_rejected_before_device_access():
     with pytest.raises(PermissionError, match="must be synchronous"):
         await DeepLinkFuzzer(adb).exercise_deep_link(
             "synthetic-serial", "org.example.fixture", "fixture://canary", guard=deny_async,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
@@ -108,6 +126,7 @@ async def test_deeplink_batch_is_fully_validated_before_device_access():
         await DeepLinkFuzzer(adb).fuzz_deep_links(
             "synthetic-serial", "org.example.fixture",
             ["fixture://valid", too_many_query_fields], guard=lambda: None,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
@@ -121,11 +140,13 @@ async def test_deeplink_direct_batch_count_and_uri_limits_fail_before_device_acc
         await fuzzer.fuzz_deep_links(
             "synthetic-serial", "org.example.fixture", ["fixture://ok"] * 31,
             guard=lambda: None,
+            synthetic_data_confirmed=True,
         )
     with pytest.raises(ValueError, match="exceeds limits"):
         await fuzzer.exercise_deep_link(
             "synthetic-serial", "org.example.fixture", "fixture://" + "x" * 8192,
             guard=lambda: None,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
@@ -149,7 +170,7 @@ async def test_scope_denial_after_baseline_blocks_deep_link_launch():
     with pytest.raises(PermissionError):
         await DeepLinkFuzzer(adb).exercise_deep_link(
             'synthetic-serial', 'org.example.fixture', 'fixture://route',
-            guard=revoke_after_baseline,
+            guard=revoke_after_baseline, synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_awaited_once()
     adb._exec_cmd.assert_not_awaited()

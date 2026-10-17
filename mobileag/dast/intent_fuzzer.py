@@ -190,6 +190,7 @@ class IntentFuzzer:
         package_name: str,
         deeplinks: list[str],
         guard=None,
+        synthetic_data_confirmed: bool = False,
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
         """Exercise deep links and custom URI schemes via DeepLinkFuzzer."""
         return await self.deeplink_fuzzer.fuzz_deep_links(
@@ -197,6 +198,7 @@ class IntentFuzzer:
             package_name=package_name,
             deep_links=deeplinks,
             guard=guard,
+            synthetic_data_confirmed=synthetic_data_confirmed,
         )
 
     async def run_full_dast_suite(

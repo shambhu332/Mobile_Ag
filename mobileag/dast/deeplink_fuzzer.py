@@ -93,6 +93,7 @@ class DeepLinkFuzzer:
         target_uri: str,
         activity_name: str = "",
         guard=None,
+        synthetic_data_confirmed: bool = False,
     ) -> tuple[int, str, list[str]]:
         """Execute a deep link intent on the device and monitor logcat output."""
 
@@ -104,6 +105,9 @@ class DeepLinkFuzzer:
                 or not isinstance(activity_name, str) or len(activity_name) > 512
                 or any(ord(char) < 0x20 or ord(char) == 0x7f for char in activity_name)):
             raise ValueError("Deep-link execution input is invalid or exceeds limits")
+
+        if synthetic_data_confirmed is not True:
+            raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
 
         self._check_scope_guard(guard)
         baseline=await self.adb.get_logcat_dump(serial,lines=100,guard=lambda:self._check_scope_guard(guard))
@@ -132,6 +136,7 @@ class DeepLinkFuzzer:
         package_name: str,
         deep_links: list[str],
         guard=None,
+        synthetic_data_confirmed: bool = False,
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
         """Execute the full deep link fuzzing matrix across discovered schemes."""
         if (not isinstance(serial, str) or not self._SERIAL_RE.fullmatch(serial)
@@ -139,6 +144,8 @@ class DeepLinkFuzzer:
                 or not isinstance(deep_links, (list, tuple))
                 or len(deep_links) > self.MAX_DEEP_LINKS):
             raise ValueError("Deep-link fuzz input is invalid or exceeds limits")
+        if synthetic_data_confirmed is not True:
+            raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
         if (any(not isinstance(uri, str) or not uri or len(uri) > self.MAX_URI_CHARS
                 for uri in deep_links)
                 or sum(len(uri) for uri in deep_links) > self.MAX_TOTAL_INPUT_CHARS):
@@ -160,7 +167,10 @@ class DeepLinkFuzzer:
                 category = item["category"]
                 cwe = item["cwe"]
 
-                code, am_out, logs = await self.exercise_deep_link(serial, package_name, test_uri,guard=guard)
+                code, am_out, logs = await self.exercise_deep_link(
+                    serial, package_name, test_uri, guard=guard,
+                    synthetic_data_confirmed=synthetic_data_confirmed,
+                )
 
                 # Check for runtime crash in logcat
                 crash_lines = attributed_crashes(logs,package_name) if code==0 else []

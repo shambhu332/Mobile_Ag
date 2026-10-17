@@ -273,13 +273,17 @@
         showToast('Specify a deep link URI', 'error');
         return;
       }
+      if (!document.getElementById('dast-synthetic-data-confirmed')?.checked) {
+        showToast('Confirm a researcher-controlled target with synthetic/test data first', 'error');
+        return;
+      }
       showToast(`Dispatching URI: ${uri}...`, 'info');
 
       try {
         const res = await fetch('/api/dast/deeplink', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dastActiveDevice, package_name:document.getElementById('dast-input-package')?.value.trim(), uri: uri }),
+          body: JSON.stringify({ serial: dastActiveDevice, package_name:document.getElementById('dast-input-package')?.value.trim(), uri: uri, synthetic_data_confirmed: true }),
         });
         const data = await res.json();
         showToast(`Deep Link dispatched (${escapeHtml(String(data.status ?? ""))})`, 'info');
@@ -467,6 +471,10 @@
 
     async function runDastFuzzSuite() {
       if (!window.confirm('Run active device fuzzing? It can launch activities and crash the scoped app. Use synthetic data only.')) return;
+      if (!document.getElementById('dast-synthetic-data-confirmed')?.checked) {
+        showToast('Confirm a researcher-controlled target with synthetic/test data first', 'error');
+        return;
+      }
       if (!dastActiveDevice) {
         showToast('Select a target device first', 'error');
         return;
@@ -501,6 +509,7 @@
           audit_storage: optStorage,
           audit_memory: optMemory,
           crawl_ui: optCrawl,
+          synthetic_data_confirmed: true,
         };
         const res = await fetch('/api/dast/fuzz', {
           method: 'POST',
@@ -645,13 +654,17 @@
         showToast('Specify a deep link URI or scheme (e.g. targetapp://)', 'error');
         return;
       }
+      if (!document.getElementById('dast-synthetic-data-confirmed')?.checked) {
+        showToast('Confirm a researcher-controlled target with synthetic/test data first', 'error');
+        return;
+      }
       showToast(`Running Deep Link Fuzzing Matrix on ${uri}...`, 'info');
 
       try {
         const res = await fetch('/api/dast/deeplinks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, deep_links: [uri] }),
+          body: JSON.stringify({ serial: dastActiveDevice, package_name: pkg, deep_links: [uri], synthetic_data_confirmed: true }),
         });
         const data = await res.json();
         const results = data.results || [];

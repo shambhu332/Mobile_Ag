@@ -5,6 +5,9 @@
     let dastDevices = [];
     let dastFindings = [];
     let dastRawLogs = [];
+    let liveLogTimer = null;
+    let liveLogRequest = false;
+    let liveLogGeneration = 0;
 
     async function loadDastView() {
       if (currentScan && currentScan.package_name) {
@@ -22,7 +25,10 @@
         const data = inventory || await (await fetch('/api/dast/devices')).json();
         if (data.inventory_state === 'unknown') throw new Error('Inventory unavailable');
         dastDevices = data.devices || [];
-        if (!dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device')) dastActiveDevice = null;
+        if (!dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device')) {
+          if (dastActiveDevice) stopLiveLogcat('Device authorization/inventory changed; monitoring stopped.');
+          dastActiveDevice = null;
+        }
 
         // Update badge and indicator
         const badge = document.getElementById('nav-dast-device-badge');
@@ -147,6 +153,7 @@
         showToast('Select an explicitly authorized device.', 'error');
         return;
       }
+      if (dastActiveDevice && dastActiveDevice !== serial) stopLiveLogcat('Device changed; live monitoring stopped.');
       dastActiveDevice = serial;
       const select = document.getElementById('header-device-select');
       if (select) select.value = serial;
@@ -293,17 +300,21 @@
       }
     }
 
-    async function fetchDastLogcat() {
+    async function fetchDastLogcat({live = false, quiet = false} = {}) {
       if (!dastActiveDevice) {
-        showToast('Select a device first', 'error');
+        if (!quiet) showToast('Select a device first', 'error');
         return;
       }
       const pkg = document.getElementById('dast-input-package')?.value.trim() || '';
-      showToast(`Dumping logcat from ${dastActiveDevice}...`, 'info');
+      if (!pkg) { if (!quiet) showToast('Enter the exact package name before collecting logs.', 'error'); return; }
+      const generation = liveLogGeneration;
+      if (!quiet) showToast(`Reading target-process logcat from ${dastActiveDevice}...`, 'info');
 
       try {
-        const res = await fetch(`/api/dast/logcat?serial=${encodeURIComponent(dastActiveDevice)}&package_name=${encodeURIComponent(pkg)}&lines=250`);
+        const res = await fetch(`/api/dast/logcat?serial=${encodeURIComponent(dastActiveDevice)}&package_name=${encodeURIComponent(pkg)}&lines=${live ? 120 : 250}`);
         const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Logcat collection denied or unavailable.');
+        if (live && generation !== liveLogGeneration) return;
         dastRawLogs = data.lines || [];
 
         renderDastTerminal(dastRawLogs);
@@ -319,13 +330,56 @@
             }
           });
           renderDastFindings();
-          showToast(`Logcat Audit: ${escapeHtml(String(data.findings.length ?? ""))} security alerts found!`, 'error');
+          if (!quiet) showToast(`Logcat review: ${data.findings.length} unverified candidate(s).`, 'info');
         } else {
-          showToast(`Retrieved ${dastRawLogs.length} logcat lines`, 'success');
+          if (!quiet) showToast(`Retrieved ${dastRawLogs.length} target-process log lines`, 'success');
         }
       } catch (e) {
-        showToast(`Logcat error: ${e}`, 'error');
+        if (live) stopLiveLogcat(`Live monitoring stopped: ${String(e.message || e).slice(0, 140)}`);
+        else if (!quiet) showToast(`Logcat error: ${e}`, 'error');
       }
+    }
+
+    function setLiveLogState(active, message = '') {
+      const start = document.getElementById('dast-live-log-start');
+      const stop = document.getElementById('dast-live-log-stop');
+      const counter = document.getElementById('dast-log-counter');
+      if (start) start.disabled = active;
+      if (stop) stop.disabled = !active;
+      if (counter) counter.textContent = `${dastRawLogs.length} lines · ${message || (active ? 'LIVE · 2s polling' : 'idle')}`;
+    }
+
+    function startLiveLogcat() {
+      const pkg = document.getElementById('dast-input-package')?.value.trim() || '';
+      if (!dastActiveDevice || !pkg) { showToast('Select an approved device and enter the exact package before starting live logcat.', 'error'); return; }
+      if (liveLogTimer) return;
+      const approved = dastDevices.some(d => d.serial === dastActiveDevice && d.allowed && d.status === 'device');
+      if (!approved) { showToast('Selected device is no longer in the approved online inventory.', 'error'); return; }
+      const startedDevice = dastActiveDevice;
+      const startedPackage = pkg;
+      setLiveLogState(true);
+      showToast('Live logcat started. Polling only the selected package process; stop to end.', 'info');
+      const tick = async () => {
+        if (liveLogRequest || !liveLogTimer || dastActiveDevice !== startedDevice ||
+            (document.getElementById('dast-input-package')?.value.trim() || '') !== startedPackage) {
+          if (liveLogTimer && (dastActiveDevice !== startedDevice ||
+              (document.getElementById('dast-input-package')?.value.trim() || '') !== startedPackage))
+            stopLiveLogcat('Target changed; live monitoring stopped.');
+          return;
+        }
+        liveLogRequest = true;
+        try { await fetchDastLogcat({live: true, quiet: true}); }
+        finally { liveLogRequest = false; if (liveLogTimer) setLiveLogState(true); }
+      };
+      liveLogTimer = setInterval(tick, 2000);
+      tick();
+    }
+
+    function stopLiveLogcat(message = 'Live monitoring stopped.') {
+      if (liveLogTimer) clearInterval(liveLogTimer);
+      liveLogTimer = null;
+      liveLogGeneration++;
+      setLiveLogState(false, message);
     }
 
     function renderDastTerminal(lines) {
@@ -784,4 +838,4 @@
     // =========================================================================
 
     window.addEventListener('DOMContentLoaded', updateDastControls);
-    window.addEventListener('workspace-session-invalidated', () => { dastDevices=[];dastActiveDevice=null;updateDastControls();const indicator=document.getElementById('dast-adb-indicator');if(indicator)indicator.textContent='ADB not checked — reconnect';const select=document.getElementById('header-device-select');if(select)select.replaceChildren(new Option('Reconnect session',''));const fleet=document.getElementById('dast-device-fleet-list');if(fleet)fleet.textContent='Session disconnected; reconnect and refresh inventory.';const count=document.getElementById('dast-fleet-count');if(count)count.textContent='Not checked';const badge=document.getElementById('nav-dast-device-badge');if(badge)badge.textContent='Unknown';});
+    window.addEventListener('workspace-session-invalidated', () => { stopLiveLogcat('Session disconnected; live monitoring stopped.');dastDevices=[];dastActiveDevice=null;updateDastControls();const indicator=document.getElementById('dast-adb-indicator');if(indicator)indicator.textContent='ADB not checked — reconnect';const select=document.getElementById('header-device-select');if(select)select.replaceChildren(new Option('Reconnect session',''));const fleet=document.getElementById('dast-device-fleet-list');if(fleet)fleet.textContent='Session disconnected; reconnect and refresh inventory.';const count=document.getElementById('dast-fleet-count');if(count)count.textContent='Not checked';const badge=document.getElementById('nav-dast-device-badge');if(badge)badge.textContent='Unknown';});

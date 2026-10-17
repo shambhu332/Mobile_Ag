@@ -20,8 +20,8 @@
 
     // Initialize on page load
     window.addEventListener('DOMContentLoaded', async () => {
-      showConnectionForm();
       await connectionReady;
+      if (!localSessionActive) return;
       loadInitialScan();
       loadPrivacyPolicy();
       checkGraphStatus();

@@ -1,4 +1,4 @@
-/* Local-only workflow extensions. Token is owned by dashboard.js, never persisted. */
+/* Local-only workflow extensions. Browser session credentials stay HttpOnly. */
 (() => {
   const make = (tag, text, parent) => { const node=document.createElement(tag); if(text) node.textContent=text; if(parent) parent.append(node); return node; };
   const button = (text,parent,run) => { const b=make('button',text,parent); b.type='button'; b.addEventListener('click',async()=>{ b.disabled=true; try {await run();} catch(e){notice(e.message,true);} finally {b.disabled=false;} });return b; };
@@ -9,8 +9,7 @@
   make('h2','Session and authorized scope',panel);
   make('p','Scope is enforced by the server. UI allowlists can only narrow environment permissions. Root, shell, install and Frida approvals are device-wide, not package-isolated. Web static jobs always run offline.',panel);
   const actions=make('div','',panel); actions.className='workflow-actions';
-  button('Rotate session token',actions,async()=>{const data=await (await fetch('/api/session/rotate',{method:'POST'})).json();accessToken=data.token;window.dispatchEvent(new Event('workspace-session-connected'));notice('Session rotated. Old tokens are invalid. Reconnect telemetry using the current session.');if(wsConnection)wsConnection.close();connectTelemetryWebSocket();});
-  button('Log out',actions,async()=>{await fetch('/api/session/logout',{method:'POST'});accessToken='';window.dispatchEvent(new Event('workspace-session-invalidated'));if(wsConnection)wsConnection.close();notice('Logged out. Reconnect with the new token in the server terminal.');});
+  make('p','The dashboard session is managed automatically by the local browser and is not displayed as a bearer token.',actions);
   const form=make('form','',panel);const fields={};
   for(const name of ['devices','packages','origins','methods','actions']){
     const label=make('label',name+' (comma-separated exact values)',form);const input=make('input','',label);input.id='scope-'+name;input.name=name;fields[name]=input;

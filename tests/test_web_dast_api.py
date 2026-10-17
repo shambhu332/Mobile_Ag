@@ -76,22 +76,23 @@ def test_scan_source_endpoint_reads_only_completed_decompiler_text(client, monke
     web = importlib.import_module("mobileag.web.app")
     monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
-        "scan_id": "scan_synthetic", "status": "completed",
+        "scan_id": "scan_synthetic", "status": "completed", "artifact_sha256": "a" * 64,
     }))
     source = tmp_path / "scan_synthetic" / "jadx_out" / "sources" / "com" / "demo" / "Entry.java"
     source.parent.mkdir(parents=True)
     source.write_text("class Entry { String canary = \"synthetic\"; }\n", encoding="utf-8")
 
     assert TestClient(web.app).get(
-        "/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"}
+        "/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java", "artifact_sha256": "a" * 64}
     ).status_code == 401
 
-    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"})
+    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java", "artifact_sha256": "a" * 64})
 
     assert response.status_code == 200
     assert response.json()["path"] == "jadx_out/sources/com/demo/Entry.java"
     assert "synthetic" in response.json()["content"]
-    assert client.get("/api/scans/scan_synthetic/source", params={"path": "../../etc/hosts"}).status_code == 400
+    assert client.get("/api/scans/scan_synthetic/source", params={"path": "../../etc/hosts", "artifact_sha256": "a" * 64}).status_code == 400
+    assert client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java", "artifact_sha256": "b" * 64}).status_code == 409
 
 
 def test_scan_source_endpoint_rejects_active_scans(client, monkeypatch):
@@ -101,7 +102,7 @@ def test_scan_source_endpoint_rejects_active_scans(client, monkeypatch):
     monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
         "scan_id": "scan_synthetic", "status": "running",
     }))
-    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java"})
+    response = client.get("/api/scans/scan_synthetic/source", params={"path": "com/demo/Entry.java", "artifact_sha256": "a" * 64})
     assert response.status_code == 409
 
 
@@ -111,23 +112,23 @@ def test_scan_source_inventory_and_search_endpoints(client, monkeypatch, tmp_pat
     web = importlib.import_module("mobileag.web.app")
     monkeypatch.setattr(web, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(web, "get_scan_details", AsyncMock(return_value={
-        "scan_id": "scan_synthetic", "status": "partial",
+        "scan_id": "scan_synthetic", "status": "partial", "artifact_sha256": "a" * 64,
     }))
     source = tmp_path / "scan_synthetic" / "jadx_out" / "sources" / "demo" / "Entry.java"
     source.parent.mkdir(parents=True)
     source.write_text("class Entry { String canary = \"SyntheticMarker\"; }\n", encoding="utf-8")
 
-    files = client.get("/api/scans/scan_synthetic/source/files")
+    files = client.get("/api/scans/scan_synthetic/source/files", params={"artifact_sha256": "a" * 64})
     assert files.status_code == 200
     assert files.json()["files"] == ["jadx_out/sources/demo/Entry.java"]
     assert "SyntheticMarker" not in files.text
 
-    search = client.get("/api/scans/scan_synthetic/source/search", params={"q": "syntheticmarker"})
+    search = client.get("/api/scans/scan_synthetic/source/search", params={"q": "syntheticmarker", "artifact_sha256": "a" * 64})
     assert search.status_code == 200
     assert search.json()["matches"] == [{"path": "jadx_out/sources/demo/Entry.java", "line": 1}]
     assert "SyntheticMarker" not in search.text
 
-    assert client.get("/api/scans/scan_synthetic/source/search", params={"q": "  "}).status_code == 400
+    assert client.get("/api/scans/scan_synthetic/source/search", params={"q": "  ", "artifact_sha256": "a" * 64}).status_code == 400
 
 
 def test_dast_connect_endpoint(client):

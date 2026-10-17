@@ -31,12 +31,9 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(application):
-    # Direct uvicorn launches must also announce the local access mechanism.
+    # Browser sessions are issued as same-origin HttpOnly cookies; never print them.
     if not getattr(application.state,'token_announced',False):
-        if os.environ.get('MOBILEAG_API_TOKEN'):
-            print('MobileAg uses configured MOBILEAG_API_TOKEN; enter that local access key, not a GitHub/app/API credential.',flush=True)
-        else:
-            print('Session access token (paste into dashboard): '+application.state.auth_token,flush=True)
+        print('Browser access uses a local HttpOnly session cookie; no token entry is required.', flush=True)
         application.state.token_announced=True
     await recover_interrupted_jobs()
     automation_service().store().recover()
@@ -255,7 +252,13 @@ async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) ->
     try:
         try:
             await websocket.accept()
-            auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            from mobileag.web.security import browser_session_cookie
+            websocket_headers = getattr(websocket, 'headers', {})
+            cookie_token = browser_session_cookie({'cookie': websocket_headers.get('cookie', '')})
+            if cookie_token and authorized(cookie_token, app.state.auth_token):
+                auth = {'token': cookie_token}
+            else:
+                auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
             if (time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict)
                     or not authorized(auth.get("token"), app.state.auth_token)):
                 await websocket.close(code=1008)
@@ -514,8 +517,19 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     return redact(prepare_scan(scan))
 
 
+def _require_source_artifact_binding(scan: dict[str, Any], artifact_sha256: str) -> None:
+    """Bind decompiler output to the exact immutable APK reviewed by the caller."""
+    import re
+    recorded = scan.get("artifact_sha256")
+    if (not isinstance(artifact_sha256, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", artifact_sha256)
+            or not isinstance(recorded, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", recorded)
+            or not secrets.compare_digest(artifact_sha256.lower(), recorded.lower())):
+        raise HTTPException(409, "Source artifact identity is missing or does not match this scan")
+
+
 @app.get("/api/scans/{scan_id}/source")
-async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max_length=2048)) -> dict[str, Any]:
+async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max_length=2048),
+                          artifact_sha256: str = Query(..., min_length=64, max_length=64)) -> dict[str, Any]:
     """Open bounded decompiler text for an already-completed APK scan.
 
     This is a read-only local review convenience, not an arbitrary file API.
@@ -523,41 +537,58 @@ async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max
     """
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, read_scan_source
     try:
-        return await asyncio.to_thread(read_scan_source, OUTPUT_DIR, scan_id, path)
+        result = await asyncio.to_thread(read_scan_source, OUTPUT_DIR, scan_id, path)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 413 if "1 MiB" in str(exc) else 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None
 
 
 @app.get("/api/scans/{scan_id}/source/files")
-async def get_scan_source_files(scan_id: str, q: str = Query("", max_length=120)) -> dict[str, Any]:
+async def get_scan_source_files(scan_id: str, artifact_sha256: str = Query(..., min_length=64, max_length=64),
+                                q: str = Query("", max_length=120)) -> dict[str, Any]:
     """List bounded decompiler text paths; never returns source contents."""
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, list_scan_source_files
     try:
-        return await asyncio.to_thread(list_scan_source_files, OUTPUT_DIR, scan_id, query=q)
+        result = await asyncio.to_thread(list_scan_source_files, OUTPUT_DIR, scan_id, query=q)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None
 
 
 @app.get("/api/scans/{scan_id}/source/search")
-async def search_scan_source(scan_id: str, q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
+async def search_scan_source(scan_id: str, artifact_sha256: str = Query(..., min_length=64, max_length=64),
+                             q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
     """Search decompiler text literally under strict file, byte, and time budgets."""
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, search_scan_sources
     try:
-        return await asyncio.to_thread(search_scan_sources, OUTPUT_DIR, scan_id, q)
+        result = await asyncio.to_thread(search_scan_sources, OUTPUT_DIR, scan_id, q)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None
@@ -1106,24 +1137,26 @@ async def save_scope(value: dict):
 
 
 @app.post("/api/session/rotate")
-async def rotate_session():
+async def rotate_session(response: Response, request: Request):
     app.state.auth_token = secrets.token_urlsafe(32)
     app.state.session_deadline = time.monotonic()+8*3600
     for ws in list(manager.active_connections):
         await ws.close(code=1008)
         manager.disconnect(ws)
-    return {'token':app.state.auth_token,'expires_in':8*3600}
+    response.set_cookie('mobileag_session', app.state.auth_token, max_age=8*3600, path='/',
+                        httponly=True, secure=request.url.scheme == 'https', samesite='strict')
+    return {'status':'rotated','expires_in':8*3600}
 
 
 @app.post("/api/session/logout")
-async def logout_session():
+async def logout_session(response: Response):
     app.state.auth_token = secrets.token_urlsafe(32)
     app.state.session_deadline = time.monotonic()+8*3600
     for ws in list(manager.active_connections):
         await ws.close(code=1008)
         manager.disconnect(ws)
-    print('MobileAg new local session token (after logout): '+app.state.auth_token, flush=True)
-    return {'status':'logged_out','reconnect':'Use the new token displayed in the server terminal'}
+    response.delete_cookie('mobileag_session', path='/', httponly=True, samesite='strict')
+    return {'status':'logged_out','reconnect':'Reload the dashboard to start a new local browser session'}
 
 
 @app.get("/api/scans/{scan_id}/retention")
@@ -2385,10 +2418,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     print(f"=======================================================\n")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
-    if not os.environ.get("MOBILEAG_API_TOKEN"):
-        print(f"Session access token (paste into dashboard): {app.state.auth_token}")
-    else:
-        print("Using configured MOBILEAG_API_TOKEN; enter that local workbench access key.")
+    print("Browser access uses an HttpOnly, same-site local session cookie; no token entry is required.")
     app.state.token_announced=True
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 

@@ -1,46 +1,33 @@
 /* MobileAg session-actions.js — ordered local classic-script module; shared workspace state is in workspace.js. */
 
-    // Token stays in page memory, never in a URL, cookie, localStorage or report.
-    let accessToken = '';
+    // The browser is authenticated by a same-origin HttpOnly cookie set on the
+    // dashboard document. No bearer token is exposed to JavaScript or prompted.
+    let localSessionActive = true;
     const nativeFetch = window.fetch.bind(window);
-    let resolveConnection;
-    let connectedBefore=false;
-    const connectionReady = new Promise(resolve => {resolveConnection=resolve;});
-    function showConnectionForm() {
-      let dialog = document.getElementById('session-connect');
-      if (!dialog) {
-        dialog = document.createElement('dialog');dialog.id='session-connect';dialog.className='workflow-panel';dialog.setAttribute('aria-labelledby','session-title');
-        const heading=document.createElement('h2');heading.id='session-title';heading.textContent='Connect to your local workbench';dialog.append(heading);
-        const text=document.createElement('p');text.textContent='Use the session token displayed in your server terminal. It stays in page memory only. Sessions expire after eight hours.';dialog.append(text);
-        const help=document.createElement('details');const summary=document.createElement('summary');summary.textContent='What token is this?';help.append(summary);
-        const guide=document.createElement('p');guide.textContent='This is the workbench access key, not your GitHub password, mobile-app login, or AI API key. In the terminal running this server, copy the value after “Session access token (paste into dashboard):”. If MOBILEAG_API_TOKEN is configured, use that configured value. Do not share it. A server restart usually changes the key and stops active jobs.';help.append(guide);dialog.append(help);
-        const form=document.createElement('form');const label=document.createElement('label');label.textContent='Session token';
-        const input=document.createElement('input');input.type='password';input.id='session-token';input.required=true;input.autocomplete='off';label.append(input);form.append(label);
-        const error=document.createElement('p');error.setAttribute('role','alert');form.append(error);
-        const submit=document.createElement('button');submit.textContent='Connect';submit.type='submit';form.append(submit);
-        form.addEventListener('submit',async(event)=>{event.preventDefault();submit.disabled=true;try{
-          const result=await nativeFetch('/api/status',{headers:{Authorization:'Bearer '+input.value}});
-          if(!result.ok)throw new Error('Token invalid or expired. Check the server terminal.');
-          accessToken=input.value;input.value='';dialog.close();
-          if(connectedBefore){await loadInitialScan();await loadPrivacyPolicy();if(wsConnection)wsConnection.close();connectTelemetryWebSocket();}
-          else{connectedBefore=true;resolveConnection();}
+    window.addEventListener('workspace-session-invalidated', () => { localSessionActive = false; });
+    window.addEventListener('workspace-session-connected', () => { localSessionActive = true; });
+    const connectionReady = new Promise(resolve => {
+      const initialize = async () => {
+        try {
+          const response = await nativeFetch('/api/status');
+          if (!response.ok) throw new Error('Local browser session unavailable. Reload the dashboard.');
           window.dispatchEvent(new Event('workspace-session-connected'));
-        }catch(e){error.textContent=e.message;}finally{submit.disabled=false;}});
-        dialog.append(form);document.body.append(dialog);
-      }
-      if (!dialog.open) dialog.showModal();
-      dialog.querySelector('input').focus();
-    }
+        } catch (error) {
+          localSessionActive = false;
+          window.dispatchEvent(new Event('workspace-session-invalidated'));
+          console.error('Local dashboard session unavailable:', error.message);
+        } finally { resolve(); }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, {once:true});
+      else initialize();
+    });
     window.fetch = async function(input, options = {}) {
       const url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
       const headers = new Headers(options.headers || {});
-      if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-        headers.set('Authorization', 'Bearer ' + accessToken);
-      }
       const response = await nativeFetch(input, {...options, headers});
       if (!response.ok) {
         const body = await response.clone().json().catch(() => ({}));
-        if(response.status===401){accessToken='';window.dispatchEvent(new Event('workspace-session-invalidated'));showConnectionForm();}
+        if(response.status===401){localSessionActive=false;window.dispatchEvent(new Event('workspace-session-invalidated'));}
         const error=new Error(body.detail || `Request failed (${response.status})`);error.status=response.status;throw error;
       }
       return response;
@@ -67,7 +54,7 @@
       return 'data-on' + type + '="' + id + '"';
     }
     actionCallbacks.set('static-dragleave', function(event) { handleDragLeave(event); });
-    actionCallbacks.set('static-reconnect', function() { showConnectionForm(); });
+    actionCallbacks.set('static-reconnect', function() { window.location.reload(); });
     actionCallbacks.set('static0', function(event) { switchView('surface'); });
     actionCallbacks.set('static1', function(event) { switchView('findings'); });
     actionCallbacks.set('static2', function(event) { switchView('dast'); });
@@ -117,6 +104,8 @@
     actionCallbacks.set('static48', function(event) { checkFridaServerStatus(); });
     actionCallbacks.set('static57', function(event) { filterDastTerminalLogs(); });
     actionCallbacks.set('static58', function(event) { fetchDastLogcat(); });
+    actionCallbacks.set('static61', function(event) { startLiveLogcat(); });
+    actionCallbacks.set('static62', function(event) { stopLiveLogcat(); });
     actionCallbacks.set('static60', function(event) { captureDastScreenshot(); });
     actionCallbacks.set('static61', function(event) { loadSelectedTaintSample(); });
     actionCallbacks.set('static62', function(event) { runTaintAnalysis(); });

@@ -100,9 +100,7 @@ def main() -> int:
                     errors = []
                     page.on("pageerror", lambda error: errors.append(str(error)))
                     page.goto(origin, wait_until="domcontentloaded")
-                    page.locator("#session-token").fill(token)
-                    page.get_by_role("button", name="Connect", exact=True).click()
-                    page.wait_for_timeout(250)
+                    assert page.locator("#session-token").count() == 0
                     page.locator("#nav-scans").click()
                     page.locator("#manual-test-plan summary").click()
                     wait(page, "#test-plan-scope", lambda text: "ui-current-synthetic" in text)

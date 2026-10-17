@@ -70,6 +70,19 @@ def test_logcat_auditor_crash_detection():
     assert "Crash" in findings[0].title
 
 
+def test_logcat_auditor_reports_anr_as_unverified_diagnostic_candidate():
+    auditor = LogcatAuditor()
+    lines = [
+        "10-17 12:00:00.000 1234 1234 I ActivityManager: Process: com.test.app, PID: 1234",
+        "10-17 12:00:01.000 1234 1234 E ActivityManager: ANR in com.test.app",
+    ]
+    findings = auditor.audit_lines(lines, package_name="com.test.app", process_pids=[1234])
+    assert len(findings) == 1
+    assert findings[0].status.value == "UNVERIFIED"
+    assert "ANR" in findings[0].title
+    assert "raw values" in findings[0].code_snippet
+
+
 def test_traffic_auditor_cleartext_and_query_leak():
     auditor = TrafficAuditor()
     transactions = [

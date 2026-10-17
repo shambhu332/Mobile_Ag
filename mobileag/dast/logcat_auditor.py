@@ -46,6 +46,15 @@ _CRASH_PATTERN: Final[re.Pattern[str]] = re.compile(
     re.DOTALL
 )
 
+_RUNTIME_SIGNALS: Final[list[tuple[str, re.Pattern[str], str]]] = [
+    ("Application not responding (ANR) observation", re.compile(r"(?i)\bANR in\s+"),
+     "An ANR marker attributed to the target process was observed. Confirm with a reproducible user-visible hang; this log marker alone does not establish cause."),
+    ("StrictMode violation observation", re.compile(r"(?i)StrictMode policy violation|StrictMode.*(disk|network).*violation"),
+     "A StrictMode violation was logged for the target process. Review and reproduce the operation; this is a diagnostic candidate, not a security finding."),
+    ("Uncaught runtime exception observation", re.compile(r"(?i)uncaught exception"),
+     "An uncaught runtime exception marker was observed in target-process logs. Reproduce with controlled input and inspect a redacted stack trace before classifying impact."),
+]
+
 
 class LogcatAuditor:
     """Audits Android logcat streams for data leakage and uncaught runtime crashes."""
@@ -82,6 +91,20 @@ class LogcatAuditor:
                         file_path='logcat', line_number=idx+1, code_snippet='[Sensitive log value omitted]',
                         detection_method='LogcatAuditor (ADB diagnostic)', status=FindingStatus.UNVERIFIED,
                         remediation='Remove sensitive logging; verify the production build and ordinary-app log access separately.'))
+                    break
+        # Runtime-health signals are analyst leads, not proof of a security bug.
+        for title, pattern, desc in _RUNTIME_SIGNALS:
+            for idx, line in enumerate(lines):
+                header = _THREADTIME.match(line)
+                if header and header[1] in pids and pattern.search(line):
+                    findings.append(Finding(
+                        title=f'{title}: {package_name}', description=desc,
+                        severity=Severity.INFO, confidence=0.3, cwe_id='CWE-755',
+                        cvss_score=0.0, cvss_vector='', affected_component=package_name,
+                        file_path='logcat', line_number=idx+1,
+                        code_snippet='[Runtime diagnostic marker; raw values omitted]',
+                        detection_method='LogcatAuditor (ADB diagnostic)', status=FindingStatus.UNVERIFIED,
+                        remediation='Reproduce with synthetic input and a minimal redacted trace; assess ordinary-app reachability and user impact separately.'))
                     break
         if package_name and attributed_crashes(lines, package_name):
             findings.append(Finding(

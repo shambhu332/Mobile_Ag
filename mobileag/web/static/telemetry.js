@@ -8,7 +8,6 @@
         wsConnection = new WebSocket(wsUrl);
 
         wsConnection.onopen = function() {
-          wsConnection.send(JSON.stringify({token: accessToken}));
           const wsLabel = document.getElementById('sidebar-ws-status');
           if (wsLabel) wsLabel.textContent = 'Live Connected';
         };
@@ -32,7 +31,7 @@
         wsConnection.onclose = function() {
           const wsLabel = document.getElementById('sidebar-ws-status');
           if (wsLabel) wsLabel.textContent = 'Reconnecting...';
-          if(accessToken)setTimeout(connectTelemetryWebSocket, 3000);else if(wsLabel)wsLabel.textContent='Disconnected: connect session';
+          if(localSessionActive)setTimeout(connectTelemetryWebSocket, 3000);else if(wsLabel)wsLabel.textContent='Disconnected: reload dashboard';
         };
       } catch (e) {
         console.warn('WebSocket init failed:', e);

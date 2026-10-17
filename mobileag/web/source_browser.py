@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+import time
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -21,6 +22,9 @@ TEXT_SUFFIXES = {
     ".gradle", ".cfg", ".conf", ".graphql", ".gql",
 }
 ALLOWED_ROOTS = ("jadx_out/sources", "jadx_out/resources", "apktool_out")
+SEARCH_FILE_LIMIT = 500
+SEARCH_BYTE_LIMIT = 16 * 1024 * 1024
+SEARCH_RESULT_LIMIT = 100
 
 
 class SourceReadError(ValueError):
@@ -72,7 +76,6 @@ def _read_candidate(scan_fd: int, parts: tuple[str, ...], max_bytes: int) -> tup
 
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory = getattr(os, "O_DIRECTORY", 0)
-    flags = os.O_RDONLY | nofollow | directory
     fd = None
     try:
         fd = os.dup(scan_fd)
@@ -154,3 +157,173 @@ def read_scan_source(output_root: str | os.PathLike[str], scan_id: str, path: st
                     os.close(fd)
                 except OSError:
                     pass
+
+
+def _open_dir(scan_fd: int, parts: tuple[str, ...]) -> int:
+    """Open a relative directory using no-follow descriptor traversal."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    fd = os.dup(scan_fd)
+    try:
+        for part in parts:
+            nxt = os.open(part, os.O_RDONLY | nofollow | directory, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _enumerate_text_files(scan_fd: int, *, max_entries: int, max_files: int) -> dict[str, Any]:
+    files: list[str] = []
+    entries = 0
+    truncated = False
+    root_parts = [tuple(root.split("/")) for root in ALLOWED_ROOTS]
+
+    def walk(fd: int, prefix: tuple[str, ...], depth: int) -> None:
+        nonlocal entries, truncated
+        if depth > 40:
+            truncated = True
+            return
+        try:
+            names = sorted(os.listdir(fd))
+        except OSError:
+            truncated = True
+            return
+        for name in names:
+            entries += 1
+            if entries > max_entries or len(files) >= max_files:
+                truncated = True
+                return
+            if (name in {".", ".."} or not name or len(name) > 255 or "\\" in name
+                    or any(ord(ch) < 32 for ch in name)):
+                continue
+            try:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except OSError:
+                truncated = True
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                try:
+                    child = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                                    | getattr(os, "O_DIRECTORY", 0), dir_fd=fd)
+                except OSError:
+                    truncated = True
+                    continue
+                try:
+                    walk(child, (*prefix, name), depth + 1)
+                finally:
+                    os.close(child)
+                if truncated and (entries > max_entries or len(files) >= max_files):
+                    return
+            elif stat.S_ISREG(info.st_mode) and PurePosixPath(name).suffix.lower() in TEXT_SUFFIXES:
+                files.append("/".join((*prefix, name)))
+
+    for root in root_parts:
+        try:
+            fd = _open_dir(scan_fd, root)
+        except OSError:
+            continue
+        try:
+            walk(fd, root, 0)
+        finally:
+            os.close(fd)
+        if entries > max_entries or len(files) >= max_files:
+            truncated = True
+            break
+    return {"files": files, "entries_examined": min(entries, max_entries), "truncated": truncated}
+
+
+def list_scan_source_files(output_root: str | os.PathLike[str], scan_id: str, *,
+                           query: str = "", max_entries: int = 10_000,
+                           max_files: int = 1_200) -> dict[str, Any]:
+    """Return a bounded text-file inventory; query filters paths, not contents."""
+    if not isinstance(scan_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", scan_id):
+        raise SourceReadError("invalid scan identifier")
+    if not isinstance(query, str) or len(query) > 120:
+        raise SourceReadError("invalid file filter")
+    files = _with_scan_fd(output_root, scan_id, lambda fd: _enumerate_text_files(
+        fd, max_entries=max_entries, max_files=max_files))
+    if query:
+        wanted = query.casefold()
+        files["files"] = [p for p in files["files"] if wanted in p.casefold()]
+    return {**files, "file_count": len(files["files"]), "coverage": "partial" if files["truncated"] else "complete"}
+
+
+def _with_scan_fd(output_root: str | os.PathLike[str], scan_id: str, callback):
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    root_fd = scan_fd = None
+    try:
+        root_fd = os.open(os.fspath(output_root), os.O_RDONLY | nofollow | directory)
+        scan_fd = os.open(scan_id, os.O_RDONLY | nofollow | directory, dir_fd=root_fd)
+        return callback(scan_fd)
+    except (OSError, TypeError, ValueError):
+        raise SourceReadError("source inventory is unavailable") from None
+    finally:
+        for fd in (scan_fd, root_fd):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+
+def search_scan_sources(output_root: str | os.PathLike[str], scan_id: str, query: str, *,
+                        max_files: int = SEARCH_FILE_LIMIT,
+                        max_bytes: int = SEARCH_BYTE_LIMIT,
+                        max_results: int = SEARCH_RESULT_LIMIT,
+                        time_limit_seconds: float = 2.0) -> dict[str, Any]:
+    """Literal, case-insensitive search across a bounded set of decompiler text."""
+    if not isinstance(query, str) or not query.strip() or len(query) > 120:
+        raise SourceReadError("search text must contain 1 to 120 characters")
+    inventory = list_scan_source_files(output_root, scan_id, max_files=max_files)
+    results = []
+    reasons: set[str] = set()
+    examined = total_bytes = 0
+    deadline = time.monotonic() + time_limit_seconds
+    needle = query.casefold()
+    partial = inventory["truncated"]
+    if partial:
+        reasons.add("source_file_inventory_limit")
+    for path in inventory["files"]:
+        if examined >= max_files:
+            partial = True
+            reasons.add("source_file_limit")
+            break
+        if time.monotonic() >= deadline:
+            partial = True
+            reasons.add("time_limit")
+            break
+        remaining = max_bytes - total_bytes
+        if remaining <= 0:
+            partial = True
+            reasons.add("byte_limit")
+            break
+        examined += 1
+        try:
+            source = read_scan_source(output_root, scan_id, path, max_bytes=min(256 * 1024, remaining))
+        except SourceReadError as exc:
+            partial = True
+            reasons.add("oversize_or_unreadable_file" if "unavailable" in str(exc) or "1 MiB" in str(exc) else "source_file_rejected")
+            continue
+        total_bytes += source["size_bytes"]
+        for line_no, line in enumerate(source["content"].splitlines(), 1):
+            if needle in line.casefold():
+                results.append({"path": path, "line": line_no})
+                if len(results) >= max_results:
+                    partial = True
+                    reasons.add("match_limit")
+                    break
+        if len(results) >= max_results:
+            break
+    return {
+        "matches": results,
+        "match_count": len(results),
+        "files_examined": examined,
+        "bytes_examined": total_bytes,
+        "coverage": "partial" if partial else "complete",
+        "truncated": partial,
+        "reasons": sorted(reasons),
+    }

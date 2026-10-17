@@ -533,6 +533,36 @@ async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max
         raise HTTPException(status, str(exc)) from None
 
 
+@app.get("/api/scans/{scan_id}/source/files")
+async def get_scan_source_files(scan_id: str, q: str = Query("", max_length=120)) -> dict[str, Any]:
+    """List bounded decompiler text paths; never returns source contents."""
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    if scan.get("status") not in {"completed", "partial"}:
+        raise HTTPException(409, "Source is available only after a completed or partial scan")
+    from mobileag.web.source_browser import SourceReadError, list_scan_source_files
+    try:
+        return await asyncio.to_thread(list_scan_source_files, OUTPUT_DIR, scan_id, query=q)
+    except SourceReadError as exc:
+        status = 404 if "unavailable" in str(exc) else 400
+        raise HTTPException(status, str(exc)) from None
+
+
+@app.get("/api/scans/{scan_id}/source/search")
+async def search_scan_source(scan_id: str, q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
+    """Search decompiler text literally under strict file, byte, and time budgets."""
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    if scan.get("status") not in {"completed", "partial"}:
+        raise HTTPException(409, "Source is available only after a completed or partial scan")
+    from mobileag.web.source_browser import SourceReadError, search_scan_sources
+    try:
+        return await asyncio.to_thread(search_scan_sources, OUTPUT_DIR, scan_id, q)
+    except SourceReadError as exc:
+        status = 404 if "unavailable" in str(exc) else 400
+        raise HTTPException(status, str(exc)) from None
+
+
 @app.get("/api/scans/{scan_id}/comparison/{baseline_scan_id}")
 async def compare_scan_to_baseline(scan_id: str, baseline_scan_id: str) -> dict[str, Any]:
     """Read-only comparison; never marks findings fixed or changes scan history."""

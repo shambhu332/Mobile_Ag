@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from mobileag.web.source_browser import SourceReadError, read_scan_source
+from mobileag.web.source_browser import (
+    SourceReadError, list_scan_source_files, read_scan_source, search_scan_sources,
+)
 
 
 def test_reads_only_bounded_text_beneath_jadx_source_root(tmp_path):
@@ -50,3 +52,48 @@ def test_rejects_over_limit_text_before_returning_partial_content(tmp_path):
     source.write_bytes(b"x" * 32)
     with pytest.raises(SourceReadError, match="1 MiB"):
         read_scan_source(tmp_path, "scan_demo", "resources/res/raw/large.txt", max_bytes=16)
+
+
+def test_lists_only_text_paths_under_approved_roots_and_filters_path(tmp_path):
+    scan = tmp_path / "scan_demo"
+    src = scan / "jadx_out" / "sources" / "com" / "demo"
+    src.mkdir(parents=True)
+    (src / "Main.java").write_text("synthetic", encoding="utf-8")
+    (src / "blob.bin").write_bytes(b"binary")
+    (src / "escape.java").symlink_to(tmp_path / "outside.java")
+    (scan / "other").mkdir()
+    (scan / "other" / "ignored.java").write_text("not in approved root")
+
+    result = list_scan_source_files(tmp_path, "scan_demo")
+    assert result["files"] == ["jadx_out/sources/com/demo/Main.java"]
+    assert result["coverage"] == "complete"
+    assert list_scan_source_files(tmp_path, "scan_demo", query="MAIN")["files"] == result["files"]
+
+
+def test_literal_search_returns_path_and_line_only_with_bounded_coverage(tmp_path):
+    src = tmp_path / "scan_demo" / "jadx_out" / "sources" / "demo"
+    src.mkdir(parents=True)
+    (src / "Main.kt").write_text("one\nval token = \"SyntheticCanary\"\nthree\n", encoding="utf-8")
+
+    result = search_scan_sources(tmp_path, "scan_demo", "syntheticcanary")
+    assert result["matches"] == [{"path": "jadx_out/sources/demo/Main.kt", "line": 2}]
+    assert result["coverage"] == "complete"
+    assert "SyntheticCanary" not in str(result)
+
+
+def test_literal_search_marks_file_limit_as_partial(tmp_path):
+    src = tmp_path / "scan_demo" / "jadx_out" / "sources" / "demo"
+    src.mkdir(parents=True)
+    (src / "A.java").write_text("needle", encoding="utf-8")
+    (src / "B.java").write_text("needle", encoding="utf-8")
+
+    result = search_scan_sources(tmp_path, "scan_demo", "needle", max_files=1)
+    assert result["coverage"] == "partial"
+    assert result["files_examined"] == 1
+    assert "source_file_inventory_limit" in result["reasons"]
+
+
+@pytest.mark.parametrize("query", ["", "   ", "x" * 121])
+def test_search_rejects_empty_or_overlong_queries(tmp_path, query):
+    with pytest.raises(SourceReadError):
+        search_scan_sources(tmp_path, "scan_demo", query)

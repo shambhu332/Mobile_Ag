@@ -1,0 +1,3247 @@
+{
+  "scope": "Python source inventory, not a line-by-line security certification",
+  "groups": {
+    "mobileag": {
+      "files": 2,
+      "lines": 361,
+      "functions": 10
+    },
+    "mobileag/analysis": {
+      "files": 39,
+      "lines": 14494,
+      "functions": 296
+    },
+    "mobileag/assessments": {
+      "files": 6,
+      "lines": 488,
+      "functions": 35
+    },
+    "mobileag/automation": {
+      "files": 7,
+      "lines": 647,
+      "functions": 50
+    },
+    "mobileag/core": {
+      "files": 4,
+      "lines": 1049,
+      "functions": 18
+    },
+    "mobileag/dashboard": {
+      "files": 4,
+      "lines": 244,
+      "functions": 13
+    },
+    "mobileag/dast": {
+      "files": 24,
+      "lines": 5020,
+      "functions": 169
+    },
+    "mobileag/diffing": {
+      "files": 2,
+      "lines": 514,
+      "functions": 14
+    },
+    "mobileag/filters": {
+      "files": 7,
+      "lines": 755,
+      "functions": 19
+    },
+    "mobileag/generators": {
+      "files": 4,
+      "lines": 534,
+      "functions": 18
+    },
+    "mobileag/ingestion": {
+      "files": 8,
+      "lines": 2049,
+      "functions": 42
+    },
+    "mobileag/knowledge": {
+      "files": 5,
+      "lines": 670,
+      "functions": 23
+    },
+    "mobileag/llm": {
+      "files": 12,
+      "lines": 1417,
+      "functions": 60
+    },
+    "mobileag/reporting": {
+      "files": 16,
+      "lines": 3600,
+      "functions": 96
+    },
+    "mobileag/security": {
+      "files": 4,
+      "lines": 205,
+      "functions": 10
+    },
+    "mobileag/studio": {
+      "files": 1,
+      "lines": 21,
+      "functions": 2
+    },
+    "mobileag/web": {
+      "files": 7,
+      "lines": 3426,
+      "functions": 170
+    },
+    "config": {
+      "files": 3,
+      "lines": 214,
+      "functions": 4
+    }
+  },
+  "files": [
+    {
+      "path": "mobileag/__init__.py",
+      "sha256": "827951398cbec9c8f1e5ddd5321569ebed88491037b0c15aca4fd81c1f602837",
+      "lines": 3,
+      "summary": "MobileAg \u2014 Multi-LLM Mobile Security Analysis Platform.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/analysis/__init__.py",
+      "sha256": "03e81884da2fd1dcde196b934000f458df5d9ea35c9dd5f6364ffaa706c8c9b7",
+      "lines": 30,
+      "summary": "Analysis agents loaded on demand; starting the dashboard never loads cloud SDKs.",
+      "top_level_symbols": [
+        {
+          "name": "__getattr__",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/android_surface.py",
+      "sha256": "5517fd07ce24c2862ff4b8185af9a7e85f4165711325c9a92904d17d6b1d9fa9",
+      "lines": 344,
+      "summary": "Bounded Android surface review. Pattern evidence is never exploit proof.",
+      "top_level_symbols": [
+        {
+          "name": "_call_arguments",
+          "line": 16
+        },
+        {
+          "name": "_split_arguments",
+          "line": 29
+        },
+        {
+          "name": "_last_call_argument",
+          "line": 50
+        },
+        {
+          "name": "_pending_intent_flag_aliases",
+          "line": 77
+        },
+        {
+          "name": "_resolve_pending_intent_flag_alias",
+          "line": 92
+        },
+        {
+          "name": "mask_non_code",
+          "line": 107
+        },
+        {
+          "name": "method_spans",
+          "line": 113
+        },
+        {
+          "name": "class_spans",
+          "line": 126
+        },
+        {
+          "name": "AndroidSurfaceAnalyzer",
+          "line": 164
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/api_endpoint_safety.py",
+      "sha256": "eaf91c9ac2b9aecf3fb10edfa8fdd747f3281874527055adaf4ed5dda4561af4",
+      "lines": 87,
+      "summary": "Shared report-safe normalization for observed API URL candidates.",
+      "top_level_symbols": [
+        {
+          "name": "safe_api_route",
+          "line": 11
+        },
+        {
+          "name": "sanitize_candidate_text",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/api_mapper.py",
+      "sha256": "ba60474996b239fa26e66ad54e3117d7b03570a33741db77346aa23e6ad30741",
+      "lines": 534,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "_mask_java_kotlin_comments",
+          "line": 16
+        },
+        {
+          "name": "_mask_smali_comments",
+          "line": 67
+        },
+        {
+          "name": "_mask_xml_comments",
+          "line": 95
+        },
+        {
+          "name": "_mask_javascript_dart_comments",
+          "line": 124
+        },
+        {
+          "name": "APIMapper",
+          "line": 172
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/auth_session_auditor.py",
+      "sha256": "276ac421b86982c00758bc134b4ef186b4f7fe7a7557fc30b99b9b97226672fa",
+      "lines": 143,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "AuthSessionAuditor",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/authorization_pair.py",
+      "sha256": "73b0b8321022728c525a4f6800cb9f493cb14f637baeeacda1e990f152c1e002",
+      "lines": 94,
+      "summary": "Offline comparison of operator-imported, synthetic multi-account captures.",
+      "top_level_symbols": [
+        {
+          "name": "Observation",
+          "line": 11
+        },
+        {
+          "name": "AuthorizationPair",
+          "line": 24
+        },
+        {
+          "name": "compare_authorization_pair",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/binary_protection_auditor.py",
+      "sha256": "2d14d48457c9ac52632b38e5a4d88c57630fd25e55c473934538d1b91a462642",
+      "lines": 256,
+      "summary": "Binary protection auditor for Android native shared libraries (.so files).",
+      "top_level_symbols": [
+        {
+          "name": "BinaryProtectionAuditor",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/bounded_sources.py",
+      "sha256": "eaadcde159ee58f6d9b24b973495acaeec21a95fdb2bd88e72e60ae521cf9926",
+      "lines": 186,
+      "summary": "Bounded offline artifact reading; no symlink traversal or implicit cwd scan.",
+      "top_level_symbols": [
+        {
+          "name": "explicit_scan_root",
+          "line": 10
+        },
+        {
+          "name": "SourceInventory",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/call_graph.py",
+      "sha256": "38f8235a55ecfeff76c5df0b52b4a894fa8b669c9e64ea8e219e224963e72dca",
+      "lines": 1564,
+      "summary": "Bounded Smali call-path and taint may-flow review heuristics.",
+      "top_level_symbols": [
+        {
+          "name": "MethodNode",
+          "line": 36
+        },
+        {
+          "name": "CallChainFinding",
+          "line": 59
+        },
+        {
+          "name": "_invocation_registers",
+          "line": 384
+        },
+        {
+          "name": "_parameter_descriptors",
+          "line": 401
+        },
+        {
+          "name": "_parameter_argument_registers",
+          "line": 428
+        },
+        {
+          "name": "SmaliCallGraphEngine",
+          "line": 449
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/code_reviewer.py",
+      "sha256": "21d76160e52903449d653ba99a971bd91963d359036e1a6206bc5a703b930b96",
+      "lines": 446,
+      "summary": "Scope-aware code reviewer for Android Java and Kotlin source files.",
+      "top_level_symbols": [
+        {
+          "name": "MethodBlock",
+          "line": 28
+        },
+        {
+          "name": "CodeReviewer",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/crypto_api_auditor.py",
+      "sha256": "45ff7d46a2df52bd9fb4f18caaccef9f28c65db16f668eca9477dd34edda9173",
+      "lines": 243,
+      "summary": "Bounded static inventory of literal platform cryptography API calls.",
+      "top_level_symbols": [
+        {
+          "name": "CryptoApiMetadataAuditor",
+          "line": 65
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/deep_link_correlation.py",
+      "sha256": "5c77dbabe6c72d9937196f82ca418651af322bbb28031f221d3934db6b6c87bb",
+      "lines": 133,
+      "summary": "Correlate URI-flow candidates with same-class exported manifest routes.",
+      "top_level_symbols": [
+        {
+          "name": "_component_class",
+          "line": 20
+        },
+        {
+          "name": "_bounded_route_value",
+          "line": 31
+        },
+        {
+          "name": "correlate_manifest_deep_link_flows",
+          "line": 39
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/dependency_scanner.py",
+      "sha256": "fdfb1207dd91ca3d94c673c0dc574a6491a165a3aa84a670053eb2c91ef235f1",
+      "lines": 789,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "_catalog_accessor",
+          "line": 45
+        },
+        {
+          "name": "_mask_gradle_comments",
+          "line": 50
+        },
+        {
+          "name": "_pom_direct_dependencies",
+          "line": 99
+        },
+        {
+          "name": "DependencyScanner",
+          "line": 184
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/evaluation.py",
+      "sha256": "af347584f02689e65953ae3dc250fdb953da17d8f469ca74759bdebf7b5c04bb",
+      "lines": 276,
+      "summary": "Instance-level offline evaluation for synthetic source fixtures.",
+      "top_level_symbols": [
+        {
+          "name": "_normal_path",
+          "line": 19
+        },
+        {
+          "name": "_normal_method",
+          "line": 32
+        },
+        {
+          "name": "_observed_path",
+          "line": 39
+        },
+        {
+          "name": "validate_corpus",
+          "line": 56
+        },
+        {
+          "name": "evaluate_instances",
+          "line": 126
+        },
+        {
+          "name": "assert_disjoint",
+          "line": 271
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/fileprovider_auditor.py",
+      "sha256": "763c5046dc9b89858d887878657cc7056cf46b87e99442e36fd66dae251cc2b3",
+      "lines": 270,
+      "summary": "FileProvider XML configuration auditor.",
+      "top_level_symbols": [
+        {
+          "name": "_UnexpectedRootElement",
+          "line": 18
+        },
+        {
+          "name": "_XMLNestingLimit",
+          "line": 22
+        },
+        {
+          "name": "FileProviderPathEntry",
+          "line": 27
+        },
+        {
+          "name": "FileProviderAuditResult",
+          "line": 36
+        },
+        {
+          "name": "FileProviderAuditor",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/firebase_auditor.py",
+      "sha256": "8cf9f3104e936b123b2d991794335510421340d7cbf979ea40a201a31a332ab9",
+      "lines": 164,
+      "summary": "Offline Firebase configuration review; no database reads, listing or signup.",
+      "top_level_symbols": [
+        {
+          "name": "FirebaseAuditor",
+          "line": 39
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/flutter_engine.py",
+      "sha256": "a8f74f7f24ddf1d670de75c6f7d1a8de60a00df236e295e51dd85d3f2f874888",
+      "lines": 195,
+      "summary": "Flutter Engine & Dart Binary Analyzer.",
+      "top_level_symbols": [
+        {
+          "name": "FlutterAnalysisResult",
+          "line": 19
+        },
+        {
+          "name": "FlutterEngineAnalyzer",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/graphql_candidates.py",
+      "sha256": "841a8c1fc503f0cbcb8d5311a8cd29b674075b78a4e317d214b83aed18e3a1b5",
+      "lines": 98,
+      "summary": "Bounded lexical helpers for GraphQL operation-name candidates.",
+      "top_level_symbols": [
+        {
+          "name": "mask_graphql_non_code",
+          "line": 12
+        },
+        {
+          "name": "extract_graphql_operation_candidates",
+          "line": 67
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/hermes_analyzer.py",
+      "sha256": "a2d0d75d9e11959abb5445310ab5f0b44dd5ea0c2809a25c7bbbca4f234a0a2e",
+      "lines": 165,
+      "summary": "React Native Hermes Bytecode (.hbc) Analyzer.",
+      "top_level_symbols": [
+        {
+          "name": "HermesAnalysisResult",
+          "line": 21
+        },
+        {
+          "name": "HermesBytecodeAnalyzer",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/il2cpp_auditor.py",
+      "sha256": "164771ef2c591106a0d081300b4a75dbd69e30a078640c9af4623f39b1298f6f",
+      "lines": 468,
+      "summary": "Bounded Unity IL2CPP metadata and binary indicators.",
+      "top_level_symbols": [
+        {
+          "name": "Il2CppAnalysisResult",
+          "line": 22
+        },
+        {
+          "name": "Il2CppAuditor",
+          "line": 47
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/intent_redirection_auditor.py",
+      "sha256": "134145e4fab7de5ce43d248e8037378eb6c28ef898210943419b721b22938856",
+      "lines": 170,
+      "summary": "Intent Redirection and Sub-Intent Proxying Auditor.",
+      "top_level_symbols": [
+        {
+          "name": "IntentRedirectionAuditor",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/ios_analyzer.py",
+      "sha256": "a2d9eb1a74487b96faf73a893faa953eab0d9b5a02c22b90774761e1033d354e",
+      "lines": 728,
+      "summary": "iOS Application Security Static Analysis Module (IPA, Info.plist, Entitlements, Mach-O).",
+      "top_level_symbols": [
+        {
+          "name": "MachOSecurityHeaders",
+          "line": 46
+        },
+        {
+          "name": "IOSSecurityAnalyzer",
+          "line": 56
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/java_ast_taint.py",
+      "sha256": "d090b87f3c3cdb86ae3c64cea09447568f845bd15c2dcfc0385b98b02e25d7ff",
+      "lines": 582,
+      "summary": "Optional Tree-sitter Java source-to-sink candidate analysis.",
+      "top_level_symbols": [
+        {
+          "name": "Trace",
+          "line": 20
+        },
+        {
+          "name": "JavaAstTaintAnalyzer",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/macho_parser.py",
+      "sha256": "ce780ddf9f46cabb26ca02a23f59a4af673017ee478f9b16d1952cc76fac8dbb",
+      "lines": 814,
+      "summary": "iOS Mach-O & Swift Metadata Binary Parser.",
+      "top_level_symbols": [
+        {
+          "name": "MachoAnalysisResult",
+          "line": 21
+        },
+        {
+          "name": "MachoBinaryParser",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/manifest_auditor.py",
+      "sha256": "655102841fe9cfaab2d9da1dd6ef0d213297dbdc823a133ebb7ea9d5bef0f88a",
+      "lines": 427,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "ManifestAuditor",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/native_analyzer.py",
+      "sha256": "eca629510e22e8d3250520ef1a218cdbf7d90d4a623efaa39e38ab489c68fbfd",
+      "lines": 205,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "NativeAnalyzer",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/native_jni_bridge.py",
+      "sha256": "68cd6521b8380f4387eae9d4e87f37f2604c0619b02666f15d02ec80cf4fe86a",
+      "lines": 318,
+      "summary": "Native JNI Cross-Boundary Analyzer (inspired by REA).",
+      "top_level_symbols": [
+        {
+          "name": "JniExportedFunction",
+          "line": 28
+        },
+        {
+          "name": "NativeLibraryAuditResult",
+          "line": 39
+        },
+        {
+          "name": "NativeJniAnalyzer",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/network_security_config_auditor.py",
+      "sha256": "d7df752c6932e7fdef21ad498e0f915d8d9b6bd95eb9a1307836db69d62b66a2",
+      "lines": 398,
+      "summary": "Network Security Configuration auditor for Android applications.",
+      "top_level_symbols": [
+        {
+          "name": "NetworkSecurityConfigAuditor",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/pending_intent_auditor.py",
+      "sha256": "fb750f07568c625493d89f4d221b4956504fa0422adec563a67a4d11710a1312",
+      "lines": 351,
+      "summary": "PendingIntent Mutability & Security Auditor.",
+      "top_level_symbols": [
+        {
+          "name": "PendingIntentAuditor",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/privacy_manifest_auditor.py",
+      "sha256": "84947236868b9ae1dbc72d8701dd70a53f2c5729aa37fdd493d44bf3e07e55a5",
+      "lines": 663,
+      "summary": "Apple Privacy Manifest & Google Play Data Safety Auditor.",
+      "top_level_symbols": [
+        {
+          "name": "_mask_java_kotlin_comments_and_strings",
+          "line": 23
+        },
+        {
+          "name": "_mask_smali_comments",
+          "line": 73
+        },
+        {
+          "name": "PrivacyManifestResult",
+          "line": 101
+        },
+        {
+          "name": "PrivacyManifestAuditor",
+          "line": 116
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/rasp_resilience_auditor.py",
+      "sha256": "10e53fd4093f1086c2646b45337b054ed4515a9ec35edc9d4e8fcfd9b3d116bd",
+      "lines": 199,
+      "summary": "Bounded Smali string-inventory helper for resilience review (not MASVS scoring).",
+      "top_level_symbols": [
+        {
+          "name": "ResilienceVectorScore",
+          "line": 23
+        },
+        {
+          "name": "ResilienceAssessmentResult",
+          "line": 32
+        },
+        {
+          "name": "RaspResilienceAuditor",
+          "line": 39
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/react_native_scanner.py",
+      "sha256": "065b77d81b6ab2b775cf2a3fddbaaed0ba0e88ad95aeb6384aab2512b4c975d4",
+      "lines": 266,
+      "summary": "React Native JavaScript bundle security scanner.",
+      "top_level_symbols": [
+        {
+          "name": "ReactNativeScanner",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/sbom_generator.py",
+      "sha256": "161c8d16c229e66a73501b29a89d9e6d6ddb50ae7f758731bcb09fc4186d4abb",
+      "lines": 447,
+      "summary": "Software Bill of Materials (SBOM) Generator for Mobile Applications.",
+      "top_level_symbols": [
+        {
+          "name": "_write_sbom_atomically",
+          "line": 25
+        },
+        {
+          "name": "escape_purl_segment",
+          "line": 33
+        },
+        {
+          "name": "normalize_package_url",
+          "line": 40
+        },
+        {
+          "name": "build_package_url",
+          "line": 72
+        },
+        {
+          "name": "SbomComponent",
+          "line": 89
+        },
+        {
+          "name": "MobileSbomGenerator",
+          "line": 100
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/secret_scanner.py",
+      "sha256": "9e7ada9eb778275a1e120d32f341a0f3aced46a0c3c0f5c051f3edfc9a36f9b0",
+      "lines": 225,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "SecretScanner",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/source_syntax.py",
+      "sha256": "9d9a2aa365c7a716e8cce3b464dfd3d9d8b6196dd7954caf1fe00aff239c8faf",
+      "lines": 98,
+      "summary": "Small lexical helpers for candidate review, not a Java/Kotlin AST or proof engine.",
+      "top_level_symbols": [
+        {
+          "name": "CallSite",
+          "line": 11
+        },
+        {
+          "name": "call_sites",
+          "line": 19
+        },
+        {
+          "name": "literal_flag_bits",
+          "line": 56
+        },
+        {
+          "name": "numeric_sql_concatenation",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/symbol_resolver.py",
+      "sha256": "29e21aa3a74486212c9d447c12d6ef25614380d68fe27fb04adb7bb84628be7a",
+      "lines": 176,
+      "summary": "Global symbol resolver and inter-procedural class/method indexer.",
+      "top_level_symbols": [
+        {
+          "name": "MethodSymbol",
+          "line": 18
+        },
+        {
+          "name": "ClassSymbol",
+          "line": 29
+        },
+        {
+          "name": "SymbolResolver",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/taint_engine.py",
+      "sha256": "8d4cd24980eefcc232827aa4f98bb85827c957e7ee63e8371dd3022787b87b00",
+      "lines": 1779,
+      "summary": "Bounded Java AST and lexical Source-to-Sink review heuristics.",
+      "top_level_symbols": [
+        {
+          "name": "_conditional_question_index",
+          "line": 242
+        },
+        {
+          "name": "_conditional_result_expression",
+          "line": 255
+        },
+        {
+          "name": "TaintTrace",
+          "line": 290
+        },
+        {
+          "name": "_mask_nested_method_scopes",
+          "line": 299
+        },
+        {
+          "name": "_type_scopes",
+          "line": 311
+        },
+        {
+          "name": "_enclosing_type",
+          "line": 330
+        },
+        {
+          "name": "_lexical_method_identity",
+          "line": 335
+        },
+        {
+          "name": "_enclosing_type_members",
+          "line": 403
+        },
+        {
+          "name": "_declared_receiver_type",
+          "line": 412
+        },
+        {
+          "name": "_intent_data_uri_names",
+          "line": 420
+        },
+        {
+          "name": "_mask_call_inputs",
+          "line": 444
+        },
+        {
+          "name": "_is_nested_in_call",
+          "line": 471
+        },
+        {
+          "name": "_has_modeled_get_intent",
+          "line": 490
+        },
+        {
+          "name": "_known_unrelated_sink_receiver",
+          "line": 499
+        },
+        {
+          "name": "TaintEngine",
+          "line": 546
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/token_lifecycle_auditor.py",
+      "sha256": "b70df58a2f98a50fe68bb7ee09586dcc4c4c8845b3dc012574d95e05f6c10b30",
+      "lines": 133,
+      "summary": "Mobile Token and Session Lifecycle Auditor.",
+      "top_level_symbols": [
+        {
+          "name": "ParsedJwtClaims",
+          "line": 19
+        },
+        {
+          "name": "TokenAuditReport",
+          "line": 32
+        },
+        {
+          "name": "TokenLifecycleAuditor",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "path": "mobileag/analysis/webview_auditor.py",
+      "sha256": "d69b21e015942e25d2ce81d4942eacef1d4ce917b338a7af2fb4f6b1a8a4a8f1",
+      "lines": 30,
+      "summary": "Compatibility facade for bounded WebView lexical review, not exploit proof.",
+      "top_level_symbols": [
+        {
+          "name": "WebViewAuditor",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "mobileag/assessments/__init__.py",
+      "sha256": "b35579f45cce8d213734af708e9154a2a33e180beddeb19bbe7ccdd9f774993a",
+      "lines": 1,
+      "summary": "Scoped guided assessments; static parsers never receive provider credentials.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/assessments/models.py",
+      "sha256": "220752f6b85ac3282de16d55af67649ab46b1c225062022486a0c8d606ffcd77",
+      "lines": 34,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "Scope",
+          "line": 5
+        },
+        {
+          "name": "Assessment",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "path": "mobileag/assessments/routes.py",
+      "sha256": "2247e97d6dd65923e0ef4c331ccd9725f19d6f17d6adec9b4cb5c826311c0d51",
+      "lines": 34,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "build_router",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "path": "mobileag/assessments/service.py",
+      "sha256": "380cde064db2b38d23051d8fbe48548dcc3d4d84764f4f9f340bf54fe690b67d",
+      "lines": 221,
+      "summary": "One approved assessment: isolated SAST \u2192 scoped API \u2192 DAST map \u2192 optional AI.",
+      "top_level_symbols": [
+        {
+          "name": "AssessmentCancelled",
+          "line": 19
+        },
+        {
+          "name": "AssessmentService",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "path": "mobileag/assessments/store.py",
+      "sha256": "a7a3795dcf945df782bf4766286bc89f477e1b21e846f49a73e80fbe4619e9a2",
+      "lines": 30,
+      "summary": "Bounded private assessment state, independent of scan metadata.",
+      "top_level_symbols": [
+        {
+          "name": "AssessmentStore",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "path": "mobileag/assessments/test_plan.py",
+      "sha256": "162ed99a08cad8e221ed9781aab043a0b21b23cdea25b82acfe0c55b838018ed",
+      "lines": 168,
+      "summary": "Schema for a manual, scan-bound validation plan; it cannot execute testing.",
+      "top_level_symbols": [
+        {
+          "name": "_StrictModel",
+          "line": 10
+        },
+        {
+          "name": "Role",
+          "line": 14
+        },
+        {
+          "name": "Flow",
+          "line": 19
+        },
+        {
+          "name": "AccountAlias",
+          "line": 27
+        },
+        {
+          "name": "Coverage",
+          "line": 32
+        },
+        {
+          "name": "EvidenceNote",
+          "line": 50
+        },
+        {
+          "name": "TestPlanInput",
+          "line": 69
+        },
+        {
+          "name": "build_plan",
+          "line": 135
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lines": 0,
+      "summary": "",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/automation/android.py",
+      "sha256": "1b88b52d4ddf726761acfd857b5c9ff9da1280eb0306bf1ec948ce8285d58164",
+      "lines": 118,
+      "summary": "Explicit dedicated-device ADB adapter; never root, grant consent or clear data.",
+      "top_level_symbols": [
+        {
+          "name": "digest",
+          "line": 16
+        },
+        {
+          "name": "parse_snapshot",
+          "line": 18
+        },
+        {
+          "name": "AndroidDriver",
+          "line": 53
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/engine.py",
+      "sha256": "268d4a15d2aac19937cae2be24c51bfc603e362032f2557b56af877509fe5ab6",
+      "lines": 268,
+      "summary": "Bounded discover/map/approve/execute/observe/report loop.",
+      "top_level_symbols": [
+        {
+          "name": "stamp",
+          "line": 29
+        },
+        {
+          "name": "safe_shape",
+          "line": 31
+        },
+        {
+          "name": "RunCancelled",
+          "line": 38
+        },
+        {
+          "name": "AutomationService",
+          "line": 40
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/models.py",
+      "sha256": "847d3496b54c6866979920a073944d99395cb6a8cace987edfd76cd908df8086",
+      "lines": 45,
+      "summary": "Bounded operator contracts. No credential is part of a durable run model.",
+      "top_level_symbols": [
+        {
+          "name": "Contract",
+          "line": 5
+        },
+        {
+          "name": "Capture",
+          "line": 8
+        },
+        {
+          "name": "CreateRun",
+          "line": 20
+        },
+        {
+          "name": "ExecuteRun",
+          "line": 34
+        },
+        {
+          "name": "ImportCaptures",
+          "line": 43
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/report.py",
+      "sha256": "aaec65ad966475a5c88a0812b2fdacbe0c8dbe5da312b01c7a7c5e79ca6cc934",
+      "lines": 62,
+      "summary": "Evidence-aware report and regression comparison, never an invented risk score.",
+      "top_level_symbols": [
+        {
+          "name": "layout_svg",
+          "line": 4
+        },
+        {
+          "name": "regression",
+          "line": 14
+        },
+        {
+          "name": "report",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/routes.py",
+      "sha256": "d2957ce6c6f6e3779d8f4ff6d3863407f980dbafc55f011e9c64d928fcd5ff31",
+      "lines": 90,
+      "summary": "Factory-wired router: no importing app globals or auth test-mode switches.",
+      "top_level_symbols": [
+        {
+          "name": "Revision",
+          "line": 14
+        },
+        {
+          "name": "PrivateValidationRoute",
+          "line": 16
+        },
+        {
+          "name": "build_router",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "path": "mobileag/automation/store.py",
+      "sha256": "fb67a96af25aca16d834d62e66fb337b75b94c8ee65015589c1481906e2e671e",
+      "lines": 64,
+      "summary": "Private CAS run state; no resumption of device input on server restart.",
+      "top_level_symbols": [
+        {
+          "name": "Conflict",
+          "line": 9
+        },
+        {
+          "name": "RunStore",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/cli.py",
+      "sha256": "4f20277f749a7dde65f3bb0462a2c2aca96b6e4d5587ba7b35c6ac9b0758af10",
+      "lines": 358,
+      "summary": "Command-line interface for MobileAg.",
+      "top_level_symbols": [
+        {
+          "name": "main",
+          "line": 20
+        },
+        {
+          "name": "scan",
+          "line": 32
+        },
+        {
+          "name": "ios",
+          "line": 125
+        },
+        {
+          "name": "diff",
+          "line": 172
+        },
+        {
+          "name": "web",
+          "line": 199
+        },
+        {
+          "name": "dast",
+          "line": 244
+        },
+        {
+          "name": "taint",
+          "line": 255
+        },
+        {
+          "name": "import_sarif_command",
+          "line": 284
+        },
+        {
+          "name": "import_mobsf_json_command",
+          "line": 309
+        },
+        {
+          "name": "inventory_aab_command",
+          "line": 334
+        }
+      ]
+    },
+    {
+      "path": "mobileag/core/__init__.py",
+      "sha256": "0b599e51620c10a59bb83a87b39c095c8e14f25125d24035a5fc2626bffc3d98",
+      "lines": 1,
+      "summary": "Core orchestration modules.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/core/isolated_worker.py",
+      "sha256": "91f24cccce6a7a29933e38d079e174ab23818cf88d58ca95b945a5140face3bb",
+      "lines": 59,
+      "summary": "Offline static worker protocol. Never imports dashboard state or credentials.",
+      "top_level_symbols": [
+        {
+          "name": "_write_result",
+          "line": 14
+        },
+        {
+          "name": "main",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "path": "mobileag/core/orchestrator.py",
+      "sha256": "f4270db13a427744d4981431b786c7d1d491749ff75f686e8b13ca2e952f939d",
+      "lines": 882,
+      "summary": "LangGraph orchestrator \u2014 wires all agents into a state-machine pipeline.",
+      "top_level_symbols": [
+        {
+          "name": "_framework_probe_coverage",
+          "line": 63
+        },
+        {
+          "name": "_native_jni_coverage",
+          "line": 100
+        },
+        {
+          "name": "_il2cpp_probe_coverage",
+          "line": 122
+        },
+        {
+          "name": "Orchestrator",
+          "line": 149
+        }
+      ]
+    },
+    {
+      "path": "mobileag/core/state.py",
+      "sha256": "bc11bf21b6d521d0c9fab722d41aaefab311933f389d88a7813a40c934bf3ad4",
+      "lines": 107,
+      "summary": "LangGraph state schema for the MobileAg scan pipeline.",
+      "top_level_symbols": [
+        {
+          "name": "ScanState",
+          "line": 6
+        },
+        {
+          "name": "create_initial_state",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dashboard/__init__.py",
+      "sha256": "64d3334d0fb885f105f41acaa56c591ad84e7232882b9bbe699245e147313c12",
+      "lines": 1,
+      "summary": "Local dashboard operation clients; no target scanning authority.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/dashboard/client.py",
+      "sha256": "f556e8cdbd96f6a9a1d183c9468a66ca1abf09222f1603189300d1cf5c330ca0",
+      "lines": 129,
+      "summary": "Authenticated, read-only local dashboard HTTP/curl client.",
+      "top_level_symbols": [
+        {
+          "name": "DashboardError",
+          "line": 25
+        },
+        {
+          "name": "local_origin",
+          "line": 29
+        },
+        {
+          "name": "safe_endpoint",
+          "line": 44
+        },
+        {
+          "name": "DashboardClient",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dashboard/commands.py",
+      "sha256": "460f770eae6d41d1f04911be48188fd6b6fa8222ccdf58d16b8a34fc4ba665b0",
+      "lines": 32,
+      "summary": "Local API CLI: private connection and bounded read-only HTTP/curl.",
+      "top_level_symbols": [
+        {
+          "name": "connection",
+          "line": 10
+        },
+        {
+          "name": "dashboard",
+          "line": 18
+        },
+        {
+          "name": "api",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dashboard/routes.py",
+      "sha256": "7ec56c0f86b85061b866d8e4fa51cda690d11df8d089ed8247d16872e1ee7177",
+      "lines": 82,
+      "summary": "Explicit read-only dashboard workbench, never a generic shell/URL proxy.",
+      "top_level_symbols": [
+        {
+          "name": "ReadDashboard",
+          "line": 13
+        },
+        {
+          "name": "server_origin",
+          "line": 19
+        },
+        {
+          "name": "build_router",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/__init__.py",
+      "sha256": "10f6b75f1c79c6cc3e5e25a1bc35fa7ccf5f552627b26f1219f9450656843d27",
+      "lines": 29,
+      "summary": "MobileAg Dynamic Application Security Testing (DAST) Package.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/dast/adb_manager.py",
+      "sha256": "b888a4389c0a1b64c9f9f7b5603e32279453351b31c11de43ad85caba86ccad8",
+      "lines": 331,
+      "summary": "ADB device manager for MobileAg dynamic testing and orchestration.",
+      "top_level_symbols": [
+        {
+          "name": "ConnectedDevice",
+          "line": 19
+        },
+        {
+          "name": "ADBManager",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/api_cataloger.py",
+      "sha256": "6487222e4142e6c36fd8c761d2c1d00cccc430addae259ebcbe7593144521f4e",
+      "lines": 648,
+      "summary": "Dynamic Mobile API Cataloger & OpenAPI 3.0 Exporter.",
+      "top_level_symbols": [
+        {
+          "name": "_looks_like_dynamic_json_key",
+          "line": 49
+        },
+        {
+          "name": "_safe_content_type",
+          "line": 53
+        },
+        {
+          "name": "_redacted_headers",
+          "line": 62
+        },
+        {
+          "name": "CapturedRequest",
+          "line": 75
+        },
+        {
+          "name": "MobileApiCataloger",
+          "line": 86
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/api_security_tester.py",
+      "sha256": "0fe36c2e2590b4fdd408b6cd3d2ca3263a38e34a3ed2830d4f9e9bfb7ebcb120",
+      "lines": 130,
+      "summary": "Conservative API review; live testing belongs to the approved replay workflow.",
+      "top_level_symbols": [
+        {
+          "name": "APISecurityTester",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/bola_fuzzer.py",
+      "sha256": "86edce2a71ce3279dbc00939de31b6e5121036c9aa1275ee9ae6110aab8ca8b1",
+      "lines": 289,
+      "summary": "Offline BOLA/IDOR candidate extraction and supplied-observation comparison.",
+      "top_level_symbols": [
+        {
+          "name": "BolaTestResult",
+          "line": 17
+        },
+        {
+          "name": "BolaFuzzer",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/crypto_harvester.py",
+      "sha256": "e560d9d23d21cfccf1f58a656df5f0956367cccd4d81a183a2ab5d3a2a5a8b19",
+      "lines": 42,
+      "summary": "Safe parser for bounded crypto metadata; runtime hook generation is retired.",
+      "top_level_symbols": [
+        {
+          "name": "HarvestedCryptoEvent",
+          "line": 13
+        },
+        {
+          "name": "CryptoHarvester",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/deeplink_fuzzer.py",
+      "sha256": "89195ea4be7666d251af716f163b3d7d74a141d1837151eb0587ce3cd6531ef1",
+      "lines": 219,
+      "summary": "Dynamic Deep Link and App Link Fuzzing Matrix for Android DAST.",
+      "top_level_symbols": [
+        {
+          "name": "DeepLinkFuzzer",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/deeplink_intent_fuzzer.py",
+      "sha256": "e54a5dbc5ddc7220404b75afb180c67efb4b513668bfecd34cc22ae7670a0e0d",
+      "lines": 226,
+      "summary": "Scoped, bounded deep-link launch probes via ADB.",
+      "top_level_symbols": [
+        {
+          "name": "FuzzResult",
+          "line": 20
+        },
+        {
+          "name": "DeepLinkIntentFuzzer",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/frida_runner.py",
+      "sha256": "1b5266d8b803fcfa89cd1acfdc5fb0b334871077135460ff95e2e9ed0cef88e0",
+      "lines": 44,
+      "summary": "Disabled runtime instrumentation compatibility surface.",
+      "top_level_symbols": [
+        {
+          "name": "FridaRunner",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/frida_stealth.py",
+      "sha256": "64bff767b82546d37ad8ddee300459a71c27162330dbf693a91c11cdb015df2b",
+      "lines": 12,
+      "summary": "Retired compatibility surface for instrumentation concealment features.",
+      "top_level_symbols": [
+        {
+          "name": "FridaStealthHarness",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/intent_fuzzer.py",
+      "sha256": "d835bc8ce5728e568e472304e6198041bf796369c435237d7018e786f7ced567",
+      "lines": 223,
+      "summary": "Autonomous Intent, Deep Link, and IPC Fuzzer for Android DAST.",
+      "top_level_symbols": [
+        {
+          "name": "IntentFuzzer",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/logcat_auditor.py",
+      "sha256": "5aed833a74c526323443521e8ff428ba834a7cb6ed020354df7285ad82663c15",
+      "lines": 118,
+      "summary": "Logcat runtime auditor for detecting sensitive data leakage (CWE-532) and unhandled crashes.",
+      "top_level_symbols": [
+        {
+          "name": "LogcatAuditor",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/memory_forensics.py",
+      "sha256": "afcf3deb2f185b31dcc275e832f78442be71271d4edde4899a76373e65908f6a",
+      "lines": 186,
+      "summary": "Bounded memory-pattern indicators for explicitly scoped Android research.",
+      "top_level_symbols": [
+        {
+          "name": "MemoryForensicsAuditor",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/mitm_proxy.py",
+      "sha256": "14eae9925dfbd022382adfb0a4c6de53e71ab7d7a8c43517d3b00bf2af394a9c",
+      "lines": 176,
+      "summary": "Bounded, authenticated HTTP capture proxy.",
+      "top_level_symbols": [
+        {
+          "name": "AsyncMITMProxy",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/provider_auditor.py",
+      "sha256": "f14e871a72a6024964e1f055a1d3350573faf9dbfa5211b8989f94eb3e37847f",
+      "lines": 102,
+      "summary": "Read-only ADB provider diagnostics, restricted to server-approved synthetic fixtures.",
+      "top_level_symbols": [
+        {
+          "name": "ProviderAuditor",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/provider_fuzzer.py",
+      "sha256": "149f5047a29877a7d9d1d4c26609a7f9bd2aef8fdbab0596dc40d372b74bc8e0",
+      "lines": 283,
+      "summary": "Bounded ContentProvider probes that report observations, not proof.",
+      "top_level_symbols": [
+        {
+          "name": "ProviderFuzzResult",
+          "line": 22
+        },
+        {
+          "name": "ContentProviderFuzzer",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/runtime_evidence.py",
+      "sha256": "8fa196b585382960e83b49548e636e732005d67bacd72d4b0bc295abbe13b4ca",
+      "lines": 24,
+      "summary": "Conservative log attribution. New target logs are observations, not causation proof.",
+      "top_level_symbols": [
+        {
+          "name": "new_lines",
+          "line": 9
+        },
+        {
+          "name": "attributed_crashes",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/smart_crawler.py",
+      "sha256": "afefa6318c1854ffcf469975d4b173f9f11c09a13ac7c770a2852028916a94d6",
+      "lines": 252,
+      "summary": "Autonomous Dynamic UI Crawler with Semantic Element Recognition.",
+      "top_level_symbols": [
+        {
+          "name": "UIElement",
+          "line": 17
+        },
+        {
+          "name": "CrawlerDecision",
+          "line": 29
+        },
+        {
+          "name": "SmartUICrawler",
+          "line": 36
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/storage_auditor.py",
+      "sha256": "e558e6d4f65d1e451b5ae329708c9c128d33f15a0143e7067bea7e01b30173a4",
+      "lines": 254,
+      "summary": "Dynamic local storage and sandbox forensics auditor for Android apps.",
+      "top_level_symbols": [
+        {
+          "name": "StorageAuditor",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/token_session_auditor.py",
+      "sha256": "2e90f6f2144fd220c0fd7f7b06ffab9f0efe9686963078657a08ec85f4ad1a11",
+      "lines": 602,
+      "summary": "Mobile Token & Session Lifecycle Auditor.",
+      "top_level_symbols": [
+        {
+          "name": "MobileTokenSessionAuditor",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/traffic_auditor.py",
+      "sha256": "cd21db9fe1c2adcd65d9fe8713d1eb8e51e75bd55a990403a2bcff3a134716f8",
+      "lines": 504,
+      "summary": "Dynamic network traffic security auditor for MobileAg.",
+      "top_level_symbols": [
+        {
+          "name": "HTTPTransaction",
+          "line": 18
+        },
+        {
+          "name": "TrafficAuditor",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/ui_crawler.py",
+      "sha256": "2ed00b2b6a69e408f283eeddcae8ebcae8e930726095997fc44a134814b73ef8",
+      "lines": 195,
+      "summary": "Read-only, package-bound UI observation.",
+      "top_level_symbols": [
+        {
+          "name": "UICrawler",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/unpinning_engine.py",
+      "sha256": "135f1763efbbdb59af8af561a79d76bbc98c0cd8460dfecb8034e3f33c89cd14",
+      "lines": 25,
+      "summary": "Retired TLS bypass API retained only for a clear compatibility error.",
+      "top_level_symbols": [
+        {
+          "name": "UnpinningConfig",
+          "line": 9
+        },
+        {
+          "name": "UnpinningEngine",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "mobileag/dast/verification_loop.py",
+      "sha256": "b8772166c4d90972fc20bbf5c31591087d3335c9eaa13359df1a9734bdc5c7ce",
+      "lines": 106,
+      "summary": "Closed-Loop Dynamic Verification Engine (Zero False-Positive Engine).",
+      "top_level_symbols": [
+        {
+          "name": "DynamicVerificationOutcome",
+          "line": 20
+        },
+        {
+          "name": "DynamicVerificationLoop",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "mobileag/diffing/__init__.py",
+      "sha256": "172f68a34e241bd84f0e414539f1006a903e426a71540391c5f86c26501ea074",
+      "lines": 269,
+      "summary": "APK version diff engine \u2014 compares two APK versions for new vulnerabilities.",
+      "top_level_symbols": [
+        {
+          "name": "VersionDiff",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/diffing/version_diff.py",
+      "sha256": "cfb9a9dab24bf4425046f606b5200cc7de57b0feda0156715e6b6990832bd6c8",
+      "lines": 245,
+      "summary": "APK version diff engine \u2014 compares two APK versions for new vulnerabilities.",
+      "top_level_symbols": [
+        {
+          "name": "VersionDiff",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/__init__.py",
+      "sha256": "30c388dcf38b40bdbc16b397dea5e8843a24e79e0f94bc353386a216d1c30316",
+      "lines": 1,
+      "summary": "Advisory finding-candidate ranking signals.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/filters/confidence.py",
+      "sha256": "ec0ce4880ad030c91e662533253013e473943f992cf799bcb39c5c89b5059ba8",
+      "lines": 54,
+      "summary": "Heuristic review-priority calculation; this is not a probability or proof score.",
+      "top_level_symbols": [
+        {
+          "name": "ConfidenceScorer",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/consensus_vote.py",
+      "sha256": "24d614869c3ce7b1c69f97d630a805434baa1bcd5e54635cb0c70f074ca58de2",
+      "lines": 91,
+      "summary": "Consensus vote filter \u2014 uses multi-LLM agreement to validate findings.",
+      "top_level_symbols": [
+        {
+          "name": "ConsensusFilter",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/historical_match.py",
+      "sha256": "4db74769b6b550e76c637714ad48d911d1adbd0dd15972cc3325ccbe379a0548",
+      "lines": 95,
+      "summary": "Historical match filter \u2014 uses Qdrant vector similarity to learn from past scans.",
+      "top_level_symbols": [
+        {
+          "name": "HistoricalFilter",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/pipeline.py",
+      "sha256": "d5a0dea2251b6dda3868e91a53e911c70a09f5e7c8446f7e47caf8da957aed5a",
+      "lines": 181,
+      "summary": "Advisory candidate-ranking pipeline; stages do not prove or eliminate findings.",
+      "top_level_symbols": [
+        {
+          "name": "FilterPipeline",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/reachability.py",
+      "sha256": "e019b92e51410ee5f24f5434e6b54e3207664b1bcb578edcfe55d8823f2b8f1a",
+      "lines": 92,
+      "summary": "Reachability filter \u2014 checks if vulnerable code is actually reachable.",
+      "top_level_symbols": [
+        {
+          "name": "ReachabilityFilter",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/filters/sanitizer_check.py",
+      "sha256": "a41a071176fefa39238da05baa6409ef8a9ecaa66d8b1cc21757cc432fbcf25e",
+      "lines": 241,
+      "summary": "Sanitizer filter \u2014 detects whether input validation exists near the finding.",
+      "top_level_symbols": [
+        {
+          "name": "SanitizerFilter",
+          "line": 62
+        }
+      ]
+    },
+    {
+      "path": "mobileag/generators/__init__.py",
+      "sha256": "5aad997a888a38815dc9d1159790338cbefd60812645099b90708a36afd36e8a",
+      "lines": 1,
+      "summary": "Output generators \u2014 Frida scripts and PoC guides.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/generators/frida_generator.py",
+      "sha256": "6af2baa2fc0f78286e198f40758a4d6c22ca5d296bc7f71be13340dbddb84a67",
+      "lines": 19,
+      "summary": "Retired compatibility surface for generated runtime hook scripts.",
+      "top_level_symbols": [
+        {
+          "name": "FridaGenerator",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "path": "mobileag/generators/poc_apk_synthesizer.py",
+      "sha256": "9813611b63d6d74ad99af9726b115b382433f60a296772e64e43f39b3b9008b1",
+      "lines": 305,
+      "summary": "Generate bounded review-only Android PoC templates for synthetic fixtures.",
+      "top_level_symbols": [
+        {
+          "name": "GeneratedPoc",
+          "line": 20
+        },
+        {
+          "name": "ExploitPocSynthesizer",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "mobileag/generators/poc_generator.py",
+      "sha256": "d5157afaa9c66285909a2f1982ffcc5c34650a66f6bbd0a72603b78c7c985e51",
+      "lines": 209,
+      "summary": "LLM-powered PoC guide generator for security findings.",
+      "top_level_symbols": [
+        {
+          "name": "PoCGenerator",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/__init__.py",
+      "sha256": "9d4d81d7e121ef2fced760b91c590d3f858301088a4f19460878db2d782f8cb5",
+      "lines": 6,
+      "summary": "MobileAg Phase 2 Ingestion Modules.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/ingestion/aab_inventory.py",
+      "sha256": "732ead24991b74f4f8bc34c952b3831e67bfeabd5703474f3c0322a299c4b216",
+      "lines": 153,
+      "summary": "Bounded inventory-only accounting for Android App Bundle ZIP inputs.",
+      "top_level_symbols": [
+        {
+          "name": "inventory_android_app_bundle",
+          "line": 17
+        },
+        {
+          "name": "_sha256",
+          "line": 148
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/apk_extractor.py",
+      "sha256": "c507f9849e03db173ee0fbbbc9ee46aa9f13c6b7d2c9b730fc0fa901ffaa1e39",
+      "lines": 767,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "APKExtractor",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/framework_detector.py",
+      "sha256": "5c9ea8e140917291d2ff3b96dd99f35450eba4fa5db09ff3b89b40516b3beacf",
+      "lines": 119,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "FrameworkDetector",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/intent_filters.py",
+      "sha256": "0ad07b668415b697019d8ff1bdc5a5767c9c8cfdef65d9f66bd4d8c273215cab",
+      "lines": 49,
+      "summary": "Bounded manifest URI inventory, not a runtime resolver or domain verifier.",
+      "top_level_symbols": [
+        {
+          "name": "inventory_links",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/manifest_parser.py",
+      "sha256": "986c5a115ab90605726048cbbd548b31c08c8ab4a4b1a5470a0bf7e4bdc4c4bf",
+      "lines": 756,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "ManifestParser",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/obfuscation.py",
+      "sha256": "d5ff2d518b7cffeb89350fe942131b178fcf08a23f0ca8814a711b254d714c27",
+      "lines": 116,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "ObfuscationAnalyzer",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "mobileag/ingestion/packer_detector.py",
+      "sha256": "140908e4e55cc09d4055890796cdf9207cbd34a42ee9762137f76dffa6d7d6a4",
+      "lines": 83,
+      "summary": "",
+      "top_level_symbols": [
+        {
+          "name": "PackerDetector",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "mobileag/knowledge/__init__.py",
+      "sha256": "4af392c9cc504108b2da9c441e4b740e04f6d0a4d91378609d0f603076a38c24",
+      "lines": 4,
+      "summary": "Knowledge and Intelligence modules for MobileAg.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/knowledge/feedback.py",
+      "sha256": "caac71c1febbe6cbcf1a75b24e78c4c1783a062763eeada85daebb28bc366279",
+      "lines": 134,
+      "summary": "Self-learning feedback loop to adjust model confidences based on historical verdicts.",
+      "top_level_symbols": [
+        {
+          "name": "FeedbackEngine",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "path": "mobileag/knowledge/neo4j_graph.py",
+      "sha256": "c8574e1bea1c46ab965607247c28dee809f74b1bf0208713c408be126911282e",
+      "lines": 323,
+      "summary": "Neo4j attack surface graph integration.",
+      "top_level_symbols": [
+        {
+          "name": "_scoped_key",
+          "line": 26
+        },
+        {
+          "name": "AttackGraph",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "path": "mobileag/knowledge/qdrant_store.py",
+      "sha256": "a83584e5da192fd8eba491efd03ac3ff05a38302e9cd0870ed3397c8bfcf377b",
+      "lines": 153,
+      "summary": "Qdrant vector store for pattern memory.",
+      "top_level_symbols": [
+        {
+          "name": "PatternMemory",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "mobileag/knowledge/schemas.py",
+      "sha256": "fdb612613efaf2979ec4c30eeaf6f696ca403e0d0b39c0701a7c76057f9152ad",
+      "lines": 56,
+      "summary": "Neo4j node and relationship schemas for the attack surface graph.",
+      "top_level_symbols": [
+        {
+          "name": "AppNode",
+          "line": 9
+        },
+        {
+          "name": "ComponentNode",
+          "line": 17
+        },
+        {
+          "name": "VulnerabilityNode",
+          "line": 25
+        },
+        {
+          "name": "APIEndpointNode",
+          "line": 35
+        },
+        {
+          "name": "SecretNode",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/__init__.py",
+      "sha256": "9a02f034ed8bccae99d06f55da6daf0bd9c7b4981d3779dee9aedbf6f28caf0b",
+      "lines": 1,
+      "summary": "LLM provider system.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/llm/broker.py",
+      "sha256": "8aabb143eb3fde278be07918e306abd886ceb5a7a5c7028a7668c4837878ca6a",
+      "lines": 200,
+      "summary": "Separate, opt-in metadata-only LLM broker. No tools, code or APK egress.",
+      "top_level_symbols": [
+        {
+          "name": "setup_fields",
+          "line": 33
+        },
+        {
+          "name": "configured",
+          "line": 43
+        },
+        {
+          "name": "catalog",
+          "line": 66
+        },
+        {
+          "name": "aggregate",
+          "line": 79
+        },
+        {
+          "name": "validate_review_selection",
+          "line": 87
+        },
+        {
+          "name": "ProviderResponseError",
+          "line": 99
+        },
+        {
+          "name": "LLMReviewError",
+          "line": 104
+        },
+        {
+          "name": "_GuardFailure",
+          "line": 110
+        },
+        {
+          "name": "LLMBroker",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/consensus.py",
+      "sha256": "cc7fb96ba4c6c5171ec8269ead8c1c166ed27e9dc57bd581c47f6cad8d44ed88",
+      "lines": 199,
+      "summary": "Multi-LLM consensus voting system.",
+      "top_level_symbols": [
+        {
+          "name": "VoteDetail",
+          "line": 36
+        },
+        {
+          "name": "ConsensusResult",
+          "line": 48
+        },
+        {
+          "name": "ConsensusVoter",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/fallback.py",
+      "sha256": "3a5583ee3bfdb62e552c0cd8090d6e24fbe6a8e8c15d0dcdf18528ca42c78f1f",
+      "lines": 188,
+      "summary": "Automatic retry and fallback handler for LLM provider failures.",
+      "top_level_symbols": [
+        {
+          "name": "FallbackHandler",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/__init__.py",
+      "sha256": "86b42a0e22b9c87da5446396ba23df2fd0e74572ea79eefdd4b95ab2659b2406",
+      "lines": 10,
+      "summary": "Provider adapters: SDKs are imported only for explicitly approved execution.",
+      "top_level_symbols": [
+        {
+          "name": "__getattr__",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/base.py",
+      "sha256": "0acb64de3118b8a5e125bcf6136a5202ab68c30381f4a1804937ee304225933d",
+      "lines": 128,
+      "summary": "Abstract base class for all LLM providers.",
+      "top_level_symbols": [
+        {
+          "name": "LLMResponse",
+          "line": 13
+        },
+        {
+          "name": "BaseLLMProvider",
+          "line": 44
+        },
+        {
+          "name": "_Timer",
+          "line": 116
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/claude.py",
+      "sha256": "57a4e4ab5eca2bd2189a52473f86841c052b0fd2322f9d8cbb9948b6ef80e005",
+      "lines": 99,
+      "summary": "Anthropic Claude LLM provider using the anthropic SDK.",
+      "top_level_symbols": [
+        {
+          "name": "ClaudeProvider",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/deepseek.py",
+      "sha256": "be75afd3e21f113881d60a1f4ef44c0442004181ff377acda4230e9bcdc823e0",
+      "lines": 99,
+      "summary": "DeepSeek LLM provider using OpenAI-compatible API.",
+      "top_level_symbols": [
+        {
+          "name": "DeepSeekProvider",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/gemini.py",
+      "sha256": "4ca79e7565127117f63f823153f6d68c0b0b799c3e5a561a84dc9f1fd02b570d",
+      "lines": 94,
+      "summary": "Google Gemini LLM provider using the google-genai SDK.",
+      "top_level_symbols": [
+        {
+          "name": "GeminiProvider",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/grok.py",
+      "sha256": "ad60c70891eba83c0a0705f04bcdc5c6e54513f6a52392868eb71ee8b2a8a49f",
+      "lines": 99,
+      "summary": "xAI Grok LLM provider using OpenAI-compatible API.",
+      "top_level_symbols": [
+        {
+          "name": "GrokProvider",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/providers/openai_gpt.py",
+      "sha256": "089917890d9c81665b9a2ceaae2fe42877247693495f4dc6eb25918d4d7eb5d1",
+      "lines": 96,
+      "summary": "OpenAI GPT provider using the openai SDK.",
+      "top_level_symbols": [
+        {
+          "name": "OpenAIProvider",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "mobileag/llm/router.py",
+      "sha256": "8f8bf92cf9bcd31867e638601dd4456fbaf62d4feb721834c0512389e5aef7aa",
+      "lines": 204,
+      "summary": "Intelligent LLM routing engine \u2014 routes tasks to the best available provider.",
+      "top_level_symbols": [
+        {
+          "name": "LLMRouter",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/__init__.py",
+      "sha256": "675c02ddaaa192138196c4d2f604c6c19889bad086594e76a8fe94d4085dde84",
+      "lines": 1,
+      "summary": "Reporting modules for findings and reports.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/reporting/artifact_writer.py",
+      "sha256": "656cf000f0a403021a5ef4ee52f6fc364b7e9ac149e497df092473d6479ab665",
+      "lines": 173,
+      "summary": "Bounded private-mode atomic writes for researcher-facing artifacts.",
+      "top_level_symbols": [
+        {
+          "name": "preflight_bounded_structure",
+          "line": 14
+        },
+        {
+          "name": "_open_parent_directory",
+          "line": 59
+        },
+        {
+          "name": "private_artifact_stream",
+          "line": 87
+        },
+        {
+          "name": "write_private_artifact",
+          "line": 125
+        },
+        {
+          "name": "create_private_artifact_exclusive",
+          "line": 137
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/capability_inventory.py",
+      "sha256": "c504723413633a5c66de232864dbc593a6290f41440857e1aa8d6be867906616",
+      "lines": 166,
+      "summary": "Honest framework and binary-format capability inventory for reports.",
+      "top_level_symbols": [
+        {
+          "name": "_at_path",
+          "line": 33
+        },
+        {
+          "name": "capability_inventory",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/coverage.py",
+      "sha256": "0763033a98c3d4efa13535a83cdc183cb428640ac0a7379862cacd5da319c89d",
+      "lines": 189,
+      "summary": "Conservative coverage summaries. Execution success is never a security verdict.",
+      "top_level_symbols": [
+        {
+          "name": "_coverage_at_path",
+          "line": 35
+        },
+        {
+          "name": "review_surface_ledger",
+          "line": 44
+        },
+        {
+          "name": "guided_coverage",
+          "line": 136
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/cvss.py",
+      "sha256": "58b432ecb780f42b287f57d9cec373fb70079089f936960a5b740d36b1277e7d",
+      "lines": 190,
+      "summary": "CVSS 3.1 Base Score calculator.",
+      "top_level_symbols": [
+        {
+          "name": "calculate_cvss",
+          "line": 21
+        },
+        {
+          "name": "cvss_exported_component",
+          "line": 97
+        },
+        {
+          "name": "cvss_content_provider_traversal",
+          "line": 106
+        },
+        {
+          "name": "cvss_hardcoded_secret",
+          "line": 115
+        },
+        {
+          "name": "cvss_webview_rce",
+          "line": 124
+        },
+        {
+          "name": "cvss_deep_link_redirect",
+          "line": 133
+        },
+        {
+          "name": "cvss_weak_crypto",
+          "line": 142
+        },
+        {
+          "name": "cvss_insecure_storage",
+          "line": 151
+        },
+        {
+          "name": "get_default_cvss_for_cwe",
+          "line": 185
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/evidence_contract.py",
+      "sha256": "b61e0726cef1ec873a3736599cdf4951389197742a21cbe20f3a30022ac12bd5",
+      "lines": 102,
+      "summary": "Presentation-time evidence gate and deterministic investigation requirements.",
+      "top_level_symbols": [
+        {
+          "name": "prepare_finding",
+          "line": 19
+        },
+        {
+          "name": "prepare_scan",
+          "line": 78
+        },
+        {
+          "name": "prepare_observation",
+          "line": 94
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/finding.py",
+      "sha256": "87e4d108a9c2b27fd7cbee37d89fdbcc37c57b73b8991f82566fd57a0a18a7a3",
+      "lines": 149,
+      "summary": "Finding data model \u2014 represents a single security finding.",
+      "top_level_symbols": [
+        {
+          "name": "Severity",
+          "line": 10
+        },
+        {
+          "name": "FindingStatus",
+          "line": 19
+        },
+        {
+          "name": "Finding",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/masvs.py",
+      "sha256": "3fa7f51f5170a8d526b89bca1e00533888cc5009a93b9294b246daa0d7cdbed7",
+      "lines": 23,
+      "summary": "MASVS mappings for vulnerabilities.",
+      "top_level_symbols": [
+        {
+          "name": "get_masvs_description",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/mobsf_importer.py",
+      "sha256": "be0d945f600a47dff528fdd0fb96d127f23b8ab12682e8f17cd40ea37b00c28a",
+      "lines": 271,
+      "summary": "Bounded, offline projection of a small MobSF Android static-report subset.",
+      "top_level_symbols": [
+        {
+          "name": "MobSFImportError",
+          "line": 27
+        },
+        {
+          "name": "_preflight_object",
+          "line": 31
+        },
+        {
+          "name": "_safe_text",
+          "line": 78
+        },
+        {
+          "name": "_safe_source_path",
+          "line": 82
+        },
+        {
+          "name": "_loads_bounded",
+          "line": 98
+        },
+        {
+          "name": "_severity",
+          "line": 133
+        },
+        {
+          "name": "import_mobsf_json",
+          "line": 141
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/pentest_checklist.py",
+      "sha256": "769de98596df6b262cdc19221a19d77c4a3cd4145e91fc89065fe9161e5febda",
+      "lines": 615,
+      "summary": "Penetration Test Checklist & Workflow Engine.",
+      "top_level_symbols": [
+        {
+          "name": "AutomationLevel",
+          "line": 35
+        },
+        {
+          "name": "CheckStatus",
+          "line": 42
+        },
+        {
+          "name": "ChecklistItem",
+          "line": 52
+        },
+        {
+          "name": "PentestChecklist",
+          "line": 450
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/professional_report.py",
+      "sha256": "ccca7f6cadf5b9ba5d11f2a066792998065d0959b85dabaeefa22c911040db70",
+      "lines": 504,
+      "summary": "Professional Penetration Test Report Generator.",
+      "top_level_symbols": [
+        {
+          "name": "ProfessionalReportExporter",
+          "line": 42
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/report_engine.py",
+      "sha256": "f7c8181eaa0aff006a7aff39313db669b32c3bebe7628f269984b604ba5e3020",
+      "lines": 437,
+      "summary": "Report generation engine \u2014 outputs findings in Markdown, JSON, and PDF formats.",
+      "top_level_symbols": [
+        {
+          "name": "ReportEngine",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/sarif_exporter.py",
+      "sha256": "3aca1e9989cb92975abbaa6a42f48c9ff5452825e589f872166744b5f407a84e",
+      "lines": 215,
+      "summary": "OASIS SARIF v2.1.0 (Static Analysis Results Interchange Format) Exporter.",
+      "top_level_symbols": [
+        {
+          "name": "SARIFExporter",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/sarif_importer.py",
+      "sha256": "8e967974e5b33e3d6aef546b15dbe52426bbac7e218d4e2681b3bc1ed673ef04",
+      "lines": 288,
+      "summary": "Full-schema-validated, bounded, untrusted SARIF import projection.",
+      "top_level_symbols": [
+        {
+          "name": "SarifImportError",
+          "line": 29
+        },
+        {
+          "name": "_sarif_validator",
+          "line": 34
+        },
+        {
+          "name": "_preflight_sarif_limits",
+          "line": 48
+        },
+        {
+          "name": "validate_sarif_document",
+          "line": 78
+        },
+        {
+          "name": "_text",
+          "line": 86
+        },
+        {
+          "name": "_safe_relative_uri",
+          "line": 90
+        },
+        {
+          "name": "_bounded_object_size",
+          "line": 105
+        },
+        {
+          "name": "import_sarif",
+          "line": 153
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/scan_comparison.py",
+      "sha256": "d0aa37a20d694c0367e36aa4784d98b96976fb98a1dac634911387a2f4489934",
+      "lines": 212,
+      "summary": "Conservative read-only comparison of two immutable scan observations.",
+      "top_level_symbols": [
+        {
+          "name": "_key",
+          "line": 14
+        },
+        {
+          "name": "_relocation_key",
+          "line": 41
+        },
+        {
+          "name": "compare_scans",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "path": "mobileag/reporting/validation.py",
+      "sha256": "dc1365f292bb17b0ff6e0f9aac3f5cb528321b0b85a83b675dfc11e7ce2fe852",
+      "lines": 65,
+      "summary": "Structured analyst evidence requirements; not an automated exploit oracle.",
+      "top_level_symbols": [
+        {
+          "name": "EvidenceError",
+          "line": 7
+        },
+        {
+          "name": "ConfirmationEvidence",
+          "line": 11
+        },
+        {
+          "name": "bind_confirmation",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "path": "mobileag/security/__init__.py",
+      "sha256": "70ee0b5423eef461d1ea8fda9150f812d5e09ec0836acd17d624f719ade08565",
+      "lines": 1,
+      "summary": "Security boundaries shared by the dashboard and scan pipeline.",
+      "top_level_symbols": []
+    },
+    {
+      "path": "mobileag/security/archives.py",
+      "sha256": "7a370cef4967aa7c68588ade3bc4e93e02d3d7f7e74c08fa123029ea052d6944",
+      "lines": 80,
+      "summary": "Bounded archive validation; never trust a member's path or declared type.",
+      "top_level_symbols": [
+        {
+          "name": "_validated_members",
+          "line": 11
+        },
+        {
+          "name": "validate_archive",
+          "line": 37
+        },
+        {
+          "name": "validate_android_bundle_archive",
+          "line": 47
+        },
+        {
+          "name": "extract_archive",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "path": "mobileag/security/network.py",
+      "sha256": "a54ec29952ab41c35bb5df1ce120769a11c76c34acd8b1f59c61ec6db5ca19ee",
+      "lines": 49,
+      "summary": "Explicit-origin network scope with DNS pinning, TLS verification and byte bounds.",
+      "top_level_symbols": [
+        {
+          "name": "_scoped_request",
+          "line": 12
+        },
+        {
+          "name": "scoped_request",
+          "line": 47
+        }
+      ]
+    },
+    {
+      "path": "mobileag/security/privacy.py",
+      "sha256": "4f547ad2577f7e0a3814240739ddc34db74eada0e25ded6ef76d5bfba60300af",
+      "lines": 75,
+      "summary": "Best-effort credential redaction before evidence storage or model egress.",
+      "top_level_symbols": [
+        {
+          "name": "_sensitive",
+          "line": 15
+        },
+        {
+          "name": "_url",
+          "line": 40
+        },
+        {
+          "name": "redact",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "path": "mobileag/studio/__init__.py",
+      "sha256": "a24ef53722b167a770a84d5f38b93e8dad0b02340c12970a4b53a8090a770a3b",
+      "lines": 21,
+      "summary": "Opt-in, offline browser client. No credentials or scan data in public assets.",
+      "top_level_symbols": [
+        {
+          "name": "enable_studio",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/__init__.py",
+      "sha256": "3575112ffc4e2e623a52c7b8f71d33c67fd2c372a7ce7b2fc160d8e80062bfa2",
+      "lines": 8,
+      "summary": "Web package. Importing policy/contracts must not construct an API server.",
+      "top_level_symbols": [
+        {
+          "name": "__getattr__",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/app.py",
+      "sha256": "34f2a7e6d1e438828bd0b75d444bc02f39cb40145c3ff6cae6e031257e372a58",
+      "lines": 2388,
+      "summary": "FastAPI web application for MobileAg AppSec Dashboard with Live WebSockets & Neo4j.",
+      "top_level_symbols": [
+        {
+          "name": "lifespan",
+          "line": 33
+        },
+        {
+          "name": "Orchestrator",
+          "line": 59
+        },
+        {
+          "name": "safe_validation_error",
+          "line": 136
+        },
+        {
+          "name": "remember_findings",
+          "line": 151
+        },
+        {
+          "name": "ConnectionManager",
+          "line": 164
+        },
+        {
+          "name": "websocket_telemetry",
+          "line": 230
+        },
+        {
+          "name": "websocket_scan_telemetry",
+          "line": 236
+        },
+        {
+          "name": "_telemetry_stream",
+          "line": 241
+        },
+        {
+          "name": "get_initial_demo_scan",
+          "line": 303
+        },
+        {
+          "name": "validate_scan_id",
+          "line": 308
+        },
+        {
+          "name": "repository",
+          "line": 313
+        },
+        {
+          "name": "repository_import_legacy",
+          "line": 319
+        },
+        {
+          "name": "effective_runtime_settings",
+          "line": 352
+        },
+        {
+          "name": "find_latest_reports",
+          "line": 365
+        },
+        {
+          "name": "recover_interrupted_jobs",
+          "line": 374
+        },
+        {
+          "name": "cancel_scan",
+          "line": 387
+        },
+        {
+          "name": "retry_scan",
+          "line": 397
+        },
+        {
+          "name": "get_system_status",
+          "line": 409
+        },
+        {
+          "name": "get_readiness",
+          "line": 426
+        },
+        {
+          "name": "get_graph_status",
+          "line": 452
+        },
+        {
+          "name": "list_scans",
+          "line": 463
+        },
+        {
+          "name": "get_scan_details",
+          "line": 480
+        },
+        {
+          "name": "_require_source_artifact_binding",
+          "line": 500
+        },
+        {
+          "name": "get_scan_source",
+          "line": 511
+        },
+        {
+          "name": "get_scan_source_files",
+          "line": 536
+        },
+        {
+          "name": "search_scan_source",
+          "line": 557
+        },
+        {
+          "name": "compare_scan_to_baseline",
+          "line": 578
+        },
+        {
+          "name": "compare_scan_to_planned_baseline",
+          "line": 592
+        },
+        {
+          "name": "get_scan_graph",
+          "line": 629
+        },
+        {
+          "name": "get_scan_sarif",
+          "line": 652
+        },
+        {
+          "name": "get_scan_apis",
+          "line": 668
+        },
+        {
+          "name": "get_scan_resilience",
+          "line": 693
+        },
+        {
+          "name": "get_scan_cyclonedx",
+          "line": 789
+        },
+        {
+          "name": "get_scan_cyclonedx_xml",
+          "line": 815
+        },
+        {
+          "name": "get_scan_spdx",
+          "line": 841
+        },
+        {
+          "name": "get_scan_openapi",
+          "line": 867
+        },
+        {
+          "name": "get_scan_har",
+          "line": 884
+        },
+        {
+          "name": "audit_scan_tokens",
+          "line": 901
+        },
+        {
+          "name": "get_finding_poc",
+          "line": 929
+        },
+        {
+          "name": "FeedbackRequest",
+          "line": 985
+        },
+        {
+          "name": "submit_feedback",
+          "line": 994
+        },
+        {
+          "name": "submit_scan_feedback",
+          "line": 1002
+        },
+        {
+          "name": "scan_decisions",
+          "line": 1030
+        },
+        {
+          "name": "get_scan_test_plan",
+          "line": 1036
+        },
+        {
+          "name": "save_scan_test_plan",
+          "line": 1046
+        },
+        {
+          "name": "CopilotRequest",
+          "line": 1063
+        },
+        {
+          "name": "query_copilot",
+          "line": 1069
+        },
+        {
+          "name": "list_agents",
+          "line": 1086
+        },
+        {
+          "name": "get_scope",
+          "line": 1100
+        },
+        {
+          "name": "save_scope",
+          "line": 1109
+        },
+        {
+          "name": "retention_preview",
+          "line": 1120
+        },
+        {
+          "name": "PurgeRequest",
+          "line": 1129
+        },
+        {
+          "name": "purge_scan",
+          "line": 1135
+        },
+        {
+          "name": "get_settings_config",
+          "line": 1155
+        },
+        {
+          "name": "update_settings_config",
+          "line": 1161
+        },
+        {
+          "name": "DeviceConnectRequest",
+          "line": 1201
+        },
+        {
+          "name": "DeviceActionRequest",
+          "line": 1205
+        },
+        {
+          "name": "InstallApkRequest",
+          "line": 1209
+        },
+        {
+          "name": "LaunchActivityRequest",
+          "line": 1215
+        },
+        {
+          "name": "DispatchDeeplinkRequest",
+          "line": 1220
+        },
+        {
+          "name": "StorageAuditRequest",
+          "line": 1227
+        },
+        {
+          "name": "ProviderAuditRequest",
+          "line": 1232
+        },
+        {
+          "name": "DastFuzzRequest",
+          "line": 1238
+        },
+        {
+          "name": "DeepLinkAuditRequest",
+          "line": 1252
+        },
+        {
+          "name": "MemoryAuditRequest",
+          "line": 1259
+        },
+        {
+          "name": "UICrawlRequest",
+          "line": 1264
+        },
+        {
+          "name": "FridaDeployRequest",
+          "line": 1270
+        },
+        {
+          "name": "TaintAnalyzeRequest",
+          "line": 1276
+        },
+        {
+          "name": "CapturedTransaction",
+          "line": 1281
+        },
+        {
+          "name": "DeclaredApiEndpoint",
+          "line": 1293
+        },
+        {
+          "name": "TrafficAuditRequest",
+          "line": 1299
+        },
+        {
+          "name": "ExecuteAdbRequest",
+          "line": 1314
+        },
+        {
+          "name": "ApiTestRequest",
+          "line": 1319
+        },
+        {
+          "name": "ApiFuzzRequest",
+          "line": 1327
+        },
+        {
+          "name": "require_current_session",
+          "line": 1340
+        },
+        {
+          "name": "get_dast_devices",
+          "line": 1351
+        },
+        {
+          "name": "get_preflight",
+          "line": 1376
+        },
+        {
+          "name": "get_frida_status",
+          "line": 1391
+        },
+        {
+          "name": "preview_frida_preset",
+          "line": 1418
+        },
+        {
+          "name": "connect_dast_device",
+          "line": 1424
+        },
+        {
+          "name": "restart_dast_root",
+          "line": 1440
+        },
+        {
+          "name": "install_dast_apk",
+          "line": 1456
+        },
+        {
+          "name": "launch_dast_activity",
+          "line": 1481
+        },
+        {
+          "name": "dispatch_dast_deeplink",
+          "line": 1497
+        },
+        {
+          "name": "execute_adb_command",
+          "line": 1523
+        },
+        {
+          "name": "get_dast_logcat",
+          "line": 1539
+        },
+        {
+          "name": "clear_dast_logcat",
+          "line": 1572
+        },
+        {
+          "name": "capture_dast_screenshot",
+          "line": 1579
+        },
+        {
+          "name": "audit_dast_storage",
+          "line": 1599
+        },
+        {
+          "name": "audit_dast_providers",
+          "line": 1614
+        },
+        {
+          "name": "audit_dast_deeplinks",
+          "line": 1633
+        },
+        {
+          "name": "audit_dast_memory",
+          "line": 1654
+        },
+        {
+          "name": "crawl_dast_ui",
+          "line": 1670
+        },
+        {
+          "name": "deploy_dast_frida",
+          "line": 1688
+        },
+        {
+          "name": "audit_dast_traffic",
+          "line": 1695
+        },
+        {
+          "name": "start_api_capture",
+          "line": 1716
+        },
+        {
+          "name": "stop_api_capture",
+          "line": 1747
+        },
+        {
+          "name": "get_api_capture_transactions",
+          "line": 1758
+        },
+        {
+          "name": "_captured_api_catalog",
+          "line": 1772
+        },
+        {
+          "name": "get_api_capture_openapi",
+          "line": 1787
+        },
+        {
+          "name": "get_api_capture_har",
+          "line": 1802
+        },
+        {
+          "name": "audit_api_capture",
+          "line": 1815
+        },
+        {
+          "name": "analyze_taint",
+          "line": 1826
+        },
+        {
+          "name": "test_api_endpoint",
+          "line": 1834
+        },
+        {
+          "name": "fuzz_api_endpoint",
+          "line": 1852
+        },
+        {
+          "name": "run_dast_background_task",
+          "line": 1889
+        },
+        {
+          "name": "trigger_dast_fuzzer",
+          "line": 2058
+        },
+        {
+          "name": "upload_apk",
+          "line": 2083
+        },
+        {
+          "name": "RunScanRequest",
+          "line": 2115
+        },
+        {
+          "name": "live_scan_telemetry_worker",
+          "line": 2125
+        },
+        {
+          "name": "trigger_scan",
+          "line": 2255
+        },
+        {
+          "name": "hash_file",
+          "line": 2326
+        },
+        {
+          "name": "automation_service",
+          "line": 2335
+        },
+        {
+          "name": "assessment_service",
+          "line": 2348
+        },
+        {
+          "name": "run_server",
+          "line": 2367
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/jobs.py",
+      "sha256": "becc539ccdb3b064c011c2c6a13ee60597375bf5f3660d8151c388d35e52f1be",
+      "lines": 199,
+      "summary": "Killable offline static jobs in a mount/PID/network namespace.",
+      "top_level_symbols": [
+        {
+          "name": "_read_worker_result",
+          "line": 23
+        },
+        {
+          "name": "_measure_tree",
+          "line": 55
+        },
+        {
+          "name": "sandbox_command",
+          "line": 80
+        },
+        {
+          "name": "resource_command",
+          "line": 108
+        },
+        {
+          "name": "manager_environment",
+          "line": 117
+        },
+        {
+          "name": "isolated_analysis",
+          "line": 121
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/policy.py",
+      "sha256": "2de6b7499d4c6bf72003a866a928d6820105cba3edd92e952c300a8489b28c2e",
+      "lines": 60,
+      "summary": "Persisted operator restrictions may narrow, never expand environment scope.",
+      "top_level_symbols": [
+        {
+          "name": "validate_policy",
+          "line": 10
+        },
+        {
+          "name": "check_action",
+          "line": 26
+        },
+        {
+          "name": "check_replay",
+          "line": 58
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/repository.py",
+      "sha256": "9cb486f88e6c7d740d660aaee5b3ba29d7c28b6b8b5cd67990753ed21f289701",
+      "lines": 295,
+      "summary": "Local transactional metadata and scan-scoped analyst decisions.",
+      "top_level_symbols": [
+        {
+          "name": "_bounded_redacted_json",
+          "line": 28
+        },
+        {
+          "name": "_bounded_config_json",
+          "line": 43
+        },
+        {
+          "name": "private_write",
+          "line": 58
+        },
+        {
+          "name": "ScanRepository",
+          "line": 66
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/security.py",
+      "sha256": "4b47298fff0f159b4f7dbc8816ef165481286bdd866f0ec89febc1054513095c",
+      "lines": 147,
+      "summary": "Fail-closed API authentication, origin checks and device scope.",
+      "top_level_symbols": [
+        {
+          "name": "configured_list",
+          "line": 13
+        },
+        {
+          "name": "origin_allowed",
+          "line": 17
+        },
+        {
+          "name": "authorized",
+          "line": 23
+        },
+        {
+          "name": "check_device",
+          "line": 27
+        },
+        {
+          "name": "SecurityMiddleware",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "path": "mobileag/web/source_browser.py",
+      "sha256": "b70fc57df937d522de1c4cbe6f1158abb6c655dfb45d7168243c8689df50d714",
+      "lines": 329,
+      "summary": "Read-only, bounded access to decompiler text for the local review UI.",
+      "top_level_symbols": [
+        {
+          "name": "SourceReadError",
+          "line": 30
+        },
+        {
+          "name": "_candidate_paths",
+          "line": 34
+        },
+        {
+          "name": "_read_candidate",
+          "line": 70
+        },
+        {
+          "name": "read_scan_source",
+          "line": 119
+        },
+        {
+          "name": "_open_dir",
+          "line": 162
+        },
+        {
+          "name": "_enumerate_text_files",
+          "line": 178
+        },
+        {
+          "name": "list_scan_source_files",
+          "line": 238
+        },
+        {
+          "name": "_with_scan_fd",
+          "line": 254
+        },
+        {
+          "name": "search_scan_sources",
+          "line": 273
+        }
+      ]
+    },
+    {
+      "path": "config/__init__.py",
+      "sha256": "ff159057ecd06fecc5e96147eb95091c8176c3fc546117799e4c5580b132e987",
+      "lines": 1,
+      "summary": "",
+      "top_level_symbols": []
+    },
+    {
+      "path": "config/llm_config.py",
+      "sha256": "482f5c5180ccedf46c1014f6975b2097edb41245e39287b27b3b38c5480fd3d7",
+      "lines": 144,
+      "summary": "LLM provider configuration and task-to-model routing.",
+      "top_level_symbols": [
+        {
+          "name": "TaskType",
+          "line": 10
+        },
+        {
+          "name": "LLMProviderConfig",
+          "line": 25
+        },
+        {
+          "name": "TaskModelMapping",
+          "line": 36
+        },
+        {
+          "name": "get_provider_configs",
+          "line": 78
+        },
+        {
+          "name": "get_models_for_task",
+          "line": 139
+        }
+      ]
+    },
+    {
+      "path": "config/settings.py",
+      "sha256": "8f9738c966a6b5961de8a8793ecc81a004721a008cbe21302ef652f9c6f8ecb7",
+      "lines": 69,
+      "summary": "Central configuration loaded from environment variables.",
+      "top_level_symbols": [
+        {
+          "name": "Settings",
+          "line": 10
+        },
+        {
+          "name": "get_settings",
+          "line": 67
+        }
+      ]
+    }
+  ]
+}

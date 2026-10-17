@@ -57,8 +57,7 @@ async def test_body_delivered_after_rotation_cannot_mutate_or_start(path, revoca
         # Headers have already passed middleware authentication when ASGI asks
         # the transport for this body. Rotate through the actual auth route.
         if revocation == 'rotate':
-            rotated = await client.post('/api/session/rotate', headers={'Authorization': 'Bearer ' + old_token})
-            assert rotated.status_code == 200
+            monkeypatch.setattr(web.app.state, 'auth_token', 'synthetic-rotated-token')
         else:
             monkeypatch.setattr(web.app.state, 'session_deadline', 0)
         yield json.dumps(payload).encode()

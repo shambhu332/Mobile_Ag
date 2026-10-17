@@ -1,7 +1,7 @@
 """Local transactional metadata and scan-scoped analyst decisions.
 
 Raw originals stay immutable on disk. SQLite is the authoritative mutable record;
-legacy dashboard files are imported on first access. This is not a tenant service.
+legacy JSON files are imported on first access. This is not a tenant service.
 """
 from __future__ import annotations
 import json

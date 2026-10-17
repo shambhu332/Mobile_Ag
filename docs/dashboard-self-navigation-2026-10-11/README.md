@@ -1,3 +1,9 @@
+# Retired browser UI navigation
+
+The browser dashboard and its navigation command have been removed. The local authenticated API remains available; use `python -m mobileag.cli dashboard api` with a researcher-managed `MOBILEAG_API_TOKEN`. The remaining material below is retained as historical implementation context, not current instructions.
+
+---
+
 # Dashboard self-connection, navigation and curl
 
 This feature operates the **MobileAg dashboard**, not an Android application's

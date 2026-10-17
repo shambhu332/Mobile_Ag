@@ -52,23 +52,10 @@ def test_replay_method_policy(client,monkeypatch):
     assert client.post('/api/apis/test',json={'url':'https://owned.example/a','method':'GET'}).status_code==200
     call.assert_awaited_once()
 
-def test_session_expiration_rotation_and_logout(client,monkeypatch,capsys):
-    monkeypatch.setattr(web.app.state,'auth_token',web.app.state.auth_token)
-    monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()+100)
-    old=web.app.state.auth_token
-    result=client.post('/api/session/rotate');assert result.status_code==200
-    assert result.json().get('token') is None and result.json()['status']=='rotated'
-    assert 'httponly' in result.headers['set-cookie'].lower()
-    assert client.get('/api/settings').status_code==401
-    client.headers.pop('Authorization')
-    assert client.get('/api/settings').status_code==200
-    monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()-1)
-    assert client.get('/api/settings').status_code==401
-    monkeypatch.setattr(web.app.state,'session_deadline',time.monotonic()+100)
-    assert client.post('/api/session/logout').status_code==200
-    assert client.get('/api/settings').status_code==401
-    # Rotation/logout no longer disclose replacement tokens in server output.
-    assert 'after logout' not in capsys.readouterr().out
+def test_browser_session_management_routes_are_removed(client):
+    assert client.post('/api/session/rotate').status_code == 404
+    assert client.post('/api/session/logout').status_code == 404
+    assert client.get('/api/settings').status_code == 200
 
 
 def test_isolated_worker_tree_measurement_enforces_bounded_no_follow_inventory(tmp_path):
@@ -212,15 +199,13 @@ async def test_restart_recovery_is_not_automatic_execution():
     assert result['status']=='interrupted'
     assert 'No device action' in result['errors'][0]
 
-def test_assets_offline_and_csp(client):
-    assert client.get('/static/vendor/lucide.js').status_code==200
+def test_web_ui_and_asset_routes_are_not_shipped(client):
+    assert client.get("/static/vendor/lucide.js").status_code == 404
     anonymous=TestClient(web.app)
-    assert anonymous.get('/static/accessibility.css').status_code==200
-    assert anonymous.get('/api/scope').status_code==401
-    response=anonymous.get('/')
-    assert 'https://unpkg.com' not in response.headers['content-security-policy']
-    assert 'script-src \'self\'' in response.headers['content-security-policy']
-    assert 'https://' not in response.text
+    assert anonymous.get("/static/accessibility.css").status_code == 401
+    assert anonymous.get("/api/scope").status_code == 401
+    assert client.get("/").status_code == 404
+
 
 @pytest.mark.skipif(not shutil.which('bwrap'),reason='Linux bubblewrap not installed')
 def test_real_namespace_controls(tmp_path,monkeypatch):

@@ -1,10 +1,8 @@
-"""Fail-closed dashboard authentication, origin checks and device scope."""
+"""Fail-closed API authentication, origin checks and device scope."""
 import hmac
 import os
 import re
 import time
-import secrets
-from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -18,23 +16,12 @@ def configured_list(name):
 
 def origin_allowed(origin: str | None, host: str) -> bool:
     if not origin:
-        return True  # Non-browser clients still require a bearer token.
+        return True  # API clients still require a bearer token.
     return origin in {f'http://{host}', f'https://{host}'}
 
 
 def authorized(token, expected):
     return isinstance(token, str) and bool(token) and hmac.compare_digest(token, expected)
-
-
-def browser_session_cookie(headers) -> str:
-    """Read the HttpOnly same-site dashboard cookie without accepting URL tokens."""
-    try:
-        jar = SimpleCookie()
-        jar.load(headers.get('cookie', ''))
-        morsel = jar.get('mobileag_session')
-        return morsel.value if morsel else ''
-    except (TypeError, ValueError):
-        return ''
 
 
 def check_device(serial):
@@ -60,15 +47,6 @@ class SecurityMiddleware:
                         (b'cache-control', b'no-store'),
                         (b'content-security-policy',
                          b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")]
-                    if scope.get('path') == '/' and scope.get('method') == 'GET' and message.get('status') == 200:
-                        if time.monotonic() >= getattr(self.owner.state, 'session_deadline', 0):
-                            if not os.environ.get('MOBILEAG_API_TOKEN'):
-                                self.owner.state.auth_token = secrets.token_urlsafe(32)
-                            self.owner.state.session_deadline = time.monotonic() + 8 * 3600
-                        secure = b'; Secure' if scope.get('scheme') == 'https' else b''
-                        cookie = (b'mobileag_session=' + self.owner.state.auth_token.encode('ascii')
-                                  + b'; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800' + secure)
-                        response_headers.append((b'set-cookie', cookie))
                     message['headers'] = response_headers
                 await original_send(message)
             send = secure_send
@@ -76,12 +54,17 @@ class SecurityMiddleware:
         host = headers.get('host', '')
         hostname = urlsplit('http://' + host).hostname
         allowed = {'127.0.0.1', 'localhost', '::1'} | configured_list('MOBILEAG_ALLOWED_HOSTS')
+        # Only fixed credential-free assets are public, and only in opt-in UI mode.
+        from mobileag.studio import PUBLIC_FILES
+        public_asset = (scope['type'] == 'http' and scope.get('method') in {'GET', 'HEAD'}
+                        and getattr(self.owner.state, 'studio_enabled', False)
+                        and scope['path'] in PUBLIC_FILES)
         error = None
         status = 403
         if hostname not in allowed or not origin_allowed(headers.get('origin'), host):
             error = 'Host or Origin not allowed'
-        elif scope['type'] == 'http' and scope['path'] != '/' and not scope['path'].startswith('/static/'):
-            supplied = headers.get('authorization', '').removeprefix('Bearer ') or browser_session_cookie(headers)
+        elif scope['type'] == 'http' and not public_asset:
+            supplied = headers.get('authorization', '').removeprefix('Bearer ')
             if time.monotonic() >= getattr(self.owner.state,'session_deadline',float('inf')) or not authorized(supplied, self.owner.state.auth_token):
                 error, status = 'Bearer authentication required', 401
         if error:
@@ -91,8 +74,8 @@ class SecurityMiddleware:
         if scope['type'] == 'websocket':
             return await self.app(scope, receive, send)
         path = scope['path']
-        protected = path != '/' and not path.startswith('/static/')
-        request_token = headers.get('authorization', '').removeprefix('Bearer ') or browser_session_cookie(headers)
+        protected = not public_asset
+        request_token = headers.get('authorization', '').removeprefix('Bearer ')
         # Bind downstream tasks to the credential actually authenticated, never
         # to the server's replacement token after logout/rotation.
         if protected:
@@ -103,8 +86,9 @@ class SecurityMiddleware:
                               or not authorized(request_token, self.owner.state.auth_token)):
                 raise HTTPException(401, 'Bearer authentication required')
 
-        upload = path == '/api/upload/apk'
-        limit = MAX_UPLOAD + 65536 if upload else 1024 * 1024
+        from mobileag.studio.routes import UPLOAD_LIMITS
+        upload = path == '/api/upload/apk' or path in UPLOAD_LIMITS
+        limit = (UPLOAD_LIMITS.get(path, MAX_UPLOAD) + 65536) if upload else 1024 * 1024
         try:
             length = int(headers.get('content-length', '0'))
         except ValueError:

@@ -31,10 +31,6 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(application):
-    # Browser sessions are issued as same-origin HttpOnly cookies; never print them.
-    if not getattr(application.state,'token_announced',False):
-        print('Browser access uses a local HttpOnly session cookie; no token entry is required.', flush=True)
-        application.state.token_announced=True
     await recover_interrupted_jobs()
     automation_service().store().recover()
     assessment_service().store().recover()
@@ -54,8 +50,7 @@ async def lifespan(application):
 
 from fastapi import Request, BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, model_validator
 import httpx
@@ -118,7 +113,6 @@ intent_fuzzer = IntentFuzzer(
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_ROOT = Path(os.environ.get("MOBILEAG_DATA_DIR", Path.cwd())).resolve()
 OUTPUT_DIR = DATA_ROOT / "output"
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 UPLOAD_DIR = DATA_ROOT / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 MAX_LEGACY_IMPORT_ENTRIES = 5_000
@@ -126,16 +120,17 @@ MAX_LEGACY_IMPORT_FILE_BYTES = 16 * 1024 * 1024
 MAX_LEGACY_IMPORT_TOTAL_BYTES = 64 * 1024 * 1024
 
 app = FastAPI(
-    title="MobileAg — AppSec Dashboard",
-    description="Local, scoped mobile security research workbench",
+    title="MobileAg API",
+    description="Authenticated local API for scoped mobile security research workflows",
     version=__version__,
+    docs_url=None,
+    redoc_url=None,
     lifespan=lifespan,
 )
 
 app.state.session_deadline = time.monotonic() + 8*3600
 app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
 app.add_middleware(SecurityMiddleware, owner=app)
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation_error(request: Request, exc: RequestValidationError):
@@ -252,13 +247,7 @@ async def _telemetry_stream(websocket: WebSocket, scan_id: str | None = None) ->
     try:
         try:
             await websocket.accept()
-            from mobileag.web.security import browser_session_cookie
-            websocket_headers = getattr(websocket, 'headers', {})
-            cookie_token = browser_session_cookie({'cookie': websocket_headers.get('cookie', '')})
-            if cookie_token and authorized(cookie_token, app.state.auth_token):
-                auth = {'token': cookie_token}
-            else:
-                auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            auth = await asyncio.wait_for(websocket.receive_json(), timeout=5)
             if (time.monotonic() >= app.state.session_deadline or not isinstance(auth, dict)
                     or not authorized(auth.get("token"), app.state.auth_token)):
                 await websocket.close(code=1008)
@@ -414,15 +403,6 @@ async def retry_scan(scan_id: str, background_tasks: BackgroundTasks):
     if not path.is_file() or hash_file(path) != scan.get('artifact_sha256'):
         raise HTTPException(409, 'Original archive is unavailable or changed; upload it again')
     return await trigger_scan(RunScanRequest(**request),background_tasks)
-
-
-@app.get("/", response_class=HTMLResponse)
-async def get_dashboard() -> HTMLResponse:
-    """Serve the single-page MobileAg Enterprise Dashboard."""
-    index_path = TEMPLATES_DIR / "index.html"
-    if not index_path.exists():
-        raise HTTPException(status_code=404, detail="Dashboard template not found.")
-    return HTMLResponse(content=index_path.read_text())
 
 
 @app.get("/api/status")
@@ -1136,29 +1116,6 @@ async def save_scope(value: dict):
     return {'status':'saved','policy':policy}
 
 
-@app.post("/api/session/rotate")
-async def rotate_session(response: Response, request: Request):
-    app.state.auth_token = secrets.token_urlsafe(32)
-    app.state.session_deadline = time.monotonic()+8*3600
-    for ws in list(manager.active_connections):
-        await ws.close(code=1008)
-        manager.disconnect(ws)
-    response.set_cookie('mobileag_session', app.state.auth_token, max_age=8*3600, path='/',
-                        httponly=True, secure=request.url.scheme == 'https', samesite='strict')
-    return {'status':'rotated','expires_in':8*3600}
-
-
-@app.post("/api/session/logout")
-async def logout_session(response: Response):
-    app.state.auth_token = secrets.token_urlsafe(32)
-    app.state.session_deadline = time.monotonic()+8*3600
-    for ws in list(manager.active_connections):
-        await ws.close(code=1008)
-        manager.disconnect(ws)
-    response.delete_cookie('mobileag_session', path='/', httponly=True, samesite='strict')
-    return {'status':'logged_out','reconnect':'Reload the dashboard to start a new local browser session'}
-
-
 @app.get("/api/scans/{scan_id}/retention")
 async def retention_preview(scan_id: str):
     scan = await get_scan_details(scan_id)
@@ -1508,7 +1465,7 @@ async def install_dast_apk(req: InstallApkRequest, request: Request) -> dict[str
     guard()
     path = Path(req.apk_path).resolve()
     if not path.is_relative_to(UPLOAD_DIR.resolve()):
-        raise HTTPException(400, "Install an archive uploaded to this dashboard")
+        raise HTTPException(400, "Install an archive uploaded through this API")
     try:
         if validate_archive(path) != "android":
             raise ValueError("Expected Android APK")
@@ -2299,7 +2256,7 @@ async def trigger_scan(request: RunScanRequest, background_tasks: BackgroundTask
     """Trigger a new asynchronous security scan with live WebSocket telemetry."""
     apk_file = Path(request.apk_path).resolve()
     if not apk_file.is_relative_to(UPLOAD_DIR.resolve()):
-        raise HTTPException(400, "Select an archive uploaded to this dashboard")
+        raise HTTPException(400, "Select an archive uploaded through this API")
     try:
         platform = await asyncio.to_thread(validate_archive, apk_file)
     except ValueError as exc:
@@ -2407,19 +2364,23 @@ from mobileag.assessments.routes import build_router as build_assessment_router
 app.include_router(build_assessment_router(assessment_service,lambda request:request.state.authenticated_token))
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
-    """Entrypoint to launch the web dashboard."""
+def run_server(host: str = "127.0.0.1", port: int = 8080, ui: bool = False) -> None:
+    """Entrypoint to launch the authenticated API server."""
     import uvicorn
+    if not os.environ.get("MOBILEAG_API_TOKEN"):
+        raise ValueError("Set MOBILEAG_API_TOKEN before starting the API server")
     print(f"\n=======================================================")
-    print(f"[*] Starting MobileAg Enterprise AppSec Dashboard")
+    print(f"[*] Starting MobileAg authenticated API")
     print(f"[*] Live WebSockets:  ws://{host}:{port}/ws/telemetry")
     print(f"[*] Neo4j Status:     {'Connected' if attack_graph._connected else 'Embedded Fallback'}")
-    print(f"[*] Web Interface:    http://{host}:{port}")
+    print(f"[*] API endpoint:     http://{host}:{port}")
     print(f"=======================================================\n")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
-    print("Browser access uses an HttpOnly, same-site local session cookie; no token entry is required.")
-    app.state.token_announced=True
+    if ui:
+        from mobileag.studio import enable_studio
+        enable_studio(app)
+        print(f"[*] Browser workspace: http://{host}:{port}/ui")
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 
 

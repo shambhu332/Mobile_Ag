@@ -1,0 +1,116 @@
+{
+  "operation": "synthetic_source_zip_isolation_probe",
+  "status_code": 200,
+  "response": {
+    "findings": [],
+    "coverage": {
+      "static_status": "analyzed_heuristically",
+      "source_files_analyzed": 1,
+      "source_bytes_analyzed": 31,
+      "source_files_skipped": 0,
+      "source_file_skip_reasons": {},
+      "limit_reasons": {},
+      "entries_examined": 1,
+      "limits_reached": false,
+      "runtime_status": "not_tested",
+      "proof_status": "not_proven",
+      "exhaustive": false,
+      "automatic_exploit_proof": false,
+      "limits": {
+        "entries": 5000,
+        "file_bytes": 2097152,
+        "total_bytes": 33554432,
+        "findings": 1000,
+        "parameter_summaries": 5000,
+        "parameter_summary_rounds": 32
+      },
+      "candidate_count": 0,
+      "java_ast": {
+        "available": false,
+        "files_parsed": 0,
+        "parse_fallbacks": 1,
+        "syntax_error_fallbacks": 0,
+        "syntax_error_nodes_observed": 0,
+        "syntax_error_node_count_incomplete_files": 0,
+        "parser_exception_fallbacks": 0,
+        "parser_unavailable_fallbacks": 1,
+        "static_status": "fallback_lexical"
+      },
+      "same_file_parameter_summary": {
+        "source_files_analyzed": 1,
+        "direct_summaries": 0,
+        "transitive_summaries": 0,
+        "files_with_transitive_summaries": 0,
+        "round_limit_files": 0,
+        "candidate_limit_files": 0,
+        "max_rounds_per_file": 32,
+        "max_summaries_per_file": 5000,
+        "proof_status": "not_proven"
+      },
+      "symbol_resolver": {
+        "indexed_classes": 1,
+        "indexed_files": 1,
+        "static_status": "analyzed_heuristically",
+        "coverage": {
+          "static_status": "analyzed_heuristically",
+          "source_files_analyzed": 1,
+          "source_bytes_analyzed": 31,
+          "source_files_skipped": 0,
+          "source_file_skip_reasons": {},
+          "limit_reasons": {},
+          "entries_examined": 1,
+          "limits_reached": false,
+          "runtime_status": "not_tested",
+          "proof_status": "not_proven",
+          "exhaustive": false,
+          "automatic_exploit_proof": false,
+          "limits": {
+            "entries": 5000,
+            "file_bytes": 2097152,
+            "total_bytes": 67108864
+          }
+        }
+      },
+      "serialization": {
+        "static_status": "analyzed_heuristically",
+        "runtime_status": "not_tested",
+        "proof_status": "not_proven",
+        "candidate_count": 0,
+        "exhaustive": false,
+        "limitations": [
+          "only the bounded modeled Java ObjectInputStream flow is counted",
+          "URI provider control, grants, guards, object filters, and runtime reachability are not validated"
+        ]
+      },
+      "webview": {
+        "static_status": "analyzed_heuristically",
+        "runtime_status": "not_tested",
+        "proof_status": "not_proven",
+        "candidate_count": 0,
+        "exhaustive": false,
+        "limitations": [
+          "only bounded flows to modeled Java WebView sinks are counted",
+          "effective origin, JavaScript bridge exposure, guards, control flow, and runtime reachability are not validated"
+        ]
+      }
+    },
+    "selected_source_files": 1,
+    "non_source_members": 0,
+    "runtime_status": "not_tested",
+    "proof_status": "not_proven",
+    "operation": "uploaded_source_taint",
+    "adapter_provenance": {
+      "input_sha256": "8bddcb91447bc4693dde2151b59910a768f7edaa875d96490726039bf98dc89c",
+      "input_size_bytes": 157,
+      "mobileag_version": "0.1.0",
+      "python_version": "3.14.8",
+      "parser_packages": {
+        "tree-sitter": "not_installed",
+        "tree-sitter-java": "not_installed",
+        "tree-sitter-kotlin": "not_installed"
+      },
+      "mode": "offline_static_only"
+    }
+  },
+  "unsafe_fallback": false
+}

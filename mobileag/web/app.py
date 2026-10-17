@@ -517,8 +517,19 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
     return redact(prepare_scan(scan))
 
 
+def _require_source_artifact_binding(scan: dict[str, Any], artifact_sha256: str) -> None:
+    """Bind decompiler output to the exact immutable APK reviewed by the caller."""
+    import re
+    recorded = scan.get("artifact_sha256")
+    if (not isinstance(artifact_sha256, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", artifact_sha256)
+            or not isinstance(recorded, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", recorded)
+            or not secrets.compare_digest(artifact_sha256.lower(), recorded.lower())):
+        raise HTTPException(409, "Source artifact identity is missing or does not match this scan")
+
+
 @app.get("/api/scans/{scan_id}/source")
-async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max_length=2048)) -> dict[str, Any]:
+async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max_length=2048),
+                          artifact_sha256: str = Query(..., min_length=64, max_length=64)) -> dict[str, Any]:
     """Open bounded decompiler text for an already-completed APK scan.
 
     This is a read-only local review convenience, not an arbitrary file API.
@@ -526,41 +537,58 @@ async def get_scan_source(scan_id: str, path: str = Query(..., min_length=1, max
     """
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, read_scan_source
     try:
-        return await asyncio.to_thread(read_scan_source, OUTPUT_DIR, scan_id, path)
+        result = await asyncio.to_thread(read_scan_source, OUTPUT_DIR, scan_id, path)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 413 if "1 MiB" in str(exc) else 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None
 
 
 @app.get("/api/scans/{scan_id}/source/files")
-async def get_scan_source_files(scan_id: str, q: str = Query("", max_length=120)) -> dict[str, Any]:
+async def get_scan_source_files(scan_id: str, artifact_sha256: str = Query(..., min_length=64, max_length=64),
+                                q: str = Query("", max_length=120)) -> dict[str, Any]:
     """List bounded decompiler text paths; never returns source contents."""
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, list_scan_source_files
     try:
-        return await asyncio.to_thread(list_scan_source_files, OUTPUT_DIR, scan_id, query=q)
+        result = await asyncio.to_thread(list_scan_source_files, OUTPUT_DIR, scan_id, query=q)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None
 
 
 @app.get("/api/scans/{scan_id}/source/search")
-async def search_scan_source(scan_id: str, q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
+async def search_scan_source(scan_id: str, artifact_sha256: str = Query(..., min_length=64, max_length=64),
+                             q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
     """Search decompiler text literally under strict file, byte, and time budgets."""
     validate_scan_id(scan_id)
     scan = await get_scan_details(scan_id)
+    _require_source_artifact_binding(scan, artifact_sha256)
     if scan.get("status") not in {"completed", "partial"}:
         raise HTTPException(409, "Source is available only after a completed or partial scan")
     from mobileag.web.source_browser import SourceReadError, search_scan_sources
     try:
-        return await asyncio.to_thread(search_scan_sources, OUTPUT_DIR, scan_id, q)
+        result = await asyncio.to_thread(search_scan_sources, OUTPUT_DIR, scan_id, q)
+        result["artifact_sha256"] = scan["artifact_sha256"].lower()
+        result["decompiler_status"] = scan.get("coverage", {}).get("decompiler", {}).get("static_status", "not_recorded")
+        result["decompiler_limitations"] = scan.get("coverage", {}).get("decompiler", {}).get("limitations", [])
+        return result
     except SourceReadError as exc:
         status = 404 if "unavailable" in str(exc) else 400
         raise HTTPException(status, str(exc)) from None

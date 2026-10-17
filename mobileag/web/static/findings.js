@@ -137,13 +137,16 @@
       view.textContent = '';
       view.classList.remove('hidden');
       try {
-        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source?path=${encodeURIComponent(finding.file_path)}`;
+        const artifactHash = currentScan.artifact_sha256 || currentScan.artifact_provenance?.sha256 || '';
+        if (!/^[a-f0-9]{64}$/i.test(artifactHash)) throw new Error('This scan has no valid APK SHA-256 binding; source view is disabled.');
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source?path=${encodeURIComponent(finding.file_path)}&artifact_sha256=${encodeURIComponent(artifactHash)}`;
         const response = await fetch(url);
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Source is unavailable for this path.');
         // Decompiled input is untrusted. Render it only as text, never as HTML.
         view.textContent = result.content;
-        status.textContent = `${result.path} · ${result.line_count} lines · ${result.size_bytes} bytes · bounded read`;
+        const decodeState = result.decompiler_status || 'not_recorded';
+        status.textContent = `${result.path} · ${result.line_count} lines · ${result.size_bytes} bytes · bounded read · decompiler ${decodeState}${decodeState === 'completed' ? '' : ' (incomplete/unknown; absence is not evidence)'}`;
         if (Number.isInteger(finding.line_number) && finding.line_number > 0) {
           const lines = result.content.split('\n');
           status.textContent += ` · finding line ${finding.line_number}${finding.line_number <= lines.length ? '' : ' (outside returned file)'}`;
@@ -167,7 +170,9 @@
       status.textContent = 'Searching bounded decompiler text…';
       view.replaceChildren();
       try {
-        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/search?q=${encodeURIComponent(query)}`;
+        const artifactHash = currentScan.artifact_sha256 || currentScan.artifact_provenance?.sha256 || '';
+        if (!/^[a-f0-9]{64}$/i.test(artifactHash)) throw new Error('This scan has no valid APK SHA-256 binding; source search is disabled.');
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/search?q=${encodeURIComponent(query)}&artifact_sha256=${encodeURIComponent(artifactHash)}`;
         const response = await fetch(url);
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Search is unavailable.');
@@ -200,7 +205,11 @@
       status.textContent = 'Listing bounded decompiler files…';
       view.replaceChildren();
       try {
-        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/files${query ? `?q=${encodeURIComponent(query)}` : ''}`;
+        const artifactHash = currentScan.artifact_sha256 || currentScan.artifact_provenance?.sha256 || '';
+        if (!/^[a-f0-9]{64}$/i.test(artifactHash)) throw new Error('This scan has no valid APK SHA-256 binding; source inventory is disabled.');
+        const params = new URLSearchParams({artifact_sha256: artifactHash});
+        if (query) params.set('q', query);
+        const url = `/api/scans/${encodeURIComponent(currentScan.scan_id)}/source/files?${params}`;
         const response = await fetch(url);
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'File inventory is unavailable.');

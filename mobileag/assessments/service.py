@@ -124,6 +124,23 @@ class AssessmentService:
                         self.guard(doc,token)
                         result=await self.adb.install_apk(req.serial,str(apk),grant_permissions=False,replace=False,guard=install_guard)
                         if result['status']!='success':raise ValueError('Install failed or timed out')
+                    # Bind any subsequent live observation to the exact APK
+                    # analyzed above. Package/version strings alone do not
+                    # identify a build; split installs require separate
+                    # artifact support and therefore fail closed here.
+                    self.guard(doc,token)
+                    def identity_guard():
+                        self.guard(doc,token)
+                        if not check_action(self.repository().get_policy(),'automation_observe',
+                                            {'serial':req.serial,'package_name':req.package_name}):
+                            raise PermissionError('Runtime identity observation scope revoked')
+                    identity_guard()
+                    identity=await self.adb.installed_apk_identity(req.serial,req.package_name,
+                                                                   doc['artifact_sha256'],guard=identity_guard)
+                    doc['stages']['dast']['runtime_artifact_identity']=identity
+                    self.persist(doc)
+                    if identity.get('status')!='matched':
+                        raise PermissionError('Installed build could not be matched to the analyzed APK; DAST was not launched')
                     if req.launch:
                         def launch_guard():
                             self.guard(doc,token)

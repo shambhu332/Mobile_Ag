@@ -2363,6 +2363,9 @@ def assessment_service():
 from mobileag.assessments.routes import build_router as build_assessment_router
 app.include_router(build_assessment_router(assessment_service,lambda request:request.state.authenticated_token))
 
+from mobileag.web.console_routes import router as console_router
+app.include_router(console_router)
+
 
 def run_server(host: str = "127.0.0.1", port: int = 8080, ui: bool = False) -> None:
     """Entrypoint to launch the authenticated API server."""

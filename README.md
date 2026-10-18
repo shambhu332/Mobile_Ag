@@ -264,6 +264,8 @@ export MOBILEAG_ALLOWED_CONNECT='127.0.0.1:5555'
 
 Select a specific researcher-controlled device; no first-device/implicit target selection. Read-only observation does not consent, enter credentials or tap through account flows. Device actions require individual scope and current session checks. Root/shell/Frida output is privileged diagnostic evidence and is **not** proof that an ordinary app can achieve the same access. No automated root/SSL bypass is implemented. Frida checks require optional bindings, compatible server and an already running app; script generation or initialization is not an exploit result.
 
+The authenticated API also exposes a bounded read-only device console under `/api/console`: metrics snapshots/streams, PID-attributed and redacted logcat streams, process/package/device/settings inventories, and package-specific shared-storage directory listings. These operations require the exact device in server and persisted scope (`execute_adb`, `logcat`, or package-scoped `storage`). The shell endpoint accepts only a fixed read-only diagnostic command grammar; it is not a general command runner. There is no browser UI for these endpoints. Live logcat is an observation stream, not a finding verdict; events are limited, redacted best-effort and associated with PIDs observed for the selected package. File-content reads are intentionally omitted until remote symlink containment can be guaranteed.
+
 ## Evidence, coverage, and interpretation
 
 MobileAg distinguishes:

@@ -174,6 +174,54 @@ class ADBManager:
 
         return False
 
+    async def installed_apk_identity(self, serial: str, package_name: str, expected_sha256: str,
+                                     guard=None) -> dict[str, Any]:
+        """Read-only, best-effort identity check for the installed APK set.
+
+        This intentionally uses ordinary ADB shell access only (never ``su``).
+        A match is valid only when exactly one installed APK hashes to the
+        analyzed APK; split installs are reported as non-matching because a
+        single uploaded APK cannot attest the complete installed artifact set.
+        """
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid Android package name")
+        if not re.fullmatch(r"[A-Fa-f0-9]{64}", expected_sha256):
+            raise ValueError("Invalid expected SHA-256")
+        code, stdout, _ = await self._exec_cmd(
+            ["-s", serial, "shell", "pm", "path", package_name], timeout=10.0, output_limit=16384)
+        self._check_mutation_guard(guard)
+        if code != 0:
+            return {"status": "unavailable", "reason": "installed package paths could not be read", "apk_count": 0}
+        paths = []
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            match = re.fullmatch(r"package:(/[^\s\x00]+)", line.strip())
+            if match:
+                paths.append(match.group(1))
+        if not paths or len(paths) > 32:
+            return {"status": "unavailable", "reason": "package path inventory was empty or exceeded limits", "apk_count": len(paths)}
+        if len(paths) != 1:
+            return {"status": "mismatch", "apk_count": len(paths), "installed_sha256": None,
+                    "reason": "installed package is split; complete split artifacts were not attested"}
+        hashes = []
+        for path in paths:
+            # Paths originate from Package Manager, but quote and constrain them
+            # anyway before crossing the shell boundary.
+            if not re.fullmatch(r"/[A-Za-z0-9_./@+=,-]+", path) or ".." in path.split("/"):
+                return {"status": "unavailable", "reason": "package manager returned an unsafe path", "apk_count": len(paths)}
+            self._check_mutation_guard(guard)
+            code, data, _ = await self._exec_cmd(
+                ["-s", serial, "shell", "sha256sum", path], timeout=20.0, output_limit=4096)
+            self._check_mutation_guard(guard)
+            match = re.match(rb"^([A-Fa-f0-9]{64})\s+", data)
+            if code != 0 or not match:
+                return {"status": "unavailable", "reason": "installed APK content could not be hashed", "apk_count": len(paths)}
+            hashes.append(match.group(1).decode("ascii").lower())
+        matched = len(hashes) == 1 and hashes[0] == expected_sha256.lower()
+        return {"status": "matched" if matched else "mismatch", "apk_count": len(hashes),
+                "installed_sha256": hashes[0] if len(hashes) == 1 else None,
+                "reason": None if matched else ("installed APK hash differs from the analyzed artifact" if len(hashes) == 1 else "installed package is split; complete split artifacts were not attested")}
+
     async def connect_device(self, host_port: str, guard=None) -> dict[str, Any]:
         """Connect to a remote or local emulator/device via TCP (e.g. 127.0.0.1:5555)."""
         self._check_mutation_guard(guard)

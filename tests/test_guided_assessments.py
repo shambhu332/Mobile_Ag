@@ -31,6 +31,7 @@ def setup(monkeypatch):
     auto=AutomationService(lambda:web.OUTPUT_DIR,lambda:web.repository().get_policy(),lambda t:t==web.app.state.auth_token,lambda *a:driver)
     svc=AssessmentService(lambda:web.OUTPUT_DIR,lambda:web.UPLOAD_DIR,web.repository,lambda t:t==web.app.state.auth_token,
         AsyncMock(side_effect=static),lambda:auto,web.adb_manager,LLMBroker(AsyncMock()),web.hash_file)
+    web.adb_manager.installed_apk_identity=AsyncMock(return_value={'status':'matched','apk_count':1,'installed_sha256':'a'*64,'reason':None})
     monkeypatch.setattr(web.app.state,'assessment_service',svc,raising=False)
     return svc,apk,result,driver,web.app.state.auth_token
 
@@ -75,6 +76,17 @@ async def test_dast_mapping_is_live_observation_not_automatic_taps(setup):
     doc=await finish(svc,plan(apk,dast=True,serial='emulator-5554',component=PKG+'/.Main',dedicated_device_confirmed=True,dedicated_account_confirmed=True,scope=scope),token)
     assert doc['status']=='awaiting_action_review' and doc['stages']['dast']['screens']==1
     driver.snapshot.assert_awaited_once();driver.act.assert_not_called()
+    assert doc['stages']['dast']['runtime_artifact_identity']['status']=='matched'
+
+@pytest.mark.asyncio
+async def test_dast_identity_mismatch_is_recorded_and_blocks_live_mapping(setup):
+    svc,apk,result,driver,token=setup
+    web.adb_manager.installed_apk_identity=AsyncMock(return_value={'status':'mismatch','apk_count':1,'installed_sha256':'b'*64,'reason':'installed APK hash differs'})
+    scope={'devices':['emulator-5554'],'packages':[PKG],'origins':[],'methods':['GET'],'actions':['automation_observe']}
+    doc=await finish(svc,plan(apk,dast=True,serial='emulator-5554',component=PKG+'/.Main',dedicated_device_confirmed=True,dedicated_account_confirmed=True,scope=scope),token)
+    assert doc['status']=='paused'
+    assert doc['stages']['dast']['runtime_artifact_identity']['status']=='mismatch'
+    driver.snapshot.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_install_cannot_replace_or_grant_or_escape_scope(setup):

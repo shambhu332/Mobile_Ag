@@ -203,3 +203,52 @@ def test_network_security_config_rejects_dtd_and_entity_declarations(auditor, tm
     assert auditor.audit_file(path) == []
     assert auditor.coverage["static_status"] == "partial"
     assert "configuration file could not be safely read within configured limits" in auditor.coverage["limitations"]
+
+
+def test_inspect_config_structured_model(auditor, tmp_path):
+    """Test inspect_config returns structured trust tree, cleartext policies, and pin-sets."""
+    root = tmp_path / "decoded"
+    xml_dir = root / "res" / "xml"
+    xml_dir.mkdir(parents=True)
+    config_file = xml_dir / "network_security_config.xml"
+    config_file.write_text("""<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.target.com</domain>
+        <pin-set expiration="2030-01-01">
+            <pin digest="SHA-256">7HIpactkIAq2Y49orFOOQKurWxmmSFZhBCoQYcRhJ3Y=</pin>
+        </pin-set>
+    </domain-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>""", encoding="utf-8")
+
+    (root / "AndroidManifest.xml").write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.target.test">'
+        '<application android:networkSecurityConfig="@xml/network_security_config" />'
+        '</manifest>', encoding="utf-8")
+
+    model = auditor.inspect_config(root)
+
+    assert model["has_custom_config"] is True
+    assert model["config_file"] == "network_security_config.xml"
+    assert model["risk_posture"] in ("CRITICAL", "HIGH")
+    assert model["base_config"]["cleartext_permitted"] is True
+    assert "user" in model["base_config"]["trust_anchors"]
+    assert len(model["domain_configs"]) == 1
+    assert model["domain_configs"][0]["domains"] == ["api.target.com"]
+    assert len(model["pin_sets"]) == 1
+    assert model["pin_sets"][0]["value"] == "7HIpactkIAq2Y49orFOOQKurWxmmSFZhBCoQYcRhJ3Y="
+    assert model["debug_overrides"]["present"] is True
+    assert model["debug_overrides"]["trust_user_certs"] is True
+    assert len(model["findings"]) > 0
+

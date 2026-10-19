@@ -1350,8 +1350,33 @@ class ApiFuzzRequest(BaseModel):
     response_body: Optional[str] = Field(default=None, max_length=262144)
 
 
+class SettingsActionRequest(BaseModel):
+    serial: str
+    namespace: str = Field(default="global", pattern=r"^(global|secure|system)$")
+    key: Optional[str] = Field(default=None, max_length=256)
+    value: Optional[str] = Field(default=None, max_length=4096)
 
 
+class ProxySetupRequest(BaseModel):
+    serial: str
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=8080, ge=1, le=65535)
+
+
+class ClipboardActionRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    text: Optional[str] = Field(default=None, max_length=10000)
+
+
+class PackageActionRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    package_name: str = Field(..., max_length=256)
+    action: Literal['force_stop', 'clear_data', 'launch', 'uninstall']
+
+
+class PackagePullRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    package_name: str = Field(..., max_length=256)
 
 def require_current_session(request: Request):
     token = request.state.authenticated_token
@@ -1836,6 +1861,404 @@ async def audit_api_capture(request: Request) -> dict[str, Any]:
     return {'status': 'capture_analysis', 'transactions_reviewed': len(txs),
             'findings': redact([finding.to_dict() for finding in findings]),
             'live_requests_sent': 0}
+
+
+@app.get("/api/scans/{scan_id}/signature")
+async def get_scan_signature_analysis(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve APK Signature Scheme verification and vulnerability details."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    sig_data = scan.get("signature_analysis")
+    if not sig_data:
+        apk_path = scan.get("apk_path")
+        if apk_path and Path(apk_path).is_file():
+            from mobileag.analysis.apk_signature_auditor import ApkSignatureAuditor
+            manifest = scan.get("manifest_data") or {}
+            min_sdk = manifest.get("min_sdk") or 1
+            if isinstance(min_sdk, str) and min_sdk.isdecimal():
+                min_sdk = int(min_sdk)
+            elif not isinstance(min_sdk, int):
+                min_sdk = 1
+            auditor = ApkSignatureAuditor(min_sdk_version=min_sdk)
+            res = auditor.audit(apk_path)
+            sig_data = res.to_dict()
+            scan["signature_analysis"] = sig_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            sig_data = {
+                "signing_block_found": False,
+                "schemes": {"v1": False, "v2": False, "v3": False, "v3.1": False},
+                "certificates": [],
+                "vulnerabilities": [],
+                "janus_vulnerable": False,
+            }
+    return {"scan_id": scan_id, "signature": redact(sig_data)}
+
+
+@app.get("/api/scans/{scan_id}/binaries")
+async def get_scan_binaries(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve native shared libraries (.so) security inspection and hardening metrics."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    binaries_data = scan.get("native_binaries")
+    if not binaries_data:
+        from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
+        auditor = BinaryProtectionAuditor()
+        decompiled = scan.get("decompiled_dir")
+        if decompiled and Path(decompiled).is_dir():
+            binaries_data = auditor.inspect_directory(decompiled)
+            scan["native_binaries"] = binaries_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            binaries_data = {
+                "libraries": [],
+                "total_libraries": 0,
+                "hardening_score": 100,
+                "summary": {"missing_canary": 0, "missing_nx": 0, "missing_relro": 0, "missing_pie": 0}
+            }
+    return {"scan_id": scan_id, "native_binaries": redact(binaries_data)}
+
+
+@app.get("/api/scans/{scan_id}/nsc")
+async def get_scan_nsc(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve Network Security Configuration (NSC) trust tree, cleartext rules, and pins."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    nsc_data = scan.get("nsc_analysis")
+    if not nsc_data:
+        from mobileag.analysis.network_security_config_auditor import NetworkSecurityConfigAuditor
+        auditor = NetworkSecurityConfigAuditor()
+        decompiled = scan.get("decompiled_dir")
+        if decompiled and Path(decompiled).is_dir():
+            nsc_data = auditor.inspect_config(decompiled)
+            scan["nsc_analysis"] = nsc_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            nsc_data = {
+                "has_custom_config": False,
+                "config_file": None,
+                "risk_posture": "DEFAULT_PLATFORM",
+                "base_config": {"cleartext_permitted": False, "trust_anchors": ["system"]},
+                "domain_configs": [],
+                "pin_sets": [],
+                "debug_overrides": {"present": False, "trust_user_certs": False},
+                "findings": []
+            }
+    return {"scan_id": scan_id, "nsc": redact(nsc_data)}
+
+
+@app.get("/api/scans/{scan_id}/compliance")
+async def get_scan_compliance(scan_id: str, request: Request) -> dict[str, Any]:
+    """Calculate dynamic OWASP MASVS v2.0 domain compliance percentages from verified findings."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    findings = scan.get("findings", [])
+
+    categories = {
+        "MASVS-STORAGE": {"name": "Storage", "cwe_prefixes": ["CWE-312", "CWE-922", "CWE-276", "CWE-89"], "score": 100},
+        "MASVS-CRYPTO": {"name": "Crypto", "cwe_prefixes": ["CWE-327", "CWE-326", "CWE-330", "CWE-338"], "score": 100},
+        "MASVS-AUTH": {"name": "Auth", "cwe_prefixes": ["CWE-287", "CWE-306", "CWE-798", "CWE-522"], "score": 100},
+        "MASVS-NETWORK": {"name": "Network", "cwe_prefixes": ["CWE-319", "CWE-295", "CWE-300", "NSC-"], "score": 100},
+        "MASVS-PLATFORM": {"name": "Platform", "cwe_prefixes": ["CWE-926", "CWE-927", "CWE-940", "CWE-749"], "score": 100},
+        "MASVS-CODE": {"name": "Code", "cwe_prefixes": ["CWE-489", "CWE-215", "CWE-532", "CWE-119"], "score": 100},
+        "MASVS-RESILIENCE": {"name": "Resilience", "cwe_prefixes": ["CWE-693", "BIN-", "RASP-"], "score": 100},
+        "MASVS-ARCH": {"name": "Arch", "cwe_prefixes": ["CWE-657", "CWE-112"], "score": 100},
+    }
+
+    penalty_map = {"CRITICAL": 35, "HIGH": 20, "MEDIUM": 10, "LOW": 5, "INFO": 1}
+    for f in findings:
+        cwe = str(f.get("cwe_id", "") or f.get("cwe", "") or "")
+        sev = str(f.get("severity", "MEDIUM")).upper()
+        penalty = penalty_map.get(sev, 10)
+        matched = False
+        for cat_id, cat_info in categories.items():
+            if any(pref in cwe for pref in cat_info["cwe_prefixes"]):
+                cat_info["score"] = max(10, cat_info["score"] - penalty)
+                matched = True
+                break
+        if not matched:
+            categories["MASVS-ARCH"]["score"] = max(10, categories["MASVS-ARCH"]["score"] - penalty)
+
+    radar_labels = [c["name"] for c in categories.values()]
+    radar_scores = [c["score"] for c in categories.values()]
+    avg_posture = int(sum(radar_scores) / len(radar_scores))
+
+    return {
+        "scan_id": scan_id,
+        "overall_posture_percentage": avg_posture,
+        "radar": {"labels": radar_labels, "scores": radar_scores},
+        "domains": categories
+    }
+
+
+@app.get("/api/dast/sockets")
+async def get_dast_sockets(serial: str, request: Request) -> dict[str, Any]:
+    """Retrieve live network socket connections table from connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "sockets", {"serial": serial}):
+            raise HTTPException(403, "Sockets inspection scope is unavailable or revoked")
+    guard()
+    sockets = await adb_manager.get_sockets(serial, guard=guard)
+    guard()
+    return {"serial": serial, "sockets": sockets, "count": len(sockets)}
+
+
+@app.post("/api/dast/inspector")
+async def dump_dast_inspector(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
+    """Dump live UI view hierarchy via uiautomator and return structured component tree."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "inspector", req.model_dump()):
+            raise HTTPException(403, "UI inspector scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.dump_view_hierarchy(req.serial, guard=guard)
+    guard()
+    return {"serial": req.serial, "nodes": res.get("nodes", []), "count": res.get("count", 0), "status": res.get("status", "success")}
+
+
+@app.get("/api/dast/settings")
+async def get_dast_settings(serial: str, request: Request, namespace: str = Query("global", pattern=r"^(global|secure|system)$"), key: Optional[str] = None) -> dict[str, Any]:
+    """Read Android system / secure / global settings table or key."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "settings", {"serial": serial}):
+            raise HTTPException(403, "Settings scope is unavailable or revoked")
+    guard()
+    settings = await adb_manager.get_settings(serial, namespace=namespace, key=key, guard=guard)
+    guard()
+    return {"serial": serial, "namespace": namespace, "settings": settings, "count": len(settings)}
+
+
+@app.post("/api/dast/settings")
+async def put_dast_setting(req: SettingsActionRequest, request: Request) -> dict[str, Any]:
+    """Write an Android setting (settings put <namespace> <key> <val>)."""
+    require_current_session(request)
+    if not req.key:
+        raise HTTPException(422, "Setting key is required")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "settings", req.model_dump()):
+            raise HTTPException(403, "Settings mutation scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.put_setting(req.serial, namespace=req.namespace, key=req.key, value=req.value or "", guard=guard)
+    guard()
+    return res
+
+
+@app.delete("/api/dast/settings")
+async def delete_dast_setting(serial: str, namespace: str, key: str, request: Request) -> dict[str, Any]:
+    """Delete an Android setting."""
+    require_current_session(request)
+    if namespace not in ("system", "secure", "global"):
+        raise HTTPException(422, "Invalid settings namespace")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "settings", {"serial": serial, "namespace": namespace, "key": key}):
+            raise HTTPException(403, "Settings mutation scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.delete_setting(serial, namespace=namespace, key=key, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/proxy/setup")
+async def setup_dast_proxy(req: ProxySetupRequest, request: Request) -> dict[str, Any]:
+    """Configure device global HTTP proxy for network traffic capture."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "proxy", req.model_dump()):
+            raise HTTPException(403, "Proxy setup scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.configure_proxy(req.serial, host=req.host, port=req.port, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/proxy/clear")
+async def clear_dast_proxy(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
+    """Clear device global HTTP proxy."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "proxy", req.model_dump()):
+            raise HTTPException(403, "Proxy clear scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.clear_proxy(req.serial, guard=guard)
+    guard()
+    return res
+
+
+@app.get("/api/dast/packages")
+async def get_dast_packages(serial: str, request: Request, include_system: bool = False) -> dict[str, Any]:
+    """List installed application packages on connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "packages", {"serial": serial}):
+            raise HTTPException(403, "Packages scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    try:
+        packages = await fm.list_packages(serial, guard=guard, include_system=include_system)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return {"serial": serial, "packages": packages, "count": len(packages)}
+
+
+@app.get("/api/dast/packages/info")
+async def get_dast_package_info(serial: str, package_name: str, request: Request) -> dict[str, Any]:
+    """Retrieve detailed package metadata, permissions, code path, and data directory."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "packages", {"serial": serial, "package_name": package_name}):
+            raise HTTPException(403, "Package inspection scope is unavailable or revoked")
+    guard()
+    try:
+        info = await adb_manager.get_package_info(serial, package_name, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return info
+
+
+@app.post("/api/dast/packages/action")
+async def execute_dast_package_action(req: PackageActionRequest, request: Request) -> dict[str, Any]:
+    """Execute lifecycle action on target package: force_stop, clear_data, launch, uninstall."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "packages", req.model_dump()):
+            raise HTTPException(403, "Package action scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.execute_package_action(req.serial, req.package_name, req.action, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/packages/pull")
+async def pull_dast_package_apk(req: PackagePullRequest, request: Request) -> dict[str, Any]:
+    """Pull target APK from connected device to local storage for decompilation or offline analysis."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "packages", req.model_dump()):
+            raise HTTPException(403, "Package pull scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    dest_dir = Path("scans_storage") / f"pulled_{req.package_name}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = await fm.pull_apk(req.serial, req.package_name, dest_dir, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/fs/ls")
+async def list_dast_filesystem(serial: str, path: str, request: Request) -> dict[str, Any]:
+    """List directory entries in device sandbox or filesystem."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "fs", {"serial": serial, "path": path}):
+            raise HTTPException(403, "Filesystem inspection scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    try:
+        res = await fm.list_directory(serial, path, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/clipboard")
+async def get_dast_clipboard(serial: str, request: Request) -> dict[str, Any]:
+    """Retrieve current system clipboard text from connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "clipboard", {"serial": serial}):
+            raise HTTPException(403, "Clipboard inspection scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_clipboard(serial, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/clipboard")
+async def set_dast_clipboard(req: ClipboardActionRequest, request: Request) -> dict[str, Any]:
+    """Set system clipboard text on connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "clipboard", req.model_dump()):
+            raise HTTPException(403, "Clipboard mutation scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.set_clipboard(req.serial, req.text or "", guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    guard()
+    return res
 
 
 @app.post("/api/analysis/taint")

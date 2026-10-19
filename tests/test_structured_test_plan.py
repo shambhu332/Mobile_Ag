@@ -120,9 +120,8 @@ def test_plan_baseline_must_have_hash_and_planned_comparison_rechecks_frozen_bin
 
 
 def test_browser_plan_editor_assets_are_not_shipped():
-    web_root=Path(__file__).resolve().parents[1] / "mobileag/web"
-    assert not (web_root / "static").exists()
-    assert not (web_root / "templates").exists()
+    pkg_root = Path(__file__).resolve().parents[1] / "mobileag"
+    assert not (pkg_root / "studio").exists()
 
 
 def test_test_plan_migration_and_retention_are_local_and_scan_bound(client):

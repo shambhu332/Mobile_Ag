@@ -8,6 +8,9 @@ import logging
 import re
 import shutil
 import shlex
+import socket
+import struct
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -377,3 +380,350 @@ class ADBManager:
             "output": out_str or "(Command executed with no output)",
             "exit_code": code,
         }
+
+    @staticmethod
+    def _decode_proc_net_addr(hex_addr: str) -> str:
+        """Decode hex address from /proc/net/tcp format ('0100007F:0050' -> '127.0.0.1:80')."""
+        if ":" not in hex_addr:
+            return hex_addr
+        ip_hex, port_hex = hex_addr.split(":", 1)
+        try:
+            port = int(port_hex, 16)
+        except ValueError:
+            port = 0
+        port_str = "*" if port == 0 else str(port)
+
+        try:
+            if len(ip_hex) == 8:
+                ip_bytes = bytes.fromhex(ip_hex)
+                ip = socket.inet_ntoa(ip_bytes[::-1])
+                return f"{ip}:{port_str}"
+            elif len(ip_hex) == 32:
+                raw = bytes.fromhex(ip_hex)
+                words = [raw[i:i + 4][::-1] for i in range(0, 32, 4)]
+                ip = socket.inet_ntop(socket.AF_INET6, b"".join(words))
+                return f"[{ip}]:{port_str}" if ip != "::" else f":::{port_str}"
+        except Exception:
+            pass
+        return f"{ip_hex}:{port_str}"
+
+    async def get_sockets(self, serial: str, guard=None) -> list[dict[str, Any]]:
+        """Retrieve active network socket table (TCP/TCP6/UDP) from device."""
+        self._check_mutation_guard(guard)
+        tcp_states = {
+            "01": "ESTAB", "02": "SYN_SENT", "03": "SYN_RECV", "04": "FIN_WAIT1",
+            "05": "FIN_WAIT2", "06": "TIME_WAIT", "07": "CLOSE", "08": "CLOSE_WAIT",
+            "09": "LAST_ACK", "0A": "LISTEN", "0B": "CLOSING"
+        }
+        sockets: list[dict[str, Any]] = []
+
+        for proto, proc_file in [("tcp", "/proc/net/tcp"), ("tcp6", "/proc/net/tcp6"), ("udp", "/proc/net/udp")]:
+            self._check_mutation_guard(guard)
+            code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "cat", proc_file], timeout=3.0)
+            self._check_mutation_guard(guard)
+            if code != 0:
+                continue
+
+            lines = stdout.decode("utf-8", errors="replace").splitlines()
+            for line in lines[1:]:  # skip header
+                parts = line.strip().split()
+                if len(parts) < 10:
+                    continue
+                local_raw = parts[1]
+                rem_raw = parts[2]
+                st_hex = parts[3].upper()
+                uid_raw = parts[7]
+                inode_raw = parts[9]
+
+                state_label = tcp_states.get(st_hex, "UNKNOWN") if proto.startswith("tcp") else "UNCONN"
+                local_addr = self._decode_proc_net_addr(local_raw)
+                peer_addr = self._decode_proc_net_addr(rem_raw)
+
+                try:
+                    uid = int(uid_raw)
+                except ValueError:
+                    uid = -1
+
+                sockets.append({
+                    "proto": proto,
+                    "state": state_label,
+                    "local": local_addr,
+                    "peer": peer_addr,
+                    "proc": f"uid:{uid}" if uid >= 0 else "system",
+                    "uid": uid,
+                    "inode": inode_raw,
+                })
+                if len(sockets) >= 500:
+                    break
+            if len(sockets) >= 500:
+                break
+
+        return sockets
+
+    async def dump_view_hierarchy(self, serial: str, guard=None) -> dict[str, Any]:
+        """Dump and parse live view hierarchy from device via uiautomator dump."""
+        self._check_mutation_guard(guard)
+        remote_xml = "/data/local/tmp/uidump.xml"
+        cmd = ["-s", serial, "shell", "uiautomator", "dump", remote_xml]
+        self._check_mutation_guard(guard)
+        code, stdout, stderr = await self._exec_cmd(cmd, timeout=8.0)
+        self._check_mutation_guard(guard)
+
+        cat_cmd = ["-s", serial, "shell", "cat", remote_xml]
+        self._check_mutation_guard(guard)
+        cat_code, cat_stdout, _ = await self._exec_cmd(cat_cmd, timeout=5.0)
+        self._check_mutation_guard(guard)
+        await self._exec_cmd(["-s", serial, "shell", "rm", "-f", remote_xml], timeout=2.0)
+
+        if cat_code != 0 or not cat_stdout:
+            return {"nodes": [], "count": 0, "status": "unavailable", "output": stdout.decode("utf-8", errors="replace")}
+
+        nodes: list[dict[str, Any]] = []
+        try:
+            root = ET.fromstring(cat_stdout.decode("utf-8", errors="replace"))
+
+            def walk(el: ET.Element, depth: int):
+                node_id = f"node_{len(nodes)}"
+                full_cls = el.attrib.get("class", "")
+                short_cls = full_cls.split(".")[-1] if full_cls else "View"
+                nodes.append({
+                    "id": node_id,
+                    "cls": short_cls,
+                    "fullClass": full_cls,
+                    "rid": el.attrib.get("resource-id", ""),
+                    "text": el.attrib.get("text", ""),
+                    "desc": el.attrib.get("content-desc", ""),
+                    "bounds": el.attrib.get("bounds", ""),
+                    "clickable": el.attrib.get("clickable", "false"),
+                    "focusable": el.attrib.get("focusable", "false"),
+                    "enabled": el.attrib.get("enabled", "true"),
+                    "pkg": el.attrib.get("package", ""),
+                    "depth": depth,
+                })
+                for child in el:
+                    walk(child, depth + 1)
+
+            for child in root:
+                walk(child, 0)
+        except Exception as exc:
+            logger.debug(f"Error parsing uiautomator XML: {exc}")
+            return {"nodes": [], "count": 0, "status": "parse_error", "error": str(exc)}
+
+        return {"nodes": nodes, "count": len(nodes), "status": "success"}
+
+    async def get_settings(self, serial: str, namespace: str = "global", key: Optional[str] = None, guard=None) -> list[dict[str, str]]:
+        """Read Android system / secure / global settings."""
+        self._check_mutation_guard(guard)
+        if namespace not in ("system", "secure", "global"):
+            raise ValueError(f"Invalid settings namespace: {namespace}")
+
+        if key:
+            code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "settings", "get", namespace, key], timeout=3.0)
+            self._check_mutation_guard(guard)
+            val = stdout.decode("utf-8", errors="replace").strip()
+            return [{"k": key, "v": val if code == 0 else ""}]
+
+        code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "settings", "list", namespace], timeout=5.0)
+        self._check_mutation_guard(guard)
+        results: list[dict[str, str]] = []
+        if code == 0:
+            for line in stdout.decode("utf-8", errors="replace").splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    results.append({"k": k.strip(), "v": v.strip()})
+        return results
+
+    async def put_setting(self, serial: str, namespace: str, key: str, value: str, guard=None) -> dict[str, Any]:
+        """Write Android setting via settings put <namespace> <key> <value>."""
+        self._check_mutation_guard(guard)
+        if namespace not in ("system", "secure", "global"):
+            raise ValueError(f"Invalid settings namespace: {namespace}")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", key):
+            raise ValueError("Invalid setting key format")
+
+        cmd = ["-s", serial, "shell", "settings", "put", namespace, key, str(value)]
+        self._check_mutation_guard(guard)
+        code, stdout, stderr = await self._exec_cmd(cmd, timeout=4.0)
+        self._check_mutation_guard(guard)
+        success = code == 0
+        return {
+            "status": "success" if success else "failed",
+            "namespace": namespace,
+            "key": key,
+            "value": value,
+            "output": (stdout + stderr).decode("utf-8", errors="replace").strip(),
+        }
+
+    async def delete_setting(self, serial: str, namespace: str, key: str, guard=None) -> dict[str, Any]:
+        """Delete Android setting via settings delete <namespace> <key>."""
+        self._check_mutation_guard(guard)
+        if namespace not in ("system", "secure", "global"):
+            raise ValueError(f"Invalid settings namespace: {namespace}")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", key):
+            raise ValueError("Invalid setting key format")
+
+        cmd = ["-s", serial, "shell", "settings", "delete", namespace, key]
+        self._check_mutation_guard(guard)
+        code, stdout, stderr = await self._exec_cmd(cmd, timeout=4.0)
+        self._check_mutation_guard(guard)
+        return {
+            "status": "success" if code == 0 else "failed",
+            "namespace": namespace,
+            "key": key,
+            "output": (stdout + stderr).decode("utf-8", errors="replace").strip(),
+        }
+
+    async def configure_proxy(self, serial: str, host: str, port: int, guard=None) -> dict[str, Any]:
+        """Configure device global HTTP proxy for network interception."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host) or not (1 <= port <= 65535):
+            raise ValueError("Invalid proxy host or port")
+
+        proxy_str = f"{host}:{port}"
+        await self.put_setting(serial, "global", "http_proxy", proxy_str, guard=guard)
+        await self.put_setting(serial, "global", "global_http_proxy_host", host, guard=guard)
+        await self.put_setting(serial, "global", "global_http_proxy_port", str(port), guard=guard)
+        return {"status": "success", "proxy": proxy_str}
+
+    async def clear_proxy(self, serial: str, guard=None) -> dict[str, Any]:
+        """Clear device global HTTP proxy."""
+        self._check_mutation_guard(guard)
+        await self.put_setting(serial, "global", "http_proxy", ":0", guard=guard)
+        await self.delete_setting(serial, "global", "http_proxy", guard=guard)
+        await self.delete_setting(serial, "global", "global_http_proxy_host", guard=guard)
+        await self.delete_setting(serial, "global", "global_http_proxy_port", guard=guard)
+        return {"status": "success", "proxy": "cleared"}
+
+    async def get_clipboard(self, serial: str, guard=None) -> dict[str, Any]:
+        """Retrieve current system clipboard text from Android device."""
+        self._check_mutation_guard(guard)
+        code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "cmd clipboard get"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        text = stdout.decode("utf-8", errors="replace").strip()
+        if code == 0 and text:
+            return {"status": "success", "text": text}
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", "service call clipboard 2 i32 1 s16 com.android.shell"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        raw = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        return {"status": "success" if code == 0 else "failed", "text": raw}
+
+    async def set_clipboard(self, serial: str, text: str, guard=None) -> dict[str, Any]:
+        """Inject text into current system clipboard on Android device."""
+        self._check_mutation_guard(guard)
+        quoted = shlex.quote(text)
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", f"cmd clipboard set {quoted}"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        return {"status": "success" if code == 0 else "failed", "output": (stdout + stderr).decode("utf-8", errors="replace").strip()}
+
+    async def get_package_info(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
+        """Query package metadata, permissions, code paths, and components via dumpsys package."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid package name format")
+
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", f"dumpsys package {shlex.quote(package_name)}"], timeout=10.0, output_limit=512*1024)
+        self._check_mutation_guard(guard)
+        raw = stdout.decode("utf-8", errors="replace")
+
+        version_name = "Unknown"
+        version_code = "Unknown"
+        target_sdk = "Unknown"
+        min_sdk = "Unknown"
+        data_dir = "Unknown"
+        code_path = "Unknown"
+        requested_permissions: list[str] = []
+        granted_permissions: list[str] = []
+
+        in_req_perms = False
+        in_install_perms = False
+
+        for line in raw.splitlines():
+            sline = line.strip()
+            if "versionName=" in sline:
+                m = re.search(r"versionName=([^\s]+)", sline)
+                if m:
+                    version_name = m.group(1)
+            if "versionCode=" in sline:
+                m = re.search(r"versionCode=([0-9]+)", sline)
+                if m:
+                    version_code = m.group(1)
+            if "targetSdk=" in sline:
+                m = re.search(r"targetSdk=([0-9]+)", sline)
+                if m:
+                    target_sdk = m.group(1)
+            if "minSdk=" in sline:
+                m = re.search(r"minSdk=([0-9]+)", sline)
+                if m:
+                    min_sdk = m.group(1)
+            if "dataDir=" in sline:
+                m = re.search(r"dataDir=([^\s]+)", sline)
+                if m:
+                    data_dir = m.group(1)
+            if "codePath=" in sline:
+                m = re.search(r"codePath=([^\s]+)", sline)
+                if m:
+                    code_path = m.group(1)
+
+            if sline == "requested permissions:":
+                in_req_perms = True
+                in_install_perms = False
+                continue
+            elif sline.startswith("install permissions:") or sline.startswith("runtime permissions:"):
+                in_req_perms = False
+                in_install_perms = True
+                continue
+            elif sline.endswith(":") and not sline.startswith("android."):
+                in_req_perms = False
+                in_install_perms = False
+
+            if in_req_perms and sline.startswith("android.permission."):
+                perm = sline.split(":")[0].strip()
+                if perm not in requested_permissions:
+                    requested_permissions.append(perm)
+            elif in_install_perms and "android.permission." in sline:
+                m = re.search(r"(android\.permission\.[A-Za-z0-9_]+): granted=true", sline)
+                if m and m.group(1) not in granted_permissions:
+                    granted_permissions.append(m.group(1))
+
+        return {
+            "package_name": package_name,
+            "version_name": version_name,
+            "version_code": version_code,
+            "target_sdk": target_sdk,
+            "min_sdk": min_sdk,
+            "data_dir": data_dir,
+            "code_path": code_path,
+            "requested_permissions": requested_permissions,
+            "granted_permissions": granted_permissions,
+            "dangerous_count": sum(1 for p in requested_permissions if any(d in p for d in ["CAMERA", "LOCATION", "STORAGE", "AUDIO", "CONTACTS", "SMS", "PHONE"])),
+        }
+
+    async def execute_package_action(self, serial: str, package_name: str, action: str, guard=None) -> dict[str, Any]:
+        """Perform package lifecycle action: force_stop, clear_data, launch, uninstall."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid package name format")
+        if action not in ("force_stop", "clear_data", "launch", "uninstall"):
+            raise ValueError(f"Unsupported package action: {action}")
+
+        pkg = shlex.quote(package_name)
+        if action == "force_stop":
+            cmd = f"am force-stop {pkg}"
+        elif action == "clear_data":
+            cmd = f"pm clear {pkg}"
+        elif action == "launch":
+            cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+        else:
+            cmd = f"pm uninstall {pkg}"
+
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", cmd], timeout=10.0)
+        self._check_mutation_guard(guard)
+        out = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        return {
+            "status": "success" if code == 0 else "failed",
+            "action": action,
+            "package_name": package_name,
+            "output": out or "Done",
+        }
+
+

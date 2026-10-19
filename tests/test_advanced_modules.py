@@ -231,3 +231,42 @@ async def test_code_reviewer_keystore_and_intent_extras(code_reviewer):
         assert "auth_token_param" in extras
         assert "user_id_key" in extras
         assert "is_admin" in extras
+
+
+def test_binary_protection_auditor_inspect(binary_auditor, tmp_path):
+    """Test inspect_library_file and inspect_directory on ELF binary."""
+    mock_elf = MagicMock()
+    mock_elf.header = {"e_type": "ET_DYN"}  # PIE
+    s1 = MagicMock()
+    s1.name = "__stack_chk_fail"
+    s2 = MagicMock()
+    s2.name = "Java_com_example_NativeBridge_test"
+    mock_dynsym = MagicMock()
+    mock_dynsym.iter_symbols.return_value = [s1, s2]
+
+    mock_elf.get_section_by_name.side_effect = lambda name: mock_dynsym if name in [".dynsym", ".symtab"] else None
+    mock_stack_seg = {"p_type": "PT_GNU_STACK", "p_flags": 0x6}  # RW (NX)
+    mock_relro_seg = {"p_type": "PT_GNU_RELRO"}
+    mock_elf.iter_segments.return_value = [mock_stack_seg, mock_relro_seg]
+
+    lib_dir = tmp_path / "lib" / "arm64-v8a"
+    lib_dir.mkdir(parents=True)
+    so_file = lib_dir / "libtest.so"
+    so_file.write_bytes(b"\x7fELF" + b"\x00" * 100)
+
+    with patch("mobileag.analysis.binary_protection_auditor.ELFFile", return_value=mock_elf):
+        info = binary_auditor.inspect_library_file(so_file, base_dir=tmp_path)
+        assert info["name"] == "libtest.so"
+        assert info["arch"] == "arm64-v8a"
+        assert info["canary"] is True
+        assert info["nx"] is True
+        assert info["pie"] is True
+        assert info["relro"] in ("Full", "Partial")
+        assert "Java_com_example_NativeBridge_test" in info["exported_jni"]
+        assert info["hardening_score"] >= 75
+
+        summary = binary_auditor.inspect_directory(tmp_path)
+        assert summary["total_libraries"] == 1
+        assert len(summary["libraries"]) == 1
+        assert summary["hardening_score"] >= 75
+

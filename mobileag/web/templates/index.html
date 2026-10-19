@@ -1546,7 +1546,7 @@ public class AccountProvider extends ContentProvider {
               <div class="text-[10px] font-mono text-slate-400 uppercase font-bold">Security Test Vector Presets</div>
               <div class="flex flex-wrap gap-1.5">
                 <button onclick="injectClipboardPreset('\' OR \'1\'=\'1\' --')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberRose">SQLi Injection</button>
-                <button onclick="injectClipboardPreset('<script>alert(origin)</script>')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberAmber">XSS Payload</button>
+                <button onclick="injectClipboardPreset('&lt;script&gt;alert(origin)&lt;/script&gt;')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberAmber">XSS Payload</button>
                 <button onclick="injectClipboardPreset('bank://transfer?amount=99999&to=attacker_wallet')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberCyan">Deep Link URI</button>
                 <button onclick="injectClipboardPreset('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMzM3IiwibmFtZSI6IkFsaWNlIiwiaWF0IjoxNTE2MjM5MDIyfQ.fake_jwt_token_for_fuzzing')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberPurple">JWT Token</button>
               </div>
@@ -1955,12 +1955,23 @@ public class AccountProvider extends ContentProvider {
             </div>
           </div>
 
-          <div class="flex items-center gap-2">
-            <button id="btn-dl-sarif" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition">
-              Download SARIF v2.1.0
+          <div class="flex items-center gap-2 flex-wrap">
+            <button id="btn-dl-html-report" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition flex items-center gap-1.5">
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+              <span>Download HTML Report</span>
+            </button>
+            <button id="btn-dl-md-report" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition flex items-center gap-1.5">
+              <i data-lucide="file-code" class="w-3.5 h-3.5"></i>
+              <span>Markdown Pentest Report</span>
+            </button>
+            <button id="btn-dl-json-report" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              JSON Report
+            </button>
+            <button id="btn-dl-sarif" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              SARIF v2.1.0
             </button>
             <button id="btn-dl-cyclonedx" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
-              CycloneDX SBOM
+              CycloneDX XML
             </button>
             <button id="btn-dl-spdx" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
               SPDX SBOM
@@ -5590,34 +5601,266 @@ public class AccountProvider extends ContentProvider {
       `;
     }
 
+    function getActiveScanId() {
+      return state.currentScan?.scan_id || 'demo';
+    }
+
     // Version Diff Trigger
     document.getElementById('btn-run-diff').addEventListener('click', async () => {
       const oldScan = document.getElementById('diff-old-path').value.trim();
       const newScan = document.getElementById('diff-new-path').value.trim();
       const out = document.getElementById('diff-output-box');
+      if (!oldScan || !newScan) {
+        showToast('Specify both baseline and target builds', 'warning');
+        return;
+      }
 
       out.innerHTML = `
-        <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Version Comparison Scorecard: ${oldScan} vs ${newScan}</div>
+        <div class="flex flex-col items-center justify-center p-8 space-y-3">
+          <div class="w-8 h-8 border-2 border-cyberPurple border-t-transparent rounded-full animate-spin"></div>
+          <div class="text-xs font-mono text-slate-400">Comparing ASTs, manifests, and security findings across builds...</div>
+        </div>
+      `;
+
+      try {
+        const res = await apiFetch('/api/diff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baseline: oldScan, target: newScan })
+        });
+        if (!res.ok) throw new Error('Diff calculation returned non-200');
+        const diff = await res.json();
+        renderDiffResult(diff, oldScan, newScan);
+        showToast('Version regression analysis complete', 'success');
+      } catch (err) {
+        // Fallback realistic synthesis if network fails
+        renderDiffResult({
+          status: 'success',
+          mode: 'demo_synthetic',
+          baseline: oldScan,
+          target: newScan,
+          package_name: 'com.vulnerable.bank',
+          scorecard: {
+            introduced_flaws: 2,
+            introduced_critical: 2,
+            introduced_details: 'Exported ContentProvider & Biometric bypass',
+            resolved_flaws: 3,
+            resolved_details: 'Hardcoded API tokens removed',
+            attack_surface_expansion: 4,
+            expansion_details: 'New deep links and activities exported',
+            permissions_added: 2,
+            permissions_removed: 0
+          },
+          comparisons: [
+            {
+              rule_id: 'rule_exported_provider_no_perm',
+              cwe_id: 'CWE-926',
+              severity: 'CRITICAL',
+              file: 'com/vulnerable/bank/provider/UserDataProvider.java',
+              sink_line: 42,
+              comparison: 'new_in_current',
+              interpretation: 'candidate_requires_review',
+              title: 'Newly Exported ContentProvider without Permissions'
+            },
+            {
+              rule_id: 'rule_biometric_ipc_bypass',
+              cwe_id: 'CWE-287',
+              severity: 'CRITICAL',
+              file: 'com/vulnerable/bank/auth/BiometricAuthReceiver.java',
+              sink_line: 88,
+              comparison: 'new_in_current',
+              interpretation: 'candidate_requires_review',
+              title: 'Biometric Authentication Gate Bypassable via Exported Intent'
+            },
+            {
+              rule_id: 'rule_hardcoded_jwt_secret',
+              cwe_id: 'CWE-798',
+              severity: 'HIGH',
+              file: 'com/vulnerable/bank/api/ApiClient.java',
+              sink_line: 29,
+              comparison: 'not_observed_in_current',
+              interpretation: 'not_proof_of_fix',
+              title: 'Hardcoded JWT Secret Token'
+            },
+            {
+              rule_id: 'rule_insecure_random_seed',
+              cwe_id: 'CWE-330',
+              severity: 'MEDIUM',
+              file: 'com/vulnerable/bank/crypto/KeyGenerator.java',
+              sink_line: 51,
+              comparison: 'not_observed_in_current',
+              interpretation: 'not_proof_of_fix',
+              title: 'Static Seed in SHA1PRNG Pseudorandom Generator'
+            },
+            {
+              rule_id: 'rule_sql_injection_raw_query',
+              cwe_id: 'CWE-89',
+              severity: 'CRITICAL',
+              file: 'com/vulnerable/bank/db/AccountDatabaseHelper.java',
+              sink_line: 104,
+              comparison: 'observed_in_both',
+              interpretation: 'candidate_persists_retest_required',
+              title: 'SQL Injection in rawQuery with Tainted Intent Parameter'
+            }
+          ],
+          component_changes: [
+            { type: 'added', name: 'com.vulnerable.bank.activity.PaymentTransferActivity', exported: true, security_risk: true },
+            { type: 'added', name: 'com.vulnerable.bank.provider.UserDataProvider', exported: true, security_risk: true },
+            { type: 'export_changed', name: 'com.vulnerable.bank.service.SyncService', old_exported: false, new_exported: true, security_risk: true },
+            { type: 'removed', name: 'com.vulnerable.bank.legacy.OldLoginActivity' }
+          ],
+          permission_changes: [
+            { type: 'added', permission: 'android.permission.USE_BIOMETRIC' },
+            { type: 'added', permission: 'android.permission.ACCESS_FINE_LOCATION' }
+          ],
+          deep_link_changes: [
+            { type: 'added', uri: 'bank://transfer/quick', scheme: 'bank', host: 'transfer' },
+            { type: 'added', uri: 'https://securevault.bank.com/auth/callback', scheme: 'https', host: 'securevault.bank.com' }
+          ],
+          security_notes: [
+            '🔴 2 NEW exported components added without permission protection',
+            '🔴 Export status changed for SyncService (now globally callable)',
+            '⚠️ 2 new runtime permissions declared (USE_BIOMETRIC, ACCESS_FINE_LOCATION)'
+          ]
+        }, oldScan, newScan);
+        showToast('Rendered fallback version regression report', 'info');
+      }
+    });
+
+    function renderDiffResult(diff, oldScan, newScan) {
+      const out = document.getElementById('diff-output-box');
+      const sc = diff.scorecard || {};
+      const comps = diff.comparisons || [];
+      const compChanges = diff.component_changes || [];
+      const permChanges = diff.permission_changes || [];
+      const linkChanges = diff.deep_link_changes || [];
+      const notes = diff.security_notes || [];
+
+      const notesHtml = notes.length > 0 ? `
+        <div class="p-3 bg-panelElevated border border-cyberPurple-40 rounded-lg space-y-1">
+          <div class="text-[10px] font-mono uppercase text-cyberPurple font-bold">Key Security Regression Findings</div>
+          <div class="space-y-1">
+            ${notes.map(n => `<div class="text-xs text-slate-300 font-mono flex items-center gap-1.5">${escapeHtml(n)}</div>`).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      const rowsHtml = comps.map(c => {
+        let badge = '';
+        let rowClass = '';
+        if (c.comparison === 'new_in_current') {
+          badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberRose-15 text-cyberRose border border-cyberRose font-bold">+ INTRODUCED</span>`;
+          rowClass = 'hover:bg-cyberRose/5';
+        } else if (c.comparison === 'not_observed_in_current') {
+          badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald font-bold">- RESOLVED</span>`;
+          rowClass = 'hover:bg-cyberEmerald/5';
+        } else {
+          badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberAmber-15 text-cyberAmber border border-cyberAmber font-bold">= PERSISTENT</span>`;
+          rowClass = 'hover:bg-cyberAmber/5';
+        }
+
+        const sevClass = c.severity === 'CRITICAL' ? 'text-cyberRose font-bold' :
+                         c.severity === 'HIGH' ? 'text-cyberAmber font-bold' :
+                         c.severity === 'MEDIUM' ? 'text-amber-400' : 'text-slate-400';
+
+        return `
+          <div class="p-3 grid grid-cols-12 items-center text-xs font-mono border-b border-panelBorder ${rowClass}">
+            <div class="col-span-2">${badge}</div>
+            <div class="col-span-4 text-white font-medium truncate">${escapeHtml(c.title || c.rule_id || 'Security Finding')}</div>
+            <div class="col-span-2 text-slate-400">${escapeHtml(c.cwe_id || 'CWE')}</div>
+            <div class="col-span-3 text-slate-400 truncate" title="${escapeHtml(c.file || '')}:${c.sink_line || 1}">${escapeHtml(c.file ? c.file.split('/').slice(-2).join('/') : '')}:${c.sink_line || 1}</div>
+            <div class="col-span-1 text-right ${sevClass}">${escapeHtml(c.severity || 'INFO')}</div>
+          </div>
+        `;
+      }).join('');
+
+      const compsHtml = compChanges.map(c => {
+        let typeBadge = '';
+        if (c.type === 'added') typeBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberRose-15 text-cyberRose border border-cyberRose font-bold">ADDED</span>`;
+        else if (c.type === 'removed') typeBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald font-bold">REMOVED</span>`;
+        else typeBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberAmber-15 text-cyberAmber border border-cyberAmber font-bold">MODIFIED</span>`;
+
+        return `
+          <div class="p-2 flex items-center justify-between text-xs font-mono bg-cockpit rounded border border-panelBorder">
+            <span class="text-white truncate max-w-sm">${escapeHtml(c.name || c.uri || '')}</span>
+            <div class="flex items-center gap-2">
+              ${c.security_risk ? `<span class="text-[9px] text-cyberRose uppercase font-bold">⚠️ EXPORT RISK</span>` : ''}
+              ${typeBadge}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      out.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Version Comparison Scorecard: ${escapeHtml(oldScan)} vs ${escapeHtml(newScan)}</div>
+          <div class="text-[10px] font-mono text-slate-400">${escapeHtml(diff.package_name || '')} &bull; Mode: ${escapeHtml(diff.mode || 'comparison')}</div>
+        </div>
+
         <div class="grid grid-cols-3 gap-4">
           <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
             <div class="text-xs font-mono text-slate-400">Newly Introduced Flaws</div>
-            <div class="text-2xl font-bold font-mono text-cyberRose mt-1">+2 Critical</div>
-            <p class="text-[10px] text-slate-400 mt-1">Exported ContentProvider & Biometric bypass</p>
+            <div class="text-2xl font-bold font-mono text-cyberRose mt-1">+${sc.introduced_flaws || 0} Flaws</div>
+            <p class="text-[10px] text-slate-400 mt-1">${escapeHtml(sc.introduced_details || 'New security candidate flaws detected')}</p>
           </div>
           <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
             <div class="text-xs font-mono text-slate-400">Resolved Vulnerabilities</div>
-            <div class="text-2xl font-bold font-mono text-cyberEmerald mt-1">3 Fixed</div>
-            <p class="text-[10px] text-slate-400 mt-1">Hardcoded API tokens removed</p>
+            <div class="text-2xl font-bold font-mono text-cyberEmerald mt-1">${sc.resolved_flaws || 0} Fixed</div>
+            <p class="text-[10px] text-slate-400 mt-1">${escapeHtml(sc.resolved_details || 'Prior flaws not observed in target')}</p>
           </div>
           <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
             <div class="text-xs font-mono text-slate-400">Attack Surface Expansion</div>
-            <div class="text-2xl font-bold font-mono text-cyberAmber mt-1">+4 Endpoints</div>
-            <p class="text-[10px] text-slate-400 mt-1">New deep links and activities exported</p>
+            <div class="text-2xl font-bold font-mono text-cyberAmber mt-1">+${sc.attack_surface_expansion || 0} Delta</div>
+            <p class="text-[10px] text-slate-400 mt-1">${escapeHtml(sc.expansion_details || 'Component & permission changes')}</p>
           </div>
         </div>
+
+        ${notesHtml}
+
+        <div class="space-y-2 pt-2">
+          <div class="text-[10px] font-mono text-slate-400 uppercase font-bold flex items-center justify-between">
+            <span>Finding State Regressions (${comps.length})</span>
+            <span class="text-slate-500 text-[9px]">Exact Location-Key Retest Alignment</span>
+          </div>
+
+          <div class="bg-cockpit rounded-lg border border-panelBorder overflow-hidden">
+            <div class="p-2.5 bg-panel border-b border-panelBorder grid grid-cols-12 text-[10px] font-mono text-slate-400 uppercase font-bold">
+              <div class="col-span-2">Delta Status</div>
+              <div class="col-span-4">Vulnerability / Rule</div>
+              <div class="col-span-2">CWE</div>
+              <div class="col-span-3">Source Code Location</div>
+              <div class="col-span-1 text-right">Severity</div>
+            </div>
+            <div class="divide-y divide-panelBorder max-h-64 overflow-y-auto">
+              ${rowsHtml || '<div class="p-4 text-center text-xs text-slate-500 italic">No finding differences between builds.</div>'}
+            </div>
+          </div>
+        </div>
+
+        ${compChanges.length > 0 ? `
+          <div class="space-y-2 pt-2">
+            <div class="text-[10px] font-mono text-slate-400 uppercase font-bold">Exported Component Delta (${compChanges.length})</div>
+            <div class="grid grid-cols-2 gap-2">
+              ${compsHtml}
+            </div>
+          </div>
+        ` : ''}
+
+        ${permChanges.length > 0 ? `
+          <div class="space-y-2 pt-2">
+            <div class="text-[10px] font-mono text-slate-400 uppercase font-bold">Permission Regressions (${permChanges.length})</div>
+            <div class="flex flex-wrap gap-2">
+              ${permChanges.map(p => `
+                <span class="px-2 py-1 rounded text-xs font-mono ${p.type === 'added' ? 'bg-cyberRose-15 text-cyberRose border border-cyberRose' : 'bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald'}">
+                  ${p.type === 'added' ? '+ ' : '- '}${escapeHtml(p.permission || '')}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
       `;
-      showToast('Version regression analysis complete', 'success');
-    });
+      lucide.createIcons();
+    }
 
     // Reports & Compliance Downloads
     async function triggerBlobDownload(url, filename) {
@@ -5647,11 +5890,38 @@ public class AccountProvider extends ContentProvider {
       }
     }
 
-    document.getElementById('btn-dl-sarif').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/sarif', 'mobileag_report.sarif'));
-    document.getElementById('btn-dl-cyclonedx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/cyclonedx', 'cyclonedx_sbom.json'));
-    document.getElementById('btn-dl-spdx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/spdx', 'spdx_sbom.json'));
-    document.getElementById('btn-export-openapi').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/openapi', 'openapi_v3.json'));
-    document.getElementById('btn-export-har').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/har', 'traffic.har'));
+    document.getElementById('btn-dl-html-report')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/report.html`, `mobileag_report_${sid}.html`);
+    });
+    document.getElementById('btn-dl-md-report')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/report.md`, `mobileag_report_${sid}.md`);
+    });
+    document.getElementById('btn-dl-json-report')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/report.json`, `mobileag_report_${sid}.json`);
+    });
+    document.getElementById('btn-dl-sarif')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/sarif`, `mobileag_${sid}.sarif`);
+    });
+    document.getElementById('btn-dl-cyclonedx')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/cyclonedx.xml`, `cyclonedx_${sid}.xml`);
+    });
+    document.getElementById('btn-dl-spdx')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/spdx`, `spdx_${sid}.json`);
+    });
+    document.getElementById('btn-export-openapi')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/openapi`, `openapi_${sid}.json`);
+    });
+    document.getElementById('btn-export-har')?.addEventListener('click', () => {
+      const sid = getActiveScanId();
+      triggerBlobDownload(`/api/scans/${sid}/har`, `traffic_${sid}.har`);
+    });
 
     // Scan History Table
     async function loadScanHistory() {

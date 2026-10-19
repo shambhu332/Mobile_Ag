@@ -1884,6 +1884,114 @@ async def get_scan_signature_analysis(scan_id: str, request: Request) -> dict[st
     return {"scan_id": scan_id, "signature": redact(sig_data)}
 
 
+@app.get("/api/scans/{scan_id}/binaries")
+async def get_scan_binaries(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve native shared libraries (.so) security inspection and hardening metrics."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    binaries_data = scan.get("native_binaries")
+    if not binaries_data:
+        from mobileag.analysis.binary_protection_auditor import BinaryProtectionAuditor
+        auditor = BinaryProtectionAuditor()
+        decompiled = scan.get("decompiled_dir")
+        if decompiled and Path(decompiled).is_dir():
+            binaries_data = auditor.inspect_directory(decompiled)
+            scan["native_binaries"] = binaries_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            binaries_data = {
+                "libraries": [],
+                "total_libraries": 0,
+                "hardening_score": 100,
+                "summary": {"missing_canary": 0, "missing_nx": 0, "missing_relro": 0, "missing_pie": 0}
+            }
+    return {"scan_id": scan_id, "native_binaries": redact(binaries_data)}
+
+
+@app.get("/api/scans/{scan_id}/nsc")
+async def get_scan_nsc(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve Network Security Configuration (NSC) trust tree, cleartext rules, and pins."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    nsc_data = scan.get("nsc_analysis")
+    if not nsc_data:
+        from mobileag.analysis.network_security_config_auditor import NetworkSecurityConfigAuditor
+        auditor = NetworkSecurityConfigAuditor()
+        decompiled = scan.get("decompiled_dir")
+        if decompiled and Path(decompiled).is_dir():
+            nsc_data = auditor.inspect_config(decompiled)
+            scan["nsc_analysis"] = nsc_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            nsc_data = {
+                "has_custom_config": False,
+                "config_file": None,
+                "risk_posture": "DEFAULT_PLATFORM",
+                "base_config": {"cleartext_permitted": False, "trust_anchors": ["system"]},
+                "domain_configs": [],
+                "pin_sets": [],
+                "debug_overrides": {"present": False, "trust_user_certs": False},
+                "findings": []
+            }
+    return {"scan_id": scan_id, "nsc": redact(nsc_data)}
+
+
+@app.get("/api/scans/{scan_id}/compliance")
+async def get_scan_compliance(scan_id: str, request: Request) -> dict[str, Any]:
+    """Calculate dynamic OWASP MASVS v2.0 domain compliance percentages from verified findings."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    findings = scan.get("findings", [])
+
+    categories = {
+        "MASVS-STORAGE": {"name": "Storage", "cwe_prefixes": ["CWE-312", "CWE-922", "CWE-276", "CWE-89"], "score": 100},
+        "MASVS-CRYPTO": {"name": "Crypto", "cwe_prefixes": ["CWE-327", "CWE-326", "CWE-330", "CWE-338"], "score": 100},
+        "MASVS-AUTH": {"name": "Auth", "cwe_prefixes": ["CWE-287", "CWE-306", "CWE-798", "CWE-522"], "score": 100},
+        "MASVS-NETWORK": {"name": "Network", "cwe_prefixes": ["CWE-319", "CWE-295", "CWE-300", "NSC-"], "score": 100},
+        "MASVS-PLATFORM": {"name": "Platform", "cwe_prefixes": ["CWE-926", "CWE-927", "CWE-940", "CWE-749"], "score": 100},
+        "MASVS-CODE": {"name": "Code", "cwe_prefixes": ["CWE-489", "CWE-215", "CWE-532", "CWE-119"], "score": 100},
+        "MASVS-RESILIENCE": {"name": "Resilience", "cwe_prefixes": ["CWE-693", "BIN-", "RASP-"], "score": 100},
+        "MASVS-ARCH": {"name": "Arch", "cwe_prefixes": ["CWE-657", "CWE-112"], "score": 100},
+    }
+
+    penalty_map = {"CRITICAL": 35, "HIGH": 20, "MEDIUM": 10, "LOW": 5, "INFO": 1}
+    for f in findings:
+        cwe = str(f.get("cwe_id", "") or f.get("cwe", "") or "")
+        sev = str(f.get("severity", "MEDIUM")).upper()
+        penalty = penalty_map.get(sev, 10)
+        matched = False
+        for cat_id, cat_info in categories.items():
+            if any(pref in cwe for pref in cat_info["cwe_prefixes"]):
+                cat_info["score"] = max(10, cat_info["score"] - penalty)
+                matched = True
+                break
+        if not matched:
+            categories["MASVS-ARCH"]["score"] = max(10, categories["MASVS-ARCH"]["score"] - penalty)
+
+    radar_labels = [c["name"] for c in categories.values()]
+    radar_scores = [c["score"] for c in categories.values()]
+    avg_posture = int(sum(radar_scores) / len(radar_scores))
+
+    return {
+        "scan_id": scan_id,
+        "overall_posture_percentage": avg_posture,
+        "radar": {"labels": radar_labels, "scores": radar_scores},
+        "domains": categories
+    }
+
+
 @app.get("/api/dast/sockets")
 async def get_dast_sockets(serial: str, request: Request) -> dict[str, Any]:
     """Retrieve live network socket connections table from connected Android device."""

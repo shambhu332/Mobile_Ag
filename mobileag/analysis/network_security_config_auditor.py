@@ -396,3 +396,130 @@ class NetworkSecurityConfigAuditor:
             ))
 
         return findings
+
+    def inspect_config(self, decompiled_dir: str | Path, manifest_path: Optional[str] = None) -> dict[str, Any]:
+        """Inspect and return structured network security configuration model."""
+        config_path = self.locate_config_path(str(decompiled_dir), manifest_path)
+        if not config_path:
+            return {
+                "has_custom_config": False,
+                "config_file": None,
+                "risk_posture": "DEFAULT_PLATFORM",
+                "base_config": {
+                    "cleartext_permitted": False,
+                    "trust_anchors": ["system"]
+                },
+                "domain_configs": [],
+                "pin_sets": [],
+                "debug_overrides": {
+                    "present": False,
+                    "trust_user_certs": False
+                },
+                "findings": []
+            }
+
+        findings = self.audit_file(config_path)
+
+        try:
+            root = self._parse_bounded_xml(config_path)
+        except Exception:
+            return {
+                "has_custom_config": True,
+                "config_file": str(config_path.name),
+                "risk_posture": "PARSE_ERROR",
+                "base_config": {"cleartext_permitted": False, "trust_anchors": []},
+                "domain_configs": [],
+                "pin_sets": [],
+                "debug_overrides": {"present": False, "trust_user_certs": False},
+                "findings": findings
+            }
+
+        # 1. Base Config
+        base_elem = root.find("base-config")
+        base_cleartext = False
+        base_anchors = ["system"]
+        if base_elem is not None:
+            base_cleartext = base_elem.attrib.get("cleartextTrafficPermitted", "false").lower() == "true"
+            anchors_elem = base_elem.find("trust-anchors")
+            if anchors_elem is not None:
+                base_anchors = [c.attrib.get("src", "").lower() for c in anchors_elem.findall("certificates") if c.attrib.get("src")]
+
+        # 2. Domain Configs
+        domain_configs = []
+        all_pins = []
+        for d_elem in root.findall("domain-config"):
+            domains = [d.text.strip() for d in d_elem.findall("domain") if d.text and d.text.strip()]
+            subdomains = any(d.attrib.get("includeSubdomains", "false").lower() == "true" for d in d_elem.findall("domain"))
+            d_cleartext = d_elem.attrib.get("cleartextTrafficPermitted", "false").lower() == "true"
+            d_anchors = []
+            d_anchors_elem = d_elem.find("trust-anchors")
+            if d_anchors_elem is not None:
+                d_anchors = [c.attrib.get("src", "").lower() for c in d_anchors_elem.findall("certificates") if c.attrib.get("src")]
+
+            # Pin sets
+            pins = []
+            pin_set = d_elem.find("pin-set")
+            if pin_set is not None:
+                exp_str = pin_set.attrib.get("expiration", "")
+                is_exp = False
+                if exp_str:
+                    try:
+                        exp_dt = datetime.strptime(exp_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        is_exp = exp_dt < datetime.now(timezone.utc)
+                    except Exception:
+                        pass
+
+                for p in pin_set.findall("pin"):
+                    val = p.text.strip() if p.text else ""
+                    digest = p.attrib.get("digest", "SHA-256")
+                    pin_info = {
+                        "digest": digest,
+                        "value": val,
+                        "expiration": exp_str,
+                        "is_expired": is_exp
+                    }
+                    pins.append(pin_info)
+                    all_pins.append({**pin_info, "domains": domains})
+
+            domain_configs.append({
+                "domains": domains,
+                "include_subdomains": subdomains,
+                "cleartext_permitted": d_cleartext,
+                "trust_anchors": d_anchors,
+                "pins": pins
+            })
+
+        # 3. Debug Overrides
+        debug_elem = root.find("debug-overrides")
+        has_debug = debug_elem is not None
+        debug_user_certs = False
+        if has_debug and debug_elem is not None:
+            d_anchors = debug_elem.find("trust-anchors")
+            if d_anchors is not None:
+                debug_user_certs = any(c.attrib.get("src", "").lower() == "user" for c in d_anchors.findall("certificates"))
+
+        # Determine overall Risk Posture
+        risk = "SAFE"
+        if any(f.get("severity") in ("Critical", "High") for f in findings):
+            risk = "CRITICAL"
+        elif any(f.get("severity") == "Medium" for f in findings):
+            risk = "HIGH"
+        elif base_cleartext or any(dc.get("cleartext_permitted") for dc in domain_configs):
+            risk = "MEDIUM"
+
+        return {
+            "has_custom_config": True,
+            "config_file": str(config_path.name),
+            "risk_posture": risk,
+            "base_config": {
+                "cleartext_permitted": base_cleartext,
+                "trust_anchors": base_anchors
+            },
+            "domain_configs": domain_configs,
+            "pin_sets": all_pins,
+            "debug_overrides": {
+                "present": has_debug,
+                "trust_user_certs": debug_user_certs
+            },
+            "findings": findings
+        }

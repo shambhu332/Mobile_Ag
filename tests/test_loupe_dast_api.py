@@ -155,3 +155,74 @@ def test_settings_and_proxy_endpoints(client, monkeypatch):
         res = client.post("/api/dast/proxy/clear", json={"serial": "emulator-5554"})
         assert res.status_code == 200
         assert res.json()["status"] == "success"
+
+
+def test_binaries_endpoint_returns_hardening_data(client):
+    scan = fixture_scan("scan_bin_test")
+    scan["native_binaries"] = {
+        "libraries": [
+            {
+                "name": "libnative.so",
+                "arch": "arm64-v8a",
+                "canary": True,
+                "nx": True,
+                "pie": True,
+                "relro": "Full",
+                "hardening_score": 100,
+            }
+        ],
+        "total_libraries": 1,
+        "hardening_score": 100,
+        "summary": {"missing_canary": 0, "missing_nx": 0, "missing_relro": 0, "missing_pie": 0},
+    }
+    web.repository().save(scan)
+
+    res = client.get("/api/scans/scan_bin_test/binaries")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["scan_id"] == "scan_bin_test"
+    assert data["native_binaries"]["total_libraries"] == 1
+    assert data["native_binaries"]["libraries"][0]["canary"] is True
+
+
+def test_nsc_endpoint_returns_trust_tree(client):
+    scan = fixture_scan("scan_nsc_test")
+    scan["nsc_analysis"] = {
+        "has_custom_config": True,
+        "config_file": "network_security_config.xml",
+        "risk_posture": "CRITICAL",
+        "base_config": {"cleartext_permitted": True, "trust_anchors": ["system", "user"]},
+        "domain_configs": [],
+        "pin_sets": [],
+        "debug_overrides": {"present": True, "trust_user_certs": True},
+        "findings": [{"title": "Cleartext HTTP Allowed", "severity": "High", "cwe": "CWE-319"}],
+    }
+    web.repository().save(scan)
+
+    res = client.get("/api/scans/scan_nsc_test/nsc")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["scan_id"] == "scan_nsc_test"
+    assert data["nsc"]["risk_posture"] == "CRITICAL"
+    assert data["nsc"]["base_config"]["cleartext_permitted"] is True
+
+
+def test_compliance_endpoint_computes_masvs_radar(client):
+    scan = fixture_scan("scan_comp_test")
+    scan["findings"] = [
+        {"id": "F1", "title": "Insecure Storage", "severity": "CRITICAL", "cwe_id": "CWE-312"},
+        {"id": "F2", "title": "Weak Cipher", "severity": "HIGH", "cwe_id": "CWE-327"},
+    ]
+    web.repository().save(scan)
+
+    res = client.get("/api/scans/scan_comp_test/compliance")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["scan_id"] == "scan_comp_test"
+    assert "radar" in data
+    assert len(data["radar"]["labels"]) == 8
+    assert len(data["radar"]["scores"]) == 8
+    storage_idx = data["radar"]["labels"].index("Storage")
+    assert data["radar"]["scores"][storage_idx] < 100
+    assert data["overall_posture_percentage"] < 100
+

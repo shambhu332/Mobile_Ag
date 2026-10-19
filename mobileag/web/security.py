@@ -54,11 +54,9 @@ class SecurityMiddleware:
         host = headers.get('host', '')
         hostname = urlsplit('http://' + host).hostname
         allowed = {'127.0.0.1', 'localhost', '::1'} | configured_list('MOBILEAG_ALLOWED_HOSTS')
-        # Only fixed credential-free assets are public, and only in opt-in UI mode.
-        from mobileag.studio import PUBLIC_FILES
-        public_asset = (scope['type'] == 'http' and scope.get('method') in {'GET', 'HEAD'}
-                        and getattr(self.owner.state, 'studio_enabled', False)
-                        and scope['path'] in PUBLIC_FILES)
+        # Browser UI assets and dashboard entrypoint are public; API routes require bearer auth.
+        path = scope.get('path', '')
+        public_asset = path in ('/', '/ui') or path.startswith('/static/')
         error = None
         status = 403
         if hostname not in allowed or not origin_allowed(headers.get('origin'), host):
@@ -86,9 +84,8 @@ class SecurityMiddleware:
                               or not authorized(request_token, self.owner.state.auth_token)):
                 raise HTTPException(401, 'Bearer authentication required')
 
-        from mobileag.studio.routes import UPLOAD_LIMITS
-        upload = path == '/api/upload/apk' or path in UPLOAD_LIMITS
-        limit = (UPLOAD_LIMITS.get(path, MAX_UPLOAD) + 65536) if upload else 1024 * 1024
+        upload = path == '/api/upload/apk'
+        limit = MAX_UPLOAD + 65536 if upload else 1024 * 1024
         try:
             length = int(headers.get('content-length', '0'))
         except ValueError:

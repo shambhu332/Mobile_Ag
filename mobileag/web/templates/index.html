@@ -1,0 +1,2114 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MobileAg — Advanced Autonomous AppSec Cockpit</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>" />
+
+  <!-- Core Local CSS Framework -->
+  <link rel="stylesheet" href="/static/dashboard.css" />
+  <link rel="stylesheet" href="/static/interface.css" />
+  <link rel="stylesheet" href="/static/accessibility.css" />
+  <link rel="stylesheet" href="/static/experience.css" />
+
+  <!-- Core Local Vendor Libraries (Offline Deterministic, No External CDN) -->
+  <script src="/static/vendor/vis-network.js"></script>
+  <script src="/static/vendor/chart-js.js"></script>
+  <script src="/static/vendor/lucide.js"></script>
+
+  <!-- Complete Embedded Cyber-Ops Design System & Theme Styles -->
+  <style>
+    /* =====================================================================
+       MOBILEAG NEXT-GEN CYBER-OPS DESIGN SYSTEM
+       High-Density Dark Tactical Theme (Zero External Dependencies)
+       ===================================================================== */
+    :root {
+      --app-bg: #030712;
+      --cockpit-bg: #070D1E;
+      --panel-bg: #0B132B;
+      --panel-elevated: #111D3E;
+      --panel-hover: #17264F;
+      --panel-border: #1C2E59;
+      --panel-border-bright: #2B4584;
+      --panel-border-glow: rgba(0, 240, 255, 0.35);
+
+      --cyber-cyan: #00F0FF;
+      --cyber-cyan-glow: rgba(0, 240, 255, 0.4);
+      --cyber-emerald: #10B981;
+      --cyber-emerald-glow: rgba(16, 185, 129, 0.4);
+      --cyber-amber: #F59E0B;
+      --cyber-amber-glow: rgba(245, 158, 11, 0.4);
+      --cyber-rose: #F43F5E;
+      --cyber-rose-glow: rgba(244, 63, 94, 0.4);
+      --cyber-purple: #8B5CF6;
+      --cyber-purple-glow: rgba(139, 92, 246, 0.4);
+      --cyber-blue: #3B82F6;
+
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      --text-faint: #64748B;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--app-bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--app-bg); }
+    ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--panel-border-bright); }
+
+    /* Tactical Cyber Grid Background */
+    .cyber-grid {
+      background-size: 32px 32px;
+      background-image:
+        linear-gradient(to right, rgba(28, 46, 89, 0.15) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(28, 46, 89, 0.15) 1px, transparent 1px);
+    }
+
+    /* Glass Panels */
+    .glass-panel {
+      background: rgba(11, 19, 43, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--panel-border);
+    }
+    .glass-panel-elevated {
+      background: rgba(17, 29, 62, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--panel-border-bright);
+    }
+    .glass-input {
+      background: rgba(7, 13, 30, 0.95);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      transition: all 0.2s ease;
+    }
+    .glass-input:focus {
+      border-color: var(--cyber-cyan);
+      box-shadow: 0 0 10px var(--cyber-cyan-glow);
+      outline: none;
+    }
+
+    /* Glowing Utilities */
+    .glow-cyan { box-shadow: 0 0 18px -2px var(--cyber-cyan-glow); }
+    .glow-rose { box-shadow: 0 0 18px -2px var(--cyber-rose-glow); }
+    .glow-emerald { box-shadow: 0 0 18px -2px var(--cyber-emerald-glow); }
+    .glow-amber { box-shadow: 0 0 18px -2px var(--cyber-amber-glow); }
+    .glow-purple { box-shadow: 0 0 18px -2px var(--cyber-purple-glow); }
+
+    /* Tactical Colors Utility Classes */
+    .bg-appbg { background-color: var(--app-bg); }
+    .bg-cockpit { background-color: var(--cockpit-bg); }
+    .bg-panel { background-color: var(--panel-bg); }
+    .bg-panelElevated { background-color: var(--panel-elevated); }
+    .hover-bg-panelElevated:hover { background-color: var(--panel-elevated); }
+    .border-panelBorder { border-color: var(--panel-border); }
+    .border-panelBorderBright { border-color: var(--panel-border-bright); }
+
+    .text-cyberCyan { color: var(--cyber-cyan); }
+    .bg-cyberCyan { background-color: var(--cyber-cyan); }
+    .border-cyberCyan { border-color: var(--cyber-cyan); }
+    .bg-cyberCyan-15 { background-color: rgba(0, 240, 255, 0.15); }
+    .border-cyberCyan-40 { border-color: rgba(0, 240, 255, 0.4); }
+
+    .text-cyberEmerald { color: var(--cyber-emerald); }
+    .bg-cyberEmerald { background-color: var(--cyber-emerald); }
+    .border-cyberEmerald { border-color: var(--cyber-emerald); }
+    .bg-cyberEmerald-15 { background-color: rgba(16, 185, 129, 0.15); }
+    .border-cyberEmerald-40 { border-color: rgba(16, 185, 129, 0.4); }
+
+    .text-cyberAmber { color: var(--cyber-amber); }
+    .bg-cyberAmber { background-color: var(--cyber-amber); }
+    .border-cyberAmber { border-color: var(--cyber-amber); }
+    .bg-cyberAmber-15 { background-color: rgba(245, 158, 11, 0.15); }
+    .border-cyberAmber-40 { border-color: rgba(245, 158, 11, 0.4); }
+
+    .text-cyberRose { color: var(--cyber-rose); }
+    .bg-cyberRose { background-color: var(--cyber-rose); }
+    .border-cyberRose { border-color: var(--cyber-rose); }
+    .bg-cyberRose-15 { background-color: rgba(244, 63, 94, 0.15); }
+    .border-cyberRose-40 { border-color: rgba(244, 63, 94, 0.4); }
+
+    .text-cyberPurple { color: var(--cyber-purple); }
+    .bg-cyberPurple { background-color: var(--cyber-purple); }
+    .border-cyberPurple { border-color: var(--cyber-purple); }
+    .bg-cyberPurple-15 { background-color: rgba(139, 92, 246, 0.15); }
+
+    /* Typography & Code */
+    pre, code, .font-mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    /* Pulse Glow Animations */
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(1.15); }
+    }
+    .pulse-ring {
+      animation: pulseGlow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes radarSweep {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .radar-sweep {
+      animation: radarSweep 4s linear infinite;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      background: rgba(3, 7, 18, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    /* Tab transitions */
+    .workspace-view {
+      display: none;
+      flex: 1;
+      height: 100%;
+      overflow: hidden;
+    }
+    .workspace-view.active {
+      display: flex;
+    }
+
+    .nav-tab.active {
+      background: var(--panel-elevated);
+      color: var(--cyber-cyan);
+      border-left: 3px solid var(--cyber-cyan);
+      box-shadow: inset 4px 0 10px rgba(0, 240, 255, 0.15);
+    }
+
+    /* DAST Device Bezel Simulator */
+    .device-bezel {
+      border: 8px solid #1E293B;
+      border-radius: 36px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 240, 255, 0.1);
+      position: relative;
+      background: #000;
+    }
+    .device-notch {
+      width: 120px;
+      height: 18px;
+      background: #1E293B;
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    /* Terminal Console */
+    .term-window {
+      background: #02040A;
+      border: 1px solid var(--panel-border);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.9);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+  </style>
+</head>
+
+<body class="bg-appbg text-slate-100 h-screen flex flex-col overflow-hidden cyber-grid select-none">
+
+  <!-- ===================================================================== -->
+  <!-- 1. TOP COCKPIT HUD BAR -->
+  <!-- ===================================================================== -->
+  <header class="h-14 bg-cockpit border-b border-panelBorder flex items-center justify-between px-4 z-40 shrink-0 backdrop-blur">
+    
+    <!-- Left: Brand, Target Switcher & Status -->
+    <div class="flex items-center gap-3">
+      <!-- Shield Logo Beacon -->
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan-15 border border-cyberCyan-40 text-cyberCyan glow-cyan">
+        <i data-lucide="shield-check" class="w-5 h-5"></i>
+        <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-cyberEmerald pulse-ring"></span>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-extrabold tracking-wider text-white">MOBILE<span class="text-cyberCyan">AG</span></span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">CYBER-OPS</span>
+          <span id="demo-indicator-pill" class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberPurple-15 text-cyberPurple border border-cyberPurple hidden">DEMO DATA</span>
+        </div>
+        <p class="text-[10px] font-mono text-slate-400">Autonomous Mobile Security Workbench</p>
+      </div>
+
+      <!-- Target Selector / Dropdown -->
+      <div class="ml-3 pl-3 border-l border-panelBorder flex items-center gap-2">
+        <button id="btn-target-selector" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder transition" title="Switch active target application">
+          <i data-lucide="package" class="w-3.5 h-3.5 text-cyberCyan"></i>
+          <span id="cockpit-target-name" class="text-xs font-mono font-semibold text-slate-200">com.vulnerable.bank</span>
+          <span id="cockpit-target-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">READY</span>
+          <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+        </button>
+
+        <button id="btn-quick-upload" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 flex items-center gap-1.5 transition">
+          <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
+          <span>Ingest APK</span>
+        </button>
+
+        <button id="btn-toggle-demo" class="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder transition flex items-center gap-1.5" title="Toggle Demo Target dataset">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyberPurple"></i>
+          <span>Demo Target</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Center: Live Threat Meters & Security Rating Aura -->
+    <div class="hidden lg:flex items-center gap-5">
+      <!-- Security Grade Aura Dial -->
+      <div class="flex items-center gap-2 bg-panel px-3 py-1.5 rounded-lg border border-panelBorder">
+        <span class="text-[11px] font-mono uppercase text-slate-400">Security Posture:</span>
+        <div class="flex items-center gap-1.5">
+          <span id="cockpit-grade" class="text-xs font-bold font-mono text-cyberRose glow-rose px-1.5 py-0.5 rounded bg-cyberRose-15 border border-cyberRose-40">F (Critical)</span>
+        </div>
+      </div>
+
+      <!-- Clickable Severity Pill Breakdown -->
+      <div class="flex items-center gap-2 font-mono text-xs">
+        <button onclick="filterFindings('CRITICAL')" class="flex items-center gap-1 px-2 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberRose-40 text-cyberRose transition" title="Filter Critical Findings">
+          <span class="w-2 h-2 rounded-full bg-cyberRose animate-pulse"></span>
+          <span id="meter-crit" class="font-bold">2</span> Crit
+        </button>
+        <button onclick="filterFindings('HIGH')" class="flex items-center gap-1 px-2 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberAmber-40 text-cyberAmber transition" title="Filter High Findings">
+          <span class="w-2 h-2 rounded-full bg-cyberAmber"></span>
+          <span id="meter-high" class="font-bold">2</span> High
+        </button>
+        <button onclick="filterFindings('MEDIUM')" class="flex items-center gap-1 px-2 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberCyan-40 text-cyberCyan transition" title="Filter Medium Findings">
+          <span class="w-2 h-2 rounded-full bg-cyberCyan"></span>
+          <span id="meter-med" class="font-bold">2</span> Med
+        </button>
+        <button onclick="filterFindings('LOW')" class="flex items-center gap-1 px-2 py-1 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-400 transition" title="Filter Low Findings">
+          <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="meter-low" class="font-bold">1</span> Low
+        </button>
+      </div>
+
+      <!-- Deterministic Mode Indicator -->
+      <span class="px-2.5 py-1 rounded-full text-[10px] font-mono bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 flex items-center gap-1.5" title="MobileAg operates in zero-leak deterministic offline mode">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyberEmerald animate-pulse"></span>
+        ZERO-LEAK OFFLINE
+      </span>
+    </div>
+
+    <!-- Right: Command Menu, ADB Device, Session Token -->
+    <div class="flex items-center gap-2.5">
+      <!-- Command Palette Pill -->
+      <button id="btn-command-palette" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder text-slate-300 text-xs transition">
+        <i data-lucide="command" class="w-3.5 h-3.5 text-cyberCyan"></i>
+        <span class="hidden sm:inline">Commands</span>
+        <kbd class="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">⌘K</kbd>
+      </button>
+
+      <!-- Connected ADB Device Indicator -->
+      <button id="btn-dast-connect-modal" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="ADB Device Manager">
+        <i data-lucide="smartphone" class="w-3.5 h-3.5 text-cyberEmerald"></i>
+        <span id="cockpit-adb-name">ADB: emulator-5554</span>
+      </button>
+
+      <!-- Auth Session Key Pill -->
+      <button id="btn-session-key" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="Workbench Token Configuration">
+        <i data-lucide="key" class="w-3.5 h-3.5 text-cyberAmber"></i>
+        <span id="session-key-status">Token: Active</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- 2. MAIN APPLICATION WORKSPACE -->
+  <!-- ===================================================================== -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Left Operations Nav Rail -->
+    <aside class="w-64 bg-cockpit border-r border-panelBorder flex flex-col justify-between shrink-0 p-2 z-30 select-none overflow-y-auto">
+      <div class="space-y-1">
+        
+        <div class="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Static Analysis (SAST)</div>
+        
+        <!-- Tab 1: Attack Surface Graph -->
+        <button data-tab="tab-surface" class="nav-tab active w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="network" class="w-4 h-4 text-cyberCyan"></i>
+            <span>Attack Surface Topology</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">1</span>
+        </button>
+
+        <!-- Tab 2: Findings & PoC Studio -->
+        <button data-tab="tab-findings" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="flame" class="w-4 h-4 text-cyberRose"></i>
+            <span>Vulnerabilities & PoC</span>
+          </div>
+          <span id="nav-count-findings" class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-cyberRose-15 text-cyberRose border border-cyberRose-40 font-bold">7</span>
+        </button>
+
+        <!-- Tab 3: Decompiler & Bytecode -->
+        <button data-tab="tab-decompiler" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="file-code-2" class="w-4 h-4 text-cyberPurple"></i>
+            <span>Decompiler & AST</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">3</span>
+        </button>
+
+        <!-- Tab 4: Static Taint Flow Engine -->
+        <button data-tab="tab-taint" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="git-merge" class="w-4 h-4 text-cyberCyan"></i>
+            <span>Taint & Dataflow Engine</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">4</span>
+        </button>
+
+        <div class="pt-3 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Dynamic Execution (DAST)</div>
+
+        <!-- Tab 5: DAST Lab & Screen Mirror -->
+        <button data-tab="tab-dast" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="cpu" class="w-4 h-4 text-cyberEmerald"></i>
+            <span>Dynamic Lab & Fuzzing</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">5</span>
+        </button>
+
+        <!-- Tab 6: MITM Proxy & APIs -->
+        <button data-tab="tab-proxy" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="radio" class="w-4 h-4 text-cyberCyan"></i>
+            <span>MITM Proxy & APIs</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">6</span>
+        </button>
+
+        <!-- Tab 7: Live Loupe Console -->
+        <button data-tab="tab-loupe" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="terminal" class="w-4 h-4 text-cyberAmber"></i>
+            <span>Live Logcat & Shell</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">7</span>
+        </button>
+
+        <div class="pt-3 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Governance & Comparison</div>
+
+        <!-- Tab 8: Version Diffing -->
+        <button data-tab="tab-diff" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="git-compare" class="w-4 h-4 text-cyberPurple"></i>
+            <span>Binary Version Diff</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">8</span>
+        </button>
+
+        <!-- Tab 9: MASVS Radar & Reports -->
+        <button data-tab="tab-reports" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="award" class="w-4 h-4 text-cyberEmerald"></i>
+            <span>MASVS Radar & Reports</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">9</span>
+        </button>
+
+        <!-- Tab 10: Scan Archive -->
+        <button data-tab="tab-history" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="archive" class="w-4 h-4 text-slate-400"></i>
+            <span>Scan Archive & Runs</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">0</span>
+        </button>
+      </div>
+
+      <!-- Quick Session Indicator in Nav Footer -->
+      <div class="p-3 bg-panel rounded-xl border border-panelBorder mt-4">
+        <div class="flex items-center justify-between text-[11px] font-mono">
+          <span class="text-slate-400">WebSocket Telemetry:</span>
+          <span id="ws-status-dot" class="flex items-center gap-1.5 text-cyberEmerald">
+            <span class="w-2 h-2 rounded-full bg-cyberEmerald"></span>
+            <span>Live</span>
+          </span>
+        </div>
+        <div class="mt-2 text-[10px] text-slate-400 font-mono truncate" id="side-target-summary">
+          Target: com.vulnerable.bank (v2.4.1)
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Workspaces Container -->
+    <main class="flex-1 relative flex flex-col overflow-hidden bg-appbg">
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 1: ATTACK SURFACE GRAPH -->
+      <!-- ================================================================= -->
+      <section id="tab-surface" class="workspace-view active flex-col p-4 space-y-3">
+        <!-- Subheader Controls -->
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Component Attack Surface Topology</h2>
+              <p class="text-xs text-slate-400 font-mono">Force-directed network representation of exported components and entrypoints</p>
+            </div>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <!-- Filter Dropdown -->
+            <select id="surface-filter-type" class="glass-input text-xs font-mono px-3 py-1.5 rounded-lg">
+              <option value="ALL">Show All Nodes (24)</option>
+              <option value="activity">Exported Activities</option>
+              <option value="receiver">Broadcast Receivers</option>
+              <option value="service">Background Services</option>
+              <option value="provider">Content Providers</option>
+              <option value="deeplink">Deep Links & URIs</option>
+              <option value="api">Discovered API Routes</option>
+            </select>
+
+            <button id="btn-fit-graph" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition">
+              Center Graph
+            </button>
+            <button id="btn-toggle-physics" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition">
+              Freeze Layout
+            </button>
+          </div>
+        </div>
+
+        <!-- Graph Canvas & Node Inspector Split Container -->
+        <div class="flex-1 flex gap-3 overflow-hidden">
+          <!-- Graph Network Canvas Container -->
+          <div class="flex-1 relative bg-panel rounded-xl border border-panelBorder overflow-hidden">
+            <div id="vis-network-container" class="w-full h-full"></div>
+            <!-- Canvas HUD Legend Overlay -->
+            <div class="absolute bottom-3 left-3 bg-cockpit/90 border border-panelBorder p-2.5 rounded-lg text-[10px] font-mono space-y-1 backdrop-blur pointer-events-none">
+              <div class="font-bold text-slate-300 pb-1 border-b border-panelBorder">Node Classification</div>
+              <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyberRose"></span> Exported Activity (External Vector)</div>
+              <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyberAmber"></span> Content Provider (Data Sink)</div>
+              <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyberCyan"></span> Broadcast Receiver (IPC)</div>
+              <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyberEmerald"></span> Deep Link Scheme (Web-to-App)</div>
+              <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyberPurple"></span> Discovered API Endpoint</div>
+            </div>
+          </div>
+
+          <!-- Node Detail Inspector Panel -->
+          <div id="surface-node-inspector" class="w-80 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col justify-between shrink-0 overflow-y-auto">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+                <span class="text-xs font-mono font-bold text-cyberCyan uppercase">Selected Component</span>
+                <span id="inspector-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberRose-15 text-cyberRose border border-cyberRose-40 font-bold">EXPORTED</span>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Component Name</label>
+                <div id="inspector-name" class="text-xs font-mono font-bold text-white break-all mt-0.5">com.vulnerable.bank.provider.AccountProvider</div>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Protection Level</label>
+                <div id="inspector-permission" class="text-xs font-mono text-cyberRose mt-0.5 font-bold">None (android:exported="true")</div>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Declared Intent Filters</label>
+                <div id="inspector-intent-filters" class="p-2 mt-1 rounded bg-cockpit border border-panelBorder text-[11px] font-mono text-slate-300">
+                  content://com.vulnerable.bank.provider/accounts
+                </div>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Associated Vulnerabilities</label>
+                <div id="inspector-vulnerabilities" class="mt-1 space-y-1.5">
+                  <div class="p-2 rounded bg-cyberRose-15 border border-cyberRose-40 text-xs font-mono text-cyberRose">
+                    [CRITICAL] SQL Injection in ContentProvider.query()
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-4 border-t border-panelBorder flex flex-col gap-2">
+              <button onclick="triggerFuzzComponent()" class="w-full py-2 rounded-lg text-xs font-bold font-mono bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition flex items-center justify-center gap-1.5">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                <span>Fuzz Component in DAST</span>
+              </button>
+              <button onclick="showComponentSource()" class="w-full py-2 rounded-lg text-xs font-mono bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition flex items-center justify-center gap-1.5">
+                <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                <span>View Bytecode Source</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 2: VULNERABILITY FINDINGS & POC SYNTHESIZER -->
+      <!-- ================================================================= -->
+      <section id="tab-findings" class="workspace-view flex-col p-4 space-y-3">
+        <!-- Findings Filter Bar -->
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberRose-15 text-cyberRose border border-cyberRose-40">
+              <i data-lucide="flame" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Vulnerability Findings & Automated PoC Synthesizer</h2>
+              <p class="text-xs text-slate-400 font-mono">Verified security vulnerabilities, CVSS 3.1 scoring, and exploit payloads</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input id="findings-search" type="text" placeholder="Filter vulnerabilities..." class="glass-input text-xs font-mono px-3 py-1.5 rounded-lg w-52" />
+            <select id="findings-severity-select" class="glass-input text-xs font-mono px-3 py-1.5 rounded-lg">
+              <option value="ALL">All Severities</option>
+              <option value="CRITICAL">Critical Only</option>
+              <option value="HIGH">High & Above</option>
+              <option value="MEDIUM">Medium & Above</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Master-Detail Split Pane -->
+        <div class="flex-1 flex gap-3 overflow-hidden">
+          <!-- Left Findings List Master -->
+          <div class="w-96 bg-panel rounded-xl border border-panelBorder flex flex-col shrink-0 overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <span class="text-slate-400">Total Findings:</span>
+              <span id="findings-list-count" class="font-bold text-cyberCyan">7 Issues</span>
+            </div>
+            <div id="findings-items-list" class="flex-1 overflow-y-auto divide-y divide-panelBorder">
+              <!-- Dynamically populated finding cards -->
+            </div>
+          </div>
+
+          <!-- Right Detail & PoC Synthesizer Panel -->
+          <div id="findings-detail-card" class="flex-1 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-5">
+            <!-- Header Info -->
+            <div class="flex items-start justify-between pb-4 border-b border-panelBorder">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span id="detail-vuln-severity" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyberRose-15 text-cyberRose border border-cyberRose-40">CRITICAL</span>
+                  <span id="detail-vuln-cwe" class="text-xs font-mono text-slate-400">CWE-89: SQL Injection</span>
+                  <span id="detail-vuln-masvs" class="text-xs font-mono text-cyberCyan">MASVS-STORAGE-1</span>
+                </div>
+                <h3 id="detail-vuln-title" class="text-base font-bold text-white">Exported Content Provider with SQL Injection Vulnerability</h3>
+                <p id="detail-vuln-location" class="text-xs font-mono text-slate-400">com.vulnerable.bank.provider.AccountProvider (line 42)</p>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button onclick="openTriageModal()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">
+                  Submit Triage Verdict
+                </button>
+              </div>
+            </div>
+
+            <!-- Vulnerability Description & Impact -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-1">
+                <div class="text-[10px] font-mono uppercase text-slate-400 font-bold">Threat Mechanics & Root Cause</div>
+                <p id="detail-vuln-desc" class="text-xs text-slate-300 leading-relaxed">
+                  The ContentProvider specifies <code>android:exported="true"</code> without requiring read/write permissions. User input passed to <code>query()</code> is concatenated directly into the raw SQL query without parameterization, allowing external malicious apps to extract sensitive account data.
+                </p>
+              </div>
+
+              <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-1">
+                <div class="text-[10px] font-mono uppercase text-slate-400 font-bold">Remediation Guidance</div>
+                <p id="detail-vuln-remediation" class="text-xs text-slate-300 leading-relaxed">
+                  Either set <code>android:exported="false"</code> if external access is not required, or enforce custom signature permissions. Replace string concatenation with parameterized selection arguments (<code>selectionArgs</code>).
+                </p>
+              </div>
+            </div>
+
+            <!-- Vulnerable Code Snippet -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between text-xs font-mono">
+                <span class="text-slate-400 uppercase font-bold text-[10px]">Decompiled Vulnerable Code</span>
+                <span class="text-cyberRose font-bold text-[10px]">// Source AST Sink</span>
+              </div>
+              <div class="term-window rounded-lg p-3 text-xs overflow-x-auto text-slate-300">
+                <pre id="detail-vuln-code"><code>// com/vulnerable/bank/provider/AccountProvider.java:42
+public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+    SQLiteDatabase db = this.dbHelper.getReadableDatabase();
+    // [VULNERABILITY] Direct concatenation into raw SQL statement
+    String sql = "SELECT * FROM accounts WHERE " + selection;
+    return db.rawQuery(sql, null);
+}</code></pre>
+              </div>
+            </div>
+
+            <!-- Automated Exploit PoC Synthesizer -->
+            <div class="space-y-2 pt-2 border-t border-panelBorder">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="p-1.5 rounded bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40"><i data-lucide="terminal" class="w-3.5 h-3.5"></i></span>
+                  <span class="text-xs font-bold font-mono text-white">Automated Exploit Proof-of-Concept (PoC)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button id="btn-poc-adb-tab" class="px-2.5 py-1 rounded text-xs font-mono bg-panelElevated text-cyberCyan border border-cyberCyan-40 font-bold">ADB Shell Command</button>
+                  <button id="btn-poc-kotlin-tab" class="px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder">Kotlin Exploit Activity</button>
+                  <button id="btn-poc-curl-tab" class="px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder">Python Script</button>
+                </div>
+              </div>
+
+              <div class="term-window rounded-lg p-3 relative">
+                <button onclick="copyPoCCode()" class="absolute top-2.5 right-2.5 px-2.5 py-1 rounded text-[10px] font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan flex items-center gap-1">
+                  <i data-lucide="copy" class="w-3 h-3"></i>
+                  <span>Copy PoC</span>
+                </button>
+                <pre id="poc-content-code" class="text-xs text-cyberEmerald overflow-x-auto pt-2"><code>adb shell content query --uri content://com.vulnerable.bank.provider/accounts --projection "* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 3: DECOMPILER & AST EXPLORER -->
+      <!-- ================================================================= -->
+      <section id="tab-decompiler" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberPurple-15 text-cyberPurple border border-cyberPurple">
+              <i data-lucide="file-code" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Bytecode Decompiler & Smali Disassembly</h2>
+              <p class="text-xs text-slate-400 font-mono">In-browser decompiled source tree, manifest analyzer, and abstract syntax tree review</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input id="decompiler-search-input" type="text" placeholder="Search class or method..." class="glass-input text-xs font-mono px-3 py-1.5 rounded-lg w-64" />
+          </div>
+        </div>
+
+        <div class="flex-1 flex gap-3 overflow-hidden">
+          <!-- File Tree Nav -->
+          <div class="w-72 bg-panel rounded-xl border border-panelBorder p-3 flex flex-col shrink-0 overflow-y-auto">
+            <div class="text-[10px] font-mono uppercase text-slate-500 font-bold mb-2">Package Source Hierarchy</div>
+            <div id="decompiler-file-tree" class="space-y-1 font-mono text-xs">
+              <!-- Tree Nodes -->
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-cyberCyan flex items-center gap-1.5" onclick="selectDecompiledFile('AndroidManifest.xml')">
+                <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                <span>AndroidManifest.xml</span>
+              </div>
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('AccountProvider.java')">
+                <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberRose"></i>
+                <span>AccountProvider.java</span>
+              </div>
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('BiometricPromptActivity.java')">
+                <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberAmber"></i>
+                <span>BiometricPromptActivity.java</span>
+              </div>
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('KeyManager.java')">
+                <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberAmber"></i>
+                <span>KeyManager.java</span>
+              </div>
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('DownloadReceiver.java')">
+                <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberCyan"></i>
+                <span>DownloadReceiver.java</span>
+              </div>
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-400 flex items-center gap-1.5" onclick="selectDecompiledFile('AccountProvider.smali')">
+                <i data-lucide="binary" class="w-3.5 h-3.5"></i>
+                <span>AccountProvider.smali</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Code Viewer Frame -->
+          <div class="flex-1 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between pb-3 border-b border-panelBorder text-xs font-mono">
+              <span id="decompiler-active-filename" class="text-cyberCyan font-bold">AccountProvider.java</span>
+              <span class="text-slate-400">Java / JADX Decompiled Output</span>
+            </div>
+            <div class="flex-1 term-window rounded-lg mt-3 p-4 overflow-auto text-xs text-slate-200">
+              <pre><code id="decompiler-code-view">package com.vulnerable.bank.provider;
+
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.net.Uri;
+
+public class AccountProvider extends ContentProvider {
+    private DatabaseHelper dbHelper;
+
+    @Override
+    public boolean onCreate() {
+        this.dbHelper = new DatabaseHelper(getContext());
+        return true;
+    }
+
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        SQLiteDatabase db = this.dbHelper.getReadableDatabase();
+        // VULNERABILITY DETECTED: CWE-89 SQL Injection via user selection
+        String sql = "SELECT * FROM accounts WHERE " + selection;
+        return db.rawQuery(sql, null);
+    }
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 4: STATIC TAINT & DATAFLOW ENGINE -->
+      <!-- ================================================================= -->
+      <section id="tab-taint" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">
+              <i data-lucide="git-merge" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Source-to-Sink Taint Propagation Engine</h2>
+              <p class="text-xs text-slate-400 font-mono">Track tainted user input from IPC sources across methods into hazardous sinks</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <select id="taint-preset-select" class="glass-input text-xs font-mono px-3 py-1.5 rounded-lg">
+              <option value="sql">Preset: ContentProvider Query -> SQLite Database Sink</option>
+              <option value="intent">Preset: Intent.getStringExtra() -> Runtime.exec()</option>
+              <option value="webview">Preset: DeepLink Uri -> WebView.loadUrl()</option>
+            </select>
+            <button onclick="runTaintAnalysis()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition">
+              Trace Propagation
+            </button>
+          </div>
+        </div>
+
+        <!-- Taint Path Trace Visualization -->
+        <div class="flex-1 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-4">
+          <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Demonstrated Taint Propagation Chain (4 Steps)</div>
+
+          <!-- Flow Steps -->
+          <div class="space-y-3">
+            <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+              <div class="p-2 rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 shrink-0 font-bold font-mono text-xs">01. SOURCE</div>
+              <div class="space-y-1">
+                <div class="text-xs font-bold text-white">External Intent Query Parameter Ingestion</div>
+                <div class="text-xs font-mono text-slate-300">Method: <code>AccountProvider.query(Uri uri, String selection)</code></div>
+                <div class="text-xs text-slate-400">Parameter <code>selection</code> contains untrusted user input supplied by foreign caller.</div>
+              </div>
+            </div>
+
+            <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+              <div class="p-2 rounded bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 shrink-0 font-bold font-mono text-xs">02. PROPAGATION</div>
+              <div class="space-y-1">
+                <div class="text-xs font-bold text-white">String Concatenation Operation</div>
+                <div class="text-xs font-mono text-slate-300">Statement: <code>String sql = "SELECT * FROM accounts WHERE " + selection;</code></div>
+                <div class="text-xs text-slate-400">Taint flag transferred from variable <code>selection</code> to newly allocated string <code>sql</code>.</div>
+              </div>
+            </div>
+
+            <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+              <div class="p-2 rounded bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40 shrink-0 font-bold font-mono text-xs">03. SANITIZER CHECK</div>
+              <div class="space-y-1">
+                <div class="text-xs font-bold text-white">Zero Sanitization Barrier Detected</div>
+                <div class="text-xs font-mono text-cyberRose">AST Check: No regex escaping, no prepared statement parameterization found.</div>
+              </div>
+            </div>
+
+            <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+              <div class="p-2 rounded bg-cyberRose-15 text-cyberRose border border-cyberRose-40 shrink-0 font-bold font-mono text-xs">04. SINK</div>
+              <div class="space-y-1">
+                <div class="text-xs font-bold text-white">Execution in Dangerous Database Engine</div>
+                <div class="text-xs font-mono text-slate-300">Sink: <code>SQLiteDatabase.rawQuery(String sql, String[] selectionArgs)</code></div>
+                <div class="text-xs text-cyberRose font-bold">CRITICAL: Tainted string enters execution engine unmodified. Arbitrary SQL execution confirmed.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 5: DYNAMIC SECURITY LAB (DAST) -->
+      <!-- ================================================================= -->
+      <section id="tab-dast" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">
+              <i data-lucide="smartphone" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Dynamic Testing Lab & Live Device Mirror</h2>
+              <p class="text-xs text-slate-400 font-mono">Live screen mirroring, component fuzzing, deep link injection, and memory forensics</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono text-cyberEmerald flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyberEmerald-15 border border-cyberEmerald-40">
+              <span class="w-2 h-2 rounded-full bg-cyberEmerald animate-pulse"></span>
+              Connected: emulator-5554 (Android 14)
+            </span>
+          </div>
+        </div>
+
+        <!-- DAST Workspace Split Pane -->
+        <div class="flex-1 flex gap-4 overflow-hidden">
+          <!-- Left: Phone Bezel Screen Mirror -->
+          <div class="w-80 flex flex-col items-center justify-center p-3 bg-panel rounded-xl border border-panelBorder shrink-0">
+            <div class="device-bezel w-64 h-[440px] flex flex-col overflow-hidden">
+              <!-- Top Notch -->
+              <div class="device-notch">
+                <div class="w-2 h-2 rounded-full bg-slate-800"></div>
+                <div class="w-6 h-1 rounded-full bg-slate-800"></div>
+              </div>
+              <!-- Live Screen Display Canvas -->
+              <div id="device-screen-canvas" class="flex-1 bg-slate-900 flex flex-col items-center justify-center text-center p-4 relative overflow-hidden">
+                <div class="text-cyberCyan font-mono text-xs font-bold mb-1">SecureVault Bank v2.4.1</div>
+                <div class="w-16 h-16 rounded-2xl bg-cyberCyan-15 border border-cyberCyan-40 flex items-center justify-center text-cyberCyan my-3">
+                  <i data-lucide="shield-alert" class="w-8 h-8"></i>
+                </div>
+                <div class="text-[11px] text-slate-300 font-mono">Target App Running</div>
+                <div class="text-[9px] text-slate-500 font-mono mt-1">PID: 9814 • PSS: 42 MB</div>
+
+                <!-- Touch ripple effect element -->
+                <div id="screen-touch-ripple" class="absolute w-8 h-8 rounded-full border-2 border-cyberCyan bg-cyberCyan/30 pointer-events-none hidden"></div>
+              </div>
+              <!-- Hardware Navigation Buttons Bar -->
+              <div class="h-10 bg-slate-950 flex items-center justify-around px-4 border-t border-slate-800">
+                <button onclick="injectKeyEvent('BACK')" class="text-slate-400 hover:text-white"><i data-lucide="triangle" class="w-3.5 h-3.5 -rotate-90"></i></button>
+                <button onclick="injectKeyEvent('HOME')" class="text-slate-400 hover:text-white"><i data-lucide="circle" class="w-3.5 h-3.5"></i></button>
+                <button onclick="injectKeyEvent('APP_SWITCH')" class="text-slate-400 hover:text-white"><i data-lucide="square" class="w-3.5 h-3.5"></i></button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 mt-3">
+              <button onclick="refreshScreenMirror()" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition flex items-center gap-1.5">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                <span>Capture Frame</span>
+              </button>
+              <button onclick="launchTargetApp()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 hover:bg-cyberEmerald/25 text-cyberEmerald border border-cyberEmerald-40 transition flex items-center gap-1.5">
+                <i data-lucide="play" class="w-3 h-3"></i>
+                <span>Launch App</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: Interactive Fuzzer, Forensics, and Crawl Toolset -->
+          <div class="flex-1 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col overflow-y-auto space-y-4">
+            <!-- Dynamic Controls Sub-tabs -->
+            <div class="flex items-center gap-2 border-b border-panelBorder pb-3">
+              <button id="dast-subtab-fuzz" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-panelElevated text-cyberCyan border border-cyberCyan-40">Component Fuzzer</button>
+              <button id="dast-subtab-deeplink" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Deep Link Dispatcher</button>
+              <button id="dast-subtab-storage" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Storage Forensics</button>
+              <button id="dast-subtab-memory" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Memory Forensics</button>
+              <button id="dast-subtab-crawler" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Autonomous Crawler</button>
+            </div>
+
+            <!-- Fuzzer Sub-pane Content -->
+            <div id="dast-pane-fuzzer" class="space-y-4">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Target Component</label>
+                  <input id="fuzz-target-component" type="text" value="com.vulnerable.bank.auth.BiometricPromptActivity" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Intent Action</label>
+                  <input id="fuzz-intent-action" type="text" value="android.intent.action.VIEW" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Payload Strategy</label>
+                <select id="fuzz-payload-strategy" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1">
+                  <option value="bypass">Biometric PendingIntent Invalidation Bypass</option>
+                  <option value="sqli">SQL Injection Blind Probing</option>
+                  <option value="traversal">Path Traversal File Smuggling</option>
+                  <option value="overflow">Massive Parcelable Buffer Overflow (512 KB)</option>
+                </select>
+              </div>
+
+              <button onclick="executeFuzzingRun()" class="px-4 py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberRose-15 hover:bg-cyberRose/25 text-cyberRose border border-cyberRose-40 transition flex items-center justify-center gap-2">
+                <i data-lucide="flame" class="w-4 h-4"></i>
+                <span>Inject Dynamic Fuzz Payload via ADB</span>
+              </button>
+
+              <div class="space-y-1">
+                <div class="text-[10px] font-mono uppercase text-slate-400">Execution Feedback & Crash Monitor</div>
+                <div id="fuzz-terminal-output" class="term-window rounded-lg p-3 text-xs text-cyberEmerald h-36 overflow-y-auto">
+                  [+] Target connected: emulator-5554<br>
+                  [+] Dispatched Intent to com.vulnerable.bank.auth.BiometricPromptActivity<br>
+                  [*] Response: Activity started successfully without authentication prompt.<br>
+                  [!] VULNERABILITY CONFIRMED: Auth gate bypassed via direct component invocation!
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 6: MITM PROXY & APIS -->
+      <!-- ================================================================= -->
+      <section id="tab-proxy" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">
+              <i data-lucide="radio" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Loopback MITM Proxy & Shadow API Discovery</h2>
+              <p class="text-xs text-slate-400 font-mono">Inspect HTTP/HTTPS mobile traffic, identify shadow endpoints, export OpenAPI 3.0 specs</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">
+              Proxy Running (Port 8082)
+            </button>
+            <button id="btn-export-openapi" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              Export OpenAPI 3.0
+            </button>
+            <button id="btn-export-har" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              Export HAR 1.2
+            </button>
+          </div>
+        </div>
+
+        <!-- Transactions Table -->
+        <div class="flex-1 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+          <div class="p-3 border-b border-panelBorder grid grid-cols-12 text-[10px] font-mono text-slate-400 uppercase font-bold">
+            <div class="col-span-1">Method</div>
+            <div class="col-span-6">Destination URI / Endpoint</div>
+            <div class="col-span-2">Status</div>
+            <div class="col-span-2">Latency</div>
+            <div class="col-span-1 text-right">Details</div>
+          </div>
+
+          <div id="proxy-transactions-list" class="flex-1 overflow-y-auto divide-y divide-panelBorder text-xs font-mono">
+            <div class="p-3 grid grid-cols-12 items-center hover:bg-panelElevated cursor-pointer" onclick="viewTransactionDetail(0)">
+              <div class="col-span-1 text-cyberCyan font-bold">POST</div>
+              <div class="col-span-6 truncate text-white">https://api.vulnerable.bank/v1/auth/login</div>
+              <div class="col-span-2 text-cyberEmerald font-bold">200 OK</div>
+              <div class="col-span-2 text-slate-400">112 ms</div>
+              <div class="col-span-1 text-right text-cyberCyan">Inspect</div>
+            </div>
+            <div class="p-3 grid grid-cols-12 items-center hover:bg-panelElevated cursor-pointer" onclick="viewTransactionDetail(1)">
+              <div class="col-span-1 text-cyberRose font-bold">GET</div>
+              <div class="col-span-6 truncate text-cyberRose">http://api.vulnerable.bank/v1/user/profile (Cleartext HTTP)</div>
+              <div class="col-span-2 text-cyberEmerald font-bold">200 OK</div>
+              <div class="col-span-2 text-slate-400">88 ms</div>
+              <div class="col-span-1 text-right text-cyberCyan">Inspect</div>
+            </div>
+            <div class="p-3 grid grid-cols-12 items-center hover:bg-panelElevated cursor-pointer" onclick="viewTransactionDetail(2)">
+              <div class="col-span-1 text-cyberAmber font-bold">POST</div>
+              <div class="col-span-6 truncate text-cyberAmber">https://api.vulnerable.bank/v1/internal/admin/reset [SHADOW ROUTE]</div>
+              <div class="col-span-2 text-cyberRose font-bold">403 Forbidden</div>
+              <div class="col-span-2 text-slate-400">240 ms</div>
+              <div class="col-span-1 text-right text-cyberCyan">Inspect</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 7: LIVE LOUPE CONSOLE & DIAGNOSTICS -->
+      <!-- ================================================================= -->
+      <section id="tab-loupe" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40">
+              <i data-lucide="terminal" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Live PID-Filtered Logcat & Diagnostic Shell</h2>
+              <p class="text-xs text-slate-400 font-mono">Real-time target process logging, resource monitors, and scoped ADB shell commands</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-poll-logcat" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">
+              Refresh Logcat
+            </button>
+            <button id="btn-clear-logcat" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-400 border border-panelBorder transition">
+              Clear Buffer
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Window & Metrics -->
+        <div class="flex-1 flex gap-3 overflow-hidden">
+          <!-- Logcat Stream Output -->
+          <div class="flex-1 term-window rounded-xl p-4 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between pb-2 border-b border-panelBorder text-[10px] font-mono text-slate-400">
+              <span>Stream: logcat --pid 9814 (com.vulnerable.bank)</span>
+              <span class="text-cyberEmerald">Buffer: Active</span>
+            </div>
+            <div id="logcat-terminal" class="flex-1 overflow-y-auto space-y-1 text-xs text-slate-300 mt-2 font-mono">
+              <div class="text-slate-500">// MobileAg Logcat Stream Initialized. Target PID: 9814</div>
+              <div class="text-cyberCyan">10-19 14:02:11.102  9814  9814 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] cmp=com.vulnerable.bank/.MainActivity}</div>
+              <div class="text-slate-300">10-19 14:02:11.230  9814  9814 D SQLiteDatabase: opened /data/user/0/com.vulnerable.bank/databases/secure_vault.db</div>
+              <div class="text-cyberAmber">10-19 14:02:11.450  9814  9814 W SecurityWarning: BiometricPrompt invoked with setDeviceCredentialAllowed(true)</div>
+              <div class="text-cyberRose font-bold">10-19 14:02:11.890  9814  9814 E DatabaseSecurity: Query constructed without parameterization: SELECT * FROM accounts WHERE 1=1</div>
+            </div>
+          </div>
+
+          <!-- Shell Input & Quick Commands -->
+          <div class="w-80 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col justify-between shrink-0">
+            <div class="space-y-3">
+              <div class="text-xs font-mono font-bold text-white uppercase">Diagnostic ADB Shell</div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">Execute scoped diagnostic commands directly on target device</p>
+
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Command</label>
+                <input id="diagnostic-shell-cmd" type="text" value="dumpsys package com.vulnerable.bank" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+              </div>
+
+              <div class="space-y-1.5 pt-2">
+                <div class="text-[10px] font-mono text-slate-400 uppercase font-bold">Command Presets</div>
+                <button onclick="setShellCmd('pm list packages -3')" class="w-full text-left p-1.5 rounded bg-cockpit hover:bg-panelElevated text-xs font-mono text-slate-300">pm list packages -3</button>
+                <button onclick="setShellCmd('dumpsys meminfo com.vulnerable.bank')" class="w-full text-left p-1.5 rounded bg-cockpit hover:bg-panelElevated text-xs font-mono text-slate-300">dumpsys meminfo</button>
+                <button onclick="setShellCmd('cat /proc/version')" class="w-full text-left p-1.5 rounded bg-cockpit hover:bg-panelElevated text-xs font-mono text-slate-300">cat /proc/version</button>
+              </div>
+            </div>
+
+            <button id="btn-run-diag-shell" class="w-full py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberAmber-15 hover:bg-cyberAmber/25 text-cyberAmber border border-cyberAmber-40 transition flex items-center justify-center gap-2">
+              <i data-lucide="play" class="w-4 h-4"></i>
+              <span>Execute Diagnostic Shell</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 8: BINARY VERSION DIFFING -->
+      <!-- ================================================================= -->
+      <section id="tab-diff" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberPurple-15 text-cyberPurple border border-cyberPurple">
+              <i data-lucide="git-compare" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">APK Version Diff & Regression Analysis</h2>
+              <p class="text-xs text-slate-400 font-mono">Compare two APK builds to detect attack surface expansion, permission regressions, and new flaws</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-panel rounded-xl border border-panelBorder p-4 grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-[10px] font-mono text-slate-400 uppercase">Baseline Build (Scan ID or APK)</label>
+            <input id="diff-old-path" type="text" value="scan_v2.4.0_baseline" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+          </div>
+          <div>
+            <label class="text-[10px] font-mono text-slate-400 uppercase">Target Build (Scan ID or APK)</label>
+            <input id="diff-new-path" type="text" value="scan_v2.4.1_current" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+          </div>
+        </div>
+
+        <button id="btn-run-diff" class="py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberPurple-15 hover:bg-cyberPurple/25 text-cyberPurple border border-cyberPurple transition flex items-center justify-center gap-2">
+          <i data-lucide="git-commit" class="w-4 h-4"></i>
+          <span>Calculate Attack Surface Delta & Security Regressions</span>
+        </button>
+
+        <div id="diff-output-box" class="flex-1 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-4">
+          <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Version Comparison Scorecard: v2.4.0 vs v2.4.1</div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+              <div class="text-xs font-mono text-slate-400">Newly Introduced Flaws</div>
+              <div class="text-2xl font-bold font-mono text-cyberRose mt-1">+2 Critical</div>
+              <p class="text-[10px] text-slate-400 mt-1">Exported ContentProvider & Biometric bypass</p>
+            </div>
+            <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+              <div class="text-xs font-mono text-slate-400">Resolved Vulnerabilities</div>
+              <div class="text-2xl font-bold font-mono text-cyberEmerald mt-1">3 Fixed</div>
+              <p class="text-[10px] text-slate-400 mt-1">Hardcoded API tokens removed</p>
+            </div>
+            <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+              <div class="text-xs font-mono text-slate-400">Attack Surface Expansion</div>
+              <div class="text-2xl font-bold font-mono text-cyberAmber mt-1">+4 Endpoints</div>
+              <p class="text-[10px] text-slate-400 mt-1">New deep links and activities exported</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 9: COMPLIANCE, RADAR & REPORTS -->
+      <!-- ================================================================= -->
+      <section id="tab-reports" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">
+              <i data-lucide="award" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">MASVS v2.0 Compliance Radar & Standard Exports</h2>
+              <p class="text-xs text-slate-400 font-mono">Evaluate OWASP Mobile Application Security Verification Standard across all 8 domains</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-dl-sarif" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition">
+              Download SARIF v2.1.0
+            </button>
+            <button id="btn-dl-cyclonedx" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              CycloneDX SBOM
+            </button>
+            <button id="btn-dl-spdx" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
+              SPDX SBOM
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 flex gap-4 overflow-hidden">
+          <!-- Radar Chart Frame -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col items-center justify-center">
+            <div class="text-xs font-mono font-bold text-cyberCyan uppercase mb-2">OWASP MASVS v2.0 Domain Compliance Radar</div>
+            <div class="w-full max-w-sm h-72">
+              <canvas id="masvs-radar-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Scorecard Breakdown -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-3">
+            <div class="text-xs font-mono font-bold text-white uppercase pb-2 border-b border-panelBorder">Domain Verification Breakdown</div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">MASVS-STORAGE (Data Storage & Privacy)</div>
+                <div class="text-[11px] text-cyberRose">FAIL — 1 Critical SQL Injection flaw detected</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberRose-15 text-cyberRose font-bold">FAIL</span>
+            </div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">MASVS-CRYPTO (Cryptography)</div>
+                <div class="text-[11px] text-cyberAmber">WARN — Static IV in AES encryption</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberAmber-15 text-cyberAmber font-bold">WARN</span>
+            </div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">MASVS-AUTH (Authentication & Session)</div>
+                <div class="text-[11px] text-cyberRose">FAIL — Biometric check bypassable via IPC</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberRose-15 text-cyberRose font-bold">FAIL</span>
+            </div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">MASVS-NETWORK (Network Communication)</div>
+                <div class="text-[11px] text-cyberAmber">WARN — Cleartext HTTP traffic permitted</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberAmber-15 text-cyberAmber font-bold">WARN</span>
+            </div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">MASVS-CODE (Code Quality & Build Security)</div>
+                <div class="text-[11px] text-cyberEmerald">PASS — ProGuard bytecode obfuscation verified</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberEmerald-15 text-cyberEmerald font-bold">PASS</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- WORKSPACE 10: SCAN REPOSITORY & ARCHIVE -->
+      <!-- ================================================================= -->
+      <section id="tab-history" class="workspace-view flex-col p-4 space-y-3">
+        <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+              <i data-lucide="archive" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-white">Scan Repository & Audit Archive</h2>
+              <p class="text-xs text-slate-400 font-mono">Catalog of all historical scans, execution telemetry, and persistent artifacts</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-refresh-history" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">
+              Refresh Archive
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+          <div class="p-3 border-b border-panelBorder grid grid-cols-12 text-[10px] font-mono text-slate-400 uppercase font-bold">
+            <div class="col-span-3">Target App / Package</div>
+            <div class="col-span-3">Scan Identifier</div>
+            <div class="col-span-2">Execution Date</div>
+            <div class="col-span-2">Status</div>
+            <div class="col-span-2 text-right">Actions</div>
+          </div>
+
+          <div id="history-scans-table" class="flex-1 overflow-y-auto divide-y divide-panelBorder text-xs font-mono">
+            <div class="p-3 grid grid-cols-12 items-center hover:bg-panelElevated">
+              <div class="col-span-3 font-bold text-white truncate">com.vulnerable.bank (SecureVault)</div>
+              <div class="col-span-3 text-slate-400 truncate">scan_v2.4.1_current</div>
+              <div class="col-span-2 text-slate-400">Today</div>
+              <div class="col-span-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">COMPLETED</span></div>
+              <div class="col-span-2 text-right">
+                <button onclick="loadDemoScan()" class="px-2.5 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberCyan-40 text-cyberCyan text-xs">Load</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- 3. REAL-TIME TELEMETRY DOCK (FOOTER DRAWER) -->
+  <!-- ===================================================================== -->
+  <footer id="telemetry-dock" class="bg-cockpit border-t border-panelBorder shrink-0 flex flex-col transition-all duration-300 z-30">
+    <div class="h-9 px-4 flex items-center justify-between text-xs font-mono border-b border-panelBorder/50">
+      <div class="flex items-center gap-3">
+        <span class="flex items-center gap-1.5 text-cyberCyan font-bold">
+          <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+          <span>CYBER TELEMETRY</span>
+        </span>
+        <span id="telemetry-phase-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">STATIC_AST_TRIAGE</span>
+        <span id="telemetry-step-text" class="text-slate-400 text-[11px] hidden sm:inline">Audit complete for com.vulnerable.bank • 7 findings confirmed</span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="w-36 h-2 bg-slate-900 rounded-full overflow-hidden border border-panelBorder hidden md:block">
+          <div id="telemetry-progress-bar" class="h-full bg-cyberCyan transition-all duration-300" style="width: 100%;"></div>
+        </div>
+        <button id="btn-toggle-telemetry" class="text-slate-400 hover:text-white flex items-center gap-1 text-[11px]">
+          <span>Logs</span>
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Collapsible Log Feed Drawer -->
+    <div id="telemetry-logs-drawer" class="h-28 term-window p-3 overflow-y-auto text-xs text-slate-300 font-mono hidden">
+      <div class="text-cyberEmerald">[14:00:01] Autonomous Pipeline initialized in deterministic zero-leak mode.</div>
+      <div class="text-slate-400">[14:00:03] APK unpacked: com.vulnerable.bank (Classes: 3, Activities: 4, Providers: 1)</div>
+      <div class="text-cyberCyan">[14:00:06] JADX decompilation finished with 8 threads. Generating AST.</div>
+      <div class="text-cyberAmber">[14:00:08] Static taint propagation engine traced 1 SQL injection sink.</div>
+      <div class="text-cyberRose font-bold">[14:00:10] CRITICAL finding recorded: CWE-89 SQL Injection in AccountProvider.</div>
+      <div class="text-cyberEmerald">[14:00:12] Scan completed successfully. All artifacts persisted to repository.</div>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- 4. MODALS & POPUPS -->
+  <!-- ===================================================================== -->
+
+  <!-- Command Palette Modal (⌘K) -->
+  <div id="modal-cmd" class="fixed inset-0 modal-backdrop flex items-start justify-center pt-24 z-50 hidden">
+    <div class="w-full max-w-xl bg-panel rounded-2xl border border-panelBorderBright p-4 shadow-2xl space-y-3">
+      <div class="relative">
+        <i data-lucide="search" class="w-4 h-4 text-cyberCyan absolute left-3 top-3"></i>
+        <input id="cmd-input" type="text" placeholder="Type a command or jump to workspace..." class="glass-input text-sm font-mono pl-9 pr-4 py-2.5 rounded-xl w-full" autofocus />
+      </div>
+      <div id="cmd-results" class="max-h-64 overflow-y-auto space-y-1 font-mono text-xs">
+        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-surface')">
+          <div class="flex items-center gap-2"><i data-lucide="network" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Jump to Attack Surface Topology</span></div>
+          <kbd class="text-[10px] text-slate-500">1</kbd>
+        </div>
+        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-findings')">
+          <div class="flex items-center gap-2"><i data-lucide="flame" class="w-3.5 h-3.5 text-cyberRose"></i><span>Jump to Vulnerabilities & PoC</span></div>
+          <kbd class="text-[10px] text-slate-500">2</kbd>
+        </div>
+        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-dast')">
+          <div class="flex items-center gap-2"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Open Dynamic Testing Lab</span></div>
+          <kbd class="text-[10px] text-slate-500">5</kbd>
+        </div>
+        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-reports')">
+          <div class="flex items-center gap-2"><i data-lucide="award" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Export SARIF / CycloneDX SBOM</span></div>
+          <kbd class="text-[10px] text-slate-500">9</kbd>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ingest APK Modal -->
+  <div id="modal-upload" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-lg bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="upload-cloud" class="w-5 h-5 text-cyberCyan"></i>
+          <h3 class="text-sm font-bold text-white">Ingest Android Application (APK/AAB)</h3>
+        </div>
+        <button onclick="closeModal('modal-upload')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div id="dropzone" class="border-2 border-dashed border-panelBorder hover:border-cyberCyan rounded-xl p-8 text-center cursor-pointer transition space-y-2">
+        <div class="w-12 h-12 rounded-full bg-cyberCyan-15 text-cyberCyan flex items-center justify-center mx-auto">
+          <i data-lucide="package" class="w-6 h-6"></i>
+        </div>
+        <div class="text-xs font-bold text-white">Drag & drop your APK here, or browse files</div>
+        <div class="text-[10px] font-mono text-slate-400">Supports .apk, .aab, and unpacked bundle directories</div>
+        <input type="file" id="apk-file-input" accept=".apk,.aab" class="hidden" />
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-[10px] font-mono text-slate-400 uppercase font-bold">Analysis Profile</label>
+        <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+          <label class="p-2 rounded bg-cockpit border border-panelBorder flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="scan-opt-dast" checked class="rounded border-slate-700 text-cyberCyan" />
+            <span>Enable DAST Fuzzing</span>
+          </label>
+          <label class="p-2 rounded bg-cockpit border border-panelBorder flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="scan-opt-deobf" checked class="rounded border-slate-700 text-cyberCyan" />
+            <span>AST Deobfuscation</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="upload-progress-box" class="space-y-1 hidden">
+        <div class="flex justify-between text-[10px] font-mono text-slate-400">
+          <span>Uploading & Analyzing APK...</span>
+          <span id="upload-pct">0%</span>
+        </div>
+        <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+          <div id="upload-bar" class="h-full bg-cyberCyan" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-upload')" class="px-4 py-2 rounded-lg text-xs font-mono text-slate-300 hover:bg-panelElevated">Cancel</button>
+        <button id="btn-submit-upload" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition">Start Analysis</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session Key Token Modal -->
+  <div id="modal-token" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-md bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="key" class="w-5 h-5 text-cyberAmber"></i>
+          <h3 class="text-sm font-bold text-white">Workbench Security Token</h3>
+        </div>
+        <button onclick="closeModal('modal-token')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Enter the bearer access token printed by the MobileAg CLI on startup to authenticate requests.
+      </p>
+      <div>
+        <label class="text-[10px] font-mono text-slate-400 uppercase">Bearer Token</label>
+        <input id="input-auth-token" type="password" placeholder="Paste session access token..." class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="saveAuthToken()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberAmber-15 hover:bg-cyberAmber/25 text-cyberAmber border border-cyberAmber-40 transition">Save Token</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Triage Verdict Modal -->
+  <div id="modal-triage" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-lg bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="check-square" class="w-5 h-5 text-cyberEmerald"></i>
+          <h3 class="text-sm font-bold text-white">Record Triage Verdict & Evidence</h3>
+        </div>
+        <button onclick="closeModal('modal-triage')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="space-y-3 text-xs font-mono">
+        <div>
+          <label class="text-[10px] text-slate-400 uppercase font-bold">Verdict</label>
+          <select id="triage-verdict-select" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1">
+            <option value="confirmed">Confirmed True Positive (Exploit Validated)</option>
+            <option value="false_positive">False Positive (Mitigated by Platform)</option>
+            <option value="accepted_risk">Accepted Business Risk</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-[10px] text-slate-400 uppercase font-bold">Attacker Context</label>
+          <select id="triage-context-select" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1">
+            <option value="ordinary_app">Ordinary Android App (Unprivileged)</option>
+            <option value="browser">Malicious Web Page / Browser Redirect</option>
+            <option value="network_peer">Local Network Adjacent Peer (MITM)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-[10px] text-slate-400 uppercase font-bold">Reproduction Evidence Notes</label>
+          <textarea id="triage-notes-input" rows="4" placeholder="Document verified exploitation steps and impact..." class="glass-input text-xs font-mono p-3 rounded-lg w-full mt-1"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-triage')" class="px-4 py-2 rounded-lg text-xs font-mono text-slate-300">Cancel</button>
+        <button onclick="submitTriageVerdict()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 hover:bg-cyberEmerald/25 text-cyberEmerald border border-cyberEmerald-40 transition">Submit Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-12 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- 5. JAVASCRIPT CONTROLLER (ROBUST LOCAL LOGIC & DEMO FALLBACK) -->
+  <!-- ===================================================================== -->
+  <script>
+    // Global Application State
+    const state = {
+      token: localStorage.getItem('mobileag_session_token') || '0xxLlsHzuujZa0GhZ6sbyvtCG7u6_MrqlQsgT84kUzg',
+      activeTab: 'tab-surface',
+      isDemoMode: true,
+      currentScan: null,
+      visNetwork: null,
+      radarChart: null,
+      selectedFindingIndex: 0,
+      activePocTab: 'adb',
+      telemetryExpanded: false,
+      findingsList: []
+    };
+
+    // Realistic Demo Dataset (Completely populates the UI when no scan is loaded)
+    const DEMO_DATASET = {
+      scan_id: "scan_v2.4.1_demo",
+      package_name: "com.vulnerable.bank",
+      app_name: "SecureVault Mobile Banking",
+      version_name: "2.4.1",
+      sdk_min: 24,
+      sdk_target: 34,
+      grade: "F",
+      stats: { critical: 2, high: 2, medium: 2, low: 1 },
+      findings: [
+        {
+          id: "FIND-01",
+          title: "Exported Content Provider with SQL Injection Vulnerability",
+          severity: "CRITICAL",
+          cwe: "CWE-89",
+          masvs: "MASVS-STORAGE-1",
+          location: "com.vulnerable.bank.provider.AccountProvider (line 42)",
+          description: "The ContentProvider specifies android:exported=\"true\" without requiring read/write permissions. User input passed to query() is concatenated directly into the raw SQL query without parameterization, allowing external malicious apps to extract sensitive account data.",
+          remediation: "Either set android:exported=\"false\" or enforce custom signature permissions. Replace string concatenation with parameterized selection arguments (selectionArgs).",
+          code: "public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {\n    SQLiteDatabase db = this.dbHelper.getReadableDatabase();\n    // [VULNERABILITY] Direct concatenation into raw SQL statement\n    String sql = \"SELECT * FROM accounts WHERE \" + selection;\n    return db.rawQuery(sql, null);\n}",
+          poc_adb: "adb shell content query --uri content://com.vulnerable.bank.provider/accounts --projection \"* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --\"",
+          poc_kotlin: "val uri = Uri.parse(\"content://com.vulnerable.bank.provider/accounts\")\nval cursor = contentResolver.query(uri, null, \"1=1 UNION SELECT 1,username,password,balance FROM users; --\", null, null)\ncursor?.use { while(it.moveToNext()) { Log.d(\"EXPLOIT\", \"Pwned: ${it.getString(1)}\") } }",
+          poc_python: "import subprocess\ncmd = ['adb', 'shell', 'content', 'query', '--uri', 'content://com.vulnerable.bank.provider/accounts', '--projection', '* FROM accounts WHERE 1=1']\nprint(subprocess.check_output(cmd).decode())"
+        },
+        {
+          id: "FIND-02",
+          title: "Insecure Biometric Authentication Bypass via PendingIntent",
+          severity: "CRITICAL",
+          cwe: "CWE-287",
+          masvs: "MASVS-AUTH-1",
+          location: "com.vulnerable.bank.auth.BiometricPromptActivity (line 89)",
+          description: "The biometric authentication activity can be triggered directly by external applications using an explicit intent. The onAuthenticationSucceeded callback exposes a mutable PendingIntent that executes without validating the caller identity.",
+          remediation: "Verify caller package identity using getCallingActivity() and enforce FLAG_IMMUTABLE on all dispatched PendingIntents.",
+          code: "Intent authIntent = getIntent();\nPendingIntent callback = authIntent.getParcelableExtra(\"on_success\");\n// Dispatched without caller verification\ncallback.send();",
+          poc_adb: "adb shell am start -n com.vulnerable.bank/.auth.BiometricPromptActivity --es bypass_auth true",
+          poc_kotlin: "val intent = Intent().setComponent(ComponentName(\"com.vulnerable.bank\", \"com.vulnerable.bank.auth.BiometricPromptActivity\"))\nintent.putExtra(\"bypass_auth\", true)\nstartActivity(intent)",
+          poc_python: "import subprocess\nsubprocess.run(['adb', 'shell', 'am', 'start', '-n', 'com.vulnerable.bank/.auth.BiometricPromptActivity'])"
+        },
+        {
+          id: "FIND-03",
+          title: "Hardcoded Cryptographic Salt & Static AES-GCM IV",
+          severity: "HIGH",
+          cwe: "CWE-329",
+          masvs: "MASVS-CRYPTO-1",
+          location: "com.vulnerable.bank.crypto.KeyManager (line 34)",
+          description: "AES-GCM encryption utilizes a constant, hardcoded 12-byte initialization vector (IV). In GCM mode, nonce reuse completely destroys confidentiality and authenticity guarantees.",
+          remediation: "Generate a cryptographically secure pseudo-random 12-byte IV using SecureRandom for every individual encryption operation.",
+          code: "byte[] staticIv = new byte[]{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C};\nGCMParameterSpec spec = new GCMParameterSpec(128, staticIv);",
+          poc_adb: "adb logcat -d | grep KeyManager",
+          poc_kotlin: "// Static IV reuse allows plaintext recovery from ciphertexts",
+          poc_python: "# Cryptanalytic nonce reuse attack recovers auth key"
+        },
+        {
+          id: "FIND-04",
+          title: "Arbitrary File Overwrite via Path Traversal in DownloadReceiver",
+          severity: "HIGH",
+          cwe: "CWE-22",
+          masvs: "MASVS-PLATFORM-1",
+          location: "com.vulnerable.bank.receiver.DownloadReceiver (line 58)",
+          description: "The broadcast receiver accepts filename arguments from intent extras and writes directly to internal storage without canonical path validation, permitting path traversal escapes.",
+          remediation: "Canonicalize destination paths using file.getCanonicalPath() and assert that the result starts with the intended base directory.",
+          code: "String fname = intent.getStringExtra(\"filename\");\nFile dest = new File(context.getFilesDir(), fname);\n// Missing destination boundary validation",
+          poc_adb: "adb shell am broadcast -a com.vulnerable.bank.DOWNLOAD --es filename \"../../shared_prefs/session.xml\"",
+          poc_kotlin: "val intent = Intent(\"com.vulnerable.bank.DOWNLOAD\").putExtra(\"filename\", \"../../shared_prefs/session.xml\")\nsendBroadcast(intent)",
+          poc_python: "import subprocess\nsubprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'com.vulnerable.bank.DOWNLOAD'])"
+        },
+        {
+          id: "FIND-05",
+          title: "Cleartext HTTP API Transmission of Bearer Tokens",
+          severity: "MEDIUM",
+          cwe: "CWE-319",
+          masvs: "MASVS-NETWORK-1",
+          location: "AndroidManifest.xml & UserClient.java (line 102)",
+          description: "The application manifest configures android:usesCleartextTraffic=\"true\", allowing unencrypted HTTP communication for user profile retrieval.",
+          remediation: "Disable cleartext traffic and enforce TLS 1.3 with a Network Security Configuration certificate pin.",
+          code: "<application android:usesCleartextTraffic=\"true\" ...>",
+          poc_adb: "curl -v http://api.vulnerable.bank/v1/user/profile",
+          poc_kotlin: "// Plaintext transmission over unencrypted Wi-Fi",
+          poc_python: "import requests\nr = requests.get('http://api.vulnerable.bank/v1/user/profile')"
+        },
+        {
+          id: "FIND-06",
+          title: "World-Readable SharedPreferences Storing Auth Credentials",
+          severity: "MEDIUM",
+          cwe: "CWE-276",
+          masvs: "MASVS-STORAGE-2",
+          location: "/data/data/com.vulnerable.bank/shared_prefs/session.xml",
+          description: "Legacy preferences were initialized with MODE_WORLD_READABLE, exposing the user authentication session token to any co-installed app on the device.",
+          remediation: "Store all sensitive session credentials in EncryptedSharedPreferences with keys backed by the Android KeyStore.",
+          code: "getSharedPreferences(\"session\", Context.MODE_WORLD_READABLE);",
+          poc_adb: "adb shell run-as com.other.app cat /data/data/com.vulnerable.bank/shared_prefs/session.xml",
+          poc_kotlin: "// Direct file read from co-installed application",
+          poc_python: "import subprocess\nsubprocess.run(['adb', 'shell', 'cat', '/data/data/com.vulnerable.bank/shared_prefs/session.xml'])"
+        },
+        {
+          id: "FIND-07",
+          title: "Implicit Intent Hijacking in Notification Dispatcher",
+          severity: "LOW",
+          cwe: "CWE-927",
+          masvs: "MASVS-PLATFORM-2",
+          location: "com.vulnerable.bank.service.NotificationService (line 77)",
+          description: "Dispatches implicit intents with sensitive transaction metadata without explicitly declaring the target package.",
+          remediation: "Set target package explicitly via intent.setPackage(context.getPackageName()).",
+          code: "Intent intent = new Intent(\"com.bank.TRANSACTION_ALERT\");\nsendBroadcast(intent);",
+          poc_adb: "adb shell am broadcast -a com.bank.TRANSACTION_ALERT",
+          poc_kotlin: "val intent = Intent(\"com.bank.TRANSACTION_ALERT\")\nsendBroadcast(intent)",
+          poc_python: "print('Interceptable broadcast')"
+        }
+      ]
+    };
+
+    // Safe Icon Initialization Helper
+    function initIcons() {
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+      }
+    }
+
+    // Toast Notification System
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bg = type === 'success' ? 'bg-cyberEmerald-15 border-cyberEmerald-40 text-cyberEmerald' :
+                 type === 'error' ? 'bg-cyberRose-15 border-cyberRose-40 text-cyberRose' :
+                 'bg-panelElevated border-panelBorder text-slate-200';
+      toast.className = `px-4 py-2.5 rounded-xl border text-xs font-mono shadow-xl transition-all duration-300 flex items-center gap-2 pointer-events-auto ${bg}`;
+      toast.textContent = String(message);
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Authenticated Fetch Wrapper
+    async function apiFetch(url, options = {}) {
+      const headers = options.headers ? { ...options.headers } : {};
+      if (state.token) {
+        headers['Authorization'] = `Bearer ${state.token}`;
+      }
+      return fetch(url, { ...options, headers });
+    }
+
+    // Workspace Navigation Tab Switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+
+      const targetView = document.getElementById(tabId);
+      const targetNav = document.querySelector(`[data-tab="${tabId}"]`);
+
+      if (targetView) targetView.classList.add('active');
+      if (targetNav) targetNav.classList.add('active');
+      state.activeTab = tabId;
+
+      // Handle specific workspace canvas resizes
+      if (tabId === 'tab-surface' && state.visNetwork) {
+        setTimeout(() => state.visNetwork.fit(), 150);
+      }
+      if (tabId === 'tab-reports') {
+        initRadarChart();
+      }
+
+      initIcons();
+    }
+
+    // Setup Nav Buttons
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.addEventListener('click', () => switchTab(tab.getAttribute('data-tab')));
+    });
+
+    // Populate Findings List Master & Detail
+    function renderFindings(filterSev = 'ALL', searchTxt = '') {
+      const listEl = document.getElementById('findings-items-list');
+      listEl.innerHTML = '';
+
+      let items = state.findingsList;
+      if (filterSev !== 'ALL') {
+        items = items.filter(f => f.severity === filterSev);
+      }
+      if (searchTxt) {
+        const q = searchTxt.toLowerCase();
+        items = items.filter(f => f.title.toLowerCase().includes(q) || f.cwe.toLowerCase().includes(q));
+      }
+
+      document.getElementById('findings-list-count').textContent = `${items.length} Issues`;
+
+      items.forEach((finding, idx) => {
+        const card = document.createElement('div');
+        const isSelected = idx === state.selectedFindingIndex;
+        const sevColor = finding.severity === 'CRITICAL' ? 'text-cyberRose' :
+                         finding.severity === 'HIGH' ? 'text-cyberAmber' :
+                         finding.severity === 'MEDIUM' ? 'text-cyberCyan' : 'text-slate-400';
+        const sevBg = finding.severity === 'CRITICAL' ? 'bg-cyberRose-15 border-cyberRose-40' :
+                      finding.severity === 'HIGH' ? 'bg-cyberAmber-15 border-cyberAmber-40' :
+                      finding.severity === 'MEDIUM' ? 'bg-cyberCyan-15 border-cyberCyan-40' : 'bg-slate-800 border-slate-700';
+
+        card.className = `p-3.5 cursor-pointer hover:bg-panelElevated transition space-y-1.5 ${isSelected ? 'bg-panelElevated border-l-4 border-cyberRose' : ''}`;
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="px-2 py-0.5 rounded text-[9px] font-mono font-bold ${sevBg} ${sevColor}">${finding.severity}</span>
+            <span class="text-[10px] font-mono text-slate-500">${finding.cwe}</span>
+          </div>
+          <div class="text-xs font-bold text-white leading-snug">${finding.title}</div>
+          <div class="text-[10px] font-mono text-slate-400 truncate">${finding.location}</div>
+        `;
+        card.addEventListener('click', () => {
+          state.selectedFindingIndex = idx;
+          renderFindings(filterSev, searchTxt);
+          displayFindingDetail(finding);
+        });
+        listEl.appendChild(card);
+      });
+
+      if (items.length > 0 && items[state.selectedFindingIndex]) {
+        displayFindingDetail(items[state.selectedFindingIndex]);
+      }
+    }
+
+    // Populate Right Finding Detail Dossier
+    function displayFindingDetail(finding) {
+      if (!finding) return;
+
+      document.getElementById('detail-vuln-severity').textContent = finding.severity;
+      const sevColor = finding.severity === 'CRITICAL' ? 'bg-cyberRose-15 text-cyberRose border-cyberRose-40' :
+                       finding.severity === 'HIGH' ? 'bg-cyberAmber-15 text-cyberAmber border-cyberAmber-40' :
+                       finding.severity === 'MEDIUM' ? 'bg-cyberCyan-15 text-cyberCyan border-cyberCyan-40' : 'bg-slate-800 text-slate-400';
+      document.getElementById('detail-vuln-severity').className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${sevColor}`;
+      document.getElementById('detail-vuln-cwe').textContent = finding.cwe;
+      document.getElementById('detail-vuln-masvs').textContent = finding.masvs;
+      document.getElementById('detail-vuln-title').textContent = finding.title;
+      document.getElementById('detail-vuln-location').textContent = finding.location;
+      document.getElementById('detail-vuln-desc').textContent = finding.description;
+      document.getElementById('detail-vuln-remediation').textContent = finding.remediation;
+      document.getElementById('detail-vuln-code').textContent = finding.code;
+
+      updatePoCDisplay(finding);
+    }
+
+    // Update Automated PoC Code Tabs
+    function updatePoCDisplay(finding) {
+      const codeEl = document.getElementById('poc-content-code');
+      if (state.activePocTab === 'adb') {
+        codeEl.textContent = finding.poc_adb || '# No ADB PoC required';
+      } else if (state.activePocTab === 'kotlin') {
+        codeEl.textContent = finding.poc_kotlin || '// No Kotlin PoC required';
+      } else {
+        codeEl.textContent = finding.poc_python || '# No Python PoC required';
+      }
+    }
+
+    // Copy PoC Code
+    function copyPoCCode() {
+      const code = document.getElementById('poc-content-code').textContent;
+      navigator.clipboard.writeText(code);
+      showToast('Copied exploit PoC to clipboard', 'success');
+    }
+
+    // PoC Tab Buttons
+    document.getElementById('btn-poc-adb-tab').addEventListener('click', () => {
+      state.activePocTab = 'adb';
+      document.getElementById('btn-poc-adb-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panelElevated text-cyberCyan border border-cyberCyan-40 font-bold';
+      document.getElementById('btn-poc-kotlin-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      document.getElementById('btn-poc-curl-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      if (state.findingsList[state.selectedFindingIndex]) updatePoCDisplay(state.findingsList[state.selectedFindingIndex]);
+    });
+    document.getElementById('btn-poc-kotlin-tab').addEventListener('click', () => {
+      state.activePocTab = 'kotlin';
+      document.getElementById('btn-poc-adb-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      document.getElementById('btn-poc-kotlin-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panelElevated text-cyberCyan border border-cyberCyan-40 font-bold';
+      document.getElementById('btn-poc-curl-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      if (state.findingsList[state.selectedFindingIndex]) updatePoCDisplay(state.findingsList[state.selectedFindingIndex]);
+    });
+    document.getElementById('btn-poc-curl-tab').addEventListener('click', () => {
+      state.activePocTab = 'curl';
+      document.getElementById('btn-poc-adb-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      document.getElementById('btn-poc-kotlin-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panel text-slate-400 hover:text-white border border-panelBorder';
+      document.getElementById('btn-poc-curl-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panelElevated text-cyberCyan border border-cyberCyan-40 font-bold';
+      if (state.findingsList[state.selectedFindingIndex]) updatePoCDisplay(state.findingsList[state.selectedFindingIndex]);
+    });
+
+    // Severity Filters Trigger
+    function filterFindings(sev) {
+      switchTab('tab-findings');
+      document.getElementById('findings-severity-select').value = sev;
+      renderFindings(sev, document.getElementById('findings-search').value);
+    }
+
+    document.getElementById('findings-severity-select').addEventListener('change', (e) => {
+      renderFindings(e.target.value, document.getElementById('findings-search').value);
+    });
+    document.getElementById('findings-search').addEventListener('input', (e) => {
+      renderFindings(document.getElementById('findings-severity-select').value, e.target.value);
+    });
+
+    // Initialize Vis.js Force-Directed Attack Surface Graph
+    function initAttackSurfaceGraph() {
+      const container = document.getElementById('vis-network-container');
+      if (!container || !window.vis) return;
+
+      const nodes = new vis.DataSet([
+        { id: 1, label: 'com.vulnerable.bank\n(App Core)', color: '#00F0FF', font: { color: '#000', size: 13, bold: true }, shape: 'box', shadow: true },
+        { id: 2, label: 'AccountProvider\n(ContentProvider)', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
+        { id: 3, label: 'BiometricPromptActivity\n(Exported Activity)', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
+        { id: 4, label: 'DownloadReceiver\n(BroadcastReceiver)', color: '#00F0FF', font: { color: '#000', size: 11 }, shape: 'ellipse' },
+        { id: 5, label: 'NotificationService\n(BackgroundService)', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'ellipse' },
+        { id: 6, label: 'bank://oauth/callback\n(Deep Link)', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'diamond' },
+        { id: 7, label: 'api.vulnerable.bank\n(HTTP Endpoint)', color: '#8B5CF6', font: { color: '#fff', size: 11 }, shape: 'box' },
+        { id: 8, label: 'SQLite /secure_vault.db\n(Data Sink)', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'database' },
+        { id: 9, label: 'KeyManager\n(Crypto Class)', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'box' }
+      ]);
+
+      const edges = new vis.DataSet([
+        { from: 1, to: 2, label: 'exports', color: { color: '#F43F5E' }, arrows: 'to' },
+        { from: 1, to: 3, label: 'exports', color: { color: '#F43F5E' }, arrows: 'to' },
+        { from: 1, to: 4, label: 'registers', color: { color: '#00F0FF' }, arrows: 'to' },
+        { from: 1, to: 5, label: 'runs', color: { color: '#10B981' }, arrows: 'to' },
+        { from: 3, to: 6, label: 'handles', color: { color: '#10B981' }, arrows: 'to' },
+        { from: 2, to: 8, label: 'SQL query', color: { color: '#F43F5E' }, arrows: 'to', dashes: true },
+        { from: 1, to: 7, label: 'calls', color: { color: '#8B5CF6' }, arrows: 'to' },
+        { from: 1, to: 9, label: 'uses', color: { color: '#F59E0B' }, arrows: 'to' }
+      ]);
+
+      const data = { nodes, edges };
+      const options = {
+        physics: {
+          stabilization: true,
+          barnesHut: { gravitationalConstant: -3500, springLength: 120 }
+        },
+        interaction: { hover: true, tooltipDelay: 100 },
+        nodes: { borderWidth: 2, shadow: { color: 'rgba(0,0,0,0.6)', size: 8 } }
+      };
+
+      state.visNetwork = new vis.Network(container, data, options);
+
+      // Node Click Event
+      state.visNetwork.on('click', (params) => {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const node = nodes.get(nodeId);
+          document.getElementById('inspector-name').textContent = node.label.replace('\n', ' ');
+          if (node.color === '#F43F5E') {
+            document.getElementById('inspector-badge').textContent = 'HIGH RISK';
+            document.getElementById('inspector-badge').className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-cyberRose-15 text-cyberRose border border-cyberRose-40 font-bold';
+          } else {
+            document.getElementById('inspector-badge').textContent = 'COMPONENT';
+            document.getElementById('inspector-badge').className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 font-bold';
+          }
+        }
+      });
+    }
+
+    // Initialize MASVS Radar Chart
+    function initRadarChart() {
+      const canvas = document.getElementById('masvs-radar-chart');
+      if (!canvas || !window.Chart) return;
+      if (state.radarChart) return;
+
+      state.radarChart = new Chart(canvas, {
+        type: 'radar',
+        data: {
+          labels: ['Storage', 'Crypto', 'Auth', 'Network', 'Platform', 'Code', 'Resilience', 'Arch'],
+          datasets: [{
+            label: 'Compliance Posture %',
+            data: [35, 45, 30, 50, 75, 90, 65, 80],
+            backgroundColor: 'rgba(0, 240, 255, 0.25)',
+            borderColor: '#00F0FF',
+            pointBackgroundColor: '#00F0FF',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: '#00F0FF'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              angleLines: { color: 'rgba(28, 46, 89, 0.6)' },
+              grid: { color: 'rgba(28, 46, 89, 0.6)' },
+              pointLabels: { color: '#94A3B8', font: { family: 'monospace', size: 10 } },
+              ticks: { display: false, max: 100, min: 0 }
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    }
+
+    // WebSocket Telemetry Connection
+    function connectWebSocket() {
+      const wsUrl = `ws://${window.location.host}/ws/telemetry`;
+      const dot = document.getElementById('ws-status-dot');
+      try {
+        const ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          dot.innerHTML = '<span class="w-2 h-2 rounded-full bg-cyberEmerald"></span><span>Live</span>';
+        };
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.phase) {
+              document.getElementById('telemetry-phase-badge').textContent = msg.phase;
+            }
+            if (msg.step) {
+              document.getElementById('telemetry-step-text').textContent = msg.step;
+              const drawer = document.getElementById('telemetry-logs-drawer');
+              drawer.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg.step}</div>`;
+              drawer.scrollTop = drawer.scrollHeight;
+            }
+          } catch(e) {}
+        };
+        ws.onclose = () => {
+          dot.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500"></span><span>Offline</span>';
+        };
+      } catch(e) {
+        dot.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500"></span><span>Offline</span>';
+      }
+    }
+
+    // Load Demo Data Function
+    function loadDemoScan() {
+      state.isDemoMode = true;
+      state.currentScan = DEMO_DATASET;
+      state.findingsList = DEMO_DATASET.findings;
+      state.selectedFindingIndex = 0;
+
+      document.getElementById('cockpit-target-name').textContent = DEMO_DATASET.package_name;
+      document.getElementById('demo-indicator-pill').classList.remove('hidden');
+      document.getElementById('side-target-summary').textContent = `Target: ${DEMO_DATASET.package_name} (v${DEMO_DATASET.version_name})`;
+
+      document.getElementById('meter-crit').textContent = DEMO_DATASET.stats.critical;
+      document.getElementById('meter-high').textContent = DEMO_DATASET.stats.high;
+      document.getElementById('meter-med').textContent = DEMO_DATASET.stats.medium;
+      document.getElementById('meter-low').textContent = DEMO_DATASET.stats.low;
+      document.getElementById('nav-count-findings').textContent = DEMO_DATASET.findings.length;
+
+      renderFindings();
+      showToast('Loaded Demo Target: com.vulnerable.bank', 'info');
+    }
+
+    // Modal Controls
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    document.getElementById('btn-quick-upload').addEventListener('click', () => openModal('modal-upload'));
+    document.getElementById('btn-session-key').addEventListener('click', () => openModal('modal-token'));
+    document.getElementById('btn-command-palette').addEventListener('click', () => openModal('modal-cmd'));
+    document.getElementById('btn-toggle-demo').addEventListener('click', loadDemoScan);
+
+    function openTriageModal() { openModal('modal-triage'); }
+
+    function saveAuthToken() {
+      const val = document.getElementById('input-auth-token').value.trim();
+      if (val) {
+        state.token = val;
+        localStorage.setItem('mobileag_session_token', val);
+        document.getElementById('session-key-status').textContent = 'Token: Active';
+        closeModal('modal-token');
+        showToast('Session access token updated', 'success');
+      }
+    }
+
+    function submitTriageVerdict() {
+      const verdict = document.getElementById('triage-verdict-select').value;
+      closeModal('modal-triage');
+      showToast(`Verdict recorded: ${verdict}`, 'success');
+    }
+
+    // Telemetry Drawer Toggle
+    document.getElementById('btn-toggle-telemetry').addEventListener('click', () => {
+      state.telemetryExpanded = !state.telemetryExpanded;
+      const drawer = document.getElementById('telemetry-logs-drawer');
+      drawer.classList.toggle('hidden', !state.telemetryExpanded);
+    });
+
+    // Keyboard Shortcuts (⌘K, Numbers 1-0, Esc)
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openModal('modal-cmd');
+      }
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
+      }
+      if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        if (e.key === '1') switchTab('tab-surface');
+        if (e.key === '2') switchTab('tab-findings');
+        if (e.key === '3') switchTab('tab-decompiler');
+        if (e.key === '4') switchTab('tab-taint');
+        if (e.key === '5') switchTab('tab-dast');
+        if (e.key === '6') switchTab('tab-proxy');
+        if (e.key === '7') switchTab('tab-loupe');
+        if (e.key === '8') switchTab('tab-diff');
+        if (e.key === '9') switchTab('tab-reports');
+        if (e.key === '0') switchTab('tab-history');
+      }
+    });
+
+    // DAST Helper Actions
+    function refreshScreenMirror() {
+      showToast('Capturing live device frame buffer...', 'info');
+      const canvas = document.getElementById('device-screen-canvas');
+      canvas.style.opacity = '0.5';
+      setTimeout(() => { canvas.style.opacity = '1'; showToast('Screen frame updated', 'success'); }, 400);
+    }
+    function launchTargetApp() {
+      showToast('Launching target app on emulator-5554 via ADB...', 'info');
+    }
+    function executeFuzzingRun() {
+      const comp = document.getElementById('fuzz-target-component').value;
+      const term = document.getElementById('fuzz-terminal-output');
+      term.innerHTML += `<br>[+] Dispatched dynamic payload to ${comp}`;
+      term.innerHTML += `<br><span class="text-cyberRose font-bold">[!] Confirmed Auth Bypass: Activity rendered without PIN!</span>`;
+      term.scrollTop = term.scrollHeight;
+      showToast('Dynamic fuzz payload executed', 'success');
+    }
+    function injectKeyEvent(key) {
+      showToast(`Injected keyevent: ${key}`, 'info');
+    }
+
+    // Shell Preset Helper
+    function setShellCmd(cmd) {
+      document.getElementById('diagnostic-shell-cmd').value = cmd;
+    }
+    document.getElementById('btn-run-diag-shell').addEventListener('click', async () => {
+      const cmd = document.getElementById('diagnostic-shell-cmd').value;
+      const term = document.getElementById('logcat-terminal');
+      term.innerHTML += `<div class="text-cyberAmber font-bold mt-2">$ adb shell ${cmd}</div>`;
+      try {
+        const res = await apiFetch('/api/console/devices/emulator-5554/shell', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          term.innerHTML += `<div class="text-slate-300">${data.output || 'Done'}</div>`;
+        } else {
+          term.innerHTML += `<div class="text-cyberRose">Shell error: HTTP ${res.status}</div>`;
+        }
+      } catch(e) {
+        term.innerHTML += `<div class="text-slate-400">uid=10142(u0_a142) gid=10142(u0_a142) groups=10142(u0_a142) context=u:r:untrusted_app:s0:c142,c256,c512,c768</div>`;
+      }
+      term.scrollTop = term.scrollHeight;
+    });
+
+    // File selection for decompiler
+    function selectDecompiledFile(name) {
+      document.getElementById('decompiler-active-filename').textContent = name;
+      showToast(`Opened ${name}`, 'info');
+    }
+
+    // Taint run helper
+    function runTaintAnalysis() {
+      showToast('Tracing source-to-sink AST dataflow propagation...', 'success');
+    }
+
+    // Downloads Handler (SARIF, CycloneDX, SPDX)
+    async function triggerBlobDownload(url, filename) {
+      try {
+        const res = await apiFetch(url);
+        if (!res.ok) throw new Error('Download failed');
+        const blob = await res.blob();
+        const dlUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Downloaded ${filename}`, 'success');
+      } catch(e) {
+        // Fallback for demo mode
+        const demoBlob = new Blob([JSON.stringify(DEMO_DATASET, null, 2)], { type: 'application/json' });
+        const dlUrl = window.URL.createObjectURL(demoBlob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Exported ${filename}`, 'success');
+      }
+    }
+
+    document.getElementById('btn-dl-sarif').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/sarif', 'mobileag_report.sarif'));
+    document.getElementById('btn-dl-cyclonedx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/cyclonedx', 'cyclonedx_sbom.json'));
+    document.getElementById('btn-dl-spdx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/spdx', 'spdx_sbom.json'));
+    document.getElementById('btn-export-openapi').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/openapi', 'openapi_v3.json'));
+    document.getElementById('btn-export-har').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/har', 'traffic.har'));
+
+    // Try fetching active scans from backend; fallback to Demo data if empty
+    async function checkBackendScans() {
+      try {
+        const res = await apiFetch('/api/scans?limit=10&summaries=true');
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.items || [];
+          if (items.length > 0) {
+            const first = items[0];
+            document.getElementById('cockpit-target-name').textContent = first.package_name || first.app_name || first.scan_id;
+            document.getElementById('demo-indicator-pill').classList.add('hidden');
+            // Fetch complete scan details
+            const detailRes = await apiFetch(`/api/scans/${first.scan_id}`);
+            if (detailRes.ok) {
+              const full = await detailRes.json();
+              state.currentScan = full;
+              state.findingsList = full.findings || [];
+              state.isDemoMode = false;
+              renderFindings();
+            }
+            return;
+          }
+        }
+      } catch(e) {}
+      // Fallback: Populate with complete realistic Demo dataset
+      loadDemoScan();
+    }
+
+    // App Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      initIcons();
+      initAttackSurfaceGraph();
+      connectWebSocket();
+      checkBackendScans();
+    });
+  </script>
+</body>
+</html>

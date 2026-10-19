@@ -594,3 +594,136 @@ class ADBManager:
         await self.delete_setting(serial, "global", "global_http_proxy_port", guard=guard)
         return {"status": "success", "proxy": "cleared"}
 
+    async def get_clipboard(self, serial: str, guard=None) -> dict[str, Any]:
+        """Retrieve current system clipboard text from Android device."""
+        self._check_mutation_guard(guard)
+        code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", "cmd clipboard get"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        text = stdout.decode("utf-8", errors="replace").strip()
+        if code == 0 and text:
+            return {"status": "success", "text": text}
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", "service call clipboard 2 i32 1 s16 com.android.shell"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        raw = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        return {"status": "success" if code == 0 else "failed", "text": raw}
+
+    async def set_clipboard(self, serial: str, text: str, guard=None) -> dict[str, Any]:
+        """Inject text into current system clipboard on Android device."""
+        self._check_mutation_guard(guard)
+        quoted = shlex.quote(text)
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", f"cmd clipboard set {quoted}"], timeout=3.0)
+        self._check_mutation_guard(guard)
+        return {"status": "success" if code == 0 else "failed", "output": (stdout + stderr).decode("utf-8", errors="replace").strip()}
+
+    async def get_package_info(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
+        """Query package metadata, permissions, code paths, and components via dumpsys package."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid package name format")
+
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", f"dumpsys package {shlex.quote(package_name)}"], timeout=10.0, output_limit=512*1024)
+        self._check_mutation_guard(guard)
+        raw = stdout.decode("utf-8", errors="replace")
+
+        version_name = "Unknown"
+        version_code = "Unknown"
+        target_sdk = "Unknown"
+        min_sdk = "Unknown"
+        data_dir = "Unknown"
+        code_path = "Unknown"
+        requested_permissions: list[str] = []
+        granted_permissions: list[str] = []
+
+        in_req_perms = False
+        in_install_perms = False
+
+        for line in raw.splitlines():
+            sline = line.strip()
+            if "versionName=" in sline:
+                m = re.search(r"versionName=([^\s]+)", sline)
+                if m:
+                    version_name = m.group(1)
+            if "versionCode=" in sline:
+                m = re.search(r"versionCode=([0-9]+)", sline)
+                if m:
+                    version_code = m.group(1)
+            if "targetSdk=" in sline:
+                m = re.search(r"targetSdk=([0-9]+)", sline)
+                if m:
+                    target_sdk = m.group(1)
+            if "minSdk=" in sline:
+                m = re.search(r"minSdk=([0-9]+)", sline)
+                if m:
+                    min_sdk = m.group(1)
+            if "dataDir=" in sline:
+                m = re.search(r"dataDir=([^\s]+)", sline)
+                if m:
+                    data_dir = m.group(1)
+            if "codePath=" in sline:
+                m = re.search(r"codePath=([^\s]+)", sline)
+                if m:
+                    code_path = m.group(1)
+
+            if sline == "requested permissions:":
+                in_req_perms = True
+                in_install_perms = False
+                continue
+            elif sline.startswith("install permissions:") or sline.startswith("runtime permissions:"):
+                in_req_perms = False
+                in_install_perms = True
+                continue
+            elif sline.endswith(":") and not sline.startswith("android."):
+                in_req_perms = False
+                in_install_perms = False
+
+            if in_req_perms and sline.startswith("android.permission."):
+                perm = sline.split(":")[0].strip()
+                if perm not in requested_permissions:
+                    requested_permissions.append(perm)
+            elif in_install_perms and "android.permission." in sline:
+                m = re.search(r"(android\.permission\.[A-Za-z0-9_]+): granted=true", sline)
+                if m and m.group(1) not in granted_permissions:
+                    granted_permissions.append(m.group(1))
+
+        return {
+            "package_name": package_name,
+            "version_name": version_name,
+            "version_code": version_code,
+            "target_sdk": target_sdk,
+            "min_sdk": min_sdk,
+            "data_dir": data_dir,
+            "code_path": code_path,
+            "requested_permissions": requested_permissions,
+            "granted_permissions": granted_permissions,
+            "dangerous_count": sum(1 for p in requested_permissions if any(d in p for d in ["CAMERA", "LOCATION", "STORAGE", "AUDIO", "CONTACTS", "SMS", "PHONE"])),
+        }
+
+    async def execute_package_action(self, serial: str, package_name: str, action: str, guard=None) -> dict[str, Any]:
+        """Perform package lifecycle action: force_stop, clear_data, launch, uninstall."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid package name format")
+        if action not in ("force_stop", "clear_data", "launch", "uninstall"):
+            raise ValueError(f"Unsupported package action: {action}")
+
+        pkg = shlex.quote(package_name)
+        if action == "force_stop":
+            cmd = f"am force-stop {pkg}"
+        elif action == "clear_data":
+            cmd = f"pm clear {pkg}"
+        elif action == "launch":
+            cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+        else:
+            cmd = f"pm uninstall {pkg}"
+
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "shell", cmd], timeout=10.0)
+        self._check_mutation_guard(guard)
+        out = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        return {
+            "status": "success" if code == 0 else "failed",
+            "action": action,
+            "package_name": package_name,
+            "output": out or "Done",
+        }
+
+

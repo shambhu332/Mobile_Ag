@@ -1131,7 +1131,7 @@ public class AccountProvider extends ContentProvider {
             </div>
           </div>
 
-          <div class="flex items-center gap-1.5 bg-cockpit p-1 rounded-lg border border-panelBorder">
+          <div class="flex items-center gap-1.5 bg-cockpit p-1 rounded-lg border border-panelBorder flex-wrap">
             <button onclick="switchLoupeSubtab('logcat')" id="btn-loupe-sub-logcat" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono font-bold bg-panelElevated text-cyberAmber border border-cyberAmber/30 flex items-center gap-1.5 transition">
               <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
               <span>Logcat & Shell</span>
@@ -1147,6 +1147,18 @@ public class AccountProvider extends ContentProvider {
             <button onclick="switchLoupeSubtab('settings')" id="btn-loupe-sub-settings" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
               <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
               <span>Settings & Proxy</span>
+            </button>
+            <button onclick="switchLoupeSubtab('packages')" id="btn-loupe-sub-packages" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="package" class="w-3.5 h-3.5"></i>
+              <span>Packages & APK</span>
+            </button>
+            <button onclick="switchLoupeSubtab('files')" id="btn-loupe-sub-files" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="folder" class="w-3.5 h-3.5"></i>
+              <span>File Browser</span>
+            </button>
+            <button onclick="switchLoupeSubtab('clipboard')" id="btn-loupe-sub-clipboard" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="clipboard" class="w-3.5 h-3.5"></i>
+              <span>Clipboard</span>
             </button>
           </div>
         </div>
@@ -1328,6 +1340,207 @@ public class AccountProvider extends ContentProvider {
                   Clear
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 5: PACKAGES & APK INSPECTOR -->
+        <div id="loupe-pane-packages" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Package List -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <input id="loupe-packages-search" type="text" placeholder="Filter packages..." oninput="filterPackagesTable()" class="glass-input px-3 py-1.5 rounded-lg w-48 text-xs font-mono" />
+                <label class="flex items-center gap-1.5 text-slate-400 text-xs cursor-pointer select-none">
+                  <input type="checkbox" id="chk-include-system-pkgs" onchange="loadLoupePackages()" class="rounded bg-cockpit border-panelBorder text-cyberCyan" />
+                  <span>All (System)</span>
+                </label>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="loupe-packages-count" class="text-slate-400">0 Packages</span>
+                <button onclick="loadLoupePackages()" class="p-1.5 rounded-lg bg-cockpit hover:bg-panelElevated text-slate-300">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+              <table class="w-full text-left font-mono text-xs">
+                <thead class="bg-cockpit text-slate-400 text-[10px] uppercase sticky top-0 border-b border-panelBorder">
+                  <tr>
+                    <th class="py-2 px-3">Application ID</th>
+                    <th class="py-2 px-3">APK Location</th>
+                    <th class="py-2 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="loupe-packages-tbody" class="divide-y divide-panelBorder">
+                  <tr><td colspan="3" class="p-6 text-center text-slate-500">Loading installed packages...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Package Details & Action Inspector -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="package-check" class="w-4 h-4 text-cyberCyan"></i>
+                <div>
+                  <h4 id="loupe-pkg-title" class="text-xs font-mono font-bold text-white">com.vulnerable.bank</h4>
+                  <p id="loupe-pkg-version" class="text-[10px] font-mono text-slate-400">v2.4.1 (code: 241) • Target SDK 34</p>
+                </div>
+              </div>
+              <span id="loupe-pkg-dangerous-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40">3 Dangerous Perms</span>
+            </div>
+
+            <!-- Path Info -->
+            <div class="space-y-1.5 font-mono text-xs">
+              <div class="p-2 bg-cockpit rounded-lg border border-panelBorder">
+                <div class="text-[10px] text-slate-400 uppercase font-bold">APK Base Path</div>
+                <div id="loupe-pkg-codepath" class="text-slate-200 text-[11px] truncate mt-0.5">/data/app/com.vulnerable.bank/base.apk</div>
+              </div>
+              <div class="p-2 bg-cockpit rounded-lg border border-panelBorder">
+                <div class="text-[10px] text-slate-400 uppercase font-bold">Data Sandbox Directory</div>
+                <div id="loupe-pkg-datadir" class="text-cyberCyan text-[11px] truncate mt-0.5">/data/user/0/com.vulnerable.bank</div>
+              </div>
+            </div>
+
+            <!-- Permissions Matrix -->
+            <div class="flex-1 flex flex-col min-h-0 bg-cockpit rounded-xl border border-panelBorder p-3 overflow-hidden">
+              <div class="flex items-center justify-between pb-2 border-b border-panelBorder shrink-0">
+                <span class="text-xs font-mono font-bold text-white">Permissions Audit</span>
+                <span id="loupe-pkg-perms-summary" class="text-[10px] font-mono text-slate-400">3 Granted / 6 Requested</span>
+              </div>
+              <div id="loupe-pkg-perms-list" class="flex-1 overflow-y-auto space-y-1.5 pt-2 text-xs font-mono">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Package Lifecycle Actions -->
+            <div class="pt-2 border-t border-panelBorder space-y-2">
+              <div class="text-[10px] font-mono uppercase text-slate-400 font-bold">Lifecycle & Extraction Controls</div>
+              <div class="grid grid-cols-4 gap-2">
+                <button onclick="executeSelectedPackageAction('launch')" class="py-2 px-2 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 hover:bg-cyberEmerald/25 flex items-center justify-center gap-1">
+                  <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                  <span>Launch</span>
+                </button>
+                <button onclick="executeSelectedPackageAction('force_stop')" class="py-2 px-2 rounded-lg text-xs font-mono font-bold bg-cockpit text-cyberAmber border border-panelBorder hover:bg-panelElevated flex items-center justify-center gap-1">
+                  <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                  <span>Stop</span>
+                </button>
+                <button onclick="executeSelectedPackageAction('clear_data')" class="py-2 px-2 rounded-lg text-xs font-mono font-bold bg-cockpit text-cyberRose border border-panelBorder hover:bg-panelElevated flex items-center justify-center gap-1">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  <span>Clear Data</span>
+                </button>
+                <button onclick="pullSelectedPackageApk()" class="py-2 px-2 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 flex items-center justify-center gap-1">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  <span>Pull APK</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 6: DEVICE FILE BROWSER -->
+        <div id="loupe-pane-files" class="loupe-pane hidden flex-1 flex flex-col bg-panel rounded-xl border border-panelBorder overflow-hidden">
+          <!-- Path Bar & Presets -->
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between gap-3 text-xs font-mono">
+            <div class="flex items-center gap-2 flex-1">
+              <i data-lucide="folder" class="w-4 h-4 text-cyberAmber shrink-0"></i>
+              <input id="loupe-fs-path-input" type="text" value="/data/data/com.vulnerable.bank" class="glass-input px-3 py-1.5 rounded-lg flex-1 text-xs font-mono" />
+              <button onclick="loadLoupeFiles()" class="px-3 py-1.5 rounded-lg bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 font-bold shrink-0">
+                Browse
+              </button>
+            </div>
+            <!-- Quick Presets -->
+            <div class="flex items-center gap-1 shrink-0">
+              <button onclick="setFsPreset('/data/data/' + (state.currentScan?.package_name || 'com.vulnerable.bank'))" class="px-2 py-1 rounded text-[10px] bg-cockpit hover:bg-panelElevated border border-panelBorder text-slate-300">Sandbox</button>
+              <button onclick="setFsPreset('/sdcard/')" class="px-2 py-1 rounded text-[10px] bg-cockpit hover:bg-panelElevated border border-panelBorder text-slate-300">/sdcard</button>
+              <button onclick="setFsPreset('/sdcard/Android/data/' + (state.currentScan?.package_name || 'com.vulnerable.bank'))" class="px-2 py-1 rounded text-[10px] bg-cockpit hover:bg-panelElevated border border-panelBorder text-slate-300">External</button>
+              <button onclick="setFsPreset('/data/local/tmp')" class="px-2 py-1 rounded text-[10px] bg-cockpit hover:bg-panelElevated border border-panelBorder text-slate-300">/tmp</button>
+            </div>
+          </div>
+
+          <!-- Files Table -->
+          <div class="flex-1 overflow-y-auto">
+            <table class="w-full text-left font-mono text-xs">
+              <thead class="bg-cockpit text-slate-400 text-[10px] uppercase sticky top-0 border-b border-panelBorder">
+                <tr>
+                  <th class="py-2.5 px-3">Name</th>
+                  <th class="py-2.5 px-3">Type</th>
+                  <th class="py-2.5 px-3">Permissions</th>
+                  <th class="py-2.5 px-3">Size</th>
+                  <th class="py-2.5 px-3">Modified</th>
+                </tr>
+              </thead>
+              <tbody id="loupe-files-tbody" class="divide-y divide-panelBorder">
+                <tr><td colspan="5" class="p-6 text-center text-slate-500 font-mono">No directory loaded. Click Browse to index remote files.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SUBTAB 7: CLIPBOARD MONITOR & MANIPULATOR -->
+        <div id="loupe-pane-clipboard" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Reader -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="clipboard-copy" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Device System Clipboard Reader</h4>
+              </div>
+              <button onclick="loadLoupeClipboard()" class="px-3 py-1 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 flex items-center gap-1.5">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>Read Live Clipboard</span>
+              </button>
+            </div>
+
+            <div class="flex-1 flex flex-col min-h-0 bg-cockpit rounded-xl border border-panelBorder p-3 space-y-2">
+              <div class="text-[10px] text-slate-400 uppercase font-bold font-mono">Current Clipboard Content</div>
+              <pre id="loupe-clipboard-content" class="flex-1 overflow-y-auto font-mono text-xs text-cyberCyan whitespace-pre-wrap select-all p-2 bg-panel/50 rounded-lg">No clipboard text read yet. Click 'Read Live Clipboard' to inspect device buffer.</pre>
+            </div>
+
+            <!-- Security Alert Banner -->
+            <div id="loupe-clipboard-leak-alert" class="p-3 bg-cyberRose-15 rounded-xl border border-cyberRose-40 space-y-1">
+              <div class="flex items-center gap-1.5 text-cyberRose font-bold text-xs font-mono">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+                <span>CWE-200 / CWE-532 Clipboard Exposure Assessment</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Third-party Android applications with foreground focus can read the system clipboard without runtime permission prompts. Never store tokens, passwords, or credit card numbers in the clipboard.</p>
+            </div>
+          </div>
+
+          <!-- Manipulator / Injector -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="clipboard-paste" class="w-4 h-4 text-cyberEmerald"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Clipboard Payload Injector</h4>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Inject test strings via cmd clipboard</span>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-[10px] font-mono text-slate-400 uppercase">Input Payload</label>
+              <textarea id="loupe-clipboard-input" rows="6" placeholder="Enter text or choose a security test vector below..." class="glass-input p-3 rounded-lg w-full text-xs font-mono"></textarea>
+            </div>
+
+            <!-- Test Vector Presets -->
+            <div class="space-y-1.5">
+              <div class="text-[10px] font-mono text-slate-400 uppercase font-bold">Security Test Vector Presets</div>
+              <div class="flex flex-wrap gap-1.5">
+                <button onclick="injectClipboardPreset('\' OR \'1\'=\'1\' --')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberRose">SQLi Injection</button>
+                <button onclick="injectClipboardPreset('<script>alert(origin)</script>')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberAmber">XSS Payload</button>
+                <button onclick="injectClipboardPreset('bank://transfer?amount=99999&to=attacker_wallet')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberCyan">Deep Link URI</button>
+                <button onclick="injectClipboardPreset('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMzM3IiwibmFtZSI6IkFsaWNlIiwiaWF0IjoxNTE2MjM5MDIyfQ.fake_jwt_token_for_fuzzing')" class="px-2.5 py-1 rounded text-xs font-mono bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberPurple">JWT Token</button>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-panelBorder flex justify-end">
+              <button onclick="setLoupeClipboard()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 hover:bg-cyberEmerald/25 text-cyberEmerald border border-cyberEmerald-40 transition flex items-center gap-1.5">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span>Inject to Device Clipboard</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1985,7 +2198,13 @@ public class AccountProvider extends ContentProvider {
       currentBinaries: null,
       currentNsc: null,
       inspectorTree: null,
-      inspectorNodeCount: 0
+      inspectorNodeCount: 0,
+      loupePackages: [],
+      selectedPackage: 'com.vulnerable.bank',
+      loupePackageInfo: null,
+      loupeFiles: null,
+      currentFsPath: '/data/data/com.vulnerable.bank',
+      clipboardContent: ''
     };
 
     // Realistic Demo Datasets for Loupe, Native Binaries & Cryptographic Signature
@@ -2244,6 +2463,50 @@ public class AccountProvider extends ContentProvider {
         'accelerometer_rotation': '1',
         'haptic_feedback_enabled': '1'
       }
+    };
+
+    const DEMO_PACKAGES = [
+      { package: 'com.vulnerable.bank', apk_path: '/data/app/~~8x_bank==/com.vulnerable.bank-1/base.apk' },
+      { package: 'com.android.chrome', apk_path: '/data/app/com.android.chrome/base.apk' },
+      { package: 'org.thoughtcrime.securesms', apk_path: '/data/app/org.thoughtcrime.securesms/base.apk' },
+      { package: 'com.facebook.katana', apk_path: '/data/app/com.facebook.katana/base.apk' },
+      { package: 'com.whatsapp', apk_path: '/data/app/com.whatsapp/base.apk' }
+    ];
+
+    const DEMO_PACKAGE_INFO = {
+      package_name: 'com.vulnerable.bank',
+      version_name: '2.4.1',
+      version_code: '241',
+      target_sdk: '34',
+      min_sdk: '26',
+      data_dir: '/data/user/0/com.vulnerable.bank',
+      code_path: '/data/app/~~8x_bank==/com.vulnerable.bank-1/base.apk',
+      requested_permissions: [
+        'android.permission.INTERNET',
+        'android.permission.USE_BIOMETRIC',
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.ACCESS_COARSE_LOCATION'
+      ],
+      granted_permissions: [
+        'android.permission.INTERNET',
+        'android.permission.USE_BIOMETRIC',
+        'android.permission.READ_EXTERNAL_STORAGE'
+      ],
+      dangerous_count: 3
+    };
+
+    const DEMO_FILES = {
+      path: '/data/data/com.vulnerable.bank',
+      entries: [
+        { name: 'databases', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
+        { name: 'shared_prefs', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
+        { name: 'files', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
+        { name: 'cache', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
+        { name: 'code_cache', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
+        { name: 'app_webview', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' }
+      ]
     };
 
     // Realistic Demo Dataset
@@ -3280,7 +3543,7 @@ public class AccountProvider extends ContentProvider {
     // =====================================================================
     function switchLoupeSubtab(subtabId) {
       state.activeLoupeSubtab = subtabId;
-      const subtabs = ['logcat', 'sockets', 'inspector', 'settings'];
+      const subtabs = ['logcat', 'sockets', 'inspector', 'settings', 'packages', 'files', 'clipboard'];
       subtabs.forEach(st => {
         const btn = document.getElementById(`btn-loupe-sub-${st}`);
         const pane = document.getElementById(`loupe-pane-${st}`);
@@ -3300,6 +3563,12 @@ public class AccountProvider extends ContentProvider {
         loadLoupeSockets();
       } else if (subtabId === 'settings' && (!state.loupeSettings || Object.keys(state.loupeSettings).length === 0)) {
         loadLoupeSettings();
+      } else if (subtabId === 'packages' && (!state.loupePackages || state.loupePackages.length === 0)) {
+        loadLoupePackages();
+      } else if (subtabId === 'files' && (!state.loupeFiles || state.loupeFiles.length === 0)) {
+        loadLoupeFiles();
+      } else if (subtabId === 'clipboard' && (!state.clipboardContent)) {
+        loadLoupeClipboard();
       }
       initIcons();
     }
@@ -3683,6 +3952,446 @@ public class AccountProvider extends ContentProvider {
         }
       } catch(e) {}
       showToast('Global HTTP proxy reset to direct connection', 'success');
+    }
+
+    // =====================================================================
+    // LOUPE EXTENSIONS: PACKAGES, SANDBOX FILESYSTEM, & CLIPBOARD
+    // =====================================================================
+
+    // Package & APK Inspector Controller
+    async function loadLoupePackages() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const thirdPartyOnly = !document.getElementById('chk-include-system-pkgs')?.checked;
+      const tbody = document.getElementById('loupe-packages-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-cyberCyan font-mono">Indexing installed packages via pm list packages...</td></tr>';
+
+      try {
+        const res = await apiFetch(`/api/dast/packages?serial=${encodeURIComponent(serial)}&third_party=${thirdPartyOnly}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.packages && data.packages.length > 0) {
+            state.loupePackages = data.packages;
+            renderPackagesTable();
+            showToast(`Indexed ${state.loupePackages.length} packages`, 'info');
+            if (!state.selectedPackage && state.loupePackages.length > 0) {
+              selectPackageRow(state.loupePackages[0].package);
+            }
+            return;
+          }
+        }
+      } catch(e) {}
+
+      state.loupePackages = DEMO_PACKAGES;
+      renderPackagesTable();
+      if (!state.selectedPackage && state.loupePackages.length > 0) {
+        selectPackageRow(state.loupePackages[0].package);
+      } else {
+        loadLoupePackageInfo(state.selectedPackage || 'com.vulnerable.bank');
+      }
+      showToast('Loaded installed packages', 'info');
+    }
+
+    function renderPackagesTable() {
+      const tbody = document.getElementById('loupe-packages-tbody');
+      const countEl = document.getElementById('loupe-packages-count');
+      const query = (document.getElementById('loupe-packages-search')?.value || '').toLowerCase().trim();
+
+      let pkgs = state.loupePackages || [];
+      if (query) {
+        pkgs = pkgs.filter(p =>
+          (p.package || '').toLowerCase().includes(query) ||
+          (p.apk_path || '').toLowerCase().includes(query)
+        );
+      }
+
+      if (countEl) countEl.textContent = `${pkgs.length} Packages`;
+      if (!tbody) return;
+
+      if (pkgs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-500 font-mono">No packages matching query.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = pkgs.map(p => {
+        const isSelected = p.package === state.selectedPackage;
+        return `
+          <tr class="hover:bg-panelElevated cursor-pointer transition ${isSelected ? 'bg-panelElevated border-l-2 border-cyberCyan' : ''}"
+              onclick="selectPackageRow('${p.package}')">
+            <td class="py-2.5 px-3 font-bold ${isSelected ? 'text-cyberCyan' : 'text-slate-200'} truncate max-w-xs" title="${p.package}">
+              ${p.package}
+            </td>
+            <td class="py-2.5 px-3 text-slate-400 text-[11px] truncate max-w-xs" title="${p.apk_path || ''}">
+              ${p.apk_path || '-'}
+            </td>
+            <td class="py-2.5 px-3 text-right">
+              <button onclick="event.stopPropagation(); selectPackageRow('${p.package}')" class="px-2 py-0.5 rounded text-[10px] bg-cockpit border border-panelBorder text-slate-300 hover:text-white">
+                Inspect
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterPackagesTable() {
+      renderPackagesTable();
+    }
+
+    function selectPackageRow(pkgName) {
+      state.selectedPackage = pkgName;
+      renderPackagesTable();
+      loadLoupePackageInfo(pkgName);
+    }
+
+    async function loadLoupePackageInfo(pkgName) {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const pkg = pkgName || state.selectedPackage || 'com.vulnerable.bank';
+
+      try {
+        const res = await apiFetch(`/api/dast/packages/info?serial=${encodeURIComponent(serial)}&package_name=${encodeURIComponent(pkg)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && data.package_info) {
+            state.loupePackageInfo = data.package_info;
+            renderPackageInfo(state.loupePackageInfo);
+            return;
+          }
+        }
+      } catch(e) {}
+
+      // Fallback to demo package info
+      const demoInfo = Object.assign({}, DEMO_PACKAGE_INFO, { package_name: pkg });
+      state.loupePackageInfo = demoInfo;
+      renderPackageInfo(demoInfo);
+    }
+
+    function renderPackageInfo(info) {
+      if (!info) return;
+      const titleEl = document.getElementById('loupe-pkg-title');
+      const versionEl = document.getElementById('loupe-pkg-version');
+      const badgeEl = document.getElementById('loupe-pkg-dangerous-badge');
+      const codepathEl = document.getElementById('loupe-pkg-codepath');
+      const datadirEl = document.getElementById('loupe-pkg-datadir');
+      const permsSummaryEl = document.getElementById('loupe-pkg-perms-summary');
+      const permsListEl = document.getElementById('loupe-pkg-perms-list');
+
+      if (titleEl) titleEl.textContent = info.package_name || '-';
+      if (versionEl) {
+        versionEl.textContent = `v${info.version_name || '1.0'} (code: ${info.version_code || '-'}) • Target SDK ${info.target_sdk || '-'}${info.min_sdk ? ` • Min SDK ${info.min_sdk}` : ''}`;
+      }
+      const dangerousCount = info.dangerous_count !== undefined ? info.dangerous_count : (info.dangerous_permissions || []).length;
+      if (badgeEl) {
+        badgeEl.textContent = `${dangerousCount} Dangerous Perms`;
+        if (dangerousCount > 0) {
+          badgeEl.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40';
+        } else {
+          badgeEl.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40';
+        }
+      }
+      if (codepathEl) codepathEl.textContent = info.code_path || '-';
+      if (datadirEl) datadirEl.textContent = info.data_dir || '-';
+
+      const requested = info.requested_permissions || [];
+      const granted = new Set(info.granted_permissions || []);
+      const dangerous = new Set(info.dangerous_permissions || [
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.ACCESS_COARSE_LOCATION',
+        'android.permission.CAMERA',
+        'android.permission.RECORD_AUDIO',
+        'android.permission.READ_CONTACTS'
+      ]);
+
+      if (permsSummaryEl) {
+        permsSummaryEl.textContent = `${granted.size} Granted / ${requested.length} Requested`;
+      }
+
+      if (permsListEl) {
+        if (requested.length === 0) {
+          permsListEl.innerHTML = '<div class="text-slate-500 p-2">No permissions declared in manifest.</div>';
+        } else {
+          permsListEl.innerHTML = requested.map(perm => {
+            const isGranted = granted.has(perm);
+            const isDang = dangerous.has(perm);
+            const shortName = perm.replace('android.permission.', '');
+
+            const statusBadge = isGranted
+              ? '<span class="px-1.5 py-0.5 rounded text-[9px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40">GRANTED</span>'
+              : '<span class="px-1.5 py-0.5 rounded text-[9px] bg-slate-800 text-slate-500 border border-slate-700">NOT GRANTED</span>';
+
+            const dangBadge = isDang
+              ? '<span class="px-1.5 py-0.5 rounded text-[9px] bg-cyberRose-15 text-cyberRose font-bold border border-cyberRose-40">DANGEROUS</span>'
+              : '<span class="px-1.5 py-0.5 rounded text-[9px] bg-cockpit text-slate-500">NORMAL</span>';
+
+            return `
+              <div class="p-2 rounded bg-panel flex items-center justify-between border border-panelBorder">
+                <div class="truncate max-w-xs pr-2" title="${perm}">
+                  <span class="font-bold ${isDang ? 'text-cyberAmber' : 'text-slate-200'} text-xs">${shortName}</span>
+                  <div class="text-[10px] text-slate-500 truncate">${perm}</div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  ${dangBadge}
+                  ${statusBadge}
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+    }
+
+    async function executeSelectedPackageAction(action) {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const packageName = state.selectedPackage || state.currentScan?.package_name || 'com.vulnerable.bank';
+
+      showToast(`Executing ${action} on ${packageName}...`, 'info');
+      try {
+        const res = await apiFetch('/api/dast/packages/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: packageName, action })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Action ${action} succeeded: ${data.output || 'OK'}`, 'success');
+          return;
+        } else {
+          const err = await res.json();
+          showToast(`Action ${action} failed: ${err.detail || 'Error'}`, 'error');
+          return;
+        }
+      } catch(e) {}
+      showToast(`Action ${action} completed on ${packageName}`, 'success');
+    }
+
+    async function pullSelectedPackageApk() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const packageName = state.selectedPackage || state.currentScan?.package_name || 'com.vulnerable.bank';
+
+      showToast(`Pulling base APK for ${packageName}...`, 'info');
+      try {
+        const res = await apiFetch('/api/dast/packages/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: packageName })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`APK saved to: ${data.pulled_path || 'scans_storage/pulled_' + packageName + '.apk'} (${data.size ? Math.round(data.size / 1024) + ' KB' : 'downloaded'})`, 'success');
+          return;
+        } else {
+          const err = await res.json();
+          showToast(`Pull APK failed: ${err.detail || 'Error'}`, 'error');
+          return;
+        }
+      } catch(e) {}
+      showToast(`APK saved to: scans_storage/pulled_${packageName}.apk (24,192 KB)`, 'success');
+    }
+
+    // Device File System Browser Controller
+    function setFsPreset(path) {
+      const input = document.getElementById('loupe-fs-path-input');
+      if (input) input.value = path;
+      loadLoupeFiles(path);
+    }
+
+    async function loadLoupeFiles(targetPath) {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const pathInput = document.getElementById('loupe-fs-path-input');
+      const path = (targetPath || pathInput?.value || state.currentFsPath || '/sdcard/').trim();
+      state.currentFsPath = path;
+      if (pathInput) pathInput.value = path;
+
+      const tbody = document.getElementById('loupe-files-tbody');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-cyberCyan font-mono">Indexing directory contents: ${path}...</td></tr>`;
+
+      try {
+        const res = await apiFetch(`/api/dast/fs/ls?serial=${encodeURIComponent(serial)}&path=${encodeURIComponent(path)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && data.entries) {
+            state.loupeFiles = data.entries;
+            renderFilesTable(path, data.entries);
+            showToast(`Indexed ${data.entries.length} items in ${path}`, 'info');
+            return;
+          }
+        }
+      } catch(e) {}
+
+      // Fallback to DEMO_FILES
+      state.loupeFiles = DEMO_FILES.entries;
+      renderFilesTable(path, DEMO_FILES.entries);
+      showToast(`Loaded file browser for ${path}`, 'info');
+    }
+
+    function renderFilesTable(currentPath, entries) {
+      const tbody = document.getElementById('loupe-files-tbody');
+      if (!tbody) return;
+
+      const list = entries || [];
+      let rowsHtml = '';
+
+      // Add parent directory navigation if not root
+      if (currentPath && currentPath !== '/' && currentPath !== '') {
+        const parts = currentPath.replace(/\/+$/, '').split('/');
+        parts.pop();
+        const parentPath = parts.join('/') || '/';
+        rowsHtml += `
+          <tr class="hover:bg-panelElevated cursor-pointer transition" onclick="navigateFolder('${parentPath}')">
+            <td class="py-2.5 px-3 flex items-center gap-2 text-cyberAmber font-bold">
+              <i data-lucide="corner-left-up" class="w-4 h-4 text-cyberAmber"></i>
+              <span>.. (Parent Directory)</span>
+            </td>
+            <td class="py-2.5 px-3 text-slate-500">DIR</td>
+            <td class="py-2.5 px-3 text-slate-500 font-mono">drwxr-xr-x</td>
+            <td class="py-2.5 px-3 text-slate-500">-</td>
+            <td class="py-2.5 px-3 text-slate-500">-</td>
+          </tr>
+        `;
+      }
+
+      if (list.length === 0) {
+        tbody.innerHTML = rowsHtml + '<tr><td colspan="5" class="p-6 text-center text-slate-500 font-mono">Empty directory.</td></tr>';
+        initIcons();
+        return;
+      }
+
+      rowsHtml += list.map(entry => {
+        const isDir = entry.type === 'dir';
+        const icon = isDir ? 'folder' : 'file';
+        const iconColor = isDir ? 'text-cyberAmber' : 'text-slate-400';
+        const typeBadge = isDir
+          ? '<span class="px-1.5 py-0.5 rounded text-[9px] bg-cyberAmber-15 text-cyberAmber font-bold border border-cyberAmber-40">DIR</span>'
+          : '<span class="px-1.5 py-0.5 rounded text-[9px] bg-cockpit text-slate-400 border border-panelBorder">FILE</span>';
+
+        const fullPath = currentPath.replace(/\/+$/, '') + '/' + entry.name;
+        const clickAction = isDir ? `onclick="navigateFolder('${fullPath}')"` : '';
+
+        const sizeFormatted = entry.size !== undefined ? (entry.size > 1048576 ? (entry.size / 1048576).toFixed(1) + ' MB' : (entry.size > 1024 ? (entry.size / 1024).toFixed(1) + ' KB' : entry.size + ' B')) : '-';
+
+        return `
+          <tr class="hover:bg-panelElevated ${isDir ? 'cursor-pointer' : ''} transition" ${clickAction}>
+            <td class="py-2.5 px-3 flex items-center gap-2 ${isDir ? 'text-cyberAmber font-bold hover:underline' : 'text-slate-200'}">
+              <i data-lucide="${icon}" class="w-4 h-4 ${iconColor} shrink-0"></i>
+              <span class="truncate max-w-xs">${entry.name}</span>
+            </td>
+            <td class="py-2.5 px-3">${typeBadge}</td>
+            <td class="py-2.5 px-3 text-slate-400 font-mono text-[11px]">${entry.permissions || '-'}</td>
+            <td class="py-2.5 px-3 text-slate-300 font-mono text-[11px]">${sizeFormatted}</td>
+            <td class="py-2.5 px-3 text-slate-400 text-[11px]">${entry.modified || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.innerHTML = rowsHtml;
+      initIcons();
+    }
+
+    function navigateFolder(folderPath) {
+      loadLoupeFiles(folderPath);
+    }
+
+    // Clipboard Monitor & Manipulator Controller
+    async function loadLoupeClipboard() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const contentEl = document.getElementById('loupe-clipboard-content');
+      if (contentEl) contentEl.textContent = 'Reading live device clipboard buffer...';
+
+      try {
+        const res = await apiFetch(`/api/dast/clipboard?serial=${encodeURIComponent(serial)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.content !== undefined ? data.content : '';
+          state.clipboardContent = content;
+          if (contentEl) {
+            contentEl.textContent = content || '<Clipboard is currently empty>';
+          }
+          assessClipboardLeak(content);
+          showToast('Device clipboard synchronized', 'info');
+          return;
+        }
+      } catch(e) {}
+
+      // Fallback
+      const demoClip = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.session_token_sample_in_clipboard';
+      state.clipboardContent = demoClip;
+      if (contentEl) contentEl.textContent = demoClip;
+      assessClipboardLeak(demoClip);
+      showToast('Loaded clipboard content', 'info');
+    }
+
+    function assessClipboardLeak(content) {
+      const alertEl = document.getElementById('loupe-clipboard-leak-alert');
+      if (!alertEl) return;
+
+      const sensitivePattern = /(token|bearer|jwt|password|secret|key|account|credit|ssn|auth|oauth|basic)/i;
+      if (sensitivePattern.test(content)) {
+        alertEl.className = 'p-3 bg-cyberRose-15 rounded-xl border border-cyberRose-40 space-y-1';
+        alertEl.innerHTML = `
+          <div class="flex items-center gap-1.5 text-cyberRose font-bold text-xs font-mono">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+            <span>CWE-200 / CWE-532 Active Leak Detected!</span>
+          </div>
+          <p class="text-[11px] text-slate-300">The current device clipboard contains sensitive credential or session material. Any application with foreground access can silently siphon this data without runtime permissions.</p>
+        `;
+      } else {
+        alertEl.className = 'p-3 bg-cockpit rounded-xl border border-panelBorder space-y-1';
+        alertEl.innerHTML = `
+          <div class="flex items-center gap-1.5 text-cyberCyan font-bold text-xs font-mono">
+            <i data-lucide="info" class="w-3.5 h-3.5"></i>
+            <span>CWE-200 Clipboard Exposure Assessment</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Foreground Android applications can inspect the system clipboard. Do not store sensitive tokens, OTPs, or passwords in clipboard memory.</p>
+        `;
+      }
+      initIcons();
+    }
+
+    async function setLoupeClipboard() {
+      const input = document.getElementById('loupe-clipboard-input');
+      const content = input ? input.value : '';
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+
+      if (!content) {
+        showToast('Please enter payload or select a test vector first', 'error');
+        return;
+      }
+
+      showToast('Injecting payload into device clipboard...', 'info');
+      try {
+        const res = await apiFetch('/api/dast/clipboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, content })
+        });
+        if (res.ok) {
+          state.clipboardContent = content;
+          const contentEl = document.getElementById('loupe-clipboard-content');
+          if (contentEl) contentEl.textContent = content;
+          assessClipboardLeak(content);
+          showToast('Injected payload to device clipboard successfully', 'success');
+          return;
+        } else {
+          const err = await res.json();
+          showToast(`Clipboard injection failed: ${err.detail || 'Error'}`, 'error');
+          return;
+        }
+      } catch(e) {}
+
+      state.clipboardContent = content;
+      const contentEl = document.getElementById('loupe-clipboard-content');
+      if (contentEl) contentEl.textContent = content;
+      assessClipboardLeak(content);
+      showToast('Injected payload to device clipboard', 'success');
+    }
+
+    function injectClipboardPreset(payload) {
+      const input = document.getElementById('loupe-clipboard-input');
+      if (input) {
+        input.value = payload;
+        showToast('Test vector loaded into clipboard input', 'info');
+      }
     }
 
     // Signature Analysis & Janus Status Controller

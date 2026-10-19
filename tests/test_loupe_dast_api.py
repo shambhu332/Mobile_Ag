@@ -226,3 +226,87 @@ def test_compliance_endpoint_computes_masvs_radar(client):
     assert data["radar"]["scores"][storage_idx] < 100
     assert data["overall_posture_percentage"] < 100
 
+
+def test_packages_endpoints(client, monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "emulator-5554")
+    repo = web.repository()
+    repo.save_policy({
+        "devices": ["emulator-5554"],
+        "packages": ["org.example.synthetic"],
+        "origins": ["http://localhost:8080"],
+        "methods": ["GET", "POST"],
+        "actions": ["packages", "fs", "clipboard"],
+    })
+
+    # 1. GET packages list
+    mock_pkgs = [{"package": "org.example.synthetic", "apk_path": "/data/app/org.example.synthetic-1/base.apk"}]
+    with patch("mobileag.dast.file_manager.DeviceFileManager.list_packages", AsyncMock(return_value=mock_pkgs)):
+        res = client.get("/api/dast/packages?serial=emulator-5554")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["count"] == 1
+        assert data["packages"][0]["package"] == "org.example.synthetic"
+
+    # 2. GET package info
+    mock_info = {
+        "package_name": "org.example.synthetic",
+        "version_name": "1.0.0",
+        "version_code": "100",
+        "target_sdk": "34",
+        "min_sdk": "26",
+        "data_dir": "/data/user/0/org.example.synthetic",
+        "code_path": "/data/app/org.example.synthetic",
+        "requested_permissions": ["android.permission.INTERNET", "android.permission.CAMERA"],
+        "granted_permissions": ["android.permission.INTERNET"],
+        "dangerous_count": 1,
+    }
+    with patch.object(web.adb_manager, "get_package_info", AsyncMock(return_value=mock_info)):
+        res = client.get("/api/dast/packages/info?serial=emulator-5554&package_name=org.example.synthetic")
+        assert res.status_code == 200
+        assert res.json()["version_name"] == "1.0.0"
+        assert res.json()["dangerous_count"] == 1
+
+    # 3. POST package action
+    with patch.object(web.adb_manager, "execute_package_action", AsyncMock(return_value={"status": "success", "action": "force_stop", "package_name": "org.example.synthetic", "output": "Done"})):
+        res = client.post("/api/dast/packages/action", json={"serial": "emulator-5554", "package_name": "org.example.synthetic", "action": "force_stop"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+    # 4. POST package pull
+    with patch("mobileag.dast.file_manager.DeviceFileManager.pull_apk", AsyncMock(return_value={"status": "success", "local_path": "/tmp/test.apk", "package": "org.example.synthetic"})):
+        res = client.post("/api/dast/packages/pull", json={"serial": "emulator-5554", "package_name": "org.example.synthetic"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+
+def test_fs_and_clipboard_endpoints(client, monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "emulator-5554")
+    repo = web.repository()
+    repo.save_policy({
+        "devices": ["emulator-5554"],
+        "packages": ["org.example.synthetic"],
+        "origins": ["http://localhost:8080"],
+        "methods": ["GET", "POST"],
+        "actions": ["packages", "fs", "clipboard"],
+    })
+
+    # 1. GET fs ls
+    mock_ls = {"path": "/sdcard", "entries": [{"name": "Download", "type": "dir", "size": 4096, "permissions": "rwxrwx---", "modified": "2026-10-19"}]}
+    with patch("mobileag.dast.file_manager.DeviceFileManager.list_directory", AsyncMock(return_value=mock_ls)):
+        res = client.get("/api/dast/fs/ls?serial=emulator-5554&path=/sdcard")
+        assert res.status_code == 200
+        assert len(res.json()["entries"]) == 1
+
+    # 2. GET clipboard
+    with patch.object(web.adb_manager, "get_clipboard", AsyncMock(return_value={"status": "success", "text": "secret_token_123"})):
+        res = client.get("/api/dast/clipboard?serial=emulator-5554")
+        assert res.status_code == 200
+        assert res.json()["text"] == "secret_token_123"
+
+    # 3. POST clipboard
+    with patch.object(web.adb_manager, "set_clipboard", AsyncMock(return_value={"status": "success", "output": ""})):
+        res = client.post("/api/dast/clipboard", json={"serial": "emulator-5554", "text": "test_payload"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+

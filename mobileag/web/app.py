@@ -1362,6 +1362,22 @@ class ProxySetupRequest(BaseModel):
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=8080, ge=1, le=65535)
 
+
+class ClipboardActionRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    text: Optional[str] = Field(default=None, max_length=10000)
+
+
+class PackageActionRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    package_name: str = Field(..., max_length=256)
+    action: Literal['force_stop', 'clear_data', 'launch', 'uninstall']
+
+
+class PackagePullRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    package_name: str = Field(..., max_length=256)
+
 def require_current_session(request: Request):
     token = request.state.authenticated_token
     if time.monotonic() >= app.state.session_deadline or not authorized(token, app.state.auth_token):
@@ -2097,6 +2113,150 @@ async def clear_dast_proxy(req: DeviceActionRequest, request: Request) -> dict[s
             raise HTTPException(403, "Proxy clear scope is unavailable or revoked")
     guard()
     res = await adb_manager.clear_proxy(req.serial, guard=guard)
+    guard()
+    return res
+
+
+@app.get("/api/dast/packages")
+async def get_dast_packages(serial: str, request: Request, include_system: bool = False) -> dict[str, Any]:
+    """List installed application packages on connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "packages", {"serial": serial}):
+            raise HTTPException(403, "Packages scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    try:
+        packages = await fm.list_packages(serial, guard=guard, include_system=include_system)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return {"serial": serial, "packages": packages, "count": len(packages)}
+
+
+@app.get("/api/dast/packages/info")
+async def get_dast_package_info(serial: str, package_name: str, request: Request) -> dict[str, Any]:
+    """Retrieve detailed package metadata, permissions, code path, and data directory."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "packages", {"serial": serial, "package_name": package_name}):
+            raise HTTPException(403, "Package inspection scope is unavailable or revoked")
+    guard()
+    try:
+        info = await adb_manager.get_package_info(serial, package_name, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return info
+
+
+@app.post("/api/dast/packages/action")
+async def execute_dast_package_action(req: PackageActionRequest, request: Request) -> dict[str, Any]:
+    """Execute lifecycle action on target package: force_stop, clear_data, launch, uninstall."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "packages", req.model_dump()):
+            raise HTTPException(403, "Package action scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.execute_package_action(req.serial, req.package_name, req.action, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/packages/pull")
+async def pull_dast_package_apk(req: PackagePullRequest, request: Request) -> dict[str, Any]:
+    """Pull target APK from connected device to local storage for decompilation or offline analysis."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "packages", req.model_dump()):
+            raise HTTPException(403, "Package pull scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    dest_dir = Path("scans_storage") / f"pulled_{req.package_name}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = await fm.pull_apk(req.serial, req.package_name, dest_dir, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/fs/ls")
+async def list_dast_filesystem(serial: str, path: str, request: Request) -> dict[str, Any]:
+    """List directory entries in device sandbox or filesystem."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "fs", {"serial": serial, "path": path}):
+            raise HTTPException(403, "Filesystem inspection scope is unavailable or revoked")
+    guard()
+    from mobileag.dast.file_manager import DeviceFileManager
+    fm = DeviceFileManager()
+    try:
+        res = await fm.list_directory(serial, path, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/clipboard")
+async def get_dast_clipboard(serial: str, request: Request) -> dict[str, Any]:
+    """Retrieve current system clipboard text from connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "clipboard", {"serial": serial}):
+            raise HTTPException(403, "Clipboard inspection scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_clipboard(serial, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/clipboard")
+async def set_dast_clipboard(req: ClipboardActionRequest, request: Request) -> dict[str, Any]:
+    """Set system clipboard text on connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "clipboard", req.model_dump()):
+            raise HTTPException(403, "Clipboard mutation scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.set_clipboard(req.serial, req.text or "", guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     guard()
     return res
 

@@ -517,6 +517,10 @@
             </div>
 
             <div class="pt-4 border-t border-panelBorder flex flex-col gap-2">
+              <button onclick="craftIntentForComponent()" class="w-full py-2 rounded-lg text-xs font-bold font-mono bg-cyberRose-15 hover:bg-cyberRose/25 text-cyberRose border border-cyberRose-40 transition flex items-center justify-center gap-1.5" title="Craft dynamic Intent or query ContentProvider in Loupe">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span>Craft Intent / Query in Loupe</span>
+              </button>
               <button onclick="triggerFuzzComponent()" class="w-full py-2 rounded-lg text-xs font-bold font-mono bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition flex items-center justify-center gap-1.5">
                 <i data-lucide="zap" class="w-3.5 h-3.5"></i>
                 <span>Fuzz Component in DAST</span>
@@ -618,9 +622,21 @@
                 <p id="detail-vuln-location" class="text-xs font-mono text-slate-400">com.vulnerable.bank.provider.AccountProvider (line 42)</p>
               </div>
 
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="testFindingInIntentCrafter()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberRose-15 hover:bg-cyberRose/25 text-cyberRose border border-cyberRose-40 transition flex items-center gap-1.5" title="Preload payload into Loupe Intent Crafter">
+                  <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                  <span>Test in Intent Crafter</span>
+                </button>
+                <button onclick="decompileSelectedFinding()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panelElevated hover:bg-panel text-cyberCyan border border-panelBorder transition flex items-center gap-1.5" title="View in Bytecode Decompiler">
+                  <i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>
+                  <span>Decompile</span>
+                </button>
+                <button onclick="traceSelectedFinding()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panelElevated hover:bg-panel text-cyberPurple border border-panelBorder transition flex items-center gap-1.5" title="Analyze flow in Taint Engine">
+                  <i data-lucide="git-merge" class="w-3.5 h-3.5"></i>
+                  <span>Taint Flow</span>
+                </button>
                 <button onclick="openTriageModal()" class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">
-                  Submit Triage Verdict
+                  Submit Verdict
                 </button>
               </div>
             </div>
@@ -2095,6 +2111,13 @@ public class AccountProvider extends ContentProvider {
               <p class="text-xs text-slate-400 font-mono">Compare two APK builds to detect attack surface expansion, permission regressions, and new flaws</p>
             </div>
           </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="loadDiffPreset('demo')" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-panelElevated hover:bg-panel text-cyberPurple border border-cyberPurple-40 transition flex items-center gap-1.5" title="Load synthetic comparison dataset">
+              <i data-lucide="play" class="w-3 h-3"></i>
+              <span>Compare Demo Builds (v2.4.0 vs v2.4.1)</span>
+            </button>
+          </div>
         </div>
 
         <div class="bg-panel rounded-xl border border-panelBorder p-4 grid grid-cols-2 gap-4">
@@ -2325,38 +2348,94 @@ public class AccountProvider extends ContentProvider {
         <i data-lucide="search" class="w-4 h-4 text-cyberCyan absolute left-3 top-3"></i>
         <input id="cmd-input" type="text" placeholder="Type a command or jump to workspace..." class="glass-input text-sm font-mono pl-9 pr-4 py-2.5 rounded-xl w-full" autofocus />
       </div>
-      <div id="cmd-results" class="max-h-64 overflow-y-auto space-y-1 font-mono text-xs">
+      <div id="cmd-results" class="max-h-72 overflow-y-auto space-y-1 font-mono text-xs">
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-surface'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="network" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Jump to Attack Surface Topology</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="network" class="w-3.5 h-3.5 text-cyberCyan"></i><span>1. Jump to Attack Surface Topology Graph</span></div>
           <kbd class="text-[10px] text-slate-500">1</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-findings'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="flame" class="w-3.5 h-3.5 text-cyberRose"></i><span>Jump to Vulnerabilities & PoC</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="flame" class="w-3.5 h-3.5 text-cyberRose"></i><span>2. Jump to Vulnerabilities & PoC Synthesizer</span></div>
           <kbd class="text-[10px] text-slate-500">2</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-decompiler'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberPurple"></i><span>Open Bytecode Decompiler & AST</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberPurple"></i><span>3. Open Bytecode Decompiler & Source AST</span></div>
           <kbd class="text-[10px] text-slate-500">3</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-taint'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="git-merge" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Run Static Taint Engine</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="git-merge" class="w-3.5 h-3.5 text-cyberCyan"></i><span>4. Run Inter-Procedural Taint Tracking</span></div>
           <kbd class="text-[10px] text-slate-500">4</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-dast'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Open Dynamic Testing Lab (DAST)</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>5. Open Dynamic Testing Lab (DAST)</span></div>
           <kbd class="text-[10px] text-slate-500">5</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-proxy'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="radio" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Inspect MITM Proxy & Shadow APIs</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="radio" class="w-3.5 h-3.5 text-cyberCyan"></i><span>6. Inspect MITM Proxy & Shadow API Traffic</span></div>
           <kbd class="text-[10px] text-slate-500">6</kbd>
         </div>
-        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="terminal" class="w-3.5 h-3.5 text-cyberAmber"></i><span>View Streaming Logcat & Diagnostics</span></div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('logcat'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="terminal" class="w-3.5 h-3.5 text-cyberAmber"></i><span>7. Loupe: Live Streaming Logcat & Diagnostics</span></div>
           <kbd class="text-[10px] text-slate-500">7</kbd>
         </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('forward'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="repeat" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Loupe: Port Forwarding & Reverse Tunnels</span></div>
+          <kbd class="text-[10px] text-slate-500">Tunnels</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('intent'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="send" class="w-3.5 h-3.5 text-cyberRose"></i><span>Loupe: Dynamic Intent & ContentProvider Crafter</span></div>
+          <kbd class="text-[10px] text-slate-500">Intent</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('inspector'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="layers" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Loupe: UI View Hierarchy & Layout Inspector</span></div>
+          <kbd class="text-[10px] text-slate-500">UI</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('sockets'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="activity" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Loupe: Network Sockets & Linux Port Table</span></div>
+          <kbd class="text-[10px] text-slate-500">Sockets</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('settings'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="sliders" class="w-3.5 h-3.5 text-cyberAmber"></i><span>Loupe: Global Settings & Device Proxy</span></div>
+          <kbd class="text-[10px] text-slate-500">Proxy</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('packages'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="package" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Loupe: Package Manager & APK Extraction</span></div>
+          <kbd class="text-[10px] text-slate-500">Packages</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('files'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="folder" class="w-3.5 h-3.5 text-cyberPurple"></i><span>Loupe: Sandbox Internal File Browser</span></div>
+          <kbd class="text-[10px] text-slate-500">Files</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('clipboard'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="clipboard" class="w-3.5 h-3.5 text-cyberRose"></i><span>Loupe: Clipboard Monitor & Data Injector</span></div>
+          <kbd class="text-[10px] text-slate-500">Clipboard</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('device'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Loupe: Device Posture & Root Detection</span></div>
+          <kbd class="text-[10px] text-slate-500">Posture</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('wireless'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="wifi" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Loupe: Wireless ADB Discovery & Pair</span></div>
+          <kbd class="text-[10px] text-slate-500">Wireless</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('cert'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="award" class="w-3.5 h-3.5 text-cyberAmber"></i><span>Loupe: CA Certificate & System Trust Installer</span></div>
+          <kbd class="text-[10px] text-slate-500">Cert</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); switchLoupeSubtab('memory'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="activity" class="w-3.5 h-3.5 text-cyberRose"></i><span>Loupe: Memory Profiler & Process Tree</span></div>
+          <kbd class="text-[10px] text-slate-500">Memory</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-diff'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="git-compare" class="w-3.5 h-3.5 text-cyberPurple"></i><span>8. Jump to APK Version Diff & Regressions</span></div>
+          <kbd class="text-[10px] text-slate-500">8</kbd>
+        </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-reports'); closeModal('modal-cmd');">
-          <div class="flex items-center gap-2"><i data-lucide="award" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Export SARIF / CycloneDX SBOM</span></div>
+          <div class="flex items-center gap-2"><i data-lucide="award" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>9. MASVS Compliance Radar & Standard Exports</span></div>
           <kbd class="text-[10px] text-slate-500">9</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-history'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="archive" class="w-3.5 h-3.5 text-slate-400"></i><span>0. View Scan Repository & Audit Archive</span></div>
+          <kbd class="text-[10px] text-slate-500">0</kbd>
         </div>
         <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="openModal('modal-upload'); closeModal('modal-cmd');">
           <div class="flex items-center gap-2"><i data-lucide="upload-cloud" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Ingest New APK / AAB Target</span></div>
@@ -3556,6 +3635,134 @@ public class AccountProvider extends ContentProvider {
                        comp.includes('Biometric') ? 'BiometricPromptActivity.java' :
                        comp.includes('Receiver') ? 'DownloadReceiver.java' : 'AccountProvider.java';
       selectDecompiledFile(filename);
+    }
+
+    function craftIntentForComponent() {
+      const comp = document.getElementById('inspector-name')?.textContent.trim() || 'com.vulnerable.bank.provider.AccountProvider';
+      switchTab('tab-loupe');
+      switchLoupeSubtab('intent');
+
+      const targetTypeEl = document.getElementById('intent-target-type');
+      const compEl = document.getElementById('intent-component');
+      const actionEl = document.getElementById('intent-action');
+      const uriEl = document.getElementById('intent-data-uri');
+      const projEl = document.getElementById('intent-projection');
+      const whereEl = document.getElementById('intent-where');
+      const container = document.getElementById('intent-extras-container');
+      if (container) container.innerHTML = '';
+
+      if (comp.includes('Provider') || comp.includes('provider')) {
+        if (targetTypeEl) targetTypeEl.value = 'content_query';
+        if (compEl) compEl.value = '';
+        if (actionEl) actionEl.value = '';
+        if (uriEl) uriEl.value = 'content://com.vulnerable.bank.provider/accounts';
+        if (projEl) projEl.value = "* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --";
+        if (whereEl) whereEl.value = '1=1';
+      } else if (comp.includes('Receiver') || comp.includes('receiver')) {
+        if (targetTypeEl) targetTypeEl.value = 'broadcast';
+        if (compEl) compEl.value = comp.includes('/') ? comp : `com.vulnerable.bank/${comp}`;
+        if (actionEl) actionEl.value = 'com.vulnerable.bank.AUTH_SUCCESS';
+        if (uriEl) uriEl.value = '';
+        if (projEl) projEl.value = '';
+        if (whereEl) whereEl.value = '';
+        addIntentExtraRow('authenticated', 'true', 'bool');
+      } else {
+        if (targetTypeEl) targetTypeEl.value = 'activity';
+        if (compEl) compEl.value = comp.includes('/') ? comp : `com.vulnerable.bank/${comp}`;
+        if (actionEl) actionEl.value = 'android.intent.action.VIEW';
+        if (uriEl) uriEl.value = 'https://bank.example.com/action';
+        if (projEl) projEl.value = '';
+        if (whereEl) whereEl.value = '';
+      }
+      updateIntentFormVisibility();
+      showToast(`Loaded ${comp} into Loupe Intent Crafter`, 'success');
+    }
+
+    function testFindingInIntentCrafter() {
+      const finding = (state.findingsList && state.findingsList[state.selectedFindingIndex]) || (state.currentScan?.findings ? state.currentScan.findings[0] : null);
+      if (!finding) return;
+
+      switchTab('tab-loupe');
+      switchLoupeSubtab('intent');
+
+      const title = (finding.title || '').toLowerCase();
+      const location = (finding.location || finding.file_path || '').toLowerCase();
+      const pocAdb = finding.poc_adb || '';
+
+      const targetTypeEl = document.getElementById('intent-target-type');
+      const compEl = document.getElementById('intent-component');
+      const actionEl = document.getElementById('intent-action');
+      const uriEl = document.getElementById('intent-data-uri');
+      const projEl = document.getElementById('intent-projection');
+      const whereEl = document.getElementById('intent-where');
+      const container = document.getElementById('intent-extras-container');
+      if (container) container.innerHTML = '';
+
+      if (title.includes('provider') || title.includes('sql') || location.includes('provider') || pocAdb.includes('content query')) {
+        if (targetTypeEl) targetTypeEl.value = 'content_query';
+        if (compEl) compEl.value = '';
+        if (actionEl) actionEl.value = '';
+        if (uriEl) uriEl.value = 'content://com.vulnerable.bank.provider/accounts';
+        if (projEl) projEl.value = "* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --";
+        if (whereEl) whereEl.value = '1=1';
+        showToast(`Loaded ${finding.title || 'SQL Injection'} into ContentProvider Crafter`, 'info');
+      } else if (title.includes('biometric') || title.includes('auth') || location.includes('receiver') || pocAdb.includes('broadcast')) {
+        if (targetTypeEl) targetTypeEl.value = 'broadcast';
+        if (compEl) compEl.value = 'com.vulnerable.bank/.auth.BiometricAuthReceiver';
+        if (actionEl) actionEl.value = 'com.vulnerable.bank.AUTH_SUCCESS';
+        if (uriEl) uriEl.value = '';
+        if (projEl) projEl.value = '';
+        if (whereEl) whereEl.value = '';
+        addIntentExtraRow('authenticated', 'true', 'bool');
+        addIntentExtraRow('user_id', 'admin', 'string');
+        addIntentExtraRow('token', 'bypass_sig_7721', 'string');
+        showToast(`Loaded ${finding.title || 'Auth Flaw'} into Broadcast Intent Crafter`, 'info');
+      } else {
+        if (targetTypeEl) targetTypeEl.value = 'activity';
+        if (compEl) compEl.value = (finding.location || 'com.vulnerable.bank/.MainActivity').split(' ')[0];
+        if (actionEl) actionEl.value = 'android.intent.action.VIEW';
+        if (uriEl) uriEl.value = 'https://bank.example.com/deeplink';
+        if (projEl) projEl.value = '';
+        if (whereEl) whereEl.value = '';
+        addIntentExtraRow('debug', 'true', 'bool');
+        showToast(`Loaded ${finding.title || 'Component'} into Activity Intent Crafter`, 'info');
+      }
+      updateIntentFormVisibility();
+    }
+
+    function decompileSelectedFinding() {
+      const finding = (state.findingsList && state.findingsList[state.selectedFindingIndex]) || (state.currentScan?.findings ? state.currentScan.findings[0] : null);
+      if (!finding) return;
+      switchTab('tab-decompiler');
+      const loc = (finding.location || finding.file_path || '').toLowerCase();
+      let fname = 'AccountProvider.java';
+      if (loc.includes('biometric')) fname = 'BiometricPromptActivity.java';
+      else if (loc.includes('receiver') || loc.includes('download')) fname = 'DownloadReceiver.java';
+      else if (loc.includes('crypto')) fname = 'CryptoManager.java';
+      else if (loc.includes('manifest')) fname = 'AndroidManifest.xml';
+      selectDecompiledFile(fname);
+      showToast(`Navigated to decompiled source: ${fname}`, 'info');
+    }
+
+    function traceSelectedFinding() {
+      const finding = (state.findingsList && state.findingsList[state.selectedFindingIndex]) || (state.currentScan?.findings ? state.currentScan.findings[0] : null);
+      if (!finding) return;
+      switchTab('tab-taint');
+      const codeArea = document.getElementById('taint-source-input');
+      if (codeArea) {
+        codeArea.value = finding.code || `public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {\n    SQLiteDatabase db = this.dbHelper.getReadableDatabase();\n    String sql = "SELECT * FROM accounts WHERE " + selection;\n    return db.rawQuery(sql, null);\n}`;
+      }
+      showToast('Loaded source into Inter-Procedural Taint Engine', 'info');
+    }
+
+    function loadDiffPreset(mode = 'demo') {
+      const oldPathEl = document.getElementById('diff-old-path');
+      const newPathEl = document.getElementById('diff-new-path');
+      if (oldPathEl) oldPathEl.value = 'scan_v2.4.0_baseline';
+      if (newPathEl) newPathEl.value = 'scan_v2.4.1_current';
+      showToast('Loaded baseline & target comparison preset', 'info');
+      const runBtn = document.getElementById('btn-run-diff');
+      if (runBtn) runBtn.click();
     }
 
     // Decompiler File Selection & Search

@@ -15,7 +15,7 @@ MobileAg combines bounded offline APK/IPA analysis, evidence-oriented reporting,
 - **Android static review:** APK extraction/decompilation, artifact/build metadata and hashes, manifest/component review, source/resource rules, API route inventory, secret/config candidates, native and cross-platform artifact review, dependency inventory, and bounded source-to-sink heuristics.
 - **iOS static review:** IPA/Info.plist, ATS, Mach-O and related static checks through the iOS analyzer.
 - **Coverage-aware findings:** Markdown, JSON and SARIF outputs retain candidate status, provenance, static/runtime/proof state, parser/coverage limits, and analyst evidence boundaries.
-- **Local API:** Bearer-authenticated scan, reporting, evidence, settings, and scoped workflow endpoints. No web UI is shipped.
+- **Local API:** Bearer-authenticated scan, reporting, evidence, settings, and scoped workflow endpoints. API-only mode is the default; an optional evidence-first browser Studio is enabled explicitly with `--ui`.
 - **Explicit dynamic operations:** individually approved ADB/device diagnostics, selected-package observation and scoped API replay. Dynamic actions are separate from a static APK scan and require exact scope.
 - **API discovery/capture:** static route literals plus opt-in loopback HTTP capture of researcher-generated traffic; inspect redacted transactions and run offline heuristics against the capture.
 - **Optional integrations:** approved CLI-only cloud LLM review, explicit OSV advisory lookup, and optional Neo4j/Qdrant services. Their presence does not establish that a stage ran or that a finding is true.
@@ -160,7 +160,7 @@ python -m pip install -e '.[test]'
 MOBILEAG_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-The server exposes an authenticated API only; there is no browser UI. Configure a researcher-managed `MOBILEAG_API_TOKEN` for API clients and keep the service bound to loopback. Requests require a bearer token; the session lifetime and authorization checks remain enforced.
+The server is API-only by default. Configure a researcher-managed `MOBILEAG_API_TOKEN` for API clients and keep the service bound to loopback. Requests require a bearer token; the session lifetime and authorization checks remain enforced. To enable the optional browser Studio, launch with `python -m mobileag.cli web --host 127.0.0.1 --port 8080 --ui` and open `/ui`. The UI assets are public, but API data/actions remain bearer-authenticated. The Studio never selects a device or starts live testing merely by opening the page; device/API actions remain subject to server scope and explicit approval.
 
 Data is stored under the current working directory by default, or `MOBILEAG_DATA_DIR` when configured. Preserve original artifacts and user data; do not place secrets in test fixtures.
 
@@ -264,7 +264,7 @@ export MOBILEAG_ALLOWED_CONNECT='127.0.0.1:5555'
 
 Select a specific researcher-controlled device; no first-device/implicit target selection. Read-only observation does not consent, enter credentials or tap through account flows. Device actions require individual scope and current session checks. Root/shell/Frida output is privileged diagnostic evidence and is **not** proof that an ordinary app can achieve the same access. No automated root/SSL bypass is implemented. Frida checks require optional bindings, compatible server and an already running app; script generation or initialization is not an exploit result.
 
-The authenticated API also exposes a bounded read-only device console under `/api/console`: metrics snapshots/streams, PID-attributed and redacted logcat streams, process/package/device/settings inventories, and package-specific shared-storage directory listings. These operations require the exact device in server and persisted scope (`execute_adb`, `logcat`, or package-scoped `storage`). The shell endpoint accepts only a fixed read-only diagnostic command grammar; it is not a general command runner. There is no browser UI for these endpoints. Live logcat is an observation stream, not a finding verdict; events are limited, redacted best-effort and associated with PIDs observed for the selected package. File-content reads are intentionally omitted until remote symlink containment can be guaranteed.
+The authenticated API also exposes a bounded read-only device console under `/api/console`: metrics snapshots/streams, PID-attributed and redacted logcat streams, process/package/device/settings inventories, and package-specific shared-storage directory listings. These operations require the exact device in server and persisted scope (`execute_adb`, `logcat`, or package-scoped `storage`). The shell endpoint accepts only a fixed read-only diagnostic command grammar; it is not a general command runner. Where represented in the optional Studio, these actions remain disabled or scope-gated until explicit authorization. Live logcat is an observation stream, not a finding verdict; events are limited, redacted best-effort and associated with PIDs observed for the selected package. File-content reads are intentionally omitted until remote symlink containment can be guaranteed.
 
 ## Evidence, coverage, and interpretation
 

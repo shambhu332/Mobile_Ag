@@ -119,9 +119,11 @@ def test_plan_baseline_must_have_hash_and_planned_comparison_rechecks_frozen_bin
     assert client.get("/api/scans/plan_current/planned-comparison").status_code == 409
 
 
-def test_browser_plan_editor_assets_are_not_shipped():
+def test_optional_studio_assets_do_not_change_default_api_mode():
     pkg_root = Path(__file__).resolve().parents[1] / "mobileag"
-    assert not (pkg_root / "studio").exists()
+    assert (pkg_root / "studio" / "assets" / "index.html").is_file()
+    web = __import__('mobileag.web.app', fromlist=['app'])
+    assert not getattr(web.app.state, 'studio_enabled', False)
 
 
 def test_test_plan_migration_and_retention_are_local_and_scan_bound(client):

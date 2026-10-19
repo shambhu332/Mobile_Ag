@@ -350,6 +350,7 @@ def test_provider_status_matches_effective_approval():
     assert settings.model_copy(update={'offline':True}).enabled_providers==[]
 
 
-def test_unknown_field_content_does_not_reintroduce_web_ui():
+def test_unknown_field_content_does_not_enable_optional_studio_by_default():
     root=Path(web.__file__).parents[1]
-    assert not (root/'studio').exists()
+    assert (root/'studio').exists()
+    assert not getattr(web.app.state, 'studio_enabled', False)

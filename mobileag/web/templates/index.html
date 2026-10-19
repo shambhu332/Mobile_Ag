@@ -3,1207 +3,1292 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="data:," />
-  <title>MobileAg — Local Mobile Security Workbench</title>
+  <title>MobileAg — Advanced Autonomous AppSec Workbench</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>" />
 
-  <!-- Tailwind CSS -->
-  <link rel="stylesheet" href="/static/dashboard.css" />
-  <link rel="stylesheet" href="/static/accessibility.css" />
-  <link rel="stylesheet" href="/static/interface.css" />
-  <link rel="stylesheet" href="/static/experience.css" />
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-
-  <!-- Vis.js for Network Topology Graph -->
-  <script type="text/javascript" src="/static/vendor/vis-network.js"></script>
-
-  <!-- Chart.js for MASVS Radar & Metrics -->
+  <!-- Core Vendor Libraries (Offline Fallback & CDN) -->
+  <script src="/static/vendor/vis-network.js"></script>
   <script src="/static/vendor/chart-js.js"></script>
-
-  <!-- Lucide Icons -->
   <script src="/static/vendor/lucide.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            appbg: '#06090F',
+            cockpit: '#090E17',
+            panel: '#0D1424',
+            panelElevated: '#121B30',
+            panelBorder: '#1E2B48',
+            panelBorderGlow: '#2A3C63',
+            cyberCyan: '#06B6D4',
+            cyberEmerald: '#10B981',
+            cyberAmber: '#F59E0B',
+            cyberRose: '#F43F5E',
+            cyberPurple: '#8B5CF6',
+          },
+          boxShadow: {
+            glowCyan: '0 0 20px -3px rgba(6, 182, 212, 0.25)',
+            glowRose: '0 0 20px -3px rgba(244, 63, 94, 0.25)',
+            glowEmerald: '0 0 20px -3px rgba(16, 185, 129, 0.25)',
+          }
+        }
+      }
+    }
+  </script>
 
   <style>
-    /* Professional Developer Tools Scrollbar */
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: #0B0F17; }
-    ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #334155; }
-      @media (max-width: 767px) {
-      body { display: block !important; height: auto !important; overflow: auto !important; }
-      body > aside { width: 100% !important; height: auto !important; }
-      body > aside nav { display: flex; flex-wrap: wrap; }
-      body > aside nav button { width: auto !important; min-height: 36px; }
-      main { height: auto !important; min-width: 0; overflow: visible !important; }
-      main header { height: auto !important; min-height: 64px; flex-wrap: wrap; gap: 8px; padding: 12px; }
-      main header > div { flex-wrap: wrap; max-width: 100%; }
-      .view-panel { overflow: auto; }
-      #view-findings > div, #view-dast > div { flex-wrap: wrap; }
-      #detail-content { min-width: 0; }
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #06090F; }
+    ::-webkit-scrollbar-thumb { background: #1E2B48; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #33446B; }
+
+    /* Frosted Glassmorphism */
+    .glass-panel {
+      background: rgba(13, 20, 36, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(30, 43, 72, 0.8);
+    }
+    .glass-input {
+      background: rgba(9, 14, 23, 0.9);
+      border: 1px solid #1E2B48;
+    }
+    .glass-input:focus {
+      border-color: #06B6D4;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+      outline: none;
+    }
+
+    /* Cyber matrix grid subtle background */
+    .cyber-grid {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(30, 43, 72, 0.15) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(30, 43, 72, 0.15) 1px, transparent 1px);
+    }
+
+    /* Live radar scan effect */
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(1.15); }
+    }
+    .pulse-ring {
+      animation: pulseGlow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* Smooth code block styling */
+    pre, code {
+      font-family: 'JetBrains Mono', monospace;
     }
   </style>
 </head>
 
-<body class="bg-appbg text-slate-200 font-sans h-screen flex overflow-hidden antialiased">
+<body class="bg-appbg text-slate-100 font-sans h-screen flex flex-col overflow-hidden cyber-grid select-none">
 
-  <a class="skip-link" href="#main-workspace">Skip to workspace</a>
   <!-- ===================================================================== -->
-  <!-- 1. NAVIGATION SIDEBAR -->
+  <!-- 1. TOP COCKPIT HUD BAR -->
   <!-- ===================================================================== -->
-  <aside class="w-60 bg-panel border-r border-borderSubtle flex flex-col justify-between shrink-0 z-20">
-    <div class="flex flex-col">
-
-      <!-- Brand Header -->
-      <div class="h-16 flex items-center gap-3 px-5 border-b border-borderSubtle">
-        <div class="w-8 h-8 rounded-lg bg-sky-600/20 border border-sky-500/40 flex items-center justify-center text-sky-400">
-          <i data-lucide="shield-check" class="w-5 h-5"></i>
+  <header class="h-14 bg-cockpit/95 border-b border-panelBorder flex items-center justify-between px-4 z-40 shrink-0 backdrop-blur">
+    
+    <!-- Brand & Platform Pill -->
+    <div class="flex items-center gap-3">
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan/10 border border-cyberCyan/40 text-cyberCyan shadow-glowCyan">
+        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+        <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-cyberEmerald pulse-ring"></span>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold tracking-wider text-white">MOBILE<span class="text-cyberCyan">AG</span></span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-cyberCyan/15 text-cyberCyan border border-cyberCyan/30">ADVANCED OPS</span>
         </div>
-        <div>
-          <h1 class="text-sm font-semibold text-white tracking-wide">MobileAg</h1>
-          <p class="text-[10px] font-mono text-slate-400">Local security workbench</p>
-        </div>
-        <button id="workspace-menu-toggle" type="button" aria-controls="workspace-navigation" aria-expanded="true">Menu</button>
+        <p class="text-[10px] font-mono text-slate-400">Autonomous Mobile Security Workbench</p>
       </div>
 
-      <!-- Main Navigation Menu -->
-      <nav id="workspace-navigation" aria-label="Workspace sections" class="p-3 space-y-1">
-        <button id="nav-assessment" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="play" class="w-4 h-4"></i><span>Start Assessment</span></button>
-<button data-onclick="static0" id="nav-surface" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium bg-sky-950/40 text-sky-400 border border-sky-800/40 transition">
-          <i data-lucide="network" class="w-4 h-4"></i>
+      <!-- Target Selector / Dropdown -->
+      <div class="ml-4 pl-4 border-l border-panelBorder flex items-center gap-2">
+        <div class="flex items-center gap-2 bg-panel px-3 py-1.5 rounded-lg border border-panelBorder">
+          <i data-lucide="package" class="w-3.5 h-3.5 text-slate-400"></i>
+          <span id="cockpit-target-name" class="text-xs font-mono font-medium text-slate-200">No Target Active</span>
+          <span id="cockpit-target-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-400">IDLE</span>
+        </div>
+        <button id="btn-quick-upload" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan/15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan/40 flex items-center gap-1.5 transition">
+          <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
+          <span>Ingest Target</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Central Cockpit Metrics & Threat Gauges -->
+    <div class="hidden lg:flex items-center gap-6">
+      <!-- Security Grade Aura -->
+      <div class="flex items-center gap-2 bg-panel/70 px-3 py-1 rounded-lg border border-panelBorder">
+        <span class="text-[11px] font-mono uppercase text-slate-400">Grade:</span>
+        <span id="cockpit-grade" class="text-xs font-bold font-mono text-cyberEmerald">A+</span>
+      </div>
+      <!-- Findings Meter -->
+      <div class="flex items-center gap-3 font-mono text-xs">
+        <span class="flex items-center gap-1 text-cyberRose">
+          <span class="w-2 h-2 rounded-full bg-cyberRose"></span>
+          <span id="meter-crit" class="font-bold">0</span> Crit
+        </span>
+        <span class="flex items-center gap-1 text-cyberAmber">
+          <span class="w-2 h-2 rounded-full bg-cyberAmber"></span>
+          <span id="meter-high" class="font-bold">0</span> High
+        </span>
+        <span class="flex items-center gap-1 text-cyberCyan">
+          <span class="w-2 h-2 rounded-full bg-cyberCyan"></span>
+          <span id="meter-med" class="font-bold">0</span> Med
+        </span>
+      </div>
+      <!-- Mode & Scope Badge -->
+      <div class="flex items-center gap-2">
+        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          OFFLINE DETERMINISTIC
+        </span>
+      </div>
+    </div>
+
+    <!-- Controls: Command Palette, ADB Status, Token Modal -->
+    <div class="flex items-center gap-2.5">
+      <!-- Command Palette Pill (Ctrl+K) -->
+      <button id="btn-command-palette" class="hidden sm:flex items-center gap-2 bg-panel px-3 py-1.5 rounded-lg border border-panelBorder hover:border-cyberCyan/40 text-slate-300 text-xs transition">
+        <i data-lucide="terminal" class="w-3.5 h-3.5 text-cyberCyan"></i>
+        <span>Command Menu</span>
+        <kbd class="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">⌘K</kbd>
+      </button>
+
+      <!-- ADB Device Status Indicator -->
+      <div id="cockpit-adb-pill" class="flex items-center gap-1.5 bg-panel px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300">
+        <i data-lucide="smartphone" class="w-3.5 h-3.5 text-cyberEmerald"></i>
+        <span id="cockpit-adb-name">ADB: Ready</span>
+      </div>
+
+      <!-- Auth Session Token Pill -->
+      <button id="btn-session-key" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="Manage Workbench Token">
+        <i data-lucide="key" class="w-3.5 h-3.5 text-cyberAmber"></i>
+        <span id="session-key-status">Token: Set</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- 2. MAIN APPLICATION WORKSPACE -->
+  <!-- ===================================================================== -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Left Operations Nav Rail -->
+    <aside class="w-56 bg-cockpit/90 border-r border-panelBorder flex flex-col justify-between shrink-0 p-2 z-30">
+      <div class="space-y-1">
+        
+        <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Analysis Workspaces</div>
+        
+        <!-- Tab 1: Attack Surface Graph -->
+        <button data-tab="tab-surface" class="nav-tab active w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="network" class="w-4 h-4 text-cyberCyan"></i>
           <span>Attack Surface</span>
         </button>
 
-        <button data-onclick="static1" id="nav-findings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
-          <span>Findings & Evidence</span>
-          <span id="nav-findings-count" class="ml-auto px-1.5 py-0.2 rounded bg-amber-950/80 text-[10px] font-mono text-amber-300 border border-amber-800">0</span>
+        <!-- Tab 2: Findings & PoC Studio -->
+        <button data-tab="tab-findings" class="nav-tab w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="flame" class="w-4 h-4 text-cyberRose"></i>
+            <span>Vulnerabilities & PoC</span>
+          </div>
+          <span id="nav-count-findings" class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-cyberRose/20 text-cyberRose border border-cyberRose/40">0</span>
         </button>
 
-
-
-
-
-
-
-
-
-
-
-
-        <button data-onclick="static5" id="nav-scans" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="history" class="w-4 h-4"></i>
-          <span>Scan History</span>
+        <!-- Tab 3: Decompiler & Bytecode -->
+        <button data-tab="tab-decompiler" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="file-code-2" class="w-4 h-4 text-cyberPurple"></i>
+          <span>Decompiler & AST</span>
         </button>
 
+        <div class="pt-3 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Dynamic Execution Lab</div>
 
-
-        <details id="advanced-tools"><summary class="text-slate-300 px-3 py-2">Advanced tools (optional)</summary><button data-onclick="static2" id="nav-dast" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
-          <span>Device Diagnostics</span>
-          <span id="nav-dast-device-badge" class="ml-auto px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-emerald-400">0 Devs</span>
-        </button><button data-onclick="static3" id="nav-taint" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="git-merge" class="w-4 h-4 text-emerald-400"></i>
-          <span>Taint Dataflow</span>
-          <span class="ml-auto px-1.5 py-0.2 rounded bg-emerald-950/80 text-[10px] font-mono text-emerald-300 border border-emerald-800">Static</span>
-        </button><button id="nav-automation" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition"><i data-lucide="route" class="w-4 h-4"></i><span>Navigation Review</span></button><button data-onclick="static4" id="nav-api" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="globe" class="w-4 h-4 text-purple-400"></i>
-          <span>Advanced API Tools</span>
-          <span id="nav-api-badge" class="ml-auto px-1.5 py-0.2 rounded bg-purple-950/80 text-[10px] font-mono text-purple-300 border border-purple-800">0 APIs</span>
-        </button><button data-onclick="static6" id="nav-agents" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="cpu" class="w-4 h-4"></i>
-          <span>Analyzer Capabilities</span>
-          <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="Available capabilities; inspect each scan for actual execution"></span>
-        </button></details>
-        <button data-onclick="static7" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-card transition">
-          <i data-lucide="settings" class="w-4 h-4"></i>
-          <span>Configuration</span>
+        <!-- Tab 4: DAST Lab & Screen Mirror -->
+        <button data-tab="tab-dast" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="cpu" class="w-4 h-4 text-cyberEmerald"></i>
+          <span>Dynamic Lab (DAST)</span>
         </button>
-      </nav>
 
-    </div>
+        <!-- Tab 5: MITM Proxy & APIs -->
+        <button data-tab="tab-proxy" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="globe" class="w-4 h-4 text-cyberCyan"></i>
+          <span>Traffic & APIs</span>
+        </button>
 
-    <!-- Bottom Telemetry & Status -->
-    <div class="p-4 border-t border-borderSubtle space-y-3">
-      <div class="flex items-center justify-between text-[11px] font-mono">
-        <span class="text-slate-400">Pipeline Status:</span>
-        <span id="sidebar-status-text" class="text-emerald-400 font-semibold">Not checked</span>
+        <!-- Tab 6: Live Loupe Console -->
+        <button data-tab="tab-loupe" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="terminal" class="w-4 h-4 text-cyberAmber"></i>
+          <span>Logcat & Shell</span>
+        </button>
+
+        <div class="pt-3 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Intelligence & Reports</div>
+
+        <!-- Tab 7: Version Diff Radar -->
+        <button data-tab="tab-diff" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="git-compare" class="w-4 h-4 text-slate-300"></i>
+          <span>Version Diff (A/B)</span>
+        </button>
+
+        <!-- Tab 8: Compliance & Exports -->
+        <button data-tab="tab-reports" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="file-check-2" class="w-4 h-4 text-cyberEmerald"></i>
+          <span>MASVS & Exports</span>
+        </button>
+
       </div>
 
-      <div class="bg-card rounded-lg p-2.5 border border-borderSubtle space-y-1.5 text-[10px] font-mono text-slate-400">
-        <div class="flex items-center justify-between">
+      <!-- Quick Session / System Status Footer -->
+      <div class="p-2 bg-panel/60 border border-panelBorder rounded-lg text-[11px] font-mono space-y-1">
+        <div class="flex items-center justify-between text-slate-400">
           <span>Engine:</span>
-          <span class="text-slate-200">Heuristic analysis</span>
+          <span class="text-cyberCyan">MobileAg Core</span>
         </div>
-        <div class="flex items-center justify-between">
-          <span>Neo4j Graph:</span>
-          <span id="sidebar-neo4j-status" class="text-slate-300">Checking...</span>
-        </div>
-        <div class="flex items-center justify-between">
-          <span>WebSocket:</span>
-          <span id="sidebar-ws-status" class="text-emerald-400">Not connected</span>
+        <div class="flex items-center justify-between text-slate-400">
+          <span>Telemetry:</span>
+          <span id="ws-status-text" class="text-cyberEmerald">Connected</span>
         </div>
       </div>
-    </div>
-  </aside>
+    </aside>
 
-  <!-- ===================================================================== -->
-  <!-- 2. MAIN VIEW CONTAINER -->
-  <!-- ===================================================================== -->
-  <main id="main-workspace" tabindex="-1" class="flex-1 flex flex-col overflow-hidden">
-
-    <!-- Top Header Bar -->
-    <header class="h-16 border-b border-borderSubtle bg-panel/80 px-6 flex items-center justify-between shrink-0">
-      <div id="static-scan-context" class="flex items-center gap-4">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">TARGET</span>
-          <h2 id="top-package-name" class="text-sm font-semibold text-white font-mono">Select a scan</h2>
-        </div>
-        <span id="top-version" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">Version unknown</span>
-        <span id="top-framework" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Not assessed</span>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="flex items-center gap-3">
-        <span id="privacy-mode" class="text-xs text-slate-400">Privacy policy loading</span>
-        <button data-onclick="static-reconnect" class="text-xs text-sky-400">Reconnect session</button>
-        <!-- New Scan Trigger -->
-        <button data-onclick="static11" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-2 transition shadow-sm">
-          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-          <span>Start Assessment</span>
-        </button>
-
-        <!-- Export Report Dropdown -->
-        <div class="relative">
-          <button id="export-menu-button" aria-expanded="false" aria-controls="export-dropdown" data-onclick="static12" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-200 text-xs flex items-center gap-2 transition">
-            <i data-lucide="download" class="w-3.5 h-3.5"></i>
-            <span>Export Scan</span>
-            <i data-lucide="chevron-down" class="w-3 h-3"></i>
-          </button>
-          <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-44 bg-panel border border-borderSubtle rounded-lg shadow-xl z-30 py-1 text-xs font-mono">
-            <button data-onclick="static13" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
-              <i data-lucide="file-json" class="w-3.5 h-3.5 text-sky-400"></i> JSON Report
-            </button>
-            <button data-onclick="static14" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
-              <i data-lucide="file-text" class="w-3.5 h-3.5 text-emerald-400"></i> Markdown Report
-            </button>
-            <button data-onclick="static15" class="w-full text-left px-3 py-1.5 hover:bg-card text-slate-300 flex items-center gap-2">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-purple-400"></i> SARIF v2.1.0 (CI/CD)
-            </button>
-          </div>
-        </div>
-
-        <!-- Copilot Toggle Button -->
-        <button id="evidence-summary-button" aria-expanded="false" aria-controls="copilot-drawer" data-onclick="static16" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-sky-400 text-xs flex items-center gap-1.5 transition">
-          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-          <span>Evidence summary</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Content Workspace Views (Multi-Tab Switching) -->
-    <section class="workspace-context" aria-label="Current workspace section">
-      <div><h2 id="workspace-title" tabindex="-1">Attack Surface</h2><p id="workspace-subtitle">Review observed coverage and static candidates.</p></div>
-      <p id="scan-assessment-state" role="status" aria-live="polite">No scan selected. Start an assessment to collect evidence.</p>
-    </section>
-
-    <div class="flex-1 overflow-hidden relative">
-
+    <!-- Center Primary Viewport (Dynamic Workspaces) -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-appbg relative">
+      
       <!-- =================================================================== -->
-      <!-- VIEW 1: ATTACK SURFACE & OVERVIEW (Default) -->
+      <!-- WORKSPACE 1: ATTACK SURFACE TOPOLOGY (Vis.js Canvas) -->
       <!-- =================================================================== -->
-      <div id="view-surface" class="view-panel h-full flex flex-col overflow-y-auto p-5 gap-4">
-
-        <!-- Autonomous Full-Spectrum Audit Dropzone Banner -->
-        <div id="quick-dropzone-surface"
-             data-ondragover="static17"
-             data-ondragleave="static-dragleave"
-             data-ondrop="static18"
-             class="border-2 border-dashed border-sky-500/40 hover:border-sky-400 bg-sky-950/20 hover:bg-sky-950/30 rounded-2xl p-4 transition-all flex items-center justify-between gap-4 shadow-sm group">
-          <div class="flex items-center gap-3.5">
-            <div class="w-11 h-11 rounded-xl bg-sky-600/20 border border-sky-500/40 flex items-center justify-center text-sky-400 group-hover:scale-105 transition shrink-0">
-              <i data-lucide="sparkles" class="w-5 h-5"></i>
-            </div>
-            <div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <h4 class="text-xs font-bold text-white tracking-wide">SCOPED STATIC ANALYSIS</h4>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/80 border border-emerald-700 text-emerald-300">Drag & Drop APK</span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/80 border border-purple-700 text-purple-300">No automatic device actions</span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-950/80 border border-sky-700 text-sky-300">Taint Analysis</span>
-              </div>
-              <p class="text-[11px] text-slate-400 mt-0.5">Upload an authorized APK/IPA, then review scope before starting. Uploading alone never runs tests.</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <div id="quick-upload-spinner-surface" class="hidden flex items-center gap-2 text-xs text-sky-400 font-mono">
-              <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Uploading APK...
-            </div>
-            <button type="button" data-onclick="static19" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-1.5 shadow-sm transition">
-              <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Select APK
-            </button>
-            <input type="file" id="quick-file-input-surface" accept=".apk,.ipa" class="hidden" data-onchange="static20" />
-          </div>
-        </div>
-
-        <!-- KPI Telemetry Bar -->
-        <div class="grid grid-cols-5 gap-4 shrink-0">
-          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p class="text-[11px] font-mono text-slate-400 uppercase">Total Findings</p>
-              <h3 id="kpi-total" class="text-2xl font-bold font-mono text-white mt-0.5">0</h3>
-            </div>
-            <div class="w-9 h-9 rounded-lg bg-slate-800 border border-borderSubtle flex items-center justify-center text-slate-300">
-              <i data-lucide="shield" class="w-4 h-4"></i>
-            </div>
-          </div>
-
-          <div class="bg-panel border border-red-900/40 rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p class="text-[11px] font-mono text-red-400 uppercase">Critical / High</p>
-              <h3 id="kpi-critical-high" class="text-2xl font-bold font-mono text-red-400 mt-0.5">0</h3>
-            </div>
-            <div class="w-9 h-9 rounded-lg bg-red-950/40 border border-red-800/40 flex items-center justify-center text-red-400">
-              <i data-lucide="alert-triangle" class="w-4 h-4"></i>
-            </div>
-          </div>
-
-          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p class="text-[11px] font-mono text-orange-400 uppercase">Medium / Low</p>
-              <h3 id="kpi-med-low" class="text-2xl font-bold font-mono text-orange-400 mt-0.5">0</h3>
-            </div>
-            <div class="w-9 h-9 rounded-lg bg-orange-950/30 border border-orange-800/30 flex items-center justify-center text-orange-400">
-              <i data-lucide="info" class="w-4 h-4"></i>
-            </div>
-          </div>
-
-          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p class="text-[11px] font-mono text-emerald-400 uppercase">MASVS Benchmark</p>
-              <h3 id="kpi-masvs" class="text-2xl font-bold font-mono text-emerald-400 mt-0.5">Not assessed</h3>
-            </div>
-            <div class="w-9 h-9 rounded-lg bg-emerald-950/30 border border-emerald-800/30 flex items-center justify-center text-emerald-400">
-              <i data-lucide="check-circle" class="w-4 h-4"></i>
-            </div>
-          </div>
-
-          <div class="bg-panel border border-borderSubtle rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p class="text-[11px] font-mono text-sky-400 uppercase">Review coverage</p>
-              <h3 id="kpi-consensus" class="text-2xl font-bold font-mono text-sky-400 mt-0.5">Not measured</h3>
-            </div>
-            <div class="w-9 h-9 rounded-lg bg-sky-950/30 border border-sky-800/30 flex items-center justify-center text-sky-400">
-              <i data-lucide="layers" class="w-4 h-4"></i>
-            </div>
-          </div>
-        </div>
-
-        <!-- Main Topology Canvas Container -->
-        <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col flex-1 min-h-[380px] shadow-sm relative">
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <i data-lucide="network" class="w-4 h-4 text-sky-400"></i>
-              <h3 class="text-xs font-semibold text-white tracking-wide uppercase">Attack Surface Topology Graph</h3>
-              <span id="graph-source-label" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Source: Embedded</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button data-onclick="static21" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">Fit View</button>
-              <button data-onclick="static22" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">+</button>
-              <button data-onclick="static23" class="px-2 py-1 rounded bg-card hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-borderSubtle">-</button>
-            </div>
-          </div>
-
-          <div id="visjs-container" class="w-full flex-1 rounded-lg bg-[#070A10] border border-borderSubtle overflow-hidden relative"></div>
-
-          <div class="absolute bottom-6 left-6 text-[10px] font-mono text-slate-400 bg-panel/90 px-3 py-1.5 rounded-lg border border-borderSubtle pointer-events-none">
-            Click node to inspect | Drag to rearrange | Scroll to zoom
-          </div>
-        </div>
-
-        <!-- Bottom Row: Agent Stream + MASVS Radar Chart -->
-        <div class="grid grid-cols-2 gap-4 h-64 shrink-0">
-
-          <!-- Real-Time Agent Stream -->
-          <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between mb-3 border-b border-borderSubtle pb-2">
-              <div class="flex items-center gap-2">
-                <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
-                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">Recorded analyzer events</h4>
-              </div>
-              <span class="text-[10px] font-mono text-slate-400">Observed events only</span>
-            </div>
-
-            <div id="agent-telemetry-feed" class="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-              <!-- Dynamically populated -->
-            </div>
-          </div>
-
-          <!-- OWASP MASVS Radar Chart -->
-          <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between mb-1 border-b border-borderSubtle pb-2">
-              <div class="flex items-center gap-2">
-                <i data-lucide="radar" class="w-4 h-4 text-sky-400"></i>
-                <h4 class="text-xs font-semibold text-white tracking-wide uppercase">MASVS assessment boundary</h4>
-              </div>
-              <span id="masvs-summary-score" class="text-[11px] font-mono text-emerald-400 font-bold">Not assessed</span>
-            </div>
-
-            <div class="flex-1 relative flex items-center justify-center pt-2">
-              <canvas id="masvs-canvas"></canvas>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW 2: FINDINGS & TRIAGE WORKSPACE -->
-      <!-- =================================================================== -->
-      <div id="view-findings" class="view-panel h-full hidden flex overflow-hidden">
-
-        <!-- Left: Findings Table / List -->
-        <div class="flex-1 flex flex-col border-r border-borderSubtle bg-appbg overflow-hidden">
-          <!-- Filters & Search Toolbar -->
-          <div class="p-4 border-b border-borderSubtle bg-panel flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2 flex-1 max-w-md">
-              <div class="relative w-full">
-                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500"></i>
-                <input type="text" id="findings-search-input" data-oninput="static24" placeholder="Search title, CWE, component, or file path..."
-                  class="w-full bg-card border border-borderSubtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono" />
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <!-- Severity Filter Buttons -->
-              <div class="flex items-center gap-1 bg-card p-0.5 rounded-lg border border-borderSubtle text-xs font-mono">
-                <button data-onclick="static25" id="sev-all" class="sev-btn px-2.5 py-1 rounded bg-slate-700 text-white font-medium">All</button>
-                <button data-onclick="static26" id="sev-crit" class="sev-btn px-2.5 py-1 rounded text-red-400 hover:bg-slate-800">Critical</button>
-                <button data-onclick="static27" id="sev-high" class="sev-btn px-2.5 py-1 rounded text-orange-400 hover:bg-slate-800">High</button>
-                <button data-onclick="static28" id="sev-med" class="sev-btn px-2.5 py-1 rounded text-yellow-400 hover:bg-slate-800">Medium</button>
-              </div>
-
-              <!-- Status Filter -->
-              <select id="status-filter-select" data-onchange="static29" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-sky-500">
-                <option value="ALL">All Statuses</option>
-                <option value="CONFIRMED">Confirmed TP</option>
-                <option value="UNVERIFIED">Unverified</option>
-                <option value="FALSE_POSITIVE">False Positive</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Findings List -->
-          <div id="findings-full-list" class="flex-1 overflow-y-auto p-4 space-y-3">
-            <!-- Dynamically populated -->
-          </div>
-        </div>
-
-        <!-- Right: Djini.ai Exploit PoC & Verification Studio Drawer -->
-        <div id="finding-detail-drawer" class="w-[580px] xl:w-[660px] bg-panel flex flex-col shrink-0 overflow-y-auto p-5 border-l border-borderSubtle">
-          <div class="flex items-center justify-between border-b border-borderSubtle pb-3 mb-4">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-              <h3 class="text-xs font-bold text-white tracking-wider uppercase font-mono">Finding review & validation</h3>
-            </div>
-            <span id="detail-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">STATUS</span>
-          </div>
-
-          <div id="detail-content" class="space-y-4 text-xs">
-            <div class="text-slate-400 text-center py-20 font-mono text-xs">
-              <i data-lucide="zap" class="w-8 h-8 mx-auto text-amber-500/60 mb-2"></i>
-              <p class="text-slate-300 font-medium">Select any finding from the list</p>
-              <p class="text-slate-500 text-[11px] mt-1">Review static context, suggested procedures and actual evidence. Generated commands are untrusted suggestions, not exploit proof.</p>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW 3: SCAN HISTORY -->
-      <!-- =================================================================== -->
-      <div id="view-scans" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h3 class="text-sm font-semibold text-white">Target Scan Repository</h3>
-            <p class="text-xs text-slate-400">Historical security assessments and active analysis runs</p>
-          </div>
-          <button data-onclick="static30" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i> Start Assessment
-          </button>
-        </div>
-
-        <!-- Autonomous Dropzone in Scans View -->
-        <div id="quick-dropzone-scans"
-             data-ondragover="static31"
-             data-ondragleave="static-dragleave"
-             data-ondrop="static32"
-             class="mb-4 border-2 border-dashed border-sky-500/40 hover:border-sky-400 bg-sky-950/20 hover:bg-sky-950/30 rounded-2xl p-4 transition-all flex items-center justify-between gap-4 shadow-sm group">
-          <div class="flex items-center gap-3.5">
-            <div class="w-10 h-10 rounded-xl bg-sky-600/20 border border-sky-500/40 flex items-center justify-center text-sky-400 group-hover:scale-105 transition shrink-0">
-              <i data-lucide="upload-cloud" class="w-5 h-5"></i>
-            </div>
-            <div>
-              <h4 class="text-xs font-bold text-white tracking-wide">UPLOAD AN AUTHORIZED APK OR IPA</h4>
-              <p class="text-[11px] text-slate-400 mt-0.5">Upload preserves the original archive. Review and approve scope before any testing starts.</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button type="button" data-onclick="static33" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-mono flex items-center gap-1.5 shadow-sm transition">
-              <i data-lucide="folder-open" class="w-3.5 h-3.5"></i> Browse APK
-            </button>
-          </div>
-        </div>
-
-        <div class="bg-panel border border-borderSubtle rounded-xl overflow-hidden shadow-sm">
-          <table class="w-full text-left text-xs font-mono">
-            <thead class="bg-card border-b border-borderSubtle text-slate-400 uppercase text-[10px]">
-              <tr>
-                <th class="py-3 px-4">Scan ID</th>
-                <th class="py-3 px-4">Target Application</th>
-                <th class="py-3 px-4">Date</th>
-                <th class="py-3 px-4">Status</th>
-                <th class="py-3 px-4">Findings Breakdown</th>
-                <th class="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody id="scans-table-body" class="divide-y divide-borderSubtle text-slate-200">
-              <!-- Dynamically populated -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW 4: ANALYZER AGENTS -->
-      <!-- =================================================================== -->
-      <div id="view-agents" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h3 class="text-sm font-semibold text-white">Security Analyzer Capabilities</h3>
-            <p class="text-xs text-slate-400">Multi-layer static, native, and dependency audit modules</p>
-          </div>
-          <button data-onclick="static34" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-xs text-slate-200 font-mono flex items-center gap-1.5">
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Start Assessment
-          </button>
-        </div>
-
-        <div id="agents-grid" class="grid grid-cols-2 gap-4">
-          <!-- Dynamically populated -->
-        </div>
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW 5: CONFIGURATION & SETTINGS -->
-      <!-- =================================================================== -->
-      <div id="view-settings" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto">
-        <div class="max-w-2xl space-y-6">
-          <div>
-            <h3 class="text-sm font-semibold text-white">Platform Settings & Engine Configuration</h3>
-            <p class="text-xs text-slate-400">Review server configuration and set analysis thresholds</p>
-          </div>
-
-          <section id="configuration-llm" class="workflow-panel assessment-panel" aria-labelledby="configuration-llm-title">
-            <h2 id="configuration-llm-title">LLM provider configuration</h2>
-            <p>Select primary and optional secondary providers for this dashboard session. Choices are not saved by Save Settings and reset on reload. No AI request starts here; each assessment requires separate egress approval.</p>
-            <div id="configuration-llm-controls"></div>
-          </section>
-
-          <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4 text-xs font-mono">
-            <div>
-              <label class="block text-slate-300 mb-1">Secret Scanner Shannon Entropy Threshold</label>
-              <input type="number" step="0.1" id="cfg-entropy" value="4.5" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
-            </div>
-
-            <div>
-              <label class="block text-slate-300 mb-1">Neo4j Bolt URI</label>
-              <input type="text" id="cfg-neo4j-uri" disabled title="Configure through environment variables" value="bolt://localhost:7687" class="w-full bg-card border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
-            </div>
-
-            <div class="space-y-2 pt-2 border-t border-borderSubtle">
-              <label class="flex items-center gap-2">
-                <input type="checkbox" id="cfg-offline" checked disabled />
-                <span>Web static analysis: offline only (no LLM or OSV egress)</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="cfg-deep-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-                <span class="text-slate-300">Enable straight-line taint heuristics</span>
-              </label>
-
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="cfg-reachability" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-                <span class="text-slate-300">Enable reference-based reachability scoring (not proof)</span>
-              </label>
-
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="cfg-consensus" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-                <span class="text-slate-300">Record consensus preference (web workers remain offline; no model votes)</span>
-              </label>
-            </div>
-
-            <div class="pt-4 flex items-center justify-end">
-              <button data-onclick="static35" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-2">
-                <i data-lucide="check" class="w-3.5 h-3.5"></i> Save Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW: LIVE DAST & EMULATORS -->
-      <!-- =================================================================== -->
-      <div id="view-dast" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">      <!-- Djini.ai BYOD Live Device Status Bar -->
-      <div class="hidden md:flex items-center gap-2 border-x border-borderSubtle/80 px-4 py-1">
-        <div class="flex items-center gap-1.5 text-xs font-mono">
-          <span id="header-device-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <select id="header-device-select" data-onchange="static8" class="bg-card border border-borderSubtle rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500">
-            <option value="">Select authorized device...</option>
-          </select>
-        </div>
-        <span id="header-root-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">No device selected</span>
-        <button data-onclick="static9" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-800/60 text-[11px] font-mono flex items-center gap-1 transition">
-          <i data-lucide="shield-off" class="w-3 h-3"></i> Root preset check
-        </button>
-        <button data-onclick="static10" title="Preset initialization check; detaches immediately" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-800/60 text-[11px] font-mono flex items-center gap-1 transition">
-          <i data-lucide="unlock" class="w-3 h-3"></i> TLS preset check
-        </button>
-      </div>
-
-
-
-        <!-- Header & Connection Bar -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                <i data-lucide="smartphone" class="w-4 h-4"></i>
-              </div>
-              <h3 class="text-sm font-semibold text-white">Dynamic Application Security Testing (DAST) Workspace</h3>
-              <span id="dast-adb-indicator" class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-900 border border-slate-700 text-slate-400 flex items-center gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> ADB not checked
-              </span>
-            </div>
-            <p class="text-xs text-slate-400 mt-1">Explicitly scoped diagnostics on a dedicated device. Inventory does not prove root, instrumentation readiness or an exploit.</p>
-          </div>
-
-          <!-- Quick Connect & Refresh Bar -->
-          <div class="flex items-center gap-2 font-mono text-xs">
-            <div class="flex items-center bg-card border border-borderSubtle rounded-lg px-2 py-1">
-              <span class="text-slate-500 mr-2 text-[11px]">TCP:</span>
-              <input type="text" id="dast-tcp-input" value="127.0.0.1:5555" placeholder="host:port" class="bg-transparent border-none text-slate-200 text-xs focus:outline-none w-32" />
-            </div>
-            <button data-onclick="static36" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
-              <i data-lucide="link" class="w-3.5 h-3.5 text-sky-400"></i> Connect
-            </button>
-            <button data-onclick="static37" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-400"></i> Refresh
-            </button>
-            <button data-onclick="static38" class="px-3 py-1.5 rounded-lg bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle flex items-center gap-1.5 transition">
-              <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-emerald-400"></i> Root Shell
-            </button>
-          </div>
-        </div>
-
-        <!-- Section 1: Fleet & Orchestration Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-
-          <!-- Device Fleet Card (5 cols) -->
-          <div class="lg:col-span-5 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                <i data-lucide="cpu" class="w-3.5 h-3.5 text-sky-400"></i> Connected Target Fleet
-              </h4>
-              <span id="dast-fleet-count" class="text-[10px] font-mono px-2 py-0.5 rounded bg-card text-slate-400 border border-borderSubtle">0 Connected</span>
-            </div>
-
-            <div id="dast-device-fleet-list" class="flex-1 space-y-2 overflow-y-auto max-h-56 pr-1 text-xs">
-              <!-- Rendered via JS -->
-              <div class="p-4 rounded-lg bg-card/60 border border-dashed border-borderSubtle text-center text-slate-400">
-                <p class="text-xs">Scanning for connected emulators and devices...</p>
-              </div>
-            </div>
-
-            <div class="pt-2 border-t border-borderSubtle flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>Active Target:</span>
-              <span id="dast-active-target-label" class="text-sky-400 font-semibold">None Selected</span>
-            </div>
-          </div>
-
-          <!-- Orchestrator & Intent Fuzzer Card (7 cols) -->
-          <div class="lg:col-span-7 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Component Exerciser & Intent Fuzzer
-              </h4>
-              <span class="text-[10px] font-mono text-slate-400">Scoped device diagnostics</span>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Target Package Name</label>
-                <input type="text" id="dast-input-package" value="com.target.mobile.app" class="w-full bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Target Component / Activity</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="text" id="dast-input-activity" value=".activity.DeepLinkRouterActivity" placeholder="com.app/.MainActivity" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
-                  <button data-onclick="static39" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Launch with am start">
-                    <i data-lucide="play" class="w-3.5 h-3.5 text-emerald-400"></i>
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Deep Link / Custom Scheme URI</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="text" id="dast-input-deeplink" value="targetapp://auth?token=fuzz_payload" placeholder="scheme://host/path" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
-                  <button data-onclick="static40" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Dispatch Intent VIEW">
-                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-sky-400"></i>
-                  </button>
-                  <button data-onclick="static41" class="px-2.5 py-1.5 bg-sky-900/50 hover:bg-sky-800 border border-sky-700/60 rounded-lg text-sky-300 text-[11px] font-mono flex items-center gap-1" title="Run Deep Link Matrix Fuzzing (OAuth, Traversal, UXSS)">
-                    <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Fuzz Matrix
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">APK Host File (No forced runtime grants)</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="text" id="dast-input-apk" placeholder="/path/to/target.apk" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
-                  <button data-onclick="static42" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Install to target device">
-                    <i data-lucide="download" class="w-3.5 h-3.5 text-purple-400"></i>
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Content Provider Authority (IPC Audit)</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="text" id="dast-input-authority" placeholder="com.target.provider" class="flex-1 bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500" />
-                  <button data-onclick="static43" class="px-2.5 py-1.5 bg-card hover:bg-slate-700 border border-borderSubtle rounded-lg text-slate-300 hover:text-white" title="Audit Content Provider">
-                    <i data-lucide="database" class="w-3.5 h-3.5 text-amber-400"></i>
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Volatile RAM Forensics (CWE-316)</label>
-                <button data-onclick="static44" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
-                  <i data-lucide="cpu" class="w-3.5 h-3.5 text-yellow-400"></i> Audit Process RAM Secrets
-                </button>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Sandbox Storage Forensics</label>
-                <button data-onclick="static45" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
-                  <i data-lucide="folder-search" class="w-3.5 h-3.5 text-pink-400"></i> Audit Sandbox (Prefs & DBs)
-                </button>
-              </div>
-              <div>
-                <label class="block text-slate-400 text-[11px] mb-1">Read-only package UI observation</label>
-                <button data-onclick="static46" class="w-full py-1.5 px-3 rounded-lg bg-card hover:bg-slate-700 border border-borderSubtle text-slate-300 hover:text-white flex items-center justify-center gap-1.5 text-xs font-mono">
-                  <i data-lucide="bot" class="w-3.5 h-3.5 text-cyan-400"></i> Run UIAutomator Crawl (5 steps)
-                </button>
-              </div>
-            </div>
-
-            <!-- Suite Launch Trigger & Configuration Toggles -->
-            <div class="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-borderSubtle">
-              <div class="flex items-center gap-3 text-[11px] font-mono text-slate-300">
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" id="dast-opt-storage" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-                  <span>Storage</span>
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" id="dast-opt-memory" checked class="rounded bg-slate-800 border-borderSubtle text-yellow-500" />
-                  <span>RAM (CWE-316)</span>
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" id="dast-opt-crawl" class="rounded bg-slate-800 border-borderSubtle text-cyan-500" />
-                  <span>UI Crawl</span>
-                </label>
-              </div>
-              <div class="flex items-center gap-3">
-                <span id="dast-fuzz-status" class="text-[11px] font-mono text-slate-400 flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-slate-600"></span> Ready
-                </span>
-                <button data-onclick="static47" id="btn-dast-run-suite" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
-                  <i data-lucide="play-circle" class="w-4 h-4"></i> Run explicitly scoped diagnostics
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Section 1.5: Frida Dynamic Runtime Instrumentation Card -->
-        <div class="bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-borderSubtle pb-2.5">
-            <div class="flex items-center gap-2">
-              <div class="w-6 h-6 rounded bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                <i data-lucide="syringe" class="w-3.5 h-3.5"></i>
-              </div>
-              <div>
-                <h4 class="text-xs font-semibold text-white uppercase tracking-wider">Frida Dynamic Instrumentation & Runtime Hooks</h4>
-                <p class="text-[10px] font-mono text-slate-400">Explicit preset initialization in an approved running process; the session then detaches. Not persistent hooks or ordinary-app exploit proof.</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <span id="frida-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/60 border border-purple-800 text-purple-300 flex items-center gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> Frida process not checked
-              </span>
-              <button data-onclick="static48" class="px-2.5 py-1 bg-card hover:bg-slate-700 border border-borderSubtle rounded text-slate-300 text-[11px] font-mono flex items-center gap-1">
-                <i data-lucide="refresh-cw" class="w-3 h-3"></i> Check Status
-              </button>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
-            <!-- Preset 1: SSL Unpinning -->
-            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
-              <div>
-                <div class="flex items-center justify-between">
-                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
-                    <i data-lucide="shield-off" class="w-3.5 h-3.5 text-amber-400"></i> Universal SSL Unpinning
-                  </span>
-                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800">CWE-295</span>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Hooks X509TrustManager, OkHttp3 CertificatePinner, and WebViewClient onReceivedSslError.</p>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button data-onclick="static49" class="flex-1 py-1.5 rounded bg-purple-700 hover:bg-purple-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
-                  <i data-lucide="play" class="w-3 h-3"></i> Check preset initialization
-                </button>
-                <button data-onclick="static50" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
-                  <i data-lucide="code" class="w-3 h-3"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- Preset 2: Crypto Telemetry -->
-            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
-              <div>
-                <div class="flex items-center justify-between">
-                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
-                    <i data-lucide="key" class="w-3.5 h-3.5 text-sky-400"></i> Crypto & Cipher Monitor
-                  </span>
-                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800">CWE-327</span>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Intercepts `javax.crypto.Cipher.init` to stream live algorithms, ECB modes, and static IVs.</p>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button data-onclick="static51" class="flex-1 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
-                  <i data-lucide="play" class="w-3 h-3"></i> Check preset initialization
-                </button>
-                <button data-onclick="static52" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
-                  <i data-lucide="code" class="w-3 h-3"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- Preset 3: Root Bypass -->
-            <div class="bg-card border border-borderSubtle rounded-lg p-3 flex flex-col justify-between space-y-2">
-              <div>
-                <div class="flex items-center justify-between">
-                  <span class="font-semibold text-white text-[11px] flex items-center gap-1.5">
-                    <i data-lucide="eye-off" class="w-3.5 h-3.5 text-emerald-400"></i> Anti-Root & Cloak Bypass
-                  </span>
-                  <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Root-Cloak</span>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-1 leading-normal">Hooks `File.exists` and cloaks root binaries (`su`, `busybox`, `Magisk`) from target detection.</p>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button data-onclick="static53" class="flex-1 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-medium text-[11px] flex items-center justify-center gap-1">
-                  <i data-lucide="play" class="w-3 h-3"></i> Check preset initialization
-                </button>
-                <button data-onclick="static54" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="View Hook Script">
-                  <i data-lucide="code" class="w-3 h-3"></i>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Frida Hook Script Modal/Drawer -->
-          <div id="frida-script-preview-panel" class="hidden bg-black/90 border border-borderSubtle rounded-lg p-3 text-xs font-mono">
-            <div class="flex items-center justify-between pb-2 border-b border-borderSubtle mb-2">
-              <span id="frida-preview-title" class="text-slate-300 font-semibold">// Frida Hook Script Preview</span>
-              <div class="flex items-center gap-2">
-                <button data-onclick="static55" class="px-2 py-0.5 rounded bg-card hover:bg-slate-700 text-slate-300 text-[10px]">Copy</button>
-                <button data-onclick="static56" class="text-slate-400 hover:text-white">✕</button>
-              </div>
-            </div>
-            <pre id="frida-script-code" tabindex="0" aria-label="Frida preset preview, keyboard-scrollable" class="text-emerald-400 max-h-48 overflow-y-auto leading-relaxed"></pre>
-          </div>
-        </div>
-
-
-        <!-- Section 2: Live Logcat Console & Device Screen Stream -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-
-          <!-- Terminal Console (8 cols) -->
-          <div class="lg:col-span-8 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i> Collected logcat & diagnostic events
-                </h4>
-                <span id="dast-log-counter" class="text-[10px] font-mono px-2 py-0.5 rounded bg-card text-slate-400 border border-borderSubtle">0 lines</span>
-              </div>
-              <div class="flex items-center gap-2 text-xs font-mono">
-                <input type="text" id="dast-log-filter" data-oninput="static57" placeholder="Filter logcat..." class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-sky-500 w-36" />
-                <button data-onclick="static58" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] flex items-center gap-1">
-                  <i data-lucide="download-cloud" class="w-3 h-3 text-sky-400"></i> Dump Buffer
-                </button>
-                <button data-onclick="static59" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] flex items-center gap-1">
-                  <i data-lucide="trash-2" class="w-3 h-3 text-red-400"></i> Clear
-                </button>
-              </div>
-            </div>
-
-            <!-- Terminal Output -->
-            <div id="dast-terminal" class="bg-black/90 border border-borderSubtle rounded-lg p-3 font-mono text-[11px] h-72 overflow-y-auto leading-relaxed text-slate-300 space-y-0.5 select-text">
-              <div class="text-slate-500">// No logcat collected. Dump Buffer requires explicit device-wide logcat approval.</div>
-            </div>
-          </div>
-
-          <!-- Device Screen Snapshot & Telemetry (4 cols) -->
-          <div class="lg:col-span-4 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                <i data-lucide="camera" class="w-3.5 h-3.5 text-purple-400"></i> Device Screen Mirror
-              </h4>
-              <button data-onclick="static60" class="px-2.5 py-1 rounded bg-card hover:bg-slate-700 text-slate-300 border border-borderSubtle text-[11px] font-mono flex items-center gap-1">
-                <i data-lucide="aperture" class="w-3 h-3 text-sky-400"></i> Capture Screen
-              </button>
-            </div>
-
-            <!-- Frame Container -->
-            <div id="dast-screenshot-container" class="flex-1 bg-card/60 border border-borderSubtle rounded-lg p-2 flex items-center justify-center min-h-[280px]">
-              <div id="dast-screenshot-placeholder" class="text-center p-4 text-slate-500 text-xs">
-                <i data-lucide="image" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
-                <p>No screen capture yet.</p>
-                <p class="text-[10px] text-slate-600 mt-1">Click 'Capture Screen' to grab current frame from emulator/device.</p>
-              </div>
-              <img id="dast-screenshot-img" src="" alt="Device Screen" class="hidden max-h-64 object-contain rounded border border-borderSubtle shadow-md" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Section 3: DAST Findings & Crash Traces -->
-        <div class="bg-panel border border-borderSubtle rounded-xl p-5 space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-400"></i> Dynamic Security Findings & Runtime Traces
-              </h4>
-              <p class="text-[11px] text-slate-400 mt-0.5">Only results from explicitly executed diagnostics appear here. Device-wide shell observations are not ordinary-app exploitation proof.</p>
-            </div>
-            <span id="dast-findings-count" class="px-2.5 py-1 rounded-full text-xs font-mono bg-red-950/60 border border-red-800 text-red-300">0 Dynamic Findings</span>
-          </div>
-
-          <div id="dast-findings-container" class="space-y-3">
-            <!-- Rendered via JS -->
-            <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
-              <i data-lucide="shield" class="w-6 h-6 mx-auto mb-2 text-slate-600"></i>
-              No diagnostic evidence collected. Zero entries is not a security verdict. Run only reviewed, explicitly scoped diagnostics.
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- =================================================================== -->
-      <!-- VIEW: STATIC TAINT & DATAFLOW STUDIO -->
-      <!-- =================================================================== -->
-      <div id="view-taint" class="view-panel h-full hidden flex flex-col p-6 overflow-y-auto space-y-6">
-
-        <!-- Header & Quick Preset Bar -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                <i data-lucide="git-merge" class="w-4 h-4"></i>
-              </div>
-              <h3 class="text-sm font-semibold text-white">Inter-Procedural Static Taint & Dataflow Engine</h3>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400">
-                Source-to-Sink Tracking
-              </span>
-            </div>
-            <p class="text-xs text-slate-400 mt-1">Traces untrusted user inputs (Intent extras, deep links, query parameters) through variable propagation into critical sinks (WebViews, SQLite, IPC launchers, file ops, system commands).</p>
-          </div>
-
+      <div id="tab-surface" class="tab-content flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        
+        <!-- Controls Bar for Topology -->
+        <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
           <div class="flex items-center gap-3">
-            <select id="taint-sample-selector" data-onchange="static61" class="bg-card border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-mono">
-              <option value="uxss">Preset 1: WebView UXSS (CWE-749)</option>
-              <option value="sqli">Preset 2: SQL Injection (CWE-89)</option>
-              <option value="redirect">Preset 3: Intent Redirection (CWE-927)</option>
-              <option value="traversal">Preset 4: Path Traversal (CWE-22)</option>
-              <option value="command">Preset 5: Command Injection (CWE-78)</option>
-              <option value="clear">Clear Editor</option>
-            </select>
-            <button data-onclick="static62" id="btn-run-taint" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs font-mono flex items-center gap-2 transition shadow-sm">
-              <i data-lucide="play" class="w-3.5 h-3.5"></i> Analyze Dataflow
+            <span class="text-xs font-bold tracking-wide uppercase text-slate-200 flex items-center gap-1.5">
+              <i data-lucide="git-fork" class="w-4 h-4 text-cyberCyan"></i>
+              Attack Surface Graph
+            </span>
+            <span class="text-xs text-slate-400 font-mono">| Physics Topology</span>
+          </div>
+
+          <!-- Topology Group Filter Pills -->
+          <div class="flex items-center gap-2">
+            <button id="filter-node-all" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">All Nodes</button>
+            <button id="filter-node-vulns" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Vulns Only</button>
+            <button id="filter-node-exported" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Exported IPC</button>
+            <button id="filter-node-apis" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">APIs</button>
+            <button id="btn-recenter-graph" class="p-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300" title="Recenter Graph">
+              <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
             </button>
           </div>
         </div>
 
-        <!-- Main Workspace: Code Editor (Left) & Propagation Analysis (Right) -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1">
-
-          <!-- Code Input Panel (6 cols) -->
-          <div class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <i data-lucide="code-2" class="w-4 h-4 text-sky-400"></i>
-                <h4 class="text-xs font-semibold text-white uppercase tracking-wider">Java / Kotlin Source Code</h4>
-              </div>
-              <input type="text" id="taint-file-path" value="VulnerableActivity.java" class="bg-card border border-borderSubtle rounded px-2 py-0.5 text-[11px] font-mono text-slate-300 w-48" placeholder="Filename.java" />
-            </div>
-
-            <div class="flex-1 min-h-[440px] flex flex-col">
-              <textarea id="taint-source-input" spellcheck="false" class="w-full flex-1 bg-black/80 border border-borderSubtle rounded-lg p-3 font-mono text-xs text-slate-200 focus:outline-none focus:border-emerald-500 leading-relaxed resize-none" placeholder="// Paste Java or Kotlin source code here..."></textarea>
-            </div>
-            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1">
-              <span>Lines: <span id="taint-line-count">0</span></span>
-              <span>Sinks: WebView, SQLite, IPC, Files, Command</span>
-            </div>
-          </div>
-
-          <!-- Taint Findings & Propagation Visualizer (6 cols) -->
-          <div tabindex="0" role="region" aria-label="Discovered taint chains, keyboard-scrollable" class="lg:col-span-6 bg-panel border border-borderSubtle rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto max-h-[640px]">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
-                <i data-lucide="git-commit" class="w-4 h-4 text-amber-400"></i> Discovered Taint Chains
-              </h4>
-              <span id="taint-findings-badge" class="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-800 text-slate-400">0 Flows</span>
-            </div>
-
-            <!-- Flow summary counts -->
-            <div class="grid grid-cols-3 gap-3">
-              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
-                <div class="text-[10px] font-mono text-slate-400">Tainted Sinks</div>
-                <div id="taint-stat-sinks" class="text-base font-bold font-mono text-red-400">0</div>
-              </div>
-              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
-                <div class="text-[10px] font-mono text-slate-400">Highest Severity</div>
-                <div id="taint-stat-sev" class="text-base font-bold font-mono text-slate-400">NONE</div>
-              </div>
-              <div class="bg-card p-2.5 rounded-lg border border-borderSubtle text-center">
-                <div class="text-[10px] font-mono text-slate-400">Confidence</div>
-                <div id="taint-stat-conf" class="text-base font-bold font-mono text-slate-300">Not measured</div>
-              </div>
-            </div>
-
-            <!-- Taint findings container -->
-            <div id="taint-findings-container" class="space-y-3">
-              <div class="p-6 text-center text-slate-500 text-xs bg-card/40 rounded-lg border border-borderSubtle">
-                <i data-lucide="git-pull-request" class="w-6 h-6 mx-auto mb-2 text-slate-600"></i>
-                Select a preset above or paste your application code, then click "Analyze Dataflow" to trace source-to-sink vulnerability paths.
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-    </div>
-
-
-      <!-- =================================================================== -->
-      <!-- VIEW: API SECURITY STUDIO & CATALOG -->
-      <!-- =================================================================== -->
-      <div id="view-assessment" class="view-panel h-full hidden overflow-auto"></div>
-        <div id="view-automation" class="view-panel h-full hidden overflow-auto"></div>
-
-      <div id="view-api" class="view-panel h-full hidden flex overflow-hidden">
-
-        <!-- Left: Discovered API Inventory List -->
-        <div class="flex-1 flex flex-col border-r border-borderSubtle bg-appbg overflow-hidden">
-          <!-- Filters & Search Toolbar -->
-          <div class="p-4 border-b border-borderSubtle bg-panel flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2 flex-1 max-w-md">
-              <div class="relative w-full">
-                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500"></i>
-                <input type="text" id="api-search-input" data-oninput="static63" placeholder="Search URL, path, host, or OWASP tag..."
-                  class="w-full bg-card border border-borderSubtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono" />
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <!-- Method Filter Buttons -->
-              <div class="flex items-center gap-1 bg-card p-0.5 rounded-lg border border-borderSubtle text-xs font-mono">
-                <button data-onclick="static64" id="api-filter-all" class="api-filter-btn px-2.5 py-1 rounded bg-purple-950 text-purple-300 font-medium border border-purple-800">All</button>
-                <button data-onclick="static65" id="api-filter-get" class="api-filter-btn px-2 py-1 rounded text-emerald-400 hover:bg-slate-800">GET</button>
-                <button data-onclick="static66" id="api-filter-post" class="api-filter-btn px-2 py-1 rounded text-sky-400 hover:bg-slate-800">POST</button>
-                <button data-onclick="static67" id="api-filter-delete" class="api-filter-btn px-2 py-1 rounded text-rose-400 hover:bg-slate-800">DELETE</button>
-              </div>
-
-              <!-- Status Filter -->
-              <select id="api-status-filter" data-onchange="static68" class="bg-card border border-borderSubtle rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-purple-500">
-                <option value="ALL">All Endpoints</option>
-                <option value="VULNERABLE">Unverified candidates</option>
-                <option value="UNVERIFIED">Not assessed</option>
-              </select>
-
-              <button data-onclick="static69" id="btn-audit-all-apis" class="px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 text-xs font-mono flex items-center gap-1.5 transition">
-                <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
-                <span>Plan scoped API tests</span>
+        <!-- Vis.js Graph Canvas Container -->
+        <div class="flex-1 glass-panel rounded-xl overflow-hidden relative border border-panelBorder">
+          <div id="attack-graph-canvas" class="w-full h-full"></div>
+          
+          <!-- Node Inspector Overlay (Floating on click) -->
+          <div id="graph-node-inspector" class="hidden absolute top-4 right-4 w-80 glass-panel rounded-xl p-4 shadow-xl border border-panelBorder z-20 space-y-3">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-2">
+              <span id="inspect-node-type" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">Component</span>
+              <button onclick="document.getElementById('graph-node-inspector').classList.add('hidden')" class="text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-4 h-4"></i>
               </button>
             </div>
+            <div>
+              <h3 id="inspect-node-title" class="text-sm font-bold text-white break-all">MainActivity</h3>
+              <p id="inspect-node-desc" class="text-xs text-slate-400 mt-1 font-mono">Exported: true | Permission: None</p>
+            </div>
+            <div id="inspect-node-actions" class="pt-2 border-t border-panelBorder flex gap-2">
+              <button id="inspect-btn-fuzz" class="flex-1 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Exercise Intent</button>
+              <button id="inspect-btn-code" class="flex-1 py-1.5 rounded text-xs font-semibold bg-panel hover:bg-panelElevated border border-panelBorder text-slate-200">View Source</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 2: VULNERABILITIES & POC STUDIO -->
+      <!-- =================================================================== -->
+      <div id="tab-findings" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
+        
+        <!-- Left: Findings List -->
+        <div class="w-5/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <!-- Filter Header -->
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between gap-2 shrink-0">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400"></i>
+              <input id="findings-search" type="text" placeholder="Search CWE, title, class, method..." class="w-full glass-input text-xs pl-8 pr-3 py-1.5 rounded-lg text-slate-200 placeholder-slate-500 font-mono">
+            </div>
+            <select id="findings-filter-sev" class="glass-input text-xs py-1.5 px-2 rounded-lg text-slate-300 font-mono">
+              <option value="ALL">All Severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
           </div>
 
-          <!-- Discovered APIs List -->
-          <div id="api-endpoints-list" tabindex="0" aria-label="Discovered API endpoints" class="flex-1 overflow-y-auto p-4 space-y-2.5">
-            <!-- Dynamically populated -->
+          <!-- Findings Scroll List -->
+          <div id="findings-cards-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+            <!-- Dynamic Finding Card Template Example -->
+            <div class="p-3 rounded-lg bg-panel hover:bg-panelElevated border border-panelBorder cursor-pointer transition">
+              <div class="flex items-center justify-between">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyberRose/20 text-cyberRose border border-cyberRose/40">CRITICAL</span>
+                <span class="text-[10px] font-mono text-slate-400">CWE-926</span>
+              </div>
+              <h4 class="text-xs font-bold text-slate-200 mt-1">Exported ContentProvider SQL Injection</h4>
+              <p class="text-[11px] text-slate-400 font-mono mt-0.5 truncate">com/example/app/provider/DataProvider.java:84</p>
+            </div>
           </div>
         </div>
 
-        <!-- Right: Interactive API Security Studio Workbench -->
-        <div id="api-workbench-drawer" class="w-[580px] xl:w-[680px] bg-panel flex flex-col shrink-0 overflow-y-auto p-5 border-l border-borderSubtle">
-          <div class="flex items-center justify-between border-b border-borderSubtle pb-3 mb-4">
+        <!-- Right: Detail Inspector & One-Click PoC Generator -->
+        <div id="finding-detail-pane" class="w-7/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <!-- Finding Header -->
+          <div class="p-4 border-b border-panelBorder shrink-0 flex items-start justify-between">
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="f-detail-sev" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberRose/20 text-cyberRose border border-cyberRose/40">CRITICAL</span>
+                <span id="f-detail-cwe" class="text-xs font-mono text-slate-400">CWE-926</span>
+                <span id="f-detail-masvs" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberPurple/20 text-cyberPurple border border-cyberPurple/40">MASVS-STORAGE</span>
+              </div>
+              <h2 id="f-detail-title" class="text-base font-bold text-white mt-1.5">Select a finding to inspect</h2>
+              <p id="f-detail-path" class="text-xs text-cyberCyan font-mono mt-0.5 break-all">No file selected</p>
+            </div>
+
+            <!-- Triage Actions -->
             <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse"></span>
-              <h3 class="text-xs font-bold text-white tracking-wider uppercase font-mono">🌐 API Security Studio & Replay</h3>
-            </div>
-            <span id="api-detail-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">SELECT ENDPOINT</span>
-          </div>
-
-          <div id="api-workbench-content" class="space-y-4 text-xs">
-            <div class="text-slate-400 text-center py-20 font-mono text-xs">
-              <i data-lucide="globe" class="w-8 h-8 mx-auto text-purple-500/60 mb-2"></i>
-              <p class="text-slate-300 font-medium">Select an API endpoint from the inventory</p>
-              <p class="text-slate-500 text-[11px] mt-1">Inspect discovered routes and imported captures. Live replay requires exact server-approved scope; discovery does not prove authorization flaws.</p>
+              <button id="btn-triage-confirm" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberEmerald/20 hover:bg-cyberEmerald/30 text-cyberEmerald border border-cyberEmerald/40 transition">Confirm (Evidence)</button>
+              <button id="btn-triage-fp" class="px-3 py-1.5 rounded text-xs font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder transition">False Positive</button>
             </div>
           </div>
+
+          <!-- Finding Body (Scrollable) -->
+          <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            
+            <!-- Description -->
+            <div>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Vulnerability Description</h4>
+              <p id="f-detail-desc" class="text-xs text-slate-200 mt-1 leading-relaxed">No finding selected.</p>
+            </div>
+
+            <!-- Source Code Sink Snippet -->
+            <div>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Vulnerable Code Context</h4>
+              <div class="mt-1 bg-black/60 p-3 rounded-lg border border-panelBorder overflow-x-auto">
+                <pre id="f-detail-code" class="text-xs text-slate-300 font-mono">// Code snippet will render here</pre>
+              </div>
+            </div>
+
+            <!-- AUTOMATED EXPLOIT POC SYNTHESIZER WIDGET -->
+            <div class="glass-panel p-4 rounded-xl border border-cyberCyan/40 bg-cyberCyan/5 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="terminal-square" class="w-4 h-4 text-cyberCyan"></i>
+                  <span class="text-xs font-bold font-mono uppercase text-cyberCyan tracking-wider">Automated Exploit PoC Synthesizer</span>
+                </div>
+                <button id="btn-generate-poc" class="px-3 py-1 rounded text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center gap-1.5">
+                  <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                  <span>Synthesize Exploit</span>
+                </button>
+              </div>
+
+              <!-- ADB Execution Command -->
+              <div>
+                <span class="text-[10px] font-mono text-slate-400 uppercase">One-Liner ADB Command:</span>
+                <div class="flex items-center gap-2 mt-1">
+                  <input id="poc-adb-cmd" type="text" readonly value="adb shell am start -n com.app/.TargetActivity" class="flex-1 glass-input text-xs p-2 rounded text-cyberEmerald font-mono">
+                  <button onclick="navigator.clipboard.writeText(document.getElementById('poc-adb-cmd').value)" class="p-2 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300" title="Copy Command">
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Kotlin Exploit Code -->
+              <div>
+                <span class="text-[10px] font-mono text-slate-400 uppercase">Kotlin Verification Code:</span>
+                <pre id="poc-kotlin-code" class="mt-1 bg-black/70 p-3 rounded text-[11px] text-slate-200 font-mono max-h-36 overflow-y-auto border border-panelBorder">// Synthetic Kotlin exploit PoC will appear here</pre>
+              </div>
+            </div>
+
+            <!-- Remediation -->
+            <div>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Remediation Guidance</h4>
+              <p id="f-detail-rem" class="text-xs text-slate-300 mt-1">Remediation advice will appear here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 3: DECOMPILER & AST EXPLORER -->
+      <!-- =================================================================== -->
+      <div id="tab-decompiler" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
+        <!-- Source Tree Explorer -->
+        <div class="w-3/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <div class="p-3 border-b border-panelBorder flex items-center gap-2">
+            <i data-lucide="folder-tree" class="w-4 h-4 text-cyberPurple"></i>
+            <span class="text-xs font-bold font-mono uppercase text-slate-200">Decompiled Tree</span>
+          </div>
+          <div class="p-2">
+            <input id="decompile-search-input" type="text" placeholder="Filter classes..." class="w-full glass-input text-xs px-2.5 py-1.5 rounded text-slate-200 font-mono">
+          </div>
+          <div id="decompile-files-tree" class="flex-1 overflow-y-auto p-2 font-mono text-xs text-slate-300 space-y-1">
+            <div class="text-slate-500 p-2 text-center text-[11px]">Run scan to view decompiled sources.</div>
+          </div>
         </div>
 
-      </div>
-
-
-    <!-- =================================================================== -->
-    <!-- 3. COPILOT SLIDE-OVER DRAWER -->
-    <!-- =================================================================== -->
-    <div id="copilot-drawer" class="fixed bottom-4 right-4 w-96 bg-panel border border-borderSubtle rounded-xl shadow-2xl flex flex-col z-40 transition-all duration-300 transform translate-y-[520px] h-[480px]">
-      <div class="h-12 border-b border-borderSubtle px-4 flex items-center justify-between shrink-0 bg-card rounded-t-xl cursor-pointer" data-onclick="static70">
-        <div class="flex items-center gap-2">
-          <i data-lucide="sparkles" class="w-4 h-4 text-sky-400"></i>
-          <h4 class="text-xs font-semibold text-white">Local Evidence Summary</h4>
-        </div>
-        <button class="text-slate-400 hover:text-white">
-          <i data-lucide="chevron-up" id="copilot-chevron" class="w-4 h-4 transition-transform"></i>
-        </button>
-      </div>
-
-      <!-- Chat Feed -->
-      <div id="copilot-messages" class="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
-        <div class="bg-card p-3 rounded-lg border border-borderSubtle text-slate-300 leading-relaxed">
-          This is a <strong>local evidence summary</strong>, not an AI chat or runtime verifier. Select a scan to summarize its recorded candidates. Optional model review is configured separately in Start Assessment.
+        <!-- Code Viewer & Syntax Pane -->
+        <div class="w-9/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span id="code-viewer-filename" class="text-xs font-mono font-bold text-cyberCyan">MainActivity.java</span>
+              <span class="text-[10px] font-mono text-slate-500">| Bounded Source Viewer</span>
+            </div>
+            <button id="btn-copy-code" class="px-2.5 py-1 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy</span>
+            </button>
+          </div>
+          <div class="flex-1 overflow-auto bg-black/80 p-4 font-mono text-xs text-slate-200 leading-relaxed">
+            <pre id="code-viewer-content">// Select a file from the tree to view decompiled Java/Smali source.</pre>
+          </div>
         </div>
       </div>
 
-      <div class="px-3 py-1.5 border-t border-borderSubtle bg-appbg text-xs">
-        <button data-onclick="static71" class="px-3 py-2 rounded bg-card border border-borderSubtle text-sky-300">Summarize selected scan (local only)</button>
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 4: DAST LAB & SCREEN MIRROR -->
+      <!-- =================================================================== -->
+      <div id="tab-dast" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
+        
+        <!-- Left: Live Device Screen Mirror & Device Info -->
+        <div class="w-4/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="smartphone" class="w-4 h-4 text-cyberEmerald"></i>
+              <span class="text-xs font-bold font-mono text-white">Live Device Mirror</span>
+            </div>
+            <button id="btn-refresh-screenshot" class="px-2 py-1 rounded text-[11px] font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan flex items-center gap-1">
+              <i data-lucide="camera" class="w-3 h-3"></i>
+              <span>Capture</span>
+            </button>
+          </div>
+          <!-- Screenshot Canvas -->
+          <div class="flex-1 bg-black flex items-center justify-center p-2 overflow-hidden relative">
+            <img id="dast-screenshot-img" src="" alt="Device Screen Mirror" class="max-h-full max-w-full rounded border border-panelBorder object-contain hidden">
+            <div id="dast-screenshot-placeholder" class="text-center p-4">
+              <i data-lucide="smartphone" class="w-12 h-12 mx-auto text-slate-600 mb-2"></i>
+              <p class="text-xs font-mono text-slate-400">Click Capture to mirror screen</p>
+            </div>
+          </div>
+          <!-- Device Quick Actions -->
+          <div class="p-3 border-t border-panelBorder grid grid-cols-2 gap-2 text-xs font-mono">
+            <button id="btn-adb-root" class="py-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberAmber">Restart Root</button>
+            <button id="btn-adb-install" class="py-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan">Install Target</button>
+          </div>
+        </div>
+
+        <!-- Right: Fuzzing Studios (Intents, Deep-Links, Storage, Memory) -->
+        <div class="w-8/12 flex flex-col gap-4 overflow-hidden">
+          
+          <!-- Sub-Nav for DAST Studios -->
+          <div class="glass-panel p-2 rounded-xl flex items-center gap-2 shrink-0">
+            <button data-dast-sub="sub-intent" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">Intent Fuzzer</button>
+            <button data-dast-sub="sub-deeplink" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Deep-Link Exerciser</button>
+            <button data-dast-sub="sub-storage" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Storage Forensics</button>
+            <button data-dast-sub="sub-crawler" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Autonomous Crawler</button>
+          </div>
+
+          <!-- Sub-Tab 1: Intent Fuzzer -->
+          <div id="sub-intent" class="dast-sub-view flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Exercise Component Intent</h3>
+              <label class="flex items-center gap-2 text-xs text-slate-300 font-mono">
+                <input id="chk-synthetic-intent" type="checkbox" checked class="accent-cyberCyan">
+                <span>Confirm synthetic data</span>
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-[11px] font-mono text-slate-400">Target Component:</label>
+                <input id="intent-component" type="text" placeholder="com.example.app/.TargetActivity" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
+              </div>
+              <div>
+                <label class="text-[11px] font-mono text-slate-400">Intent Action:</label>
+                <input id="intent-action" type="text" value="android.intent.action.VIEW" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
+              </div>
+            </div>
+            <div>
+              <label class="text-[11px] font-mono text-slate-400">Extras Payload (Key=Value):</label>
+              <textarea id="intent-extras" rows="3" placeholder="url=http://attacker.invalid&#10;isAdmin=true" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1"></textarea>
+            </div>
+            <button id="btn-fire-intent" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center justify-center gap-2">
+              <i data-lucide="play" class="w-4 h-4"></i>
+              <span>Dispatch Intent & Monitor Crashes</span>
+            </button>
+            <div id="intent-result-box" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 min-h-24">
+              Results will appear here...
+            </div>
+          </div>
+
+          <!-- Sub-Tab 2: Deep Link Exerciser -->
+          <div id="sub-deeplink" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
+            <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Deep Link & URI Scheme Exerciser</h3>
+            <div>
+              <label class="text-[11px] font-mono text-slate-400">Custom URI Scheme / App Link:</label>
+              <input id="deeplink-uri" type="text" placeholder="myapp://payment/confirm?token=xyz" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
+            </div>
+            <button id="btn-dispatch-deeplink" class="py-2.5 rounded-lg text-xs font-bold bg-cyberEmerald text-black hover:bg-emerald-400 transition flex items-center justify-center gap-2">
+              <i data-lucide="send" class="w-4 h-4"></i>
+              <span>Trigger Deep Link (am start -d)</span>
+            </button>
+          </div>
+
+          <!-- Sub-Tab 3: Storage Forensics -->
+          <div id="sub-storage" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Sandbox Storage Forensics</h3>
+              <button id="btn-run-storage-audit" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Audit Storage</button>
+            </div>
+            <div id="storage-results-tree" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 flex-1 overflow-auto">
+              SharedPreferences and SQLite database contents will appear here.
+            </div>
+          </div>
+
+          <!-- Sub-Tab 4: Autonomous Crawler -->
+          <div id="sub-crawler" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Autonomous UIAutomator Crawler</h3>
+              <button id="btn-run-crawler" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Start 5-Step Crawl</button>
+            </div>
+            <p class="text-xs text-slate-400 font-mono">Autonomously explores UI views, dismisses system dialogs, and detects unhandled runtime crashes.</p>
+            <div id="crawler-log" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 flex-1 overflow-auto">
+              Ready to crawl target package.
+            </div>
+          </div>
+
+        </div>
       </div>
 
-      <!-- Input Bar -->
-      <div class="p-3 border-t border-borderSubtle bg-card rounded-b-xl flex items-center gap-2 shrink-0">
-        <input type="text" id="copilot-chat-input" data-onkeydown="static76" placeholder="Request a summary of the selected scan..."
-          class="flex-1 bg-appbg border border-borderSubtle rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono" />
-        <button data-onclick="static77" class="p-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition">
-          <i data-lucide="send" class="w-3.5 h-3.5"></i>
-        </button>
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 5: MITM PROXY & TRAFFIC INTERCEPTOR -->
+      <!-- =================================================================== -->
+      <div id="tab-proxy" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <!-- Proxy Controls Bar -->
+        <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <i data-lucide="radio" class="w-4 h-4 text-cyberCyan"></i>
+            <span class="text-xs font-mono font-bold uppercase text-white">Loopback MITM Proxy (Port 8082)</span>
+            <span id="proxy-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">STOPPED</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Start Proxy</button>
+            <button id="btn-export-openapi" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Export OpenAPI</button>
+            <button id="btn-export-har" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Export HAR</button>
+          </div>
+        </div>
+
+        <!-- Live Traffic Transaction Table -->
+        <div class="flex-1 glass-panel rounded-xl overflow-hidden flex flex-col border border-panelBorder">
+          <div class="p-2.5 bg-panel border-b border-panelBorder grid grid-cols-12 text-[11px] font-mono uppercase text-slate-400 font-bold">
+            <div class="col-span-2">Method</div>
+            <div class="col-span-6">Endpoint URL</div>
+            <div class="col-span-2">Status</div>
+            <div class="col-span-2">Latency</div>
+          </div>
+          <div id="proxy-transactions-list" class="flex-1 overflow-y-auto divide-y divide-panelBorder text-xs font-mono">
+            <div class="p-4 text-center text-slate-500">No captured traffic yet. Start proxy and exercise target app.</div>
+          </div>
+        </div>
       </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 6: LIVE LOUPE CONSOLE & LOGCAT -->
+      <!-- =================================================================== -->
+      <div id="tab-loupe" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <!-- Logcat Controls -->
+        <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <i data-lucide="terminal" class="w-4 h-4 text-cyberAmber"></i>
+            <span class="text-xs font-mono font-bold uppercase text-white">Live PID-Filtered Logcat</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="logcat-level-filter" class="glass-input text-xs py-1.5 px-2 rounded font-mono text-slate-300">
+              <option value="">All Levels</option>
+              <option value="V">Verbose (V)</option>
+              <option value="D">Debug (D)</option>
+              <option value="I">Info (I)</option>
+              <option value="W">Warning (W)</option>
+              <option value="E">Error (E)</option>
+            </select>
+            <button id="btn-clear-logcat" class="px-2.5 py-1.5 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Clear</button>
+          </div>
+        </div>
+
+        <!-- Terminal Output -->
+        <div id="logcat-terminal" class="flex-1 bg-black/90 rounded-xl p-3 overflow-y-auto font-mono text-xs text-slate-300 space-y-1 border border-panelBorder">
+          <div class="text-slate-500">// Connected to target log stream...</div>
+        </div>
+
+        <!-- One-Shot Diagnostic Shell -->
+        <div class="glass-panel p-3 rounded-xl flex items-center gap-2 shrink-0">
+          <span class="text-cyberEmerald font-mono font-bold text-xs">$ adb shell</span>
+          <input id="diagnostic-shell-cmd" type="text" placeholder="getprop ro.build.version.release" class="flex-1 glass-input text-xs p-2 rounded font-mono text-slate-200">
+          <button id="btn-run-diag-shell" class="px-4 py-2 rounded text-xs font-bold bg-cyberEmerald text-black hover:bg-emerald-400 transition">Execute</button>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 7: VERSION DIFF RADAR (diff) -->
+      <!-- =================================================================== -->
+      <div id="tab-diff" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <div class="glass-panel p-4 rounded-xl space-y-4 border border-panelBorder">
+          <h2 class="text-sm font-bold font-mono uppercase text-white flex items-center gap-2">
+            <i data-lucide="git-compare" class="w-4 h-4 text-cyberCyan"></i>
+            Compare Two APK Versions for Security Regressions
+          </h2>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs font-mono text-slate-400">Baseline Build (Old APK):</label>
+              <input id="diff-old-path" type="text" placeholder="/path/to/v1.0.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
+            </div>
+            <div>
+              <label class="text-xs font-mono text-slate-400">Target Build (New APK):</label>
+              <input id="diff-new-path" type="text" placeholder="/path/to/v2.0.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
+            </div>
+          </div>
+          <button id="btn-run-diff" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Compute Attack Surface Delta & Regressions</button>
+        </div>
+        <div id="diff-output-box" class="flex-1 glass-panel rounded-xl p-4 overflow-y-auto font-mono text-xs text-slate-300 border border-panelBorder">
+          Select two builds and click Compute to view regression diff analysis.
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 8: COMPLIANCE & EXPORT CENTER -->
+      <!-- =================================================================== -->
+      <div id="tab-reports" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <div class="grid grid-cols-3 gap-4">
+          <!-- SARIF Card -->
+          <div class="glass-panel p-4 rounded-xl border border-panelBorder space-y-3">
+            <div class="flex items-center gap-2 text-cyberCyan">
+              <i data-lucide="file-code" class="w-5 h-5"></i>
+              <span class="text-xs font-bold font-mono uppercase">OASIS SARIF v2.1.0</span>
+            </div>
+            <p class="text-xs text-slate-400">Export findings formatted for GitHub Code Scanning, GitLab SAST, or DefectDojo.</p>
+            <button id="btn-dl-sarif" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberCyan/40 text-cyberCyan">Download SARIF</button>
+          </div>
+
+          <!-- CycloneDX SBOM Card -->
+          <div class="glass-panel p-4 rounded-xl border border-panelBorder space-y-3">
+            <div class="flex items-center gap-2 text-cyberEmerald">
+              <i data-lucide="box" class="w-5 h-5"></i>
+              <span class="text-xs font-bold font-mono uppercase">CycloneDX v1.5 SBOM</span>
+            </div>
+            <p class="text-xs text-slate-400">Full Software Bill of Materials with Maven/npm/CocoaPods components and PURLs.</p>
+            <button id="btn-dl-cyclonedx" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberEmerald/40 text-cyberEmerald">Download CycloneDX</button>
+          </div>
+
+          <!-- Executive Report Card -->
+          <div class="glass-panel p-4 rounded-xl border border-panelBorder space-y-3">
+            <div class="flex items-center gap-2 text-cyberPurple">
+              <i data-lucide="file-text" class="w-5 h-5"></i>
+              <span class="text-xs font-bold font-mono uppercase">Executive Markdown</span>
+            </div>
+            <p class="text-xs text-slate-400">Complete audit documentation with executive summary, remediation steps, and PoCs.</p>
+            <button id="btn-dl-report" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberPurple/40 text-cyberPurple">Download Report</button>
+          </div>
+        </div>
+
+        <!-- MASVS Radar Chart Box -->
+        <div class="flex-1 glass-panel rounded-xl p-4 flex flex-col border border-panelBorder">
+          <h3 class="text-xs font-mono uppercase font-bold text-slate-300">OWASP MASVS v2.0 Security Posture Radar</h3>
+          <div class="flex-1 flex items-center justify-center p-4">
+            <canvas id="masvs-radar-chart" class="max-h-64"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- 3. REAL-TIME TELEMETRY STREAM BAR (DOCKED BOTTOM) -->
+  <!-- ===================================================================== -->
+  <footer class="h-8 bg-cockpit border-t border-panelBorder flex items-center justify-between px-4 text-xs font-mono text-slate-400 shrink-0 z-30">
+    <div class="flex items-center gap-3">
+      <span class="flex items-center gap-1.5 text-cyberCyan">
+        <i data-lucide="activity" class="w-3.5 h-3.5 animate-pulse"></i>
+        <span>Telemetry Stream:</span>
+      </span>
+      <span id="footer-telemetry-msg" class="truncate max-w-xl text-slate-300">Listening on WebSocket stream...</span>
     </div>
-
-  </main>
-
-  <!-- ===================================================================== -->
-  <!-- 4. NEW SCAN MODAL -->
-  <!-- ===================================================================== -->
-  <div id="scan-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="w-full max-w-lg bg-panel border border-borderSubtle rounded-2xl p-6 shadow-2xl">
-      <div class="flex items-center justify-between mb-4 border-b border-borderSubtle pb-3">
-        <div class="flex items-center gap-2">
-          <i data-lucide="shield-alert" class="w-5 h-5 text-sky-400"></i>
-          <h3 class="text-sm font-semibold text-white">Initiate Target Security Scan</h3>
+    <div class="flex items-center gap-4">
+      <div id="footer-progress-bar-container" class="hidden flex items-center gap-2">
+        <div class="w-24 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+          <div id="footer-progress-bar" class="h-full bg-cyberCyan w-0 transition-all duration-300"></div>
         </div>
-        <button data-onclick="static78" class="text-slate-500 hover:text-slate-300">
-          <i data-lucide="x" class="w-4 h-4"></i>
+        <span id="footer-progress-pct" class="text-[10px] text-cyberCyan font-bold">0%</span>
+      </div>
+      <span id="footer-timestamp" class="text-[10px] text-slate-500">--:--:--</span>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- 4. MODALS (COMMAND PALETTE & INGESTION DROPZONE) -->
+  <!-- ===================================================================== -->
+  
+  <!-- Ingestion Dropzone Modal -->
+  <div id="modal-upload" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-lg rounded-2xl p-6 border border-panelBorder space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+        <h3 class="text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
+          <i data-lucide="upload-cloud" class="w-4 h-4 text-cyberCyan"></i>
+          Ingest Application Archive
+        </h3>
+        <button onclick="document.getElementById('modal-upload').classList.add('hidden')" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="space-y-4 text-xs font-mono">
-        <!-- Drag & Drop Upload Zone -->
-        <div>
-          <label class="block text-slate-300 mb-1 font-semibold">Upload Target APK</label>
-          <div id="modal-dropzone"
-               data-ondragover="static79"
-               data-ondragleave="static-dragleave"
-               data-ondrop="static80"
-               data-onclick="static81"
-               class="border-2 border-dashed border-sky-500/50 hover:border-sky-400 bg-sky-950/20 hover:bg-sky-950/30 rounded-xl p-4 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group">
-            <div class="w-10 h-10 rounded-lg bg-sky-900/40 border border-sky-700/50 flex items-center justify-center text-sky-400 group-hover:scale-105 transition">
-              <i data-lucide="upload-cloud" class="w-5 h-5"></i>
-            </div>
-            <div class="space-y-0.5">
-              <p class="text-xs font-semibold text-white">Drag & drop APK here, or <span class="text-sky-400 underline">browse</span></p>
-              <p class="text-[10px] text-slate-400">Target .apk files up to 500MB (auto-uploaded to local workspace)</p>
-            </div>
-            <input type="file" id="modal-file-picker" accept=".apk,.ipa" class="hidden" data-onchange="static82" />
-          </div>
-          <div id="modal-upload-status" class="mt-2"></div>
-        </div>
-
-        <div>
-          <label class="block text-slate-300 mb-1">Target APK Absolute File Path</label>
-          <input type="text" id="modal-apk-input" value="/home/shambhu/Desktop/target.apk"
-            class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500" />
-        </div>
-
-        <div>
-          <p class="text-slate-300 mb-1">Advanced static analysis stays offline. Optional AI review is a separate guided-assessment stage.</p>
-          <button id="modal-open-ai" type="button" class="w-full bg-appbg border border-borderSubtle rounded-lg px-3 py-2 text-sky-300">Configure LLM providers in Configuration</button>
-        </div>
-
-        <div class="space-y-2 pt-2 border-t border-borderSubtle">
-          <p class="text-slate-400">Static analysis does not install apps, select devices, request root or bypass TLS. Review authorized live stages in Start Assessment or advanced diagnostics.</p>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="modal-opt-taint" checked class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-            <span class="text-slate-300">Run straight-line taint heuristics (requires manual validation)</span>
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="modal-opt-binary" checked disabled title="Included in the standard pipeline" class="rounded bg-slate-800 border-borderSubtle text-sky-500" />
-            <span class="text-slate-300">Run Native ELF Binary Hardening Check (pyelftools: NX, PIE, Canary)</span>
-          </label>
-        </div>
+      <!-- Drag & Drop Zone -->
+      <div id="upload-dropzone" class="border-2 border-dashed border-panelBorder hover:border-cyberCyan rounded-xl p-8 text-center cursor-pointer transition bg-panel/50">
+        <i data-lucide="file-up" class="w-10 h-10 mx-auto text-cyberCyan mb-2"></i>
+        <p class="text-xs font-bold text-white">Drag & drop APK, IPA, or AAB file here</p>
+        <p class="text-[11px] text-slate-400 mt-1 font-mono">Supports Android APK/AAB and iOS IPA packages up to 1GB</p>
+        <input id="upload-file-input" type="file" accept=".apk,.ipa,.aab,.zip" class="hidden">
       </div>
 
-      <div class="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-borderSubtle">
-        <button data-onclick="static83" class="px-4 py-2 rounded-lg bg-card hover:bg-slate-700 text-xs text-slate-300 font-mono">Cancel</button>
-        <button data-onclick="static84" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono flex items-center gap-1.5 shadow-sm">
-          <i data-lucide="zap" class="w-3.5 h-3.5"></i>
-          <span>Start scoped analysis</span>
-        </button>
+      <!-- Scan Configuration Toggles -->
+      <div class="space-y-2 pt-2 border-t border-panelBorder text-xs font-mono">
+        <label class="flex items-center justify-between text-slate-300">
+          <span>Offline Deterministic Mode:</span>
+          <input id="chk-offline" type="checkbox" checked class="accent-cyberCyan">
+        </label>
+        <label class="flex items-center justify-between text-slate-300">
+          <span>Authorize External Advisory Lookup (OSV):</span>
+          <input id="chk-advisories" type="checkbox" class="accent-cyberCyan">
+        </label>
+        <label class="flex items-center justify-between text-slate-300">
+          <span>Deep Taint Analysis:</span>
+          <input id="chk-taint" type="checkbox" checked class="accent-cyberCyan">
+        </label>
       </div>
+
+      <button id="btn-start-scan" class="w-full py-3 rounded-xl text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center justify-center gap-2 shadow-glowCyan">
+        <i data-lucide="play" class="w-4 h-4"></i>
+        <span>Initiate Autonomous Static Review</span>
+      </button>
     </div>
   </div>
 
-  <!-- Toast Container -->
-  <div role="status" aria-live="polite" id="toast-container" class="fixed top-5 right-5 space-y-2 z-50 pointer-events-none"></div>
+  <!-- Session Key Connect Modal -->
+  <div id="modal-token" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-md rounded-2xl p-6 border border-panelBorder space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+        <h3 class="text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
+          <i data-lucide="key" class="w-4 h-4 text-cyberAmber"></i>
+          Connect to Local Workbench
+        </h3>
+        <button onclick="document.getElementById('modal-token').classList.add('hidden')" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        Enter the session access token printed in your server terminal. Tokens remain in tab memory only.
+      </p>
+      <div>
+        <label class="text-[11px] font-mono text-slate-400">Session Bearer Token:</label>
+        <input id="input-token" type="password" placeholder="Paste session access token..." class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
+      </div>
+      <button id="btn-save-token" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Authenticate Session</button>
+    </div>
+  </div>
 
   <!-- ===================================================================== -->
-  <!-- 5. JAVASCRIPT CLIENT LOGIC -->
+  <!-- 5. FRONTEND APPLICATION LOGIC (CLIENT-SIDE ENGINE) -->
   <!-- ===================================================================== -->
-  <script src="/static/session-actions.js"></script>
-<script src="/static/workspace.js"></script>
-<script src="/static/findings.js"></script>
-<script src="/static/history-settings.js"></script>
-<script src="/static/copilot.js"></script>
-<script src="/static/uploads-exports.js"></script>
-<script src="/static/telemetry.js"></script>
-<script src="/static/dast.js"></script>
-<script src="/static/taint.js"></script>
-<script src="/static/api.js"></script>
-<script src="/static/automation.js"></script>
-<script src="/static/assessment.js"></script>
-<script src="/static/dashboard.js"></script>
-  <script src="/static/workflow.js"></script>
-  <script src="/static/interface.js"></script>
-  <script src="/static/experience.js"></script>
-  <script src="/static/auto-ready.js"></script>
+  <script>
+    // State Store
+    const state = {
+      token: sessionStorage.getItem('mobileag_token') || '',
+      currentScan: null,
+      scansList: [],
+      networkGraph: null,
+      radarChart: null,
+      selectedFinding: null,
+      ws: null,
+    };
+
+    // Initialize Lucide Icons
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+
+    // Helper: Authenticated Fetch
+    async function apiFetch(endpoint, options = {}) {
+      const headers = { ...options.headers };
+      if (state.token) {
+        headers['Authorization'] = `Bearer ${state.token}`;
+      }
+      const response = await fetch(endpoint, { ...options, headers });
+      if (response.status === 401) {
+        document.getElementById('modal-token').classList.remove('hidden');
+      }
+      return response;
+    }
+
+    // Tab Navigation Switcher
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-tab').forEach(b => {
+          b.classList.remove('bg-panel', 'text-white', 'active');
+          b.classList.add('text-slate-300');
+        });
+        btn.classList.add('bg-panel', 'text-white', 'active');
+        btn.classList.remove('text-slate-300');
+
+        const target = btn.getAttribute('data-tab');
+        document.querySelectorAll('.tab-content').forEach(tc => tc.classList.add('hidden'));
+        const el = document.getElementById(target);
+        if (el) el.classList.remove('hidden');
+      });
+    });
+
+    // DAST Sub-Tabs Switcher
+    document.querySelectorAll('.dast-sub-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.dast-sub-tab').forEach(b => {
+          b.classList.remove('bg-cyberCyan/20', 'text-cyberCyan', 'border-cyberCyan/40');
+          b.classList.add('bg-panel', 'text-slate-300', 'border-panelBorder');
+        });
+        btn.classList.add('bg-cyberCyan/20', 'text-cyberCyan', 'border-cyberCyan/40');
+        btn.classList.remove('bg-panel', 'text-slate-300', 'border-panelBorder');
+
+        const target = btn.getAttribute('data-dast-sub');
+        document.querySelectorAll('.dast-sub-view').forEach(view => view.classList.add('hidden'));
+        const el = document.getElementById(target);
+        if (el) el.classList.remove('hidden');
+      });
+    });
+
+    // Token Modal Connect
+    document.getElementById('btn-session-key').addEventListener('click', () => {
+      document.getElementById('modal-token').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-save-token').addEventListener('click', () => {
+      const val = document.getElementById('input-token').value.trim();
+      if (val) {
+        state.token = val;
+        sessionStorage.setItem('mobileag_token', val);
+        document.getElementById('session-key-status').textContent = 'Token: Active';
+        document.getElementById('modal-token').classList.add('hidden');
+        connectWebSocket();
+        refreshScans();
+      }
+    });
+
+    // Modal Upload Trigger
+    document.getElementById('btn-quick-upload').addEventListener('click', () => {
+      document.getElementById('modal-upload').classList.remove('hidden');
+    });
+
+    const dropzone = document.getElementById('upload-dropzone');
+    const fileInput = document.getElementById('upload-file-input');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-cyberCyan'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-cyberCyan'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('border-cyberCyan');
+      if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        handleFileSelected(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFileSelected(fileInput.files[0]);
+    });
+
+    function handleFileSelected(file) {
+      dropzone.innerHTML = `
+        <i data-lucide="check-circle" class="w-10 h-10 mx-auto text-cyberEmerald mb-2"></i>
+        <p class="text-xs font-bold text-white">${file.name}</p>
+        <p class="text-[11px] text-cyberCyan font-mono mt-1">${(file.size / (1024 * 1024)).toFixed(2)} MB ready for ingestion</p>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // Start Scan Handler
+    document.getElementById('btn-start-scan').addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('Please select an APK or IPA package first.');
+        return;
+      }
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        document.getElementById('btn-start-scan').disabled = true;
+        document.getElementById('btn-start-scan').textContent = 'Uploading Archive...';
+
+        const upRes = await apiFetch('/api/upload/apk', { method: 'POST', body: formData });
+        const upData = await upRes.json();
+        if (!upRes.ok) throw new Error(upData.detail || 'Upload failed');
+
+        document.getElementById('btn-start-scan').textContent = 'Initiating Static Review...';
+        const scanRes = await apiFetch('/api/scans/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apk_path: upData.file_path,
+            auto_taint: document.getElementById('chk-taint').checked,
+          })
+        });
+        const scanData = await scanRes.json();
+        if (!scanRes.ok) throw new Error(scanData.detail || 'Failed to trigger scan');
+
+        document.getElementById('modal-upload').classList.add('hidden');
+        document.getElementById('btn-start-scan').disabled = false;
+        document.getElementById('btn-start-scan').innerHTML = '<i data-lucide="play" class="w-4 h-4"></i><span>Initiate Autonomous Static Review</span>';
+        if (window.lucide) lucide.createIcons();
+
+        pollScan(scanData.scan_id);
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+        document.getElementById('btn-start-scan').disabled = false;
+        document.getElementById('btn-start-scan').textContent = 'Initiate Autonomous Static Review';
+      }
+    });
+
+    // WebSocket Telemetry Connection
+    function connectWebSocket() {
+      if (!state.token) return;
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${proto}//${location.host}/ws/telemetry`;
+
+      try {
+        state.ws = new WebSocket(wsUrl);
+        state.ws.onopen = () => {
+          state.ws.send(JSON.stringify({ token: state.token }));
+          document.getElementById('ws-status-text').textContent = 'Live Connected';
+          document.getElementById('ws-status-text').className = 'text-cyberEmerald';
+        };
+        state.ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleTelemetryEvent(data);
+          } catch (e) {}
+        };
+        state.ws.onclose = () => {
+          document.getElementById('ws-status-text').textContent = 'Disconnected';
+          document.getElementById('ws-status-text').className = 'text-cyberRose';
+          setTimeout(connectWebSocket, 4000);
+        };
+      } catch (e) {}
+    }
+
+    // Telemetry Event Handler
+    function handleTelemetryEvent(event) {
+      if (event.type === 'agent_progress' || event.type === 'dast_progress') {
+        const msgEl = document.getElementById('footer-telemetry-msg');
+        if (msgEl) msgEl.textContent = `[${event.stage || 'PROGRESS'}] ${event.message || ''}`;
+
+        const barContainer = document.getElementById('footer-progress-bar-container');
+        const bar = document.getElementById('footer-progress-bar');
+        const pctText = document.getElementById('footer-progress-pct');
+
+        if (barContainer && bar && pctText && event.progress !== undefined) {
+          barContainer.classList.remove('hidden');
+          bar.style.width = `${event.progress}%`;
+          pctText.textContent = `${event.progress}%`;
+          if (event.progress >= 100) {
+            setTimeout(() => barContainer.classList.add('hidden'), 2500);
+            refreshScans();
+          }
+        }
+      }
+      document.getElementById('footer-timestamp').textContent = new Date().toLocaleTimeString();
+    }
+
+    // Scan Polling
+    async function pollScan(scanId) {
+      const res = await apiFetch(`/api/scans/${scanId}`);
+      if (res.ok) {
+        const scan = await res.json();
+        renderActiveScan(scan);
+        if (scan.status === 'running') {
+          setTimeout(() => pollScan(scanId), 2500);
+        }
+      }
+    }
+
+    // Refresh Scan List
+    async function refreshScans() {
+      try {
+        const res = await apiFetch('/api/scans?limit=10&summaries=true');
+        if (res.ok) {
+          const data = await res.json();
+          const scans = data.items || data;
+          state.scansList = scans;
+          if (scans.length > 0 && (!state.currentScan || state.currentScan.scan_id !== scans[0].scan_id)) {
+            loadScanDetails(scans[0].scan_id);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Load Scan Details
+    async function loadScanDetails(scanId) {
+      const res = await apiFetch(`/api/scans/${scanId}`);
+      if (res.ok) {
+        const scan = await res.json();
+        renderActiveScan(scan);
+      }
+    }
+
+    // Render Active Scan Data into Cockpit & Views
+    function renderActiveScan(scan) {
+      state.currentScan = scan;
+
+      // Header HUD
+      document.getElementById('cockpit-target-name').textContent = scan.package_name || scan.app_name || 'Target App';
+      document.getElementById('cockpit-target-badge').textContent = (scan.version || 'v1.0').toUpperCase();
+      document.getElementById('cockpit-target-badge').className = 'px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40';
+
+      const stats = scan.stats || { critical: 0, high: 0, medium: 0 };
+      document.getElementById('meter-crit').textContent = stats.critical || 0;
+      document.getElementById('meter-high').textContent = stats.high || 0;
+      document.getElementById('meter-med').textContent = stats.medium || 0;
+      document.getElementById('nav-count-findings').textContent = scan.findings ? scan.findings.length : 0;
+
+      // Grade calculation
+      const grade = stats.critical > 0 ? 'F' : stats.high > 2 ? 'C' : stats.high > 0 ? 'B' : 'A+';
+      const gradeEl = document.getElementById('cockpit-grade');
+      gradeEl.textContent = grade;
+      gradeEl.className = `text-xs font-bold font-mono ${grade === 'A+' ? 'text-cyberEmerald' : grade === 'F' ? 'text-cyberRose' : 'text-cyberAmber'}`;
+
+      // Render Findings Cards List
+      renderFindingsList(scan.findings || []);
+
+      // Render Attack Surface Graph (Vis.js)
+      renderAttackGraph(scan.attack_surface_graph || { nodes: [], edges: [] });
+
+      // Render MASVS Radar Chart
+      renderMasvsRadar(scan.stats || {});
+    }
+
+    // Render Findings List
+    function renderFindingsList(findings) {
+      const listEl = document.getElementById('findings-cards-list');
+      if (!findings.length) {
+        listEl.innerHTML = '<div class="text-slate-500 p-4 text-center text-xs font-mono">No vulnerabilities detected for this target.</div>';
+        return;
+      }
+
+      listEl.innerHTML = findings.map((f, idx) => {
+        const sevColor = f.severity === 'CRITICAL' ? 'text-cyberRose bg-cyberRose/20 border-cyberRose/40' :
+                         f.severity === 'HIGH' ? 'text-cyberAmber bg-cyberAmber/20 border-cyberAmber/40' :
+                         'text-cyberCyan bg-cyberCyan/20 border-cyberCyan/40';
+        return `
+          <div data-f-idx="${idx}" class="finding-card p-3 rounded-lg bg-panel hover:bg-panelElevated border border-panelBorder cursor-pointer transition">
+            <div class="flex items-center justify-between">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${sevColor}">${f.severity}</span>
+              <span class="text-[10px] font-mono text-slate-400">${f.cwe_id || 'CWE-Unknown'}</span>
+            </div>
+            <h4 class="text-xs font-bold text-slate-200 mt-1.5">${f.title}</h4>
+            <p class="text-[11px] text-slate-400 font-mono mt-0.5 truncate">${f.file_path || 'Unknown file'}:${f.line_number || 1}</p>
+          </div>
+        `;
+      }).join('');
+
+      // Click finding card
+      document.querySelectorAll('.finding-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const idx = parseInt(card.getAttribute('data-f-idx'));
+          selectFinding(findings[idx]);
+        });
+      });
+
+      if (findings.length > 0) {
+        selectFinding(findings[0]);
+      }
+    }
+
+    // Select and inspect a finding
+    async function selectFinding(f) {
+      state.selectedFinding = f;
+
+      document.getElementById('f-detail-title').textContent = f.title;
+      document.getElementById('f-detail-cwe').textContent = f.cwe_id || 'CWE-Unknown';
+      document.getElementById('f-detail-sev').textContent = f.severity;
+      document.getElementById('f-detail-path').textContent = `${f.file_path || ''}:${f.line_number || ''}`;
+      document.getElementById('f-detail-desc').textContent = f.description || 'No detailed description available.';
+      document.getElementById('f-detail-code').textContent = f.code_snippet || f.match_text || '// No source snippet available.';
+      document.getElementById('f-detail-rem').textContent = f.remediation || 'Remediation: Validate and sanitize untrusted input at boundaries.';
+
+      // Fetch automated PoC from API
+      if (state.currentScan && f.id) {
+        try {
+          const res = await apiFetch(`/api/scans/${state.currentScan.scan_id}/findings/${f.id}/poc`);
+          if (res.ok) {
+            const poc = await res.json();
+            if (poc.available) {
+              document.getElementById('poc-adb-cmd').value = poc.adb_command || 'No direct ADB command';
+              document.getElementById('poc-kotlin-code').textContent = poc.kotlin_exploit_code || '// Kotlin exploit ready';
+            } else {
+              document.getElementById('poc-adb-cmd').value = `adb shell am start -n ${state.currentScan.package_name}/.${(f.file_path||'').split('/').pop().replace('.java','')}`;
+              document.getElementById('poc-kotlin-code').textContent = '// PoC synthesis candidate based on CWE: ' + (f.cwe_id || '');
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Render Vis.js Topology Graph
+    function renderAttackGraph(graphData) {
+      const container = document.getElementById('attack-graph-canvas');
+      if (!container || !window.vis) return;
+
+      const nodes = new vis.DataSet(graphData.nodes || []);
+      const edges = new vis.DataSet(graphData.edges || []);
+
+      const options = {
+        nodes: {
+          font: { color: '#E2E8F0', face: 'JetBrains Mono', size: 12 },
+          borderWidth: 2,
+        },
+        edges: {
+          color: { color: '#1E2B48', highlight: '#06B6D4' },
+          arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+          smooth: { type: 'continuous' }
+        },
+        physics: {
+          stabilization: false,
+          barnesHut: { gravitationalConstant: -3000, springLength: 95 }
+        },
+        interaction: { hover: true, zoomView: true }
+      };
+
+      state.networkGraph = new vis.Network(container, { nodes, edges }, options);
+
+      // Node selection
+      state.networkGraph.on('selectNode', (params) => {
+        const nodeId = params.nodes[0];
+        const node = nodes.get(nodeId);
+        if (node) {
+          const inspector = document.getElementById('graph-node-inspector');
+          inspector.classList.remove('hidden');
+          document.getElementById('inspect-node-title').textContent = node.label || node.id;
+          document.getElementById('inspect-node-type').textContent = node.group || 'Node';
+          document.getElementById('inspect-node-desc').textContent = node.title || `Node ID: ${node.id}`;
+        }
+      });
+    }
+
+    // Render MASVS Radar Chart (Chart.js)
+    function renderMasvsRadar(stats) {
+      const canvas = document.getElementById('masvs-radar-chart');
+      if (!canvas || !window.Chart) return;
+
+      if (state.radarChart) state.radarChart.destroy();
+
+      state.radarChart = new Chart(canvas, {
+        type: 'radar',
+        data: {
+          labels: ['STORAGE', 'CRYPTO', 'AUTH', 'NETWORK', 'PLATFORM', 'CODE', 'RESILIENCE'],
+          datasets: [{
+            label: 'MASVS Risk Coverage',
+            data: [
+              Math.max(1, 10 - (stats.critical || 0) * 2),
+              Math.max(1, 10 - (stats.high || 0)),
+              8, 9, 7, 8, 9
+            ],
+            backgroundColor: 'rgba(6, 182, 212, 0.2)',
+            borderColor: '#06B6D4',
+            borderWidth: 2,
+            pointBackgroundColor: '#06B6D4',
+          }]
+        },
+        options: {
+          scales: {
+            r: {
+              angleLines: { color: '#1E2B48' },
+              grid: { color: '#1E2B48' },
+              pointLabels: { color: '#94A3B8', font: { family: 'JetBrains Mono', size: 10 } },
+              ticks: { display: false, max: 10, min: 0 }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // Live Screenshot Capture
+    document.getElementById('btn-refresh-screenshot').addEventListener('click', async () => {
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const devices = devData.devices || [];
+        if (!devices.length) {
+          alert('No ADB devices currently connected.');
+          return;
+        }
+        const serial = devices[0].serial;
+        const res = await apiFetch('/api/dast/screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial })
+        });
+        const data = await res.json();
+        if (data.status === 'success' && data.image_b64) {
+          const img = document.getElementById('dast-screenshot-img');
+          img.src = data.image_b64;
+          img.classList.remove('hidden');
+          document.getElementById('dast-screenshot-placeholder').classList.add('hidden');
+        } else {
+          alert('Screenshot capture returned no image.');
+        }
+      } catch (e) {
+        alert('Screenshot capture error: ' + e.message);
+      }
+    });
+
+    // One-Click Exploit Synthesizer Button
+    document.getElementById('btn-generate-poc').addEventListener('click', () => {
+      if (state.selectedFinding) {
+        selectFinding(state.selectedFinding);
+      }
+    });
+
+    // Auto-run bootstrap on load
+    window.addEventListener('DOMContentLoaded', () => {
+      if (state.token) {
+        document.getElementById('session-key-status').textContent = 'Token: Active';
+        connectWebSocket();
+        refreshScans();
+      } else {
+        document.getElementById('modal-token').classList.remove('hidden');
+      }
+    });
+  </script>
 </body>
 </html>

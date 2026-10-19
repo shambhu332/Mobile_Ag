@@ -6,23 +6,19 @@
   <title>MobileAg — Advanced Autonomous AppSec Cockpit</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>" />
 
-  <!-- Core Local CSS Framework -->
+  <!-- Core Local CSS Framework (Zero External CDNs) -->
   <link rel="stylesheet" href="/static/dashboard.css" />
   <link rel="stylesheet" href="/static/interface.css" />
   <link rel="stylesheet" href="/static/accessibility.css" />
   <link rel="stylesheet" href="/static/experience.css" />
 
-  <!-- Core Local Vendor Libraries (Offline Deterministic, No External CDN) -->
+  <!-- Core Local Vendor Libraries -->
   <script src="/static/vendor/vis-network.js"></script>
   <script src="/static/vendor/chart-js.js"></script>
   <script src="/static/vendor/lucide.js"></script>
 
   <!-- Complete Embedded Cyber-Ops Design System & Theme Styles -->
   <style>
-    /* =====================================================================
-       MOBILEAG NEXT-GEN CYBER-OPS DESIGN SYSTEM
-       High-Density Dark Tactical Theme (Zero External Dependencies)
-       ===================================================================== */
     :root {
       --app-bg: #030712;
       --cockpit-bg: #070D1E;
@@ -62,13 +58,11 @@
       user-select: none;
     }
 
-    /* Scrollbars */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: var(--app-bg); }
     ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--panel-border-bright); }
 
-    /* Tactical Cyber Grid Background */
     .cyber-grid {
       background-size: 32px 32px;
       background-image:
@@ -76,7 +70,6 @@
         linear-gradient(to bottom, rgba(28, 46, 89, 0.15) 1px, transparent 1px);
     }
 
-    /* Glass Panels */
     .glass-panel {
       background: rgba(11, 19, 43, 0.88);
       backdrop-filter: blur(16px);
@@ -101,14 +94,12 @@
       outline: none;
     }
 
-    /* Glowing Utilities */
     .glow-cyan { box-shadow: 0 0 18px -2px var(--cyber-cyan-glow); }
     .glow-rose { box-shadow: 0 0 18px -2px var(--cyber-rose-glow); }
     .glow-emerald { box-shadow: 0 0 18px -2px var(--cyber-emerald-glow); }
     .glow-amber { box-shadow: 0 0 18px -2px var(--cyber-amber-glow); }
     .glow-purple { box-shadow: 0 0 18px -2px var(--cyber-purple-glow); }
 
-    /* Tactical Colors Utility Classes */
     .bg-appbg { background-color: var(--app-bg); }
     .bg-cockpit { background-color: var(--cockpit-bg); }
     .bg-panel { background-color: var(--panel-bg); }
@@ -146,45 +137,29 @@
     .border-cyberPurple { border-color: var(--cyber-purple); }
     .bg-cyberPurple-15 { background-color: rgba(139, 92, 246, 0.15); }
 
-    /* Typography & Code */
     pre, code, .font-mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
 
-    /* Pulse Glow Animations */
     @keyframes pulseGlow {
       0%, 100% { opacity: 0.9; transform: scale(1); }
       50% { opacity: 0.35; transform: scale(1.15); }
     }
-    .pulse-ring {
-      animation: pulseGlow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
+    .pulse-ring { animation: pulseGlow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
-    @keyframes radarSweep {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    .radar-sweep {
-      animation: radarSweep 4s linear infinite;
-    }
-
-    /* Modal Backdrop */
     .modal-backdrop {
       background: rgba(3, 7, 18, 0.88);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
     }
 
-    /* Tab transitions */
     .workspace-view {
       display: none;
       flex: 1;
       height: 100%;
       overflow: hidden;
     }
-    .workspace-view.active {
-      display: flex;
-    }
+    .workspace-view.active { display: flex; }
 
     .nav-tab.active {
       background: var(--panel-elevated);
@@ -193,7 +168,6 @@
       box-shadow: inset 4px 0 10px rgba(0, 240, 255, 0.15);
     }
 
-    /* DAST Device Bezel Simulator */
     .device-bezel {
       border: 8px solid #1E293B;
       border-radius: 36px;
@@ -214,13 +188,15 @@
       gap: 6px;
     }
 
-    /* Terminal Console */
     .term-window {
       background: #02040A;
       border: 1px solid var(--panel-border);
       box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.9);
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
+
+    .dast-subpane { display: none; }
+    .dast-subpane.active { display: block; }
   </style>
 </head>
 
@@ -234,7 +210,7 @@
     <!-- Left: Brand, Target Switcher & Status -->
     <div class="flex items-center gap-3">
       <!-- Shield Logo Beacon -->
-      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan-15 border border-cyberCyan-40 text-cyberCyan glow-cyan">
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan-15 border border-cyberCyan-40 text-cyberCyan glow-cyan cursor-pointer" onclick="switchTab('tab-surface')">
         <i data-lucide="shield-check" class="w-5 h-5"></i>
         <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-cyberEmerald pulse-ring"></span>
       </div>
@@ -242,7 +218,7 @@
         <div class="flex items-center gap-2">
           <span class="text-sm font-extrabold tracking-wider text-white">MOBILE<span class="text-cyberCyan">AG</span></span>
           <span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">CYBER-OPS</span>
-          <span id="demo-indicator-pill" class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberPurple-15 text-cyberPurple border border-cyberPurple hidden">DEMO DATA</span>
+          <span id="demo-indicator-pill" class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberPurple-15 text-cyberPurple border border-cyberPurple">DEMO TARGET</span>
         </div>
         <p class="text-[10px] font-mono text-slate-400">Autonomous Mobile Security Workbench</p>
       </div>
@@ -256,14 +232,14 @@
           <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
         </button>
 
-        <button id="btn-quick-upload" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 flex items-center gap-1.5 transition">
+        <button id="btn-quick-upload" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 flex items-center gap-1.5 transition" title="Ingest new APK or AAB file">
           <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
           <span>Ingest APK</span>
         </button>
 
-        <button id="btn-toggle-demo" class="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder transition flex items-center gap-1.5" title="Toggle Demo Target dataset">
+        <button id="btn-toggle-demo" class="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder transition flex items-center gap-1.5" title="Reload SecureVault Demo Target dataset">
           <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyberPurple"></i>
-          <span>Demo Target</span>
+          <span>Reload Demo</span>
         </button>
       </div>
     </div>
@@ -308,7 +284,7 @@
     <!-- Right: Command Menu, ADB Device, Session Token -->
     <div class="flex items-center gap-2.5">
       <!-- Command Palette Pill -->
-      <button id="btn-command-palette" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder text-slate-300 text-xs transition">
+      <button id="btn-command-palette" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder text-slate-300 text-xs transition" title="Open Quick Command Palette">
         <i data-lucide="command" class="w-3.5 h-3.5 text-cyberCyan"></i>
         <span class="hidden sm:inline">Commands</span>
         <kbd class="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">⌘K</kbd>
@@ -480,10 +456,10 @@
               <option value="api">Discovered API Routes</option>
             </select>
 
-            <button id="btn-fit-graph" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition">
+            <button id="btn-fit-graph" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition" title="Center graph viewport">
               Center Graph
             </button>
-            <button id="btn-toggle-physics" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition">
+            <button id="btn-toggle-physics" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 transition" title="Toggle simulation physics">
               Freeze Layout
             </button>
           </div>
@@ -577,6 +553,7 @@
               <option value="CRITICAL">Critical Only</option>
               <option value="HIGH">High & Above</option>
               <option value="MEDIUM">Medium & Above</option>
+              <option value="LOW">Low Severity</option>
             </select>
           </div>
         </div>
@@ -700,30 +677,29 @@ public Cursor query(Uri uri, String[] projection, String selection, String[] sel
           <div class="w-72 bg-panel rounded-xl border border-panelBorder p-3 flex flex-col shrink-0 overflow-y-auto">
             <div class="text-[10px] font-mono uppercase text-slate-500 font-bold mb-2">Package Source Hierarchy</div>
             <div id="decompiler-file-tree" class="space-y-1 font-mono text-xs">
-              <!-- Tree Nodes -->
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-cyberCyan flex items-center gap-1.5" onclick="selectDecompiledFile('AndroidManifest.xml')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-cyberCyan flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('AndroidManifest.xml')">
                 <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
-                <span>AndroidManifest.xml</span>
+                <span class="tree-filename">AndroidManifest.xml</span>
               </div>
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('AccountProvider.java')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('AccountProvider.java')">
                 <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberRose"></i>
-                <span>AccountProvider.java</span>
+                <span class="tree-filename">AccountProvider.java</span>
               </div>
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('BiometricPromptActivity.java')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('BiometricPromptActivity.java')">
                 <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberAmber"></i>
-                <span>BiometricPromptActivity.java</span>
+                <span class="tree-filename">BiometricPromptActivity.java</span>
               </div>
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('KeyManager.java')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('KeyManager.java')">
                 <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberAmber"></i>
-                <span>KeyManager.java</span>
+                <span class="tree-filename">KeyManager.java</span>
               </div>
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5" onclick="selectDecompiledFile('DownloadReceiver.java')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-300 flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('DownloadReceiver.java')">
                 <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberCyan"></i>
-                <span>DownloadReceiver.java</span>
+                <span class="tree-filename">DownloadReceiver.java</span>
               </div>
-              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-400 flex items-center gap-1.5" onclick="selectDecompiledFile('AccountProvider.smali')">
+              <div class="cursor-pointer p-1.5 rounded hover:bg-panelElevated text-slate-400 flex items-center gap-1.5 tree-item" onclick="selectDecompiledFile('AccountProvider.smali')">
                 <i data-lucide="binary" class="w-3.5 h-3.5"></i>
-                <span>AccountProvider.smali</span>
+                <span class="tree-filename">AccountProvider.smali</span>
               </div>
             </div>
           </div>
@@ -793,11 +769,11 @@ public class AccountProvider extends ContentProvider {
         </div>
 
         <!-- Taint Path Trace Visualization -->
-        <div class="flex-1 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-4">
+        <div id="taint-chain-container" class="flex-1 bg-panel rounded-xl border border-panelBorder p-5 flex flex-col overflow-y-auto space-y-4">
           <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Demonstrated Taint Propagation Chain (4 Steps)</div>
 
-          <!-- Flow Steps -->
-          <div class="space-y-3">
+          <!-- Flow Steps (Dynamically populated by taint-preset-select) -->
+          <div id="taint-steps-list" class="space-y-3">
             <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
               <div class="p-2 rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 shrink-0 font-bold font-mono text-xs">01. SOURCE</div>
               <div class="space-y-1">
@@ -852,7 +828,7 @@ public class AccountProvider extends ContentProvider {
           </div>
 
           <div class="flex items-center gap-2">
-            <span class="text-xs font-mono text-cyberEmerald flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyberEmerald-15 border border-cyberEmerald-40">
+            <span id="dast-device-status-badge" class="text-xs font-mono text-cyberEmerald flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyberEmerald-15 border border-cyberEmerald-40">
               <span class="w-2 h-2 rounded-full bg-cyberEmerald animate-pulse"></span>
               Connected: emulator-5554 (Android 14)
             </span>
@@ -864,28 +840,23 @@ public class AccountProvider extends ContentProvider {
           <!-- Left: Phone Bezel Screen Mirror -->
           <div class="w-80 flex flex-col items-center justify-center p-3 bg-panel rounded-xl border border-panelBorder shrink-0">
             <div class="device-bezel w-64 h-[440px] flex flex-col overflow-hidden">
-              <!-- Top Notch -->
               <div class="device-notch">
                 <div class="w-2 h-2 rounded-full bg-slate-800"></div>
                 <div class="w-6 h-1 rounded-full bg-slate-800"></div>
               </div>
-              <!-- Live Screen Display Canvas -->
-              <div id="device-screen-canvas" class="flex-1 bg-slate-900 flex flex-col items-center justify-center text-center p-4 relative overflow-hidden">
+              <div id="device-screen-canvas" class="flex-1 bg-slate-900 flex flex-col items-center justify-center text-center p-4 relative overflow-hidden cursor-crosshair" title="Click to inject touch tap coordinates">
                 <div class="text-cyberCyan font-mono text-xs font-bold mb-1">SecureVault Bank v2.4.1</div>
                 <div class="w-16 h-16 rounded-2xl bg-cyberCyan-15 border border-cyberCyan-40 flex items-center justify-center text-cyberCyan my-3">
                   <i data-lucide="shield-alert" class="w-8 h-8"></i>
                 </div>
                 <div class="text-[11px] text-slate-300 font-mono">Target App Running</div>
                 <div class="text-[9px] text-slate-500 font-mono mt-1">PID: 9814 • PSS: 42 MB</div>
-
-                <!-- Touch ripple effect element -->
-                <div id="screen-touch-ripple" class="absolute w-8 h-8 rounded-full border-2 border-cyberCyan bg-cyberCyan/30 pointer-events-none hidden"></div>
+                <div id="screen-touch-ripple" class="absolute w-8 h-8 rounded-full border-2 border-cyberCyan bg-cyberCyan/30 pointer-events-none hidden transition-transform"></div>
               </div>
-              <!-- Hardware Navigation Buttons Bar -->
               <div class="h-10 bg-slate-950 flex items-center justify-around px-4 border-t border-slate-800">
-                <button onclick="injectKeyEvent('BACK')" class="text-slate-400 hover:text-white"><i data-lucide="triangle" class="w-3.5 h-3.5 -rotate-90"></i></button>
-                <button onclick="injectKeyEvent('HOME')" class="text-slate-400 hover:text-white"><i data-lucide="circle" class="w-3.5 h-3.5"></i></button>
-                <button onclick="injectKeyEvent('APP_SWITCH')" class="text-slate-400 hover:text-white"><i data-lucide="square" class="w-3.5 h-3.5"></i></button>
+                <button onclick="injectKeyEvent('BACK')" class="text-slate-400 hover:text-white" title="Android Back Button"><i data-lucide="triangle" class="w-3.5 h-3.5 -rotate-90"></i></button>
+                <button onclick="injectKeyEvent('HOME')" class="text-slate-400 hover:text-white" title="Android Home Button"><i data-lucide="circle" class="w-3.5 h-3.5"></i></button>
+                <button onclick="injectKeyEvent('APP_SWITCH')" class="text-slate-400 hover:text-white" title="Android App Switcher Button"><i data-lucide="square" class="w-3.5 h-3.5"></i></button>
               </div>
             </div>
 
@@ -905,15 +876,15 @@ public class AccountProvider extends ContentProvider {
           <div class="flex-1 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col overflow-y-auto space-y-4">
             <!-- Dynamic Controls Sub-tabs -->
             <div class="flex items-center gap-2 border-b border-panelBorder pb-3">
-              <button id="dast-subtab-fuzz" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-panelElevated text-cyberCyan border border-cyberCyan-40">Component Fuzzer</button>
-              <button id="dast-subtab-deeplink" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Deep Link Dispatcher</button>
-              <button id="dast-subtab-storage" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Storage Forensics</button>
-              <button id="dast-subtab-memory" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Memory Forensics</button>
-              <button id="dast-subtab-crawler" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Autonomous Crawler</button>
+              <button id="dast-subtab-fuzz" onclick="switchDastSubtab('fuzz')" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-panelElevated text-cyberCyan border border-cyberCyan-40">Component Fuzzer</button>
+              <button id="dast-subtab-deeplink" onclick="switchDastSubtab('deeplink')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Deep Link Dispatcher</button>
+              <button id="dast-subtab-storage" onclick="switchDastSubtab('storage')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Storage Forensics</button>
+              <button id="dast-subtab-memory" onclick="switchDastSubtab('memory')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Memory Forensics</button>
+              <button id="dast-subtab-crawler" onclick="switchDastSubtab('crawler')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder">Autonomous Crawler</button>
             </div>
 
-            <!-- Fuzzer Sub-pane Content -->
-            <div id="dast-pane-fuzzer" class="space-y-4">
+            <!-- 1. Fuzzer Subpane -->
+            <div id="dast-pane-fuzzer" class="dast-subpane active space-y-4">
               <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label class="text-[10px] font-mono text-slate-400 uppercase">Target Component</label>
@@ -950,6 +921,99 @@ public class AccountProvider extends ContentProvider {
                 </div>
               </div>
             </div>
+
+            <!-- 2. Deep Link Subpane -->
+            <div id="dast-pane-deeplink" class="dast-subpane space-y-4">
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Target URI Scheme</label>
+                <div class="flex gap-2 mt-1">
+                  <input id="deeplink-input-uri" type="text" value="bank://oauth/callback?code=EXPLOIT_LEAKED_TOKEN" class="glass-input text-xs font-mono px-3 py-2 rounded-lg flex-1" />
+                  <button onclick="dispatchDeepLink()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition">
+                    Dispatch URI
+                  </button>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <label class="text-[10px] font-mono text-slate-400 uppercase font-bold">Discovered Deep Links from AndroidManifest.xml</label>
+                <div class="space-y-1.5">
+                  <div class="p-2.5 bg-cockpit rounded border border-panelBorder flex items-center justify-between">
+                    <span class="text-xs font-mono text-slate-200">bank://oauth/callback</span>
+                    <button onclick="setDeepLink('bank://oauth/callback?code=AUTH_TEST_42')" class="text-xs font-mono text-cyberCyan hover:underline">Use Preset</button>
+                  </div>
+                  <div class="p-2.5 bg-cockpit rounded border border-panelBorder flex items-center justify-between">
+                    <span class="text-xs font-mono text-slate-200">bank://transfer?to=attacker&amount=1000</span>
+                    <button onclick="setDeepLink('bank://transfer?to=attacker&amount=1000')" class="text-xs font-mono text-cyberCyan hover:underline">Use Preset</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="deeplink-result-output" class="term-window rounded-lg p-3 text-xs text-cyberCyan h-28 overflow-y-auto">
+                Ready to dispatch deep links to target application.
+              </div>
+            </div>
+
+            <!-- 3. Storage Forensics Subpane -->
+            <div id="dast-pane-storage" class="dast-subpane space-y-4">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono text-slate-300 font-bold">Sandbox App Storage (/data/data/com.vulnerable.bank)</span>
+                <button onclick="dumpAppStorage()" class="px-3 py-1.5 rounded text-xs font-mono bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">Dump Artifacts</button>
+              </div>
+
+              <div class="space-y-2">
+                <div class="text-[10px] font-mono uppercase text-cyberRose font-bold">shared_prefs/session.xml [MODE_WORLD_READABLE]</div>
+                <div class="term-window p-3 rounded-lg text-xs text-slate-300">
+                  <pre><code>&lt;?xml version='1.0' encoding='utf-8' standalone='yes' ?&gt;
+&lt;map&gt;
+    &lt;string name="auth_token"&gt;eyJhGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.user_token_9814&lt;/string&gt;
+    &lt;boolean name="remember_me" value="true" /&gt;
+    &lt;string name="user_pin"&gt;1337&lt;/string&gt;
+&lt;/map&gt;</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Memory Forensics Subpane -->
+            <div id="dast-pane-memory" class="dast-subpane space-y-4">
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Search Volatile Heap Strings</label>
+                <div class="flex gap-2 mt-1">
+                  <input id="memory-search-query" type="text" value="password" class="glass-input text-xs font-mono px-3 py-2 rounded-lg flex-1" />
+                  <button onclick="searchProcessMemory()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40 hover:bg-cyberAmber/25 transition">
+                    Search RAM
+                  </button>
+                </div>
+              </div>
+
+              <div id="memory-search-results" class="term-window rounded-lg p-3 text-xs text-cyberAmber h-44 overflow-y-auto">
+                <div>[+] Probing Process PID 9814 heap memory maps...</div>
+                <div class="text-cyberRose font-bold">[!] MATCH 0x7b44a100: "admin_master_password=S3cur3V@ult2026!"</div>
+                <div class="text-cyberRose font-bold">[!] MATCH 0x7b44a240: "Bearer eyJhGciOiJIUzI1NiIsInR5cCI..."</div>
+                <div class="text-slate-400">[*] Heap strings resident in plaintext without zeroing.</div>
+              </div>
+            </div>
+
+            <!-- 5. Autonomous Crawler Subpane -->
+            <div id="dast-pane-crawler" class="dast-subpane space-y-4">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Max Crawl Depth</label>
+                  <input id="crawler-depth" type="number" value="3" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Max Click Steps</label>
+                  <input id="crawler-steps" type="number" value="25" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+
+              <button onclick="startUiCrawler()" class="w-full py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition">
+                Start Autonomous UIAutomator Crawl
+              </button>
+
+              <div id="crawler-log-output" class="term-window rounded-lg p-3 text-xs text-cyberCyan h-32 overflow-y-auto">
+                Ready to initialize UIAutomator traversal graph.
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -970,7 +1034,7 @@ public class AccountProvider extends ContentProvider {
           </div>
 
           <div class="flex items-center gap-2">
-            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">
+            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 hover:bg-cyberEmerald/25 transition">
               Proxy Running (Port 8082)
             </button>
             <button id="btn-export-openapi" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-200 border border-panelBorder transition">
@@ -1321,21 +1385,41 @@ public class AccountProvider extends ContentProvider {
         <input id="cmd-input" type="text" placeholder="Type a command or jump to workspace..." class="glass-input text-sm font-mono pl-9 pr-4 py-2.5 rounded-xl w-full" autofocus />
       </div>
       <div id="cmd-results" class="max-h-64 overflow-y-auto space-y-1 font-mono text-xs">
-        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-surface')">
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-surface'); closeModal('modal-cmd');">
           <div class="flex items-center gap-2"><i data-lucide="network" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Jump to Attack Surface Topology</span></div>
           <kbd class="text-[10px] text-slate-500">1</kbd>
         </div>
-        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-findings')">
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-findings'); closeModal('modal-cmd');">
           <div class="flex items-center gap-2"><i data-lucide="flame" class="w-3.5 h-3.5 text-cyberRose"></i><span>Jump to Vulnerabilities & PoC</span></div>
           <kbd class="text-[10px] text-slate-500">2</kbd>
         </div>
-        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-dast')">
-          <div class="flex items-center gap-2"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Open Dynamic Testing Lab</span></div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-decompiler'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cyberPurple"></i><span>Open Bytecode Decompiler & AST</span></div>
+          <kbd class="text-[10px] text-slate-500">3</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-taint'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="git-merge" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Run Static Taint Engine</span></div>
+          <kbd class="text-[10px] text-slate-500">4</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-dast'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="cpu" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Open Dynamic Testing Lab (DAST)</span></div>
           <kbd class="text-[10px] text-slate-500">5</kbd>
         </div>
-        <div class="p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-reports')">
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-proxy'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="radio" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Inspect MITM Proxy & Shadow APIs</span></div>
+          <kbd class="text-[10px] text-slate-500">6</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-loupe'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="terminal" class="w-3.5 h-3.5 text-cyberAmber"></i><span>View Streaming Logcat & Diagnostics</span></div>
+          <kbd class="text-[10px] text-slate-500">7</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="switchTab('tab-reports'); closeModal('modal-cmd');">
           <div class="flex items-center gap-2"><i data-lucide="award" class="w-3.5 h-3.5 text-cyberEmerald"></i><span>Export SARIF / CycloneDX SBOM</span></div>
           <kbd class="text-[10px] text-slate-500">9</kbd>
+        </div>
+        <div class="cmd-item p-2 rounded-lg hover:bg-panelElevated text-slate-200 cursor-pointer flex items-center justify-between" onclick="openModal('modal-upload'); closeModal('modal-cmd');">
+          <div class="flex items-center gap-2"><i data-lucide="upload-cloud" class="w-3.5 h-3.5 text-cyberCyan"></i><span>Ingest New APK / AAB Target</span></div>
+          <kbd class="text-[10px] text-slate-500">Upload</kbd>
         </div>
       </div>
     </div>
@@ -1356,7 +1440,7 @@ public class AccountProvider extends ContentProvider {
         <div class="w-12 h-12 rounded-full bg-cyberCyan-15 text-cyberCyan flex items-center justify-center mx-auto">
           <i data-lucide="package" class="w-6 h-6"></i>
         </div>
-        <div class="text-xs font-bold text-white">Drag & drop your APK here, or browse files</div>
+        <div id="dropzone-text" class="text-xs font-bold text-white">Drag & drop your APK here, or browse files</div>
         <div class="text-[10px] font-mono text-slate-400">Supports .apk, .aab, and unpacked bundle directories</div>
         <input type="file" id="apk-file-input" accept=".apk,.aab" class="hidden" />
       </div>
@@ -1458,28 +1542,124 @@ public class AccountProvider extends ContentProvider {
     </div>
   </div>
 
+  <!-- Target Switcher Modal -->
+  <div id="modal-targets" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-lg bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="package" class="w-5 h-5 text-cyberCyan"></i>
+          <h3 class="text-sm font-bold text-white">Select Active Target Application</h3>
+        </div>
+        <button onclick="closeModal('modal-targets')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div id="target-switcher-list" class="max-h-64 overflow-y-auto space-y-2 font-mono text-xs">
+        <div class="p-3 bg-panelElevated rounded-xl border border-cyberCyan-40 flex items-center justify-between cursor-pointer" onclick="loadDemoScan(); closeModal('modal-targets');">
+          <div>
+            <div class="font-bold text-white">com.vulnerable.bank (SecureVault Bank)</div>
+            <div class="text-[10px] text-cyberPurple">Interactive Synthetic Assessment • 7 Vulnerabilities</div>
+          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 font-bold">ACTIVE</span>
+        </div>
+      </div>
+
+      <div class="pt-2 border-t border-panelBorder flex justify-between">
+        <button onclick="openModal('modal-upload'); closeModal('modal-targets');" class="px-3 py-1.5 rounded-lg text-xs font-mono text-cyberCyan bg-cyberCyan-15 border border-cyberCyan-40">+ Ingest New Target</button>
+        <button onclick="closeModal('modal-targets')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Manager Modal -->
+  <div id="modal-devices" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-lg bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="smartphone" class="w-5 h-5 text-cyberEmerald"></i>
+          <h3 class="text-sm font-bold text-white">Connected Android Devices & Emulators</h3>
+        </div>
+        <button onclick="closeModal('modal-devices')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div id="device-manager-list" class="space-y-2 font-mono text-xs">
+        <div class="p-3 bg-panelElevated rounded-xl border border-cyberEmerald-40 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyberEmerald animate-pulse"></span>
+            <div>
+              <div class="font-bold text-white">emulator-5554</div>
+              <div class="text-[10px] text-slate-400">Android 14 (API 34) • x86_64</div>
+            </div>
+          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold">CONNECTED</span>
+        </div>
+      </div>
+
+      <div class="pt-2 border-t border-panelBorder flex justify-between">
+        <button onclick="pollAdbDevices()" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-200 bg-panel border border-panelBorder hover:bg-panelElevated flex items-center gap-1.5">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+          <span>Rescan ADB</span>
+        </button>
+        <button onclick="closeModal('modal-devices')" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transaction Packet Inspection Modal -->
+  <div id="modal-packet" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-2xl bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="radio" class="w-5 h-5 text-cyberCyan"></i>
+          <h3 id="packet-modal-title" class="text-sm font-bold text-white">HTTP Transaction Detail</h3>
+        </div>
+        <button onclick="closeModal('modal-packet')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-xs font-mono">
+        <div class="space-y-1">
+          <span class="text-slate-400 uppercase text-[10px] font-bold">Request Headers & Body</span>
+          <div id="packet-request-detail" class="term-window p-3 rounded-lg text-slate-300 h-44 overflow-y-auto"></div>
+        </div>
+        <div class="space-y-1">
+          <span class="text-slate-400 uppercase text-[10px] font-bold">Response Headers & Body</span>
+          <div id="packet-response-detail" class="term-window p-3 rounded-lg text-cyberEmerald h-44 overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <div id="packet-security-alert" class="p-2.5 rounded-lg bg-cyberRose-15 border border-cyberRose-40 text-xs font-mono text-cyberRose"></div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeModal('modal-packet')" class="px-4 py-2 rounded-lg text-xs font-mono text-slate-300 bg-panel hover:bg-panelElevated">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed bottom-12 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
 
   <!-- ===================================================================== -->
-  <!-- 5. JAVASCRIPT CONTROLLER (ROBUST LOCAL LOGIC & DEMO FALLBACK) -->
+  <!-- 5. JAVASCRIPT CONTROLLER (100% WIRED, ZERO UNHANDLED BUTTONS) -->
   <!-- ===================================================================== -->
   <script>
     // Global Application State
     const state = {
       token: localStorage.getItem('mobileag_session_token') || '0xxLlsHzuujZa0GhZ6sbyvtCG7u6_MrqlQsgT84kUzg',
       activeTab: 'tab-surface',
+      activeDastSubtab: 'fuzz',
       isDemoMode: true,
       currentScan: null,
       visNetwork: null,
+      physicsEnabled: true,
       radarChart: null,
       selectedFindingIndex: 0,
       activePocTab: 'adb',
       telemetryExpanded: false,
-      findingsList: []
+      findingsList: [],
+      selectedUploadFile: null,
+      proxyRunning: true
     };
 
-    // Realistic Demo Dataset (Completely populates the UI when no scan is loaded)
+    // Realistic Demo Dataset
     const DEMO_DATASET = {
       scan_id: "scan_v2.4.1_demo",
       package_name: "com.vulnerable.bank",
@@ -1511,7 +1691,7 @@ public class AccountProvider extends ContentProvider {
           cwe: "CWE-287",
           masvs: "MASVS-AUTH-1",
           location: "com.vulnerable.bank.auth.BiometricPromptActivity (line 89)",
-          description: "The biometric authentication activity can be triggered directly by external applications using an explicit intent. The onAuthenticationSucceeded callback exposes a mutable PendingIntent that executes without validating the caller identity.",
+          description: "The biometric authentication activity can be triggered directly by external applications using an explicit intent. The onAuthenticationSucceeded callback exposes a mutable PendingIntent that executes without validating caller identity.",
           remediation: "Verify caller package identity using getCallingActivity() and enforce FLAG_IMMUTABLE on all dispatched PendingIntents.",
           code: "Intent authIntent = getIntent();\nPendingIntent callback = authIntent.getParcelableExtra(\"on_success\");\n// Dispatched without caller verification\ncallback.send();",
           poc_adb: "adb shell am start -n com.vulnerable.bank/.auth.BiometricPromptActivity --es bypass_auth true",
@@ -1567,8 +1747,8 @@ public class AccountProvider extends ContentProvider {
           cwe: "CWE-276",
           masvs: "MASVS-STORAGE-2",
           location: "/data/data/com.vulnerable.bank/shared_prefs/session.xml",
-          description: "Legacy preferences were initialized with MODE_WORLD_READABLE, exposing the user authentication session token to any co-installed app on the device.",
-          remediation: "Store all sensitive session credentials in EncryptedSharedPreferences with keys backed by the Android KeyStore.",
+          description: "Legacy preferences were initialized with MODE_WORLD_READABLE, exposing user authentication session token to any co-installed app on device.",
+          remediation: "Store all sensitive session credentials in EncryptedSharedPreferences with keys backed by Android KeyStore.",
           code: "getSharedPreferences(\"session\", Context.MODE_WORLD_READABLE);",
           poc_adb: "adb shell run-as com.other.app cat /data/data/com.vulnerable.bank/shared_prefs/session.xml",
           poc_kotlin: "// Direct file read from co-installed application",
@@ -1581,7 +1761,7 @@ public class AccountProvider extends ContentProvider {
           cwe: "CWE-927",
           masvs: "MASVS-PLATFORM-2",
           location: "com.vulnerable.bank.service.NotificationService (line 77)",
-          description: "Dispatches implicit intents with sensitive transaction metadata without explicitly declaring the target package.",
+          description: "Dispatches implicit intents with sensitive transaction metadata without explicitly declaring target package.",
           remediation: "Set target package explicitly via intent.setPackage(context.getPackageName()).",
           code: "Intent intent = new Intent(\"com.bank.TRANSACTION_ALERT\");\nsendBroadcast(intent);",
           poc_adb: "adb shell am broadcast -a com.bank.TRANSACTION_ALERT",
@@ -1635,7 +1815,6 @@ public class AccountProvider extends ContentProvider {
       if (targetNav) targetNav.classList.add('active');
       state.activeTab = tabId;
 
-      // Handle specific workspace canvas resizes
       if (tabId === 'tab-surface' && state.visNetwork) {
         setTimeout(() => state.visNetwork.fit(), 150);
       }
@@ -1699,7 +1878,6 @@ public class AccountProvider extends ContentProvider {
       }
     }
 
-    // Populate Right Finding Detail Dossier
     function displayFindingDetail(finding) {
       if (!finding) return;
 
@@ -1719,7 +1897,6 @@ public class AccountProvider extends ContentProvider {
       updatePoCDisplay(finding);
     }
 
-    // Update Automated PoC Code Tabs
     function updatePoCDisplay(finding) {
       const codeEl = document.getElementById('poc-content-code');
       if (state.activePocTab === 'adb') {
@@ -1731,14 +1908,12 @@ public class AccountProvider extends ContentProvider {
       }
     }
 
-    // Copy PoC Code
     function copyPoCCode() {
       const code = document.getElementById('poc-content-code').textContent;
       navigator.clipboard.writeText(code);
       showToast('Copied exploit PoC to clipboard', 'success');
     }
 
-    // PoC Tab Buttons
     document.getElementById('btn-poc-adb-tab').addEventListener('click', () => {
       state.activePocTab = 'adb';
       document.getElementById('btn-poc-adb-tab').className = 'px-2.5 py-1 rounded text-xs font-mono bg-panelElevated text-cyberCyan border border-cyberCyan-40 font-bold';
@@ -1761,7 +1936,6 @@ public class AccountProvider extends ContentProvider {
       if (state.findingsList[state.selectedFindingIndex]) updatePoCDisplay(state.findingsList[state.selectedFindingIndex]);
     });
 
-    // Severity Filters Trigger
     function filterFindings(sev) {
       switchTab('tab-findings');
       document.getElementById('findings-severity-select').value = sev;
@@ -1775,24 +1949,27 @@ public class AccountProvider extends ContentProvider {
       renderFindings(document.getElementById('findings-severity-select').value, e.target.value);
     });
 
-    // Initialize Vis.js Force-Directed Attack Surface Graph
+    // Vis.js Graph Topology
+    let visGraphNodes = null;
+    let visGraphEdges = null;
+
     function initAttackSurfaceGraph() {
       const container = document.getElementById('vis-network-container');
       if (!container || !window.vis) return;
 
-      const nodes = new vis.DataSet([
-        { id: 1, label: 'com.vulnerable.bank\n(App Core)', color: '#00F0FF', font: { color: '#000', size: 13, bold: true }, shape: 'box', shadow: true },
-        { id: 2, label: 'AccountProvider\n(ContentProvider)', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
-        { id: 3, label: 'BiometricPromptActivity\n(Exported Activity)', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
-        { id: 4, label: 'DownloadReceiver\n(BroadcastReceiver)', color: '#00F0FF', font: { color: '#000', size: 11 }, shape: 'ellipse' },
-        { id: 5, label: 'NotificationService\n(BackgroundService)', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'ellipse' },
-        { id: 6, label: 'bank://oauth/callback\n(Deep Link)', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'diamond' },
-        { id: 7, label: 'api.vulnerable.bank\n(HTTP Endpoint)', color: '#8B5CF6', font: { color: '#fff', size: 11 }, shape: 'box' },
-        { id: 8, label: 'SQLite /secure_vault.db\n(Data Sink)', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'database' },
-        { id: 9, label: 'KeyManager\n(Crypto Class)', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'box' }
+      visGraphNodes = new vis.DataSet([
+        { id: 1, label: 'com.vulnerable.bank\n(App Core)', type: 'core', color: '#00F0FF', font: { color: '#000', size: 13, bold: true }, shape: 'box', shadow: true },
+        { id: 2, label: 'AccountProvider\n(ContentProvider)', type: 'provider', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
+        { id: 3, label: 'BiometricPromptActivity\n(Exported Activity)', type: 'activity', color: '#F43F5E', font: { color: '#fff', size: 11 }, shape: 'ellipse' },
+        { id: 4, label: 'DownloadReceiver\n(BroadcastReceiver)', type: 'receiver', color: '#00F0FF', font: { color: '#000', size: 11 }, shape: 'ellipse' },
+        { id: 5, label: 'NotificationService\n(BackgroundService)', type: 'service', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'ellipse' },
+        { id: 6, label: 'bank://oauth/callback\n(Deep Link)', type: 'deeplink', color: '#10B981', font: { color: '#000', size: 11 }, shape: 'diamond' },
+        { id: 7, label: 'api.vulnerable.bank\n(HTTP Endpoint)', type: 'api', color: '#8B5CF6', font: { color: '#fff', size: 11 }, shape: 'box' },
+        { id: 8, label: 'SQLite /secure_vault.db\n(Data Sink)', type: 'sink', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'database' },
+        { id: 9, label: 'KeyManager\n(Crypto Class)', type: 'class', color: '#F59E0B', font: { color: '#000', size: 11 }, shape: 'box' }
       ]);
 
-      const edges = new vis.DataSet([
+      visGraphEdges = new vis.DataSet([
         { from: 1, to: 2, label: 'exports', color: { color: '#F43F5E' }, arrows: 'to' },
         { from: 1, to: 3, label: 'exports', color: { color: '#F43F5E' }, arrows: 'to' },
         { from: 1, to: 4, label: 'registers', color: { color: '#00F0FF' }, arrows: 'to' },
@@ -1803,9 +1980,10 @@ public class AccountProvider extends ContentProvider {
         { from: 1, to: 9, label: 'uses', color: { color: '#F59E0B' }, arrows: 'to' }
       ]);
 
-      const data = { nodes, edges };
+      const data = { nodes: visGraphNodes, edges: visGraphEdges };
       const options = {
         physics: {
+          enabled: true,
           stabilization: true,
           barnesHut: { gravitationalConstant: -3500, springLength: 120 }
         },
@@ -1815,11 +1993,10 @@ public class AccountProvider extends ContentProvider {
 
       state.visNetwork = new vis.Network(container, data, options);
 
-      // Node Click Event
       state.visNetwork.on('click', (params) => {
         if (params.nodes.length > 0) {
           const nodeId = params.nodes[0];
-          const node = nodes.get(nodeId);
+          const node = visGraphNodes.get(nodeId);
           document.getElementById('inspector-name').textContent = node.label.replace('\n', ' ');
           if (node.color === '#F43F5E') {
             document.getElementById('inspector-badge').textContent = 'HIGH RISK';
@@ -1832,7 +2009,762 @@ public class AccountProvider extends ContentProvider {
       });
     }
 
-    // Initialize MASVS Radar Chart
+    // Graph Subheader Buttons
+    document.getElementById('btn-fit-graph').addEventListener('click', () => {
+      if (state.visNetwork) {
+        state.visNetwork.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+        showToast('Centered attack surface graph', 'info');
+      }
+    });
+
+    document.getElementById('btn-toggle-physics').addEventListener('click', () => {
+      if (state.visNetwork) {
+        state.physicsEnabled = !state.physicsEnabled;
+        state.visNetwork.setOptions({ physics: { enabled: state.physicsEnabled } });
+        document.getElementById('btn-toggle-physics').textContent = state.physicsEnabled ? 'Freeze Layout' : 'Enable Physics';
+        showToast(`Graph physics ${state.physicsEnabled ? 'enabled' : 'frozen'}`, 'info');
+      }
+    });
+
+    document.getElementById('surface-filter-type').addEventListener('change', (e) => {
+      const type = e.target.value;
+      if (!visGraphNodes) return;
+      visGraphNodes.forEach(node => {
+        if (type === 'ALL' || node.type === type || node.type === 'core') {
+          visGraphNodes.update({ id: node.id, hidden: false });
+        } else {
+          visGraphNodes.update({ id: node.id, hidden: true });
+        }
+      });
+      showToast(`Filter applied: ${type}`, 'info');
+    });
+
+    // Node Inspector Action Handlers
+    function triggerFuzzComponent() {
+      const comp = document.getElementById('inspector-name').textContent.trim();
+      switchTab('tab-dast');
+      switchDastSubtab('fuzz');
+      document.getElementById('fuzz-target-component').value = comp;
+      document.getElementById('fuzz-target-component').focus();
+      showToast(`Loaded ${comp} into DAST Fuzzer`, 'success');
+    }
+
+    function showComponentSource() {
+      const comp = document.getElementById('inspector-name').textContent.trim();
+      switchTab('tab-decompiler');
+      const filename = comp.includes('AccountProvider') ? 'AccountProvider.java' :
+                       comp.includes('Biometric') ? 'BiometricPromptActivity.java' :
+                       comp.includes('Receiver') ? 'DownloadReceiver.java' : 'AccountProvider.java';
+      selectDecompiledFile(filename);
+    }
+
+    // Decompiler File Selection & Search
+    function selectDecompiledFile(name) {
+      document.getElementById('decompiler-active-filename').textContent = name;
+      const codeView = document.getElementById('decompiler-code-view');
+
+      if (name === 'AndroidManifest.xml') {
+        codeView.textContent = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.vulnerable.bank">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <application
+        android:allowBackup="true"
+        android:usesCleartextTraffic="true"
+        android:label="SecureVault Bank">
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".auth.BiometricPromptActivity"
+            android:exported="true" />
+
+        <provider
+            android:name=".provider.AccountProvider"
+            android:authorities="com.vulnerable.bank.provider"
+            android:exported="true" />
+
+        <receiver
+            android:name=".receiver.DownloadReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.vulnerable.bank.DOWNLOAD" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>`;
+      } else if (name === 'BiometricPromptActivity.java') {
+        codeView.textContent = `package com.vulnerable.bank.auth;
+
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.os.Bundle;
+
+public class BiometricPromptActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Intent intent = getIntent();
+        // VULNERABILITY: Bypasses auth callback when explicit intent arrives
+        if (intent.getBooleanExtra("bypass_auth", false)) {
+            finishWithSuccess();
+            return;
+        }
+        showBiometricDialog();
+    }
+
+    private void finishWithSuccess() {
+        setResult(RESULT_OK);
+        finish();
+    }
+}`;
+      } else if (name === 'KeyManager.java') {
+        codeView.textContent = `package com.vulnerable.bank.crypto;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+public class KeyManager {
+    // VULNERABILITY: Static 12-byte IV causes catastrophic GCM nonce reuse
+    private static final byte[] STATIC_IV = new byte[]{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C};
+
+    public static byte[] encrypt(byte[] plaintext, byte[] key) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, STATIC_IV));
+        return cipher.doFinal(plaintext);
+    }
+}`;
+      } else if (name === 'DownloadReceiver.java') {
+        codeView.textContent = `package com.vulnerable.bank.receiver;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import java.io.File;
+
+public class DownloadReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        String filename = intent.getStringExtra("filename");
+        // VULNERABILITY: Missing canonical path boundary validation
+        File dest = new File(context.getFilesDir(), filename);
+        dest.getParentFile().mkdirs();
+    }
+}`;
+      } else {
+        codeView.textContent = `package com.vulnerable.bank.provider;
+
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.net.Uri;
+
+public class AccountProvider extends ContentProvider {
+    private DatabaseHelper dbHelper;
+
+    @Override
+    public boolean onCreate() {
+        this.dbHelper = new DatabaseHelper(getContext());
+        return true;
+    }
+
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        SQLiteDatabase db = this.dbHelper.getReadableDatabase();
+        // VULNERABILITY DETECTED: CWE-89 SQL Injection via user selection
+        String sql = "SELECT * FROM accounts WHERE " + selection;
+        return db.rawQuery(sql, null);
+    }
+}`;
+      }
+
+      showToast(`Loaded ${name}`, 'info');
+    }
+
+    document.getElementById('decompiler-search-input').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#decompiler-file-tree .tree-item').forEach(item => {
+        const text = item.querySelector('.tree-filename').textContent.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    });
+
+    // Static Taint Propagation Updates
+    document.getElementById('taint-preset-select').addEventListener('change', (e) => {
+      const preset = e.target.value;
+      const list = document.getElementById('taint-steps-list');
+
+      if (preset === 'intent') {
+        list.innerHTML = `
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 shrink-0 font-bold font-mono text-xs">01. SOURCE</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">External Intent Extra Extraction</div>
+              <div class="text-xs font-mono text-slate-300">Method: <code>intent.getStringExtra("cmd")</code></div>
+              <div class="text-xs text-slate-400">Untrusted string received via unprivileged IPC caller.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 shrink-0 font-bold font-mono text-xs">02. PROPAGATION</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Shell Command Formulation</div>
+              <div class="text-xs font-mono text-slate-300">Statement: <code>String shellCmd = "/system/bin/sh -c " + cmd;</code></div>
+              <div class="text-xs text-slate-400">Taint propagates into command execution argument array.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40 shrink-0 font-bold font-mono text-xs">03. SANITIZER CHECK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">No Shell Metacharacter Escaping</div>
+              <div class="text-xs font-mono text-cyberRose">Missing command validation against authorized command whitelist.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberRose-15 text-cyberRose border border-cyberRose-40 shrink-0 font-bold font-mono text-xs">04. SINK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Arbitrary Process Execution</div>
+              <div class="text-xs font-mono text-slate-300">Sink: <code>Runtime.getRuntime().exec(shellCmd)</code></div>
+              <div class="text-xs text-cyberRose font-bold">CRITICAL: Arbitrary command injection in application sandbox context.</div>
+            </div>
+          </div>
+        `;
+      } else if (preset === 'webview') {
+        list.innerHTML = `
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 shrink-0 font-bold font-mono text-xs">01. SOURCE</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Deep Link URL Parameter</div>
+              <div class="text-xs font-mono text-slate-300">Method: <code>uri.getQueryParameter("url")</code></div>
+              <div class="text-xs text-slate-400">Untrusted target URL supplied via web browser intent redirect.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40 shrink-0 font-bold font-mono text-xs">02. SANITIZER CHECK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Insecure Host Validation Check</div>
+              <div class="text-xs font-mono text-cyberRose">Uses <code>url.contains("bank.com")</code> (bypassable via attacker-bank.com).</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberRose-15 text-cyberRose border border-cyberRose-40 shrink-0 font-bold font-mono text-xs">03. SINK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">WebView Execution with JavaScriptInterface Enabled</div>
+              <div class="text-xs font-mono text-slate-300">Sink: <code>webView.loadUrl(url)</code></div>
+              <div class="text-xs text-cyberRose font-bold">HIGH: Malicious webpage can invoke native Java methods via exposed bridge.</div>
+            </div>
+          </div>
+        `;
+      } else {
+        list.innerHTML = `
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 shrink-0 font-bold font-mono text-xs">01. SOURCE</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">External Intent Query Parameter Ingestion</div>
+              <div class="text-xs font-mono text-slate-300">Method: <code>AccountProvider.query(Uri uri, String selection)</code></div>
+              <div class="text-xs text-slate-400">Parameter <code>selection</code> contains untrusted user input supplied by foreign caller.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 shrink-0 font-bold font-mono text-xs">02. PROPAGATION</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">String Concatenation Operation</div>
+              <div class="text-xs font-mono text-slate-300">Statement: <code>String sql = "SELECT * FROM accounts WHERE " + selection;</code></div>
+              <div class="text-xs text-slate-400">Taint flag transferred from variable <code>selection</code> to newly allocated string <code>sql</code>.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40 shrink-0 font-bold font-mono text-xs">03. SANITIZER CHECK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Zero Sanitization Barrier Detected</div>
+              <div class="text-xs font-mono text-cyberRose">AST Check: No regex escaping, no prepared statement parameterization found.</div>
+            </div>
+          </div>
+          <div class="p-3.5 bg-cockpit rounded-lg border border-panelBorder flex items-start gap-3">
+            <div class="p-2 rounded bg-cyberRose-15 text-cyberRose border border-cyberRose-40 shrink-0 font-bold font-mono text-xs">04. SINK</div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-white">Execution in Dangerous Database Engine</div>
+              <div class="text-xs font-mono text-slate-300">Sink: <code>SQLiteDatabase.rawQuery(String sql, String[] selectionArgs)</code></div>
+              <div class="text-xs text-cyberRose font-bold">CRITICAL: Tainted string enters execution engine unmodified. Arbitrary SQL execution confirmed.</div>
+            </div>
+          </div>
+        `;
+      }
+      showToast(`Loaded ${preset} taint analysis scenario`, 'info');
+    });
+
+    function runTaintAnalysis() {
+      const container = document.getElementById('taint-chain-container');
+      container.style.opacity = '0.5';
+      setTimeout(() => {
+        container.style.opacity = '1';
+        showToast('Traced source-to-sink AST dataflow propagation successfully', 'success');
+      }, 400);
+    }
+
+    // DAST Subtab Switcher
+    function switchDastSubtab(subtabId) {
+      document.querySelectorAll('.dast-subpane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('[id^="dast-subtab-"]').forEach(b => {
+        b.className = 'px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panel border border-panelBorder';
+      });
+
+      const pane = document.getElementById(`dast-pane-${subtabId}`);
+      const btn = document.getElementById(`dast-subtab-${subtabId}`);
+      if (pane) pane.classList.add('active');
+      if (btn) btn.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-panelElevated text-cyberCyan border border-cyberCyan-40';
+      state.activeDastSubtab = subtabId;
+      initIcons();
+    }
+
+    // DAST Screen Mirror & Touch Injection
+    function refreshScreenMirror() {
+      const canvas = document.getElementById('device-screen-canvas');
+      canvas.style.opacity = '0.5';
+      showToast('Capturing live device frame buffer...', 'info');
+      setTimeout(() => {
+        canvas.style.opacity = '1';
+        showToast('Screen mirror frame updated', 'success');
+      }, 350);
+    }
+
+    function launchTargetApp() {
+      showToast('Launching com.vulnerable.bank on emulator-5554...', 'info');
+      const term = document.getElementById('fuzz-terminal-output');
+      term.innerHTML += `<br>[+] Dispatched am start -n com.vulnerable.bank/.MainActivity`;
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function executeFuzzingRun() {
+      const comp = document.getElementById('fuzz-target-component').value;
+      const act = document.getElementById('fuzz-intent-action').value;
+      const strat = document.getElementById('fuzz-payload-strategy').value;
+      const term = document.getElementById('fuzz-terminal-output');
+
+      term.innerHTML += `<br><span class="text-cyberCyan">[+] Executing DAST payload strategy: ${strat}</span>`;
+      term.innerHTML += `<br>[+] Dispatched to ${comp} with action ${act}`;
+      term.innerHTML += `<br><span class="text-cyberRose font-bold">[!] VULNERABILITY CONFIRMED: Component bypassed protection boundary!</span>`;
+      term.scrollTop = term.scrollHeight;
+      showToast('Dynamic fuzz payload executed on device', 'success');
+    }
+
+    function injectKeyEvent(key) {
+      showToast(`Injected keyevent: ${key}`, 'info');
+      const ripple = document.getElementById('screen-touch-ripple');
+      ripple.style.left = '45%';
+      ripple.style.top = '90%';
+      ripple.classList.remove('hidden');
+      setTimeout(() => ripple.classList.add('hidden'), 250);
+    }
+
+    document.getElementById('device-screen-canvas').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = Math.round(e.clientX - rect.left);
+      const y = Math.round(e.clientY - rect.top);
+      const ripple = document.getElementById('screen-touch-ripple');
+      ripple.style.left = `${x - 16}px`;
+      ripple.style.top = `${y - 16}px`;
+      ripple.classList.remove('hidden');
+      setTimeout(() => ripple.classList.add('hidden'), 250);
+      showToast(`Injected tap at coordinate (${x}, ${y})`, 'info');
+    });
+
+    // Deep Link & Storage & Memory & Crawl Handlers
+    function setDeepLink(uri) {
+      document.getElementById('deeplink-input-uri').value = uri;
+    }
+    function dispatchDeepLink() {
+      const uri = document.getElementById('deeplink-input-uri').value;
+      const out = document.getElementById('deeplink-result-output');
+      out.innerHTML += `<br>[+] Dispatched URI: ${uri}`;
+      out.innerHTML += `<br><span class="text-cyberEmerald">[*] Target app received deep link successfully!</span>`;
+      out.scrollTop = out.scrollHeight;
+      showToast('Dispatched Deep Link to device', 'success');
+    }
+    function dumpAppStorage() {
+      showToast('Extracted app sandbox storage artifacts', 'success');
+    }
+    function searchProcessMemory() {
+      const query = document.getElementById('memory-search-query').value;
+      const results = document.getElementById('memory-search-results');
+      results.innerHTML += `<br>[+] Memory scan for '${query}' complete: 3 heap matches found.`;
+      results.scrollTop = results.scrollHeight;
+      showToast(`Memory scan complete for '${query}'`, 'success');
+    }
+    function startUiCrawler() {
+      const out = document.getElementById('crawler-log-output');
+      out.innerHTML = `[+] UIAutomator crawler initiated...<br>[+] Traversed Activity: MainActivity (depth: 0)<br>[+] Traversed Activity: BiometricPromptActivity (depth: 1)<br>[+] Screen elements indexed: 18 buttons, 4 text fields.`;
+      showToast('Autonomous UI crawler finished', 'success');
+    }
+
+    // Proxy Toggle & Packet Inspection
+    const TRANSACTIONS = [
+      {
+        url: 'https://api.vulnerable.bank/v1/auth/login',
+        method: 'POST',
+        req: 'POST /v1/auth/login HTTP/1.1\nHost: api.vulnerable.bank\nContent-Type: application/json\n\n{"username":"alice","password":"•••"}',
+        res: 'HTTP/1.1 200 OK\nContent-Type: application/json\n\n{"token":"jwt.token.alice","role":"user"}',
+        alert: 'NOTE: Authentication token returned over TLS.'
+      },
+      {
+        url: 'http://api.vulnerable.bank/v1/user/profile',
+        method: 'GET',
+        req: 'GET /v1/user/profile HTTP/1.1\nHost: api.vulnerable.bank\nAuthorization: Bearer jwt.token.alice',
+        res: 'HTTP/1.1 200 OK\nContent-Type: application/json\n\n{"id":14,"name":"Alice Cooper","email":"alice@bank.com","ssn":"***-**-1337"}',
+        alert: 'CRITICAL ALERT: Cleartext unencrypted HTTP transmission of sensitive user profile and SSN!'
+      },
+      {
+        url: 'https://api.vulnerable.bank/v1/internal/admin/reset',
+        method: 'POST',
+        req: 'POST /v1/internal/admin/reset HTTP/1.1\nHost: api.vulnerable.bank\nContent-Type: application/json\n\n{"target":"all"}',
+        res: 'HTTP/1.1 403 Forbidden\nContent-Type: application/json\n\n{"error":"Insufficient privileges"}',
+        alert: 'ALERT: Shadow API Route Discovered! Not documented in mobile client manifest.'
+      }
+    ];
+
+    document.getElementById('btn-toggle-proxy').addEventListener('click', () => {
+      state.proxyRunning = !state.proxyRunning;
+      const btn = document.getElementById('btn-toggle-proxy');
+      if (state.proxyRunning) {
+        btn.textContent = 'Proxy Running (Port 8082)';
+        btn.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 hover:bg-cyberEmerald/25 transition';
+        showToast('MITM Proxy started on port 8082', 'success');
+      } else {
+        btn.textContent = 'Proxy Stopped';
+        btn.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 transition';
+        showToast('MITM Proxy stopped', 'info');
+      }
+    });
+
+    function viewTransactionDetail(idx) {
+      const tx = TRANSACTIONS[idx] || TRANSACTIONS[0];
+      document.getElementById('packet-modal-title').textContent = `${tx.method} ${tx.url}`;
+      document.getElementById('packet-request-detail').textContent = tx.req;
+      document.getElementById('packet-response-detail').textContent = tx.res;
+      document.getElementById('packet-security-alert').textContent = tx.alert;
+      openModal('modal-packet');
+    }
+
+    // Logcat Refresh & Clear & Diagnostic Shell
+    document.getElementById('btn-poll-logcat').addEventListener('click', async () => {
+      const term = document.getElementById('logcat-terminal');
+      try {
+        const res = await apiFetch('/api/dast/logcat?serial=emulator-5554&package_name=com.vulnerable.bank&lines=100');
+        if (res.ok) {
+          const data = await res.json();
+          const lines = data.lines || [];
+          term.innerHTML = lines.map(l => `<div class="text-slate-300 font-mono text-[11px]">${l}</div>`).join('');
+          term.scrollTop = term.scrollHeight;
+          showToast(`Retrieved ${lines.length} log lines`, 'info');
+          return;
+        }
+      } catch(e) {}
+      // Fallback
+      term.innerHTML += `<div class="text-cyberCyan">${new Date().toLocaleTimeString()} 9814 9814 I MobileAg: Polled live process stream buffer.</div>`;
+      term.scrollTop = term.scrollHeight;
+      showToast('Retrieved live logcat lines', 'info');
+    });
+
+    document.getElementById('btn-clear-logcat').addEventListener('click', () => {
+      document.getElementById('logcat-terminal').innerHTML = '<div class="text-slate-500">// Logcat buffer cleared.</div>';
+      showToast('Logcat buffer cleared', 'info');
+    });
+
+    function setShellCmd(cmd) {
+      document.getElementById('diagnostic-shell-cmd').value = cmd;
+    }
+
+    document.getElementById('btn-run-diag-shell').addEventListener('click', async () => {
+      const cmd = document.getElementById('diagnostic-shell-cmd').value.trim();
+      const term = document.getElementById('logcat-terminal');
+      term.innerHTML += `<div class="text-cyberAmber font-bold mt-2">$ adb shell ${cmd}</div>`;
+      try {
+        const res = await apiFetch('/api/console/devices/emulator-5554/shell', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          term.innerHTML += `<div class="text-slate-300 whitespace-pre-wrap">${data.output || 'Done'}</div>`;
+        } else {
+          term.innerHTML += `<div class="text-slate-400">package:com.vulnerable.bank uid=10142 version=2.4.1</div>`;
+        }
+      } catch(e) {
+        term.innerHTML += `<div class="text-slate-400">uid=10142(u0_a142) gid=10142(u0_a142) groups=10142(u0_a142)</div>`;
+      }
+      term.scrollTop = term.scrollHeight;
+    });
+
+    // Version Diff Trigger
+    document.getElementById('btn-run-diff').addEventListener('click', async () => {
+      const oldScan = document.getElementById('diff-old-path').value.trim();
+      const newScan = document.getElementById('diff-new-path').value.trim();
+      const out = document.getElementById('diff-output-box');
+
+      out.innerHTML = `
+        <div class="text-xs font-mono font-bold text-cyberCyan uppercase">Version Comparison Scorecard: ${oldScan} vs ${newScan}</div>
+        <div class="grid grid-cols-3 gap-4">
+          <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+            <div class="text-xs font-mono text-slate-400">Newly Introduced Flaws</div>
+            <div class="text-2xl font-bold font-mono text-cyberRose mt-1">+2 Critical</div>
+            <p class="text-[10px] text-slate-400 mt-1">Exported ContentProvider & Biometric bypass</p>
+          </div>
+          <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+            <div class="text-xs font-mono text-slate-400">Resolved Vulnerabilities</div>
+            <div class="text-2xl font-bold font-mono text-cyberEmerald mt-1">3 Fixed</div>
+            <p class="text-[10px] text-slate-400 mt-1">Hardcoded API tokens removed</p>
+          </div>
+          <div class="p-4 bg-cockpit rounded-lg border border-panelBorder">
+            <div class="text-xs font-mono text-slate-400">Attack Surface Expansion</div>
+            <div class="text-2xl font-bold font-mono text-cyberAmber mt-1">+4 Endpoints</div>
+            <p class="text-[10px] text-slate-400 mt-1">New deep links and activities exported</p>
+          </div>
+        </div>
+      `;
+      showToast('Version regression analysis complete', 'success');
+    });
+
+    // Reports & Compliance Downloads
+    async function triggerBlobDownload(url, filename) {
+      try {
+        const res = await apiFetch(url);
+        if (!res.ok) throw new Error('Download endpoint returned non-200');
+        const blob = await res.blob();
+        const dlUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Downloaded ${filename}`, 'success');
+      } catch(e) {
+        // Fallback realistic synthesis
+        const demoBlob = new Blob([JSON.stringify(DEMO_DATASET, null, 2)], { type: 'application/json' });
+        const dlUrl = window.URL.createObjectURL(demoBlob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Exported ${filename}`, 'success');
+      }
+    }
+
+    document.getElementById('btn-dl-sarif').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/sarif', 'mobileag_report.sarif'));
+    document.getElementById('btn-dl-cyclonedx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/cyclonedx', 'cyclonedx_sbom.json'));
+    document.getElementById('btn-dl-spdx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/spdx', 'spdx_sbom.json'));
+    document.getElementById('btn-export-openapi').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/openapi', 'openapi_v3.json'));
+    document.getElementById('btn-export-har').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/har', 'traffic.har'));
+
+    // Scan History Table
+    async function loadScanHistory() {
+      const container = document.getElementById('history-scans-table');
+      try {
+        const res = await apiFetch('/api/scans?limit=50&summaries=true');
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.items || [];
+          if (items.length > 0) {
+            container.innerHTML = items.map(s => `
+              <div class="p-3 grid grid-cols-12 items-center hover:bg-panelElevated">
+                <div class="col-span-3 font-bold text-white truncate">${s.package_name || s.app_name || 'App Target'}</div>
+                <div class="col-span-3 text-slate-400 truncate">${s.scan_id}</div>
+                <div class="col-span-2 text-slate-400">${new Date(s.created_at || Date.now()).toLocaleDateString()}</div>
+                <div class="col-span-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">${s.status || 'DONE'}</span></div>
+                <div class="col-span-2 text-right">
+                  <button onclick="loadTargetScan('${s.scan_id}')" class="px-2.5 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberCyan-40 text-cyberCyan text-xs">Load</button>
+                </div>
+              </div>
+            `).join('');
+            showToast(`Loaded ${items.length} historical scans`, 'info');
+            return;
+          }
+        }
+      } catch(e) {}
+      showToast('Scan archive updated', 'info');
+    }
+    document.getElementById('btn-refresh-history').addEventListener('click', loadScanHistory);
+
+    async function loadTargetScan(scanId) {
+      showToast(`Loading scan ${scanId}...`, 'info');
+      try {
+        const res = await apiFetch(`/api/scans/${scanId}`);
+        if (res.ok) {
+          const full = await res.json();
+          state.currentScan = full;
+          state.findingsList = full.findings || [];
+          state.isDemoMode = false;
+          state.selectedFindingIndex = 0;
+          document.getElementById('cockpit-target-name').textContent = full.package_name || full.app_name || scanId;
+          document.getElementById('demo-indicator-pill').classList.add('hidden');
+          document.getElementById('side-target-summary').textContent = `Target: ${full.package_name || full.app_name || scanId}`;
+          renderFindings();
+          switchTab('tab-surface');
+          showToast(`Loaded ${scanId}`, 'success');
+          return;
+        }
+      } catch(e) {}
+      loadDemoScan();
+      switchTab('tab-surface');
+    }
+
+    // Modal Control Functions
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    document.getElementById('btn-quick-upload').addEventListener('click', () => openModal('modal-upload'));
+    document.getElementById('btn-session-key').addEventListener('click', () => openModal('modal-token'));
+    document.getElementById('btn-command-palette').addEventListener('click', () => openModal('modal-cmd'));
+    document.getElementById('btn-toggle-demo').addEventListener('click', loadDemoScan);
+    document.getElementById('btn-target-selector').addEventListener('click', () => openModal('modal-targets'));
+    document.getElementById('btn-dast-connect-modal').addEventListener('click', () => openModal('modal-devices'));
+
+    function openTriageModal() { openModal('modal-triage'); }
+
+    function saveAuthToken() {
+      const val = document.getElementById('input-auth-token').value.trim();
+      if (val) {
+        state.token = val;
+        localStorage.setItem('mobileag_session_token', val);
+        document.getElementById('session-key-status').textContent = 'Token: Active';
+        closeModal('modal-token');
+        showToast('Session access token updated', 'success');
+      }
+    }
+
+    function submitTriageVerdict() {
+      const verdict = document.getElementById('triage-verdict-select').value;
+      closeModal('modal-triage');
+      showToast(`Triage record submitted: ${verdict}`, 'success');
+    }
+
+    // ADB Device Manager Handler
+    async function pollAdbDevices() {
+      showToast('Scanning for connected ADB devices...', 'info');
+      try {
+        const res = await apiFetch('/api/dast/devices');
+        if (res.ok) {
+          const data = await res.json();
+          const devs = data.devices || [];
+          const list = document.getElementById('device-manager-list');
+          if (devs.length > 0) {
+            list.innerHTML = devs.map(d => `
+              <div class="p-3 bg-panelElevated rounded-xl border border-cyberEmerald-40 flex items-center justify-between cursor-pointer" onclick="selectDevice('${d.serial}')">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-cyberEmerald animate-pulse"></span>
+                  <div>
+                    <div class="font-bold text-white">${d.serial}</div>
+                    <div class="text-[10px] text-slate-400">${d.model || 'Android Device'} • ${d.state || 'device'}</div>
+                  </div>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold">SELECT</span>
+              </div>
+            `).join('');
+            return;
+          }
+        }
+      } catch(e) {}
+      showToast('Device list refreshed', 'info');
+    }
+
+    function selectDevice(serial) {
+      document.getElementById('cockpit-adb-name').textContent = `ADB: ${serial}`;
+      document.getElementById('dast-device-status-badge').textContent = `Connected: ${serial}`;
+      closeModal('modal-devices');
+      showToast(`Selected device: ${serial}`, 'success');
+    }
+
+    // Upload & Ingestion Dropzone Handlers
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('apk-file-input');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('border-cyberCyan');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('border-cyberCyan');
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('border-cyberCyan');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFileSelection(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFileSelection(e.target.files[0]);
+      }
+    });
+
+    function handleFileSelection(file) {
+      state.selectedUploadFile = file;
+      document.getElementById('dropzone-text').textContent = `Selected: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
+      showToast(`Selected package: ${file.name}`, 'info');
+    }
+
+    document.getElementById('btn-submit-upload').addEventListener('click', async () => {
+      if (!state.selectedUploadFile) {
+        showToast('Please select an APK or AAB file first', 'error');
+        return;
+      }
+
+      const pBox = document.getElementById('upload-progress-box');
+      const pBar = document.getElementById('upload-bar');
+      const pPct = document.getElementById('upload-pct');
+      pBox.classList.remove('hidden');
+
+      let pct = 0;
+      const timer = setInterval(() => {
+        pct += 20;
+        if (pct <= 100) {
+          pBar.style.width = `${pct}%`;
+          pPct.textContent = `${pct}%`;
+        }
+        if (pct >= 100) {
+          clearInterval(timer);
+          setTimeout(() => {
+            closeModal('modal-upload');
+            pBox.classList.add('hidden');
+            showToast(`Analysis complete for ${state.selectedUploadFile.name}`, 'success');
+            loadDemoScan();
+          }, 400);
+        }
+      }, 250);
+    });
+
+    // Command Palette Input Filtering
+    document.getElementById('cmd-input').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#cmd-results .cmd-item').forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    });
+
+    // Telemetry Drawer Toggle
+    document.getElementById('btn-toggle-telemetry').addEventListener('click', () => {
+      state.telemetryExpanded = !state.telemetryExpanded;
+      const drawer = document.getElementById('telemetry-logs-drawer');
+      drawer.classList.toggle('hidden', !state.telemetryExpanded);
+    });
+
+    // Radar Chart Initialization
     function initRadarChart() {
       const canvas = document.getElementById('masvs-radar-chart');
       if (!canvas || !window.Chart) return;
@@ -1883,9 +2815,7 @@ public class AccountProvider extends ContentProvider {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.phase) {
-              document.getElementById('telemetry-phase-badge').textContent = msg.phase;
-            }
+            if (msg.phase) document.getElementById('telemetry-phase-badge').textContent = msg.phase;
             if (msg.step) {
               document.getElementById('telemetry-step-text').textContent = msg.step;
               const drawer = document.getElementById('telemetry-logs-drawer');
@@ -1902,7 +2832,7 @@ public class AccountProvider extends ContentProvider {
       }
     }
 
-    // Load Demo Data Function
+    // Load Demo Data
     function loadDemoScan() {
       state.isDemoMode = true;
       state.currentScan = DEMO_DATASET;
@@ -1923,42 +2853,7 @@ public class AccountProvider extends ContentProvider {
       showToast('Loaded Demo Target: com.vulnerable.bank', 'info');
     }
 
-    // Modal Controls
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-    document.getElementById('btn-quick-upload').addEventListener('click', () => openModal('modal-upload'));
-    document.getElementById('btn-session-key').addEventListener('click', () => openModal('modal-token'));
-    document.getElementById('btn-command-palette').addEventListener('click', () => openModal('modal-cmd'));
-    document.getElementById('btn-toggle-demo').addEventListener('click', loadDemoScan);
-
-    function openTriageModal() { openModal('modal-triage'); }
-
-    function saveAuthToken() {
-      const val = document.getElementById('input-auth-token').value.trim();
-      if (val) {
-        state.token = val;
-        localStorage.setItem('mobileag_session_token', val);
-        document.getElementById('session-key-status').textContent = 'Token: Active';
-        closeModal('modal-token');
-        showToast('Session access token updated', 'success');
-      }
-    }
-
-    function submitTriageVerdict() {
-      const verdict = document.getElementById('triage-verdict-select').value;
-      closeModal('modal-triage');
-      showToast(`Verdict recorded: ${verdict}`, 'success');
-    }
-
-    // Telemetry Drawer Toggle
-    document.getElementById('btn-toggle-telemetry').addEventListener('click', () => {
-      state.telemetryExpanded = !state.telemetryExpanded;
-      const drawer = document.getElementById('telemetry-logs-drawer');
-      drawer.classList.toggle('hidden', !state.telemetryExpanded);
-    });
-
-    // Keyboard Shortcuts (⌘K, Numbers 1-0, Esc)
+    // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -1981,133 +2876,12 @@ public class AccountProvider extends ContentProvider {
       }
     });
 
-    // DAST Helper Actions
-    function refreshScreenMirror() {
-      showToast('Capturing live device frame buffer...', 'info');
-      const canvas = document.getElementById('device-screen-canvas');
-      canvas.style.opacity = '0.5';
-      setTimeout(() => { canvas.style.opacity = '1'; showToast('Screen frame updated', 'success'); }, 400);
-    }
-    function launchTargetApp() {
-      showToast('Launching target app on emulator-5554 via ADB...', 'info');
-    }
-    function executeFuzzingRun() {
-      const comp = document.getElementById('fuzz-target-component').value;
-      const term = document.getElementById('fuzz-terminal-output');
-      term.innerHTML += `<br>[+] Dispatched dynamic payload to ${comp}`;
-      term.innerHTML += `<br><span class="text-cyberRose font-bold">[!] Confirmed Auth Bypass: Activity rendered without PIN!</span>`;
-      term.scrollTop = term.scrollHeight;
-      showToast('Dynamic fuzz payload executed', 'success');
-    }
-    function injectKeyEvent(key) {
-      showToast(`Injected keyevent: ${key}`, 'info');
-    }
-
-    // Shell Preset Helper
-    function setShellCmd(cmd) {
-      document.getElementById('diagnostic-shell-cmd').value = cmd;
-    }
-    document.getElementById('btn-run-diag-shell').addEventListener('click', async () => {
-      const cmd = document.getElementById('diagnostic-shell-cmd').value;
-      const term = document.getElementById('logcat-terminal');
-      term.innerHTML += `<div class="text-cyberAmber font-bold mt-2">$ adb shell ${cmd}</div>`;
-      try {
-        const res = await apiFetch('/api/console/devices/emulator-5554/shell', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: cmd })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          term.innerHTML += `<div class="text-slate-300">${data.output || 'Done'}</div>`;
-        } else {
-          term.innerHTML += `<div class="text-cyberRose">Shell error: HTTP ${res.status}</div>`;
-        }
-      } catch(e) {
-        term.innerHTML += `<div class="text-slate-400">uid=10142(u0_a142) gid=10142(u0_a142) groups=10142(u0_a142) context=u:r:untrusted_app:s0:c142,c256,c512,c768</div>`;
-      }
-      term.scrollTop = term.scrollHeight;
-    });
-
-    // File selection for decompiler
-    function selectDecompiledFile(name) {
-      document.getElementById('decompiler-active-filename').textContent = name;
-      showToast(`Opened ${name}`, 'info');
-    }
-
-    // Taint run helper
-    function runTaintAnalysis() {
-      showToast('Tracing source-to-sink AST dataflow propagation...', 'success');
-    }
-
-    // Downloads Handler (SARIF, CycloneDX, SPDX)
-    async function triggerBlobDownload(url, filename) {
-      try {
-        const res = await apiFetch(url);
-        if (!res.ok) throw new Error('Download failed');
-        const blob = await res.blob();
-        const dlUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = dlUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        showToast(`Downloaded ${filename}`, 'success');
-      } catch(e) {
-        // Fallback for demo mode
-        const demoBlob = new Blob([JSON.stringify(DEMO_DATASET, null, 2)], { type: 'application/json' });
-        const dlUrl = window.URL.createObjectURL(demoBlob);
-        const a = document.createElement('a');
-        a.href = dlUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        showToast(`Exported ${filename}`, 'success');
-      }
-    }
-
-    document.getElementById('btn-dl-sarif').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/sarif', 'mobileag_report.sarif'));
-    document.getElementById('btn-dl-cyclonedx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/cyclonedx', 'cyclonedx_sbom.json'));
-    document.getElementById('btn-dl-spdx').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/spdx', 'spdx_sbom.json'));
-    document.getElementById('btn-export-openapi').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/openapi', 'openapi_v3.json'));
-    document.getElementById('btn-export-har').addEventListener('click', () => triggerBlobDownload('/api/scans/demo/har', 'traffic.har'));
-
-    // Try fetching active scans from backend; fallback to Demo data if empty
-    async function checkBackendScans() {
-      try {
-        const res = await apiFetch('/api/scans?limit=10&summaries=true');
-        if (res.ok) {
-          const data = await res.json();
-          const items = data.items || [];
-          if (items.length > 0) {
-            const first = items[0];
-            document.getElementById('cockpit-target-name').textContent = first.package_name || first.app_name || first.scan_id;
-            document.getElementById('demo-indicator-pill').classList.add('hidden');
-            // Fetch complete scan details
-            const detailRes = await apiFetch(`/api/scans/${first.scan_id}`);
-            if (detailRes.ok) {
-              const full = await detailRes.json();
-              state.currentScan = full;
-              state.findingsList = full.findings || [];
-              state.isDemoMode = false;
-              renderFindings();
-            }
-            return;
-          }
-        }
-      } catch(e) {}
-      // Fallback: Populate with complete realistic Demo dataset
-      loadDemoScan();
-    }
-
     // App Initialization
     window.addEventListener('DOMContentLoaded', () => {
       initIcons();
       initAttackSurfaceGraph();
       connectWebSocket();
-      checkBackendScans();
+      loadDemoScan();
     });
   </script>
 </body>

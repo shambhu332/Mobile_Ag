@@ -50,7 +50,8 @@ async def lifespan(application):
 
 from fastapi import Request, BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, model_validator
 import httpx
@@ -128,9 +129,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
 app.state.session_deadline = time.monotonic() + 8*3600
 app.state.auth_token = os.environ.get("MOBILEAG_API_TOKEN") or secrets.token_urlsafe(32)
 app.add_middleware(SecurityMiddleware, owner=app)
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/ui", methods=["GET", "HEAD"], response_class=HTMLResponse)
+async def get_dashboard() -> HTMLResponse:
+    """Serve the single-page MobileAg Enterprise Dashboard."""
+    index_path = TEMPLATES_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail="Dashboard template not found.")
+    return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation_error(request: Request, exc: RequestValidationError):
@@ -2367,23 +2383,22 @@ from mobileag.web.console_routes import router as console_router
 app.include_router(console_router)
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080, ui: bool = False) -> None:
-    """Entrypoint to launch the authenticated API server."""
+def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
+    """Entrypoint to launch the web dashboard."""
     import uvicorn
-    if not os.environ.get("MOBILEAG_API_TOKEN"):
-        raise ValueError("Set MOBILEAG_API_TOKEN before starting the API server")
     print(f"\n=======================================================")
-    print(f"[*] Starting MobileAg authenticated API")
+    print(f"[*] Starting MobileAg Enterprise AppSec Dashboard")
     print(f"[*] Live WebSockets:  ws://{host}:{port}/ws/telemetry")
     print(f"[*] Neo4j Status:     {'Connected' if attack_graph._connected else 'Embedded Fallback'}")
-    print(f"[*] API endpoint:     http://{host}:{port}")
+    print(f"[*] Web Dashboard:    http://{host}:{port}")
     print(f"=======================================================\n")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")
-    if ui:
-        from mobileag.studio import enable_studio
-        enable_studio(app)
-        print(f"[*] Browser workspace: http://{host}:{port}/ui")
+    if not os.environ.get("MOBILEAG_API_TOKEN"):
+        print(f"Session access token (paste into dashboard): {app.state.auth_token}")
+    else:
+        print("Using configured MOBILEAG_API_TOKEN; enter that local workbench access key.")
+    app.state.token_announced = True
     uvicorn.run(app, host=host, port=port, log_level="info", ws_max_size=65536)
 
 

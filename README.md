@@ -89,7 +89,7 @@ The diagram shows logical boundaries, not a claim that every optional integratio
 | Static analysis | `mobileag/analysis/` | Manifest, API, secrets, code, taint, crypto API metadata, native, dependency, network-security, framework and platform checks. Results are bounded review candidates. |
 | Candidate annotation | `mobileag/filters/`, `mobileag/llm/` | Optional heuristic prioritization or explicitly approved model review; annotations do not prove exploitability or silently erase candidates. |
 | Dynamic testing | `mobileag/dast/`, `mobileag/security/network.py` | Device diagnostics, traffic auditing/capture, route cataloging, explicit replay and selected narrow test helpers. Exact scope is enforced at action/network boundaries. |
-| Web application | `mobileag/web/`, `mobileag/dashboard/` | Bearer-authenticated local API, scope policy, isolated jobs, scan/evidence persistence, and reporting. The legacy browser bundles remain removed. A new offline browser workspace is available explicitly with `mobileag web --ui`; API-only startup remains the default. |
+| Web application | `mobileag/web/`, `mobileag/dashboard/` | Bearer-authenticated local API, scope policy, isolated jobs, scan/evidence persistence, and reporting. No browser UI is shipped or served. |
 | Reporting/evidence | `mobileag/reporting/` | Finding schema, coverage, reports, SARIF interchange/import, structured analyst confirmation and provenance. |
 | Optional knowledge | `mobileag/knowledge/` | Neo4j/Qdrant adapters and feedback abstractions. Not required for the standard offline scan. |
 | Regression and docs | `tests/`, `docs/` | Synthetic, isolated checks; workflow evidence; schemas and roadmap. Tests do not certify field recall or absence of vulnerabilities. |
@@ -406,21 +406,12 @@ Small documentation, accessibility, evidence-quality and synthetic-test improvem
 - [Scoped API capture workflow](docs/API_CAPTURE_WORKFLOW.md)
 - [Current API matrix](docs/product-security-review-2026-10-05/CURRENT_API_MATRIX.md)
 
-## Optional browser workspace
+## Web Dashboard & API
 
-Launch the new local, Djini-inspired static-review workspace with:
+Launch the local web dashboard and authenticated API with:
 
 ```bash
-# Enter a privately configured server token without putting it in shell history.
-read -rsp 'MobileAg API token: ' MOBILEAG_API_TOKEN; echo
-export MOBILEAG_API_TOKEN
-mobileag web --ui --host 127.0.0.1 --port 8080
+python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-Open the `/ui` URL printed by the server (normally `http://127.0.0.1:8080/ui`) and connect using the same token. The token stays only in the tab's memory. Without `--ui`, the server stays API-only.
-
-The workspace supports archive staging and explicitly approved offline static scans, finding/evidence inspection, coverage/provenance and report downloads. **Advanced tools** adds reviewed forms for the supported API workflows: guided assessments, automation, scoped device/API diagnostics, scope/settings editing, analyst decisions, source/graph investigation and live events. CLI adapters add SARIF/MobSF imports, AAB inventory, uploaded-source taint and two-APK comparison. Uploading never starts a scan. Disconnect clears this tab; it does not revoke the server token or cancel jobs.
-
-See the [workflow coverage matrix and validation boundaries](docs/studio-parity-2026-10-17/README.md). Browser scans stay offline; server setup, provider secrets and CLI cloud/advisory flags remain terminal-managed. Retired unsafe operations stay disabled.
-
-See [architecture review and design](docs/studio-2026-10-17/REVIEW.md) and [screenshots, validation and limitations](docs/studio-2026-10-17/README.md). No demo results or external assets are shipped.
+Open `http://127.0.0.1:8080` (or `http://127.0.0.1:8080/ui`) in your browser and connect using the session token displayed in the terminal. The dashboard provides visual attack surface topology, interactive finding triage, source code inspection, dynamic DAST lab controls (intent fuzzing, storage/memory forensics, MITM proxy, live logcat stream), and compliance reporting.

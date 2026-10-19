@@ -199,12 +199,12 @@ async def test_restart_recovery_is_not_automatic_execution():
     assert result['status']=='interrupted'
     assert 'No device action' in result['errors'][0]
 
-def test_web_ui_and_asset_routes_are_not_shipped(client):
-    assert client.get("/static/vendor/lucide.js").status_code == 404
+def test_web_ui_and_asset_routes(client):
+    assert client.get("/static/vendor/lucide.js").status_code == 200
     anonymous=TestClient(web.app)
-    assert anonymous.get("/static/accessibility.css").status_code == 401
+    assert anonymous.get("/static/accessibility.css").status_code == 200
     assert anonymous.get("/api/scope").status_code == 401
-    assert client.get("/").status_code == 404
+    assert client.get("/").status_code == 200
 
 
 @pytest.mark.skipif(not shutil.which('bwrap'),reason='Linux bubblewrap not installed')

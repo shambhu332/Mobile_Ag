@@ -1350,8 +1350,17 @@ class ApiFuzzRequest(BaseModel):
     response_body: Optional[str] = Field(default=None, max_length=262144)
 
 
+class SettingsActionRequest(BaseModel):
+    serial: str
+    namespace: str = Field(default="global", pattern=r"^(global|secure|system)$")
+    key: Optional[str] = Field(default=None, max_length=256)
+    value: Optional[str] = Field(default=None, max_length=4096)
 
 
+class ProxySetupRequest(BaseModel):
+    serial: str
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=8080, ge=1, le=65535)
 
 def require_current_session(request: Request):
     token = request.state.authenticated_token
@@ -1836,6 +1845,152 @@ async def audit_api_capture(request: Request) -> dict[str, Any]:
     return {'status': 'capture_analysis', 'transactions_reviewed': len(txs),
             'findings': redact([finding.to_dict() for finding in findings]),
             'live_requests_sent': 0}
+
+
+@app.get("/api/scans/{scan_id}/signature")
+async def get_scan_signature_analysis(scan_id: str, request: Request) -> dict[str, Any]:
+    """Retrieve APK Signature Scheme verification and vulnerability details."""
+    require_current_session(request)
+    scan = repository().get(scan_id)
+    if not scan:
+        raise HTTPException(404, "Scan record not found")
+    sig_data = scan.get("signature_analysis")
+    if not sig_data:
+        apk_path = scan.get("apk_path")
+        if apk_path and Path(apk_path).is_file():
+            from mobileag.analysis.apk_signature_auditor import ApkSignatureAuditor
+            manifest = scan.get("manifest_data") or {}
+            min_sdk = manifest.get("min_sdk") or 1
+            if isinstance(min_sdk, str) and min_sdk.isdecimal():
+                min_sdk = int(min_sdk)
+            elif not isinstance(min_sdk, int):
+                min_sdk = 1
+            auditor = ApkSignatureAuditor(min_sdk_version=min_sdk)
+            res = auditor.audit(apk_path)
+            sig_data = res.to_dict()
+            scan["signature_analysis"] = sig_data
+            try:
+                repository().save(scan)
+            except Exception:
+                pass
+        else:
+            sig_data = {
+                "signing_block_found": False,
+                "schemes": {"v1": False, "v2": False, "v3": False, "v3.1": False},
+                "certificates": [],
+                "vulnerabilities": [],
+                "janus_vulnerable": False,
+            }
+    return {"scan_id": scan_id, "signature": redact(sig_data)}
+
+
+@app.get("/api/dast/sockets")
+async def get_dast_sockets(serial: str, request: Request) -> dict[str, Any]:
+    """Retrieve live network socket connections table from connected Android device."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "sockets", {"serial": serial}):
+            raise HTTPException(403, "Sockets inspection scope is unavailable or revoked")
+    guard()
+    sockets = await adb_manager.get_sockets(serial, guard=guard)
+    guard()
+    return {"serial": serial, "sockets": sockets, "count": len(sockets)}
+
+
+@app.post("/api/dast/inspector")
+async def dump_dast_inspector(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
+    """Dump live UI view hierarchy via uiautomator and return structured component tree."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "inspector", req.model_dump()):
+            raise HTTPException(403, "UI inspector scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.dump_view_hierarchy(req.serial, guard=guard)
+    guard()
+    return {"serial": req.serial, "nodes": res.get("nodes", []), "count": res.get("count", 0), "status": res.get("status", "success")}
+
+
+@app.get("/api/dast/settings")
+async def get_dast_settings(serial: str, request: Request, namespace: str = Query("global", pattern=r"^(global|secure|system)$"), key: Optional[str] = None) -> dict[str, Any]:
+    """Read Android system / secure / global settings table or key."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "settings", {"serial": serial}):
+            raise HTTPException(403, "Settings scope is unavailable or revoked")
+    guard()
+    settings = await adb_manager.get_settings(serial, namespace=namespace, key=key, guard=guard)
+    guard()
+    return {"serial": serial, "namespace": namespace, "settings": settings, "count": len(settings)}
+
+
+@app.post("/api/dast/settings")
+async def put_dast_setting(req: SettingsActionRequest, request: Request) -> dict[str, Any]:
+    """Write an Android setting (settings put <namespace> <key> <val>)."""
+    require_current_session(request)
+    if not req.key:
+        raise HTTPException(422, "Setting key is required")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "settings", req.model_dump()):
+            raise HTTPException(403, "Settings mutation scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.put_setting(req.serial, namespace=req.namespace, key=req.key, value=req.value or "", guard=guard)
+    guard()
+    return res
+
+
+@app.delete("/api/dast/settings")
+async def delete_dast_setting(serial: str, namespace: str, key: str, request: Request) -> dict[str, Any]:
+    """Delete an Android setting."""
+    require_current_session(request)
+    if namespace not in ("system", "secure", "global"):
+        raise HTTPException(422, "Invalid settings namespace")
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "settings", {"serial": serial, "namespace": namespace, "key": key}):
+            raise HTTPException(403, "Settings mutation scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.delete_setting(serial, namespace=namespace, key=key, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/proxy/setup")
+async def setup_dast_proxy(req: ProxySetupRequest, request: Request) -> dict[str, Any]:
+    """Configure device global HTTP proxy for network traffic capture."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "proxy", req.model_dump()):
+            raise HTTPException(403, "Proxy setup scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.configure_proxy(req.serial, host=req.host, port=req.port, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/proxy/clear")
+async def clear_dast_proxy(req: DeviceActionRequest, request: Request) -> dict[str, Any]:
+    """Clear device global HTTP proxy."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "proxy", req.model_dump()):
+            raise HTTPException(403, "Proxy clear scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.clear_proxy(req.serial, guard=guard)
+    guard()
+    return res
 
 
 @app.post("/api/analysis/taint")

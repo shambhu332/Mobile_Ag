@@ -4,7 +4,9 @@ import re
 from mobileag.web.security import configured_list
 
 DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb','logcat',
-                   'automation_observe','automation_execute','screenshot','storage','providers','deeplinks','memory','crawl','frida_status','fuzz','api_capture'}
+                   'automation_observe','automation_execute','screenshot','storage','providers',
+                   'deeplinks','memory','crawl','frida_status','fuzz','api_capture',
+                   'sockets','inspector','settings','proxy'}
 METHODS = {'GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'}
 
 def validate_policy(value):

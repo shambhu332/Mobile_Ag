@@ -26,15 +26,23 @@ class SecretScanner:
         self.secret_patterns = {
             "Google API Key": re.compile(r"AIza[0-9A-Za-z-_]{35}"),
             "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
-            "GitHub Access Token": re.compile(r"(?:ghp_[0-9a-zA-Z]{36}|github_pat_[0-9a-zA-Z_]{82})"),
+            "GitHub Access Token": re.compile(r"(?:ghp_[0-9a-zA-Z]{36}|github_pat_[0-9a-zA-Z_]{22,})"),
             "Slack Webhook URL": re.compile(r"https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+"),
             "Stripe Secret Key": re.compile(r"sk_(?:live|test)_[0-9a-zA-Z]{24,}"),
             "Twilio Account SID": re.compile(r"AC[a-zA-Z0-9]{32}"),
-            "OpenAI API Key": re.compile(r"sk-[a-zA-Z0-9]{32,}"),
+            "OpenAI API Key": re.compile(r"sk-(?:proj|svcacct|admin|[a-zA-Z0-9]{20,})-[A-Za-z0-9_-]{20,}"),
+            "Anthropic API Key": re.compile(r"sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_-]{80,}"),
+            "Telegram Bot Token": re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b"),
+            "Discord Bot Token": re.compile(r"\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}\b"),
+            "Database Connection URI": re.compile(r"\b(?:jdbc:[a-z]+|mongodb(?:\+srv)?|redis|postgres(?:ql)?|mysql|amqp)://[^\s\"'<>]{4,}"),
+            "Credentials in URL": re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\/\s:@\"'<>]{1,64}:[^\/\s@\"'<>]{1,64}@[\w.-]+"),
+            "SendGrid API Key": re.compile(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
+            "Square Access Token": re.compile(r"\bsq0(?:atp|csp)-[0-9A-Za-z_-]{22,}"),
+            "Mapbox Secret Token": re.compile(r"\bsk\.eyJ[A-Za-z0-9_-]{50,}\.[A-Za-z0-9_-]{20,}"),
             "xAI API Key": re.compile(r"xai-[a-zA-Z0-9_-]+"),
             "Firebase URL": re.compile(r"https://[a-zA-Z0-9_-]+\.firebaseio\.com"),
             "JWT Token": re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
-            "Private RSA/EC Key": re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),
+            "Private RSA/EC Key": re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"),
         }
         
         self.crypto_patterns = {
@@ -50,6 +58,22 @@ class SecretScanner:
         self._entropy_context = re.compile(
             r"(?i)(?:secret|token|api[_-]?key|access[_-]?key|password|credential|private[_-]?key)"
         )
+
+    def key_shaped(self, s: str) -> Optional[str]:
+        """Detect standalone key-shaped constants: Base64 or hex of an AES/crypto key."""
+        if len(s) < 16 or len(s) > 128:
+            return None
+        if len(s) in (32, 48, 64) and re.fullmatch(r"[0-9a-fA-F]+", s) and re.search(r"\d", s) and re.search(r"[a-fA-F]", s):
+            if self.calculate_entropy(s) >= 3.0:
+                return "Hex key-sized value"
+        if (len(s) in (16, 20, 22, 24, 32, 43, 44, 64, 88) or len(s) >= 22) and re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", s):
+            digits = sum(1 for c in s if c.isdigit())
+            symbols = sum(1 for c in s if c in "+/=")
+            if re.search(r"[a-z]", s) and re.search(r"[A-Z]", s):
+                if (digits + symbols) / len(s) >= 0.15 and self.calculate_entropy(s) >= 4.0:
+                    if len(re.findall(r"[A-Z][a-z]{2,}", s)) < 2 and not re.search(r"[a-z]{7,}", s):
+                        return "Base64 key-sized value"
+        return None
 
     @staticmethod
     def _mask_secret(val: str) -> str:
@@ -116,13 +140,20 @@ class SecretScanner:
                                    for match in pattern.finditer(line)]
                     for match in self._token_literal.finditer(line):
                         value = match.group(1)
-                        if (len(entropy_matches) < 1000
-                                and self.calculate_entropy(value) >= self.entropy_threshold
-                                and self._entropy_context.search(line[max(0, match.start() - 160):match.start(1)])
-                                and not any(match.start(1) < end and match.end(1) > start
-                                            for start, end in known_spans)):
-                            entropy_matches.append({"file_path": rel_path, "line_num": line_num,
-                                                    "stem": file_path.stem})
+                        if any(match.start(1) < end and match.end(1) > start for start, end in known_spans):
+                            continue
+                        is_context_entropy = (
+                            self.calculate_entropy(value) >= self.entropy_threshold
+                            and self._entropy_context.search(line[max(0, match.start() - 160):match.start(1)])
+                        )
+                        shape = self.key_shaped(value)
+                        if len(entropy_matches) < 1000 and (is_context_entropy or shape):
+                            entropy_matches.append({
+                                "file_path": rel_path,
+                                "line_num": line_num,
+                                "stem": file_path.stem,
+                                "shape": shape,
+                            })
                         if len(entropy_matches) >= 1000:
                             inventory.record_limit('entropy_candidate_count')
                             break

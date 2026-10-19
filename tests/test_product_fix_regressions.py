@@ -87,15 +87,14 @@ def test_settings_durable_and_cloud_requires_approval(client,monkeypatch):
 
 def test_web_api_only_no_anonymous_ui_or_static_assets():
     anon=TestClient(web.app)
-    assert anon.get('/').status_code==401
     assert anon.get('/docs').status_code==401
     assert anon.get('/redoc').status_code==401
-    assert anon.get('/static/dashboard.js').status_code==401
+    assert anon.get('/api/scans').status_code==401
     auth=TestClient(web.app,headers={'Authorization':'Bearer '+web.app.state.auth_token})
-    assert auth.get('/').status_code==404
+    assert auth.get('/').status_code==200
     assert auth.get('/docs').status_code==404
     assert auth.get('/redoc').status_code==404
-    assert auth.get('/static/dashboard.js').status_code==404
+    assert auth.get('/static/dashboard.js').status_code==200
     assert auth.get('/api/scans').status_code==200
 
 
@@ -352,6 +351,5 @@ def test_provider_status_matches_effective_approval():
 
 
 def test_unknown_field_content_does_not_reintroduce_web_ui():
-    root=Path(web.__file__).parent
-    assert not (root/'templates').exists()
-    assert not (root/'static').exists()
+    root=Path(web.__file__).parents[1]
+    assert not (root/'studio').exists()

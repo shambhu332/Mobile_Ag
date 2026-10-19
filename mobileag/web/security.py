@@ -124,6 +124,8 @@ class SecurityMiddleware:
                 action = path.removeprefix('/api/dast/')
                 if action == 'frida/status':
                     action = 'frida_status'
+                elif action.startswith('proxy/'):
+                    action = 'proxy'
                 if not check_action(policy, action, data):
                     return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')

@@ -558,6 +558,31 @@
           </div>
         </div>
 
+        <!-- APK Signature Schemes & Janus Status Banner -->
+        <div id="findings-signature-banner" class="bg-panelElevated p-3 rounded-xl border border-panelBorder flex items-center justify-between shrink-0 text-xs font-mono">
+          <div class="flex items-center gap-3">
+            <span class="text-slate-400 font-bold uppercase flex items-center gap-1.5">
+              <i data-lucide="shield-check" class="w-4 h-4 text-cyberEmerald"></i>
+              <span>APK Signature:</span>
+            </span>
+            <div id="sig-scheme-badges" class="flex items-center gap-2">
+              <span id="badge-sig-v1" class="px-2 py-0.5 rounded text-[10px] bg-cockpit border border-panelBorder text-slate-400 font-mono">v1: checking</span>
+              <span id="badge-sig-v2" class="px-2 py-0.5 rounded text-[10px] bg-cockpit border border-panelBorder text-slate-400 font-mono">v2: checking</span>
+              <span id="badge-sig-v3" class="px-2 py-0.5 rounded text-[10px] bg-cockpit border border-panelBorder text-slate-400 font-mono">v3: checking</span>
+            </div>
+            <div id="sig-janus-badge" class="px-2.5 py-0.5 rounded text-[10px] font-bold bg-cyberEmerald-15 border border-cyberEmerald-40 text-cyberEmerald flex items-center gap-1">
+              <i data-lucide="shield" class="w-3 h-3"></i>
+              <span>Janus CVE-2017-13156: Immune</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-slate-400">
+            <span id="sig-cert-subject" class="truncate max-w-xs text-slate-300">Cert: Loading...</span>
+            <button onclick="toggleCertDetailsModal()" class="px-2 py-1 rounded bg-cockpit hover:bg-panel border border-panelBorder text-slate-300 hover:text-white transition">
+              Cert Details
+            </button>
+          </div>
+        </div>
+
         <!-- Master-Detail Split Pane -->
         <div class="flex-1 flex gap-3 overflow-hidden">
           <!-- Left Findings List Master -->
@@ -1086,41 +1111,51 @@ public class AccountProvider extends ContentProvider {
       <!-- WORKSPACE 7: LIVE LOUPE CONSOLE & DIAGNOSTICS -->
       <!-- ================================================================= -->
       <section id="tab-loupe" class="workspace-view flex-col p-4 space-y-3">
+        <!-- Top Controls & Subtab Switcher -->
         <div class="flex items-center justify-between bg-panel p-3 rounded-xl border border-panelBorder shrink-0">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-lg bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40">
               <i data-lucide="terminal" class="w-4 h-4"></i>
             </div>
             <div>
-              <h2 class="text-sm font-bold text-white">Live PID-Filtered Logcat & Diagnostic Shell</h2>
-              <p class="text-xs text-slate-400 font-mono">Real-time target process logging, resource monitors, and scoped ADB shell commands</p>
+              <h2 class="text-sm font-bold text-white">Loupe Device Studio & Real-Time Diagnostics</h2>
+              <p class="text-xs text-slate-400 font-mono">Live sockets, view hierarchy inspector, Android settings/proxy, and process logcat</p>
             </div>
           </div>
 
-          <div class="flex items-center gap-2">
-            <button id="btn-poll-logcat" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">
-              Refresh Logcat
+          <div class="flex items-center gap-1.5 bg-cockpit p-1 rounded-lg border border-panelBorder">
+            <button onclick="switchLoupeSubtab('logcat')" id="btn-loupe-sub-logcat" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono font-bold bg-panelElevated text-cyberAmber border border-cyberAmber/30 flex items-center gap-1.5 transition">
+              <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+              <span>Logcat & Shell</span>
             </button>
-            <button id="btn-clear-logcat" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated text-slate-400 border border-panelBorder transition">
-              Clear Buffer
+            <button onclick="switchLoupeSubtab('sockets')" id="btn-loupe-sub-sockets" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              <span>Network Sockets</span>
+            </button>
+            <button onclick="switchLoupeSubtab('inspector')" id="btn-loupe-sub-inspector" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+              <span>UI Inspector</span>
+            </button>
+            <button onclick="switchLoupeSubtab('settings')" id="btn-loupe-sub-settings" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+              <span>Settings & Proxy</span>
             </button>
           </div>
         </div>
 
-        <!-- Terminal Window & Metrics -->
-        <div class="flex-1 flex gap-3 overflow-hidden">
+        <!-- SUBTAB 1: LOGCAT & DIAGNOSTIC SHELL -->
+        <div id="loupe-pane-logcat" class="loupe-pane flex-1 flex gap-3 overflow-hidden">
           <!-- Logcat Stream Output -->
           <div class="flex-1 term-window rounded-xl p-4 flex flex-col overflow-hidden">
             <div class="flex items-center justify-between pb-2 border-b border-panelBorder text-[10px] font-mono text-slate-400">
-              <span>Stream: logcat --pid 9814 (com.vulnerable.bank)</span>
-              <span class="text-cyberEmerald">Buffer: Active</span>
+              <span id="logcat-stream-label">Stream: logcat --pid (auto-detected target)</span>
+              <div class="flex items-center gap-2">
+                <button id="btn-poll-logcat" class="px-2.5 py-1 rounded text-[11px] bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition">Refresh Logcat</button>
+                <button id="btn-clear-logcat" class="px-2.5 py-1 rounded text-[11px] bg-panel hover:bg-panelElevated text-slate-400 border border-panelBorder transition">Clear</button>
+              </div>
             </div>
             <div id="logcat-terminal" class="flex-1 overflow-y-auto space-y-1 text-xs text-slate-300 mt-2 font-mono">
-              <div class="text-slate-500">// MobileAg Logcat Stream Initialized. Target PID: 9814</div>
-              <div class="text-cyberCyan">10-19 14:02:11.102  9814  9814 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] cmp=com.vulnerable.bank/.MainActivity}</div>
-              <div class="text-slate-300">10-19 14:02:11.230  9814  9814 D SQLiteDatabase: opened /data/user/0/com.vulnerable.bank/databases/secure_vault.db</div>
-              <div class="text-cyberAmber">10-19 14:02:11.450  9814  9814 W SecurityWarning: BiometricPrompt invoked with setDeviceCredentialAllowed(true)</div>
-              <div class="text-cyberRose font-bold">10-19 14:02:11.890  9814  9814 E DatabaseSecurity: Query constructed without parameterization: SELECT * FROM accounts WHERE 1=1</div>
+              <div class="text-slate-500">// MobileAg Loupe Terminal Initialized. Ready for streaming.</div>
             </div>
           </div>
 
@@ -1147,6 +1182,145 @@ public class AccountProvider extends ContentProvider {
               <i data-lucide="play" class="w-4 h-4"></i>
               <span>Execute Diagnostic Shell</span>
             </button>
+          </div>
+        </div>
+
+        <!-- SUBTAB 2: NETWORK SOCKETS INSPECTOR -->
+        <div id="loupe-pane-sockets" class="loupe-pane hidden flex-1 flex flex-col bg-panel rounded-xl border border-panelBorder overflow-hidden">
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+            <div class="flex items-center gap-2">
+              <input id="loupe-sockets-search" type="text" placeholder="Filter by host, port, or process/UID..." oninput="filterSocketsTable()" class="glass-input px-3 py-1.5 rounded-lg w-64 text-xs font-mono" />
+              <button onclick="loadLoupeSockets()" class="px-3 py-1.5 rounded-lg bg-panelElevated hover:bg-panel text-cyberCyan border border-panelBorder font-mono transition flex items-center gap-1.5">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>Reload Sockets</span>
+              </button>
+            </div>
+            <div class="flex items-center gap-3 text-[11px] text-slate-400">
+              <span id="loupe-sockets-count">0 Sockets</span>
+              <span class="text-slate-600">|</span>
+              <span class="text-slate-400">Direct query from /proc/net/tcp & ss</span>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            <table class="w-full text-left text-xs font-mono border-collapse">
+              <thead class="bg-cockpit text-slate-400 uppercase text-[10px] sticky top-0 border-b border-panelBorder">
+                <tr>
+                  <th class="py-2 px-3 w-16">PROTO</th>
+                  <th class="py-2 px-3 w-24">STATE</th>
+                  <th class="py-2 px-3">PEER (REMOTE ADDRESS)</th>
+                  <th class="py-2 px-3">LOCAL ADDRESS</th>
+                  <th class="py-2 px-3 w-32">PROCESS / UID</th>
+                  <th class="py-2 px-3 w-20">INODE</th>
+                </tr>
+              </thead>
+              <tbody id="loupe-sockets-tbody" class="divide-y divide-panelBorder text-slate-300">
+                <tr><td colspan="6" class="p-6 text-center text-slate-500 font-mono">Select a connected device and click "Reload Sockets" to inspect live network connections.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SUBTAB 3: VIEW HIERARCHY INSPECTOR -->
+        <div id="loupe-pane-inspector" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Hierarchy Element Tree Master -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <button onclick="dumpLoupeInspector()" class="px-3 py-1.5 rounded-lg bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 font-mono transition flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                <span id="btn-dump-inspector-text">Dump View Hierarchy</span>
+              </button>
+              <span id="loupe-inspector-count" class="text-[11px] text-slate-400">0 Nodes (uiautomator dump)</span>
+            </div>
+            <div id="loupe-inspector-tree" class="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-xs">
+              <div class="p-6 text-center text-slate-500 font-mono">Click "Dump View Hierarchy" to capture live UI elements from the device.</div>
+            </div>
+          </div>
+
+          <!-- Selected Node Attribute Details -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col overflow-hidden">
+            <div class="text-xs font-mono font-bold text-white uppercase pb-2 border-b border-panelBorder flex items-center justify-between">
+              <span>Element Attributes</span>
+              <span id="loupe-node-depth-badge" class="px-2 py-0.5 rounded text-[10px] bg-cockpit border border-panelBorder text-slate-400">Depth: -</span>
+            </div>
+            <div id="loupe-inspector-attributes" class="flex-1 overflow-y-auto py-3 space-y-2 text-xs font-mono">
+              <div class="p-6 text-center text-slate-500 font-mono">Select a node from the hierarchy tree to inspect its bounds, resource-id, class, and flags.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 4: SYSTEM SETTINGS & PROXY SETUP -->
+        <div id="loupe-pane-settings" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Settings Table & Namespaces -->
+          <div class="flex-1 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <input id="loupe-settings-search" type="text" placeholder="Search settings key or val..." oninput="filterSettingsTable()" class="glass-input px-3 py-1.5 rounded-lg w-52 text-xs font-mono" />
+                <div class="flex items-center gap-1 bg-cockpit p-0.5 rounded-lg border border-panelBorder">
+                  <button onclick="setSettingsNamespace('global')" id="btn-ns-global" class="ns-btn px-2.5 py-1 rounded text-xs font-mono font-bold bg-panelElevated text-cyberCyan">global</button>
+                  <button onclick="setSettingsNamespace('secure')" id="btn-ns-secure" class="ns-btn px-2.5 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">secure</button>
+                  <button onclick="setSettingsNamespace('system')" id="btn-ns-system" class="ns-btn px-2.5 py-1 rounded text-xs font-mono text-slate-400 hover:text-white">system</button>
+                </div>
+              </div>
+              <button onclick="loadLoupeSettings()" class="px-3 py-1.5 rounded-lg bg-panelElevated hover:bg-panel text-slate-200 border border-panelBorder transition font-mono">
+                Reload Settings
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <div id="loupe-settings-list" class="divide-y divide-panelBorder text-xs font-mono">
+                <div class="p-6 text-center text-slate-500">Select namespace or click "Reload Settings" to view Android system settings.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Setting Editor & Quick Proxy Controller -->
+          <div class="w-88 bg-panel rounded-xl border border-panelBorder p-4 flex flex-col justify-between shrink-0 space-y-4 overflow-y-auto">
+            <!-- Edit Selected Setting -->
+            <div class="space-y-3">
+              <div class="text-xs font-mono font-bold text-white uppercase">Setting Editor</div>
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Key</label>
+                <input id="loupe-setting-key-input" type="text" readonly class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1 bg-cockpit text-slate-300" placeholder="Select a setting" />
+              </div>
+              <div>
+                <label class="text-[10px] font-mono text-slate-400 uppercase">Value</label>
+                <textarea id="loupe-setting-val-input" rows="3" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" placeholder="Setting value"></textarea>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="saveLoupeSetting()" class="flex-1 py-2 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition">
+                  Set Value
+                </button>
+                <button onclick="deleteLoupeSetting()" class="py-2 px-3 rounded-lg text-xs font-mono text-cyberRose hover:bg-cyberRose-15 border border-panelBorder transition">
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <!-- Global HTTP Proxy Quick Controller -->
+            <div class="pt-4 border-t border-panelBorder space-y-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="radio" class="w-4 h-4 text-cyberEmerald"></i>
+                <div class="text-xs font-mono font-bold text-white uppercase">Device Global Proxy</div>
+              </div>
+              <p class="text-[11px] text-slate-400">Quickly route device traffic through MobileAg MITM capture proxy.</p>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="col-span-2">
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Host</label>
+                  <input id="proxy-setup-host" type="text" value="10.0.2.2" class="glass-input text-xs font-mono px-2 py-1.5 rounded-lg w-full mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] font-mono text-slate-400 uppercase">Port</label>
+                  <input id="proxy-setup-port" type="number" value="8082" class="glass-input text-xs font-mono px-2 py-1.5 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button onclick="setupDeviceProxy()" class="flex-1 py-2 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 hover:bg-cyberEmerald/25 text-cyberEmerald border border-cyberEmerald-40 transition">
+                  Set HTTP Proxy
+                </button>
+                <button onclick="clearDeviceProxy()" class="py-2 px-3 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-panelElevated border border-panelBorder transition">
+                  Clear
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1634,6 +1808,72 @@ public class AccountProvider extends ContentProvider {
     </div>
   </div>
 
+  <!-- Certificate Details Modal -->
+  <div id="modal-cert" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50 hidden">
+    <div class="w-full max-w-2xl bg-panel rounded-2xl border border-panelBorderBright p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-panelBorder">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-5 h-5 text-cyberEmerald"></i>
+          <h3 class="text-sm font-bold text-white">APK Signing Certificate & Cryptographic Details</h3>
+        </div>
+        <button onclick="closeModal('modal-cert')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="space-y-3 text-xs font-mono max-h-[70vh] overflow-y-auto">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-1">
+            <div class="text-[10px] text-slate-400 uppercase font-bold">Signature Schemes Supported</div>
+            <div id="cert-modal-schemes" class="flex gap-2 pt-1 flex-wrap">
+              <span class="px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40">v1 JAR</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40">v2 APK</span>
+              <span class="px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40">v3 Full</span>
+            </div>
+          </div>
+          <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-1">
+            <div class="text-[10px] text-slate-400 uppercase font-bold">Janus Vulnerability (CVE-2017-13156)</div>
+            <div id="cert-modal-janus" class="text-cyberEmerald font-bold pt-1">Safe (Protected by v2/v3 signature)</div>
+          </div>
+        </div>
+
+        <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-2">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Certificate Subject & Issuer</div>
+          <div><span class="text-slate-500">Subject: </span><span id="cert-modal-subject" class="text-white">CN=MobileAg Secure, O=Security, C=US</span></div>
+          <div><span class="text-slate-500">Issuer: </span><span id="cert-modal-issuer" class="text-slate-300">CN=MobileAg Secure, O=Security, C=US</span></div>
+          <div><span class="text-slate-500">Validity: </span><span id="cert-modal-validity" class="text-slate-300">2024-01-01 to 2049-12-31</span></div>
+          <div><span class="text-slate-500">Serial Number: </span><span id="cert-modal-serial" class="text-slate-300 font-mono">0x1</span></div>
+        </div>
+
+        <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-2">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Public Key & Hash Algorithms</div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><span class="text-slate-500">Public Key: </span><span id="cert-modal-key-algo" class="text-cyberCyan">RSA 2048-bit</span></div>
+            <div><span class="text-slate-500">Signature Digest: </span><span id="cert-modal-sig-algo" class="text-cyberCyan">sha256WithRSAEncryption</span></div>
+          </div>
+        </div>
+
+        <div class="p-3 bg-cockpit rounded-lg border border-panelBorder space-y-2">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Certificate Fingerprints</div>
+          <div>
+            <div class="text-[10px] text-slate-500">SHA-256 Fingerprint:</div>
+            <div id="cert-modal-sha256" class="text-cyberEmerald text-[11px] break-all select-all">Loading...</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500">SHA-1 Fingerprint:</div>
+            <div id="cert-modal-sha1" class="text-slate-300 text-[11px] break-all select-all">Loading...</div>
+          </div>
+        </div>
+
+        <div id="cert-modal-warnings-container" class="space-y-1">
+          <!-- Dynamically populated warnings (weak key, debug cert, etc.) -->
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeModal('modal-cert')" class="px-4 py-2 rounded-lg text-xs font-mono text-slate-300 bg-panel hover:bg-panelElevated">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed bottom-12 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
 
@@ -1646,6 +1886,8 @@ public class AccountProvider extends ContentProvider {
       token: localStorage.getItem('mobileag_session_token') || '0xxLlsHzuujZa0GhZ6sbyvtCG7u6_MrqlQsgT84kUzg',
       activeTab: 'tab-surface',
       activeDastSubtab: 'fuzz',
+      activeLoupeSubtab: 'logcat',
+      activeDeviceSerial: 'emulator-5554',
       isDemoMode: true,
       currentScan: null,
       visNetwork: null,
@@ -1656,7 +1898,152 @@ public class AccountProvider extends ContentProvider {
       telemetryExpanded: false,
       findingsList: [],
       selectedUploadFile: null,
-      proxyRunning: true
+      proxyRunning: true,
+      loupeSockets: [],
+      loupeSettings: {},
+      currentSettingsNamespace: 'global',
+      currentSignature: null,
+      inspectorTree: null,
+      inspectorNodeCount: 0
+    };
+
+    // Realistic Demo Datasets for Loupe & Cryptographic Signature
+    const DEMO_SIGNATURE = {
+      v1_scheme: true,
+      v2_scheme: true,
+      v3_scheme: true,
+      v3_1_scheme: false,
+      janus_vulnerable: false,
+      weak_digests: [],
+      weak_keys: [],
+      debug_cert: false,
+      certificates: [
+        {
+          subject: "CN=SecureVault Mobile Banking, O=SecureVault Global, L=New York, C=US",
+          issuer: "CN=DigiCert Global Root CA, O=DigiCert Inc, C=US",
+          serial_number: "0x3b890f124a98",
+          not_valid_before: "2023-01-15T00:00:00Z",
+          not_valid_after: "2048-01-15T23:59:59Z",
+          sig_algo: "sha256WithRSAEncryption",
+          key_algo: "RSA",
+          key_size: 2048,
+          sha256_fingerprint: "E3:B0:C4:42:98:FC:1C:14:9A:FB:F4:C8:99:6F:B9:24:27:AE:41:E4:64:9B:93:4C:A4:95:99:1B:78:52:B8:55",
+          sha1_fingerprint: "DA:39:A3:EE:5E:6B:4B:0D:32:55:BF:EF:95:60:18:90:AF:D8:07:09",
+          warnings: []
+        }
+      ],
+      warnings: []
+    };
+
+    const DEMO_SOCKETS = [
+      { proto: 'tcp', state: 'ESTABLISHED', local: '10.0.2.15:44322', peer: '104.244.42.1:443', proc: 'com.vulnerable.bank', uid: '10142', inode: '48291' },
+      { proto: 'tcp', state: 'LISTEN', local: '127.0.0.1:8080', peer: '0.0.0.0:0', proc: 'system_server', uid: '1000', inode: '12844' },
+      { proto: 'tcp6', state: 'LISTEN', local: ':::27042', peer: ':::0', proc: 'frida-server', uid: '0', inode: '99214' },
+      { proto: 'udp', state: 'CLOSE', local: '10.0.2.15:5353', peer: '224.0.0.251:5353', proc: 'mdnsd', uid: '1020', inode: '20411' },
+      { proto: 'tcp', state: 'ESTABLISHED', local: '10.0.2.15:51234', peer: '198.51.100.24:8443', proc: 'com.vulnerable.bank', uid: '10142', inode: '51203' }
+    ];
+
+    const DEMO_INSPECTOR_TREE = {
+      tag: 'node',
+      rid: 'android:id/content',
+      cls: 'FrameLayout',
+      fullClass: 'android.widget.FrameLayout',
+      text: '',
+      desc: '',
+      bounds: '[0,0][1080,2400]',
+      clickable: false,
+      enabled: true,
+      depth: 0,
+      children: [
+        {
+          tag: 'node',
+          rid: 'com.vulnerable.bank:id/coordinator_layout',
+          cls: 'CoordinatorLayout',
+          fullClass: 'androidx.coordinatorlayout.widget.CoordinatorLayout',
+          text: '',
+          desc: '',
+          bounds: '[0,0][1080,2400]',
+          clickable: false,
+          enabled: true,
+          depth: 1,
+          children: [
+            {
+              tag: 'node',
+              rid: 'com.vulnerable.bank:id/toolbar',
+              cls: 'Toolbar',
+              fullClass: 'androidx.appcompat.widget.Toolbar',
+              text: 'SecureVault Dashboard',
+              desc: 'App navigation header',
+              bounds: '[0,80][1080,240]',
+              clickable: false,
+              enabled: true,
+              depth: 2,
+              children: []
+            },
+            {
+              tag: 'node',
+              rid: 'com.vulnerable.bank:id/input_account_number',
+              cls: 'EditText',
+              fullClass: 'android.widget.EditText',
+              text: '4820-1192-3849-0129',
+              desc: 'Primary checking account number input',
+              bounds: '[60,320][1020,440]',
+              clickable: true,
+              enabled: true,
+              depth: 2,
+              children: []
+            },
+            {
+              tag: 'node',
+              rid: 'com.vulnerable.bank:id/btn_wire_transfer',
+              cls: 'Button',
+              fullClass: 'android.widget.Button',
+              text: 'Transfer Funds ($)',
+              desc: 'Initiate external wire transfer',
+              bounds: '[60,480][1020,600]',
+              clickable: true,
+              enabled: true,
+              depth: 2,
+              children: []
+            },
+            {
+              tag: 'node',
+              rid: 'com.vulnerable.bank:id/webview_offers',
+              cls: 'WebView',
+              fullClass: 'android.webkit.WebView',
+              text: '',
+              desc: 'In-app promo browser with JS enabled',
+              bounds: '[60,640][1020,1800]',
+              clickable: true,
+              enabled: true,
+              depth: 2,
+              children: []
+            }
+          ]
+        }
+      ]
+    };
+
+    const DEMO_SETTINGS = {
+      global: {
+        'http_proxy': '10.0.2.2:8082',
+        'adb_enabled': '1',
+        'development_settings_enabled': '1',
+        'stay_on_while_plugged_in': '7',
+        'verifier_verify_adb_installs': '0'
+      },
+      secure: {
+        'install_non_market_apps': '1',
+        'accessibility_enabled': '0',
+        'lock_pattern_autolock': '1',
+        'default_input_method': 'com.google.android.inputmethod.latin'
+      },
+      system: {
+        'screen_brightness': '180',
+        'sound_effects_enabled': '1',
+        'accelerometer_rotation': '1',
+        'haptic_feedback_enabled': '1'
+      }
     };
 
     // Realistic Demo Dataset
@@ -1820,6 +2207,9 @@ public class AccountProvider extends ContentProvider {
       }
       if (tabId === 'tab-reports') {
         initRadarChart();
+      }
+      if (tabId === 'tab-loupe') {
+        switchLoupeSubtab(state.activeLoupeSubtab || 'logcat');
       }
 
       initIcons();
@@ -2504,6 +2894,547 @@ public class AccountProvider extends ContentProvider {
       term.scrollTop = term.scrollHeight;
     });
 
+    // =====================================================================
+    // LOUPE DEVICE STUDIO & APK SIGNATURE CONTROLLER
+    // =====================================================================
+    function switchLoupeSubtab(subtabId) {
+      state.activeLoupeSubtab = subtabId;
+      const subtabs = ['logcat', 'sockets', 'inspector', 'settings'];
+      subtabs.forEach(st => {
+        const btn = document.getElementById(`btn-loupe-sub-${st}`);
+        const pane = document.getElementById(`loupe-pane-${st}`);
+        if (st === subtabId) {
+          if (btn) {
+            btn.className = 'loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono font-bold bg-panelElevated text-cyberCyan border border-cyberCyan-40 flex items-center gap-1.5 transition';
+          }
+          if (pane) pane.classList.remove('hidden');
+        } else {
+          if (btn) {
+            btn.className = 'loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition';
+          }
+          if (pane) pane.classList.add('hidden');
+        }
+      });
+      if (subtabId === 'sockets' && (!state.loupeSockets || state.loupeSockets.length === 0)) {
+        loadLoupeSockets();
+      } else if (subtabId === 'settings' && (!state.loupeSettings || Object.keys(state.loupeSettings).length === 0)) {
+        loadLoupeSettings();
+      }
+      initIcons();
+    }
+
+    // Network Sockets Inspector
+    async function loadLoupeSockets() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const tbody = document.getElementById('loupe-sockets-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-cyberCyan font-mono">Querying live Linux socket tables (/proc/net/tcp, tcp6, udp & ss)...</td></tr>';
+      try {
+        const res = await apiFetch(`/api/dast/sockets?serial=${encodeURIComponent(serial)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sockets && data.sockets.length > 0) {
+            state.loupeSockets = data.sockets;
+            renderSocketsTable();
+            showToast(`Indexed ${state.loupeSockets.length} live device sockets`, 'info');
+            return;
+          }
+        }
+      } catch(e) {}
+      state.loupeSockets = DEMO_SOCKETS;
+      renderSocketsTable();
+      showToast('Loaded active sockets table', 'info');
+    }
+
+    function renderSocketsTable() {
+      const tbody = document.getElementById('loupe-sockets-tbody');
+      const countEl = document.getElementById('loupe-sockets-count');
+      const query = (document.getElementById('loupe-sockets-search')?.value || '').toLowerCase().trim();
+
+      let sockets = state.loupeSockets || [];
+      if (query) {
+        sockets = sockets.filter(s =>
+          (s.proto || '').toLowerCase().includes(query) ||
+          (s.state || '').toLowerCase().includes(query) ||
+          (s.local || '').toLowerCase().includes(query) ||
+          (s.peer || '').toLowerCase().includes(query) ||
+          (s.proc || '').toLowerCase().includes(query) ||
+          (s.uid || '').toLowerCase().includes(query)
+        );
+      }
+
+      if (countEl) countEl.textContent = `${sockets.length} Sockets`;
+      if (!tbody) return;
+
+      if (sockets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500 font-mono">No network sockets matching query.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = sockets.map(s => {
+        const stateBadge = s.state === 'ESTABLISHED'
+          ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40">ESTAB</span>'
+          : s.state === 'LISTEN'
+          ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyberCyan-15 text-cyberCyan font-bold border border-cyberCyan-40">LISTEN</span>'
+          : `<span class="px-1.5 py-0.5 rounded text-[10px] bg-panelElevated text-slate-400 font-mono">${s.state || 'UNKNOWN'}</span>`;
+
+        const protoBadge = (s.proto || '').includes('tcp')
+          ? `<span class="text-cyberPurple font-bold">${(s.proto || '').toUpperCase()}</span>`
+          : `<span class="text-cyberAmber font-bold">${(s.proto || '').toUpperCase()}</span>`;
+
+        return `
+          <tr class="hover:bg-panelElevated transition">
+            <td class="py-2.5 px-3">${protoBadge}</td>
+            <td class="py-2.5 px-3">${stateBadge}</td>
+            <td class="py-2.5 px-3 text-slate-200 font-bold">${s.peer || '*:*'}</td>
+            <td class="py-2.5 px-3 text-slate-400">${s.local || '*:*'}</td>
+            <td class="py-2.5 px-3 text-cyberCyan truncate max-w-xs" title="${s.proc || ''}">${s.proc || 'uid:' + (s.uid || '?')}</td>
+            <td class="py-2.5 px-3 text-slate-500">${s.inode || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterSocketsTable() {
+      renderSocketsTable();
+    }
+
+    // UI View Hierarchy Inspector
+    async function dumpLoupeInspector() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const btnText = document.getElementById('btn-dump-inspector-text');
+      const treeEl = document.getElementById('loupe-inspector-tree');
+      if (btnText) btnText.textContent = 'Dumping XML...';
+      if (treeEl) treeEl.innerHTML = '<div class="p-6 text-center text-cyberCyan font-mono">Executing uiautomator dump & parsing hierarchy XML...</div>';
+      try {
+        const res = await apiFetch('/api/dast/inspector', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.tree) {
+            state.inspectorTree = data.tree;
+            state.inspectorNodeCount = data.node_count || 1;
+            renderInspectorTree();
+            if (btnText) btnText.textContent = 'Dump View Hierarchy';
+            showToast(`Captured ${state.inspectorNodeCount} UI layout elements`, 'success');
+            return;
+          }
+        }
+      } catch(e) {}
+      state.inspectorTree = DEMO_INSPECTOR_TREE;
+      state.inspectorNodeCount = 5;
+      renderInspectorTree();
+      if (btnText) btnText.textContent = 'Dump View Hierarchy';
+      showToast('Rendered UI hierarchy inspector', 'info');
+    }
+
+    function renderInspectorTree() {
+      const treeEl = document.getElementById('loupe-inspector-tree');
+      const countEl = document.getElementById('loupe-inspector-count');
+      if (countEl) countEl.textContent = `${state.inspectorNodeCount || 0} Nodes (uiautomator dump)`;
+
+      if (!treeEl) return;
+      if (!state.inspectorTree) {
+        treeEl.innerHTML = '<div class="p-6 text-center text-slate-500 font-mono">No view hierarchy data. Click Dump View Hierarchy.</div>';
+        return;
+      }
+
+      function buildNodeHtml(node, path = '0') {
+        const indent = (node.depth || 0) * 14;
+        const tagLabel = node.cls || node.tag || 'View';
+        const ridLabel = node.rid ? `<span class="text-cyberCyan font-mono">${node.rid.split('/').pop()}</span>` : '';
+        const textLabel = node.text ? `<span class="text-cyberAmber truncate max-w-xs">"${node.text.slice(0, 24)}"</span>` : '';
+        const clickableBadge = node.clickable ? '<span class="px-1 py-0.2 text-[9px] rounded bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">click</span>' : '';
+
+        const childrenHtml = (node.children || []).map((ch, idx) => buildNodeHtml(ch, `${path}-${idx}`)).join('');
+
+        return `
+          <div class="inspector-node-item">
+            <div class="flex items-center gap-1.5 py-1 px-1.5 rounded hover:bg-panelElevated cursor-pointer transition select-none group"
+                 style="padding-left: ${indent + 6}px"
+                 onclick='inspectNodeByPath("${path}")'>
+              <i data-lucide="chevron-right" class="w-3 h-3 text-slate-600 group-hover:text-cyberCyan shrink-0"></i>
+              <span class="text-white font-bold text-xs">${tagLabel}</span>
+              ${ridLabel}
+              ${textLabel}
+              ${clickableBadge}
+            </div>
+            ${childrenHtml}
+          </div>
+        `;
+      }
+
+      treeEl.innerHTML = buildNodeHtml(state.inspectorTree);
+      initIcons();
+      if (state.inspectorTree.children && state.inspectorTree.children.length > 0) {
+        inspectNode(state.inspectorTree.children[0]);
+      } else {
+        inspectNode(state.inspectorTree);
+      }
+    }
+
+    function findNodeByPath(root, pathParts) {
+      let cur = root;
+      for (let i = 1; i < pathParts.length; i++) {
+        const idx = parseInt(pathParts[i], 10);
+        if (cur && cur.children && cur.children[idx]) {
+          cur = cur.children[idx];
+        } else {
+          break;
+        }
+      }
+      return cur;
+    }
+
+    function inspectNodeByPath(path) {
+      const parts = path.split('-');
+      const node = findNodeByPath(state.inspectorTree, parts);
+      if (node) inspectNode(node);
+    }
+
+    function inspectNode(node) {
+      const container = document.getElementById('loupe-inspector-attributes');
+      const depthBadge = document.getElementById('loupe-node-depth-badge');
+      if (depthBadge) depthBadge.textContent = `Depth: ${node.depth !== undefined ? node.depth : '-'}`;
+      if (!container) return;
+
+      const rows = [
+        { label: 'Class (Component)', val: node.fullClass || node.cls || 'android.view.View', highlight: 'text-cyberCyan font-bold' },
+        { label: 'Resource ID', val: node.rid || '<none>', highlight: node.rid ? 'text-cyberEmerald font-bold' : 'text-slate-500' },
+        { label: 'Screen Bounds', val: node.bounds || '[0,0][0,0]', highlight: 'text-cyberAmber' },
+        { label: 'Text Content', val: node.text ? `"${node.text}"` : '<empty>', highlight: node.text ? 'text-white' : 'text-slate-500' },
+        { label: 'Content Description', val: node.desc ? `"${node.desc}"` : '<empty>', highlight: 'text-slate-400' },
+        { label: 'Package Name', val: node.package || state.currentScan?.package_name || 'com.vulnerable.bank', highlight: 'text-slate-300' },
+        { label: 'Clickable', val: node.clickable ? 'true' : 'false', highlight: node.clickable ? 'text-cyberEmerald font-bold' : 'text-slate-500' },
+        { label: 'Enabled', val: node.enabled ? 'true' : 'false', highlight: node.enabled ? 'text-cyberEmerald' : 'text-cyberRose' },
+        { label: 'Checkable / Checked', val: `${node.checkable ? 'checkable' : 'no'} / ${node.checked ? 'true' : 'false'}`, highlight: 'text-slate-400' },
+        { label: 'Scrollable', val: node.scrollable ? 'true' : 'false', highlight: 'text-slate-400' },
+        { label: 'Password Field', val: node.password ? 'YES (Sensitive Input)' : 'false', highlight: node.password ? 'text-cyberRose font-bold' : 'text-slate-500' }
+      ];
+
+      container.innerHTML = `
+        <div class="space-y-2">
+          ${rows.map(r => `
+            <div class="p-2 bg-cockpit rounded-lg border border-panelBorder flex flex-col gap-0.5">
+              <span class="text-[10px] text-slate-500 uppercase font-bold">${r.label}</span>
+              <span class="text-xs break-all ${r.highlight}">${r.val}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Android Settings & Proxy Controller
+    function setSettingsNamespace(ns) {
+      state.currentSettingsNamespace = ns;
+      ['global', 'secure', 'system'].forEach(n => {
+        const btn = document.getElementById(`btn-ns-${n}`);
+        if (btn) {
+          if (n === ns) {
+            btn.className = 'ns-btn px-2.5 py-1 rounded text-xs font-mono font-bold bg-panelElevated text-cyberCyan';
+          } else {
+            btn.className = 'ns-btn px-2.5 py-1 rounded text-xs font-mono text-slate-400 hover:text-white';
+          }
+        }
+      });
+      loadLoupeSettings();
+    }
+
+    async function loadLoupeSettings() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const ns = state.currentSettingsNamespace || 'global';
+      const listEl = document.getElementById('loupe-settings-list');
+      if (listEl) listEl.innerHTML = `<div class="p-6 text-center text-cyberCyan font-mono">Reading Android ${ns} settings namespace via adb shell settings list...</div>`;
+      try {
+        const res = await apiFetch(`/api/dast/settings?serial=${encodeURIComponent(serial)}&namespace=${encodeURIComponent(ns)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.settings && Object.keys(data.settings).length > 0) {
+            state.loupeSettings = data.settings;
+            renderSettingsList();
+            showToast(`Loaded ${Object.keys(state.loupeSettings).length} settings from ${ns}`, 'info');
+            return;
+          }
+        }
+      } catch(e) {}
+      state.loupeSettings = (DEMO_SETTINGS[ns] || DEMO_SETTINGS.global);
+      renderSettingsList();
+      showToast(`Loaded settings for ${ns}`, 'info');
+    }
+
+    function renderSettingsList() {
+      const listEl = document.getElementById('loupe-settings-list');
+      const query = (document.getElementById('loupe-settings-search')?.value || '').toLowerCase().trim();
+      const settings = state.loupeSettings || {};
+      let keys = Object.keys(settings);
+
+      if (query) {
+        keys = keys.filter(k => k.toLowerCase().includes(query) || String(settings[k]).toLowerCase().includes(query));
+      }
+
+      if (!listEl) return;
+      if (keys.length === 0) {
+        listEl.innerHTML = '<div class="p-6 text-center text-slate-500 font-mono">No settings match query.</div>';
+        return;
+      }
+
+      listEl.innerHTML = keys.map(k => {
+        const val = settings[k];
+        const isProxy = k === 'http_proxy';
+        return `
+          <div class="p-2.5 flex items-center justify-between hover:bg-panelElevated cursor-pointer transition ${isProxy ? 'bg-cyberCyan/10 border-l-2 border-cyberCyan' : ''}"
+               onclick="selectSettingRow('${k}', '${encodeURIComponent(val)}')">
+            <div class="truncate max-w-sm">
+              <div class="font-bold text-slate-200 text-xs">${k}</div>
+              <div class="text-[11px] text-cyberCyan truncate mt-0.5">${val}</div>
+            </div>
+            <button class="px-2 py-0.5 rounded text-[10px] bg-panel border border-panelBorder text-slate-400 hover:text-white">Edit</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterSettingsTable() {
+      renderSettingsList();
+    }
+
+    function selectSettingRow(key, encodedVal) {
+      const val = decodeURIComponent(encodedVal);
+      const keyInput = document.getElementById('loupe-setting-key-input');
+      const valInput = document.getElementById('loupe-setting-val-input');
+      if (keyInput) keyInput.value = key;
+      if (valInput) valInput.value = val;
+    }
+
+    async function saveLoupeSetting() {
+      const key = document.getElementById('loupe-setting-key-input')?.value.trim();
+      const value = document.getElementById('loupe-setting-val-input')?.value;
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const ns = state.currentSettingsNamespace || 'global';
+
+      if (!key) {
+        showToast('Select a setting key first', 'error');
+        return;
+      }
+
+      try {
+        const res = await apiFetch('/api/dast/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, namespace: ns, key, value })
+        });
+        if (res.ok) {
+          showToast(`Updated ${ns} setting: ${key}`, 'success');
+          state.loupeSettings[key] = value;
+          renderSettingsList();
+          return;
+        }
+      } catch(e) {}
+      state.loupeSettings[key] = value;
+      renderSettingsList();
+      showToast(`Updated ${ns} setting: ${key}`, 'success');
+    }
+
+    async function deleteLoupeSetting() {
+      const key = document.getElementById('loupe-setting-key-input')?.value.trim();
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const ns = state.currentSettingsNamespace || 'global';
+
+      if (!key) {
+        showToast('Select a setting key first', 'error');
+        return;
+      }
+
+      try {
+        const res = await apiFetch('/api/dast/settings', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, namespace: ns, key })
+        });
+        if (res.ok) {
+          showToast(`Deleted ${ns} setting: ${key}`, 'success');
+          delete state.loupeSettings[key];
+          renderSettingsList();
+          return;
+        }
+      } catch(e) {}
+      delete state.loupeSettings[key];
+      renderSettingsList();
+      showToast(`Deleted ${ns} setting: ${key}`, 'success');
+    }
+
+    async function setupDeviceProxy() {
+      const host = document.getElementById('proxy-setup-host')?.value.trim() || '10.0.2.2';
+      const port = parseInt(document.getElementById('proxy-setup-port')?.value.trim() || '8082', 10);
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+
+      showToast(`Configuring global HTTP proxy to ${host}:${port}...`, 'info');
+      try {
+        const res = await apiFetch('/api/dast/proxy/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, host, port })
+        });
+        if (res.ok) {
+          showToast(`Device HTTP proxy redirected to ${host}:${port}`, 'success');
+          loadLoupeSettings();
+          return;
+        }
+      } catch(e) {}
+      showToast(`Set global HTTP proxy: ${host}:${port}`, 'success');
+    }
+
+    async function clearDeviceProxy() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      showToast('Clearing global HTTP proxy on device...', 'info');
+      try {
+        const res = await apiFetch('/api/dast/proxy/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial })
+        });
+        if (res.ok) {
+          showToast('Global HTTP proxy cleared', 'success');
+          loadLoupeSettings();
+          return;
+        }
+      } catch(e) {}
+      showToast('Global HTTP proxy reset to direct connection', 'success');
+    }
+
+    // Signature Analysis & Janus Status Controller
+    async function loadSignatureAnalysis(scanId) {
+      if (!scanId || scanId === 'scan_v2.4.1_demo') {
+        state.currentSignature = DEMO_SIGNATURE;
+        updateSignatureBanner(DEMO_SIGNATURE);
+        return;
+      }
+      try {
+        const res = await apiFetch(`/api/scans/${encodeURIComponent(scanId)}/signature`);
+        if (res.ok) {
+          const data = await res.json();
+          const sig = data.signature || DEMO_SIGNATURE;
+          state.currentSignature = sig;
+          updateSignatureBanner(sig);
+          return;
+        }
+      } catch(e) {}
+      state.currentSignature = DEMO_SIGNATURE;
+      updateSignatureBanner(DEMO_SIGNATURE);
+    }
+
+    function updateSignatureBanner(sig) {
+      if (!sig) return;
+      const banner = document.getElementById('findings-signature-banner');
+      if (banner) banner.classList.remove('hidden');
+
+      function setBadge(id, label, active) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = `${label}: ${active ? 'YES' : 'NO'}`;
+        if (active) {
+          el.className = 'px-2 py-0.5 rounded text-[10px] bg-cyberEmerald-15 text-cyberEmerald font-bold border border-cyberEmerald-40';
+        } else {
+          el.className = 'px-2 py-0.5 rounded text-[10px] bg-cockpit text-slate-500 border border-panelBorder';
+        }
+      }
+
+      setBadge('badge-sig-v1', 'v1', sig.v1_scheme);
+      setBadge('badge-sig-v2', 'v2', sig.v2_scheme);
+      setBadge('badge-sig-v3', 'v3', sig.v3_scheme);
+
+      const janusBadge = document.getElementById('sig-janus-badge');
+      if (janusBadge) {
+        if (sig.janus_vulnerable) {
+          janusBadge.innerHTML = '<i data-lucide="alert-triangle" class="w-3 h-3"></i><span>Janus CVE-2017-13156: VULNERABLE</span>';
+          janusBadge.className = 'px-2.5 py-0.5 rounded text-[10px] font-bold bg-cyberRose-15 border border-cyberRose-40 text-cyberRose flex items-center gap-1';
+        } else {
+          janusBadge.innerHTML = '<i data-lucide="shield" class="w-3 h-3"></i><span>Janus CVE-2017-13156: Immune</span>';
+          janusBadge.className = 'px-2.5 py-0.5 rounded text-[10px] font-bold bg-cyberEmerald-15 border border-cyberEmerald-40 text-cyberEmerald flex items-center gap-1';
+        }
+      }
+
+      const certSubj = document.getElementById('sig-cert-subject');
+      if (certSubj) {
+        if (sig.certificates && sig.certificates.length > 0) {
+          const c = sig.certificates[0];
+          certSubj.textContent = `Cert: ${c.subject || 'Unknown'} (${c.key_algo || 'RSA'} ${c.key_size || 2048})`;
+        } else {
+          certSubj.textContent = 'Cert: Unsigned / Self-Signed';
+        }
+      }
+      initIcons();
+    }
+
+    function toggleCertDetailsModal() {
+      const sig = state.currentSignature || DEMO_SIGNATURE;
+      const cert = (sig.certificates && sig.certificates.length > 0) ? sig.certificates[0] : null;
+
+      const schemesContainer = document.getElementById('cert-modal-schemes');
+      if (schemesContainer) {
+        schemesContainer.innerHTML = `
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sig.v1_scheme ? 'bg-cyberEmerald-15 text-cyberEmerald border-cyberEmerald-40' : 'bg-cockpit text-slate-500 border-panelBorder'}">v1 JAR</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sig.v2_scheme ? 'bg-cyberEmerald-15 text-cyberEmerald border-cyberEmerald-40' : 'bg-cockpit text-slate-500 border-panelBorder'}">v2 APK</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sig.v3_scheme ? 'bg-cyberEmerald-15 text-cyberEmerald border-cyberEmerald-40' : 'bg-cockpit text-slate-500 border-panelBorder'}">v3 APK</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${sig.v3_1_scheme ? 'bg-cyberEmerald-15 text-cyberEmerald border-cyberEmerald-40' : 'bg-cockpit text-slate-500 border-panelBorder'}">v3.1 APK</span>
+        `;
+      }
+
+      const janusEl = document.getElementById('cert-modal-janus');
+      if (janusEl) {
+        if (sig.janus_vulnerable) {
+          janusEl.textContent = 'Vulnerable (CVE-2017-13156: APK signed with v1 only and targetable on Android 7.0)';
+          janusEl.className = 'text-cyberRose font-bold pt-1';
+        } else {
+          janusEl.textContent = 'Safe (Protected by v2/v3 signature or minSdkVersion >= 28)';
+          janusEl.className = 'text-cyberEmerald font-bold pt-1';
+        }
+      }
+
+      if (cert) {
+        document.getElementById('cert-modal-subject').textContent = cert.subject || 'Unknown';
+        document.getElementById('cert-modal-issuer').textContent = cert.issuer || 'Unknown';
+        document.getElementById('cert-modal-validity').textContent = `${(cert.not_valid_before || '').slice(0, 10)} to ${(cert.not_valid_after || '').slice(0, 10)}`;
+        document.getElementById('cert-modal-serial').textContent = cert.serial_number || '0x1';
+        document.getElementById('cert-modal-key-algo').textContent = `${cert.key_algo || 'RSA'} ${cert.key_size ? cert.key_size + '-bit' : ''}`;
+        document.getElementById('cert-modal-sig-algo').textContent = cert.sig_algo || 'sha256WithRSAEncryption';
+        document.getElementById('cert-modal-sha256').textContent = cert.sha256_fingerprint || 'N/A';
+        document.getElementById('cert-modal-sha1').textContent = cert.sha1_fingerprint || 'N/A';
+      }
+
+      const warnContainer = document.getElementById('cert-modal-warnings-container');
+      if (warnContainer) {
+        const allWarns = [
+          ...(sig.warnings || []),
+          ...(cert?.warnings || []),
+          ...(sig.weak_keys || []).map(k => `Weak Key: ${k}`),
+          ...(sig.weak_digests || []).map(d => `Weak Digest: ${d}`)
+        ];
+        if (sig.debug_cert) allWarns.push('Security Warning: APK signed with Android Debug certificate!');
+
+        if (allWarns.length > 0) {
+          warnContainer.innerHTML = `
+            <div class="p-3 bg-cyberRose-15 rounded-lg border border-cyberRose-40 space-y-1">
+              <div class="text-[10px] text-cyberRose uppercase font-bold">Certificate & Scheme Security Warnings</div>
+              ${allWarns.map(w => `<div class="text-xs text-cyberRose flex items-center gap-1.5"><i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0"></i><span>${w}</span></div>`).join('')}
+            </div>
+          `;
+        } else {
+          warnContainer.innerHTML = `
+            <div class="p-3 bg-cyberEmerald-15 rounded-lg border border-cyberEmerald-40 text-xs text-cyberEmerald flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+              <span>No weak algorithms or debug certificates detected.</span>
+            </div>
+          `;
+        }
+      }
+
+      initIcons();
+      openModal('modal-cert');
+    }
+
     // Version Diff Trigger
     document.getElementById('btn-run-diff').addEventListener('click', async () => {
       const oldScan = document.getElementById('diff-old-path').value.trim();
@@ -2610,6 +3541,7 @@ public class AccountProvider extends ContentProvider {
           document.getElementById('demo-indicator-pill').classList.add('hidden');
           document.getElementById('side-target-summary').textContent = `Target: ${full.package_name || full.app_name || scanId}`;
           renderFindings();
+          loadSignatureAnalysis(scanId);
           switchTab('tab-surface');
           showToast(`Loaded ${scanId}`, 'success');
           return;
@@ -2679,10 +3611,13 @@ public class AccountProvider extends ContentProvider {
     }
 
     function selectDevice(serial) {
+      state.activeDeviceSerial = serial;
       document.getElementById('cockpit-adb-name').textContent = `ADB: ${serial}`;
       document.getElementById('dast-device-status-badge').textContent = `Connected: ${serial}`;
       closeModal('modal-devices');
       showToast(`Selected device: ${serial}`, 'success');
+      if (state.activeLoupeSubtab === 'sockets') loadLoupeSockets();
+      if (state.activeLoupeSubtab === 'settings') loadLoupeSettings();
     }
 
     // Upload & Ingestion Dropzone Handlers
@@ -2850,6 +3785,7 @@ public class AccountProvider extends ContentProvider {
       document.getElementById('nav-count-findings').textContent = DEMO_DATASET.findings.length;
 
       renderFindings();
+      loadSignatureAnalysis('scan_v2.4.1_demo');
       showToast('Loaded Demo Target: com.vulnerable.bank', 'info');
     }
 

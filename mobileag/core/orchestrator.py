@@ -51,6 +51,7 @@ from mobileag.analysis.privacy_manifest_auditor import PrivacyManifestAuditor
 from mobileag.analysis.rasp_resilience_auditor import RaspResilienceAuditor
 from mobileag.analysis.fileprovider_auditor import FileProviderAuditor
 from mobileag.analysis.crypto_api_auditor import CryptoApiMetadataAuditor
+from mobileag.analysis.apk_signature_auditor import ApkSignatureAuditor
 
 
 _MAX_SCAN_STATE_BYTES = 64 * 1024 * 1024
@@ -194,6 +195,7 @@ class Orchestrator:
         self._rasp_auditor = RaspResilienceAuditor()
         self._fileprovider_auditor = FileProviderAuditor()
         self._crypto_api_auditor = CryptoApiMetadataAuditor()
+        self._apk_signature_auditor = ApkSignatureAuditor()
 
         # Filter pipeline
         self._filter_pipeline = FilterPipeline(
@@ -493,6 +495,17 @@ class Orchestrator:
             ),
         }
 
+        min_sdk_raw = manifest_data.get("min_sdk") if isinstance(manifest_data, dict) else None
+        min_sdk = 1
+        if isinstance(min_sdk_raw, int) and not isinstance(min_sdk_raw, bool):
+            min_sdk = min_sdk_raw
+        elif isinstance(min_sdk_raw, str) and min_sdk_raw.isdecimal():
+            min_sdk = int(min_sdk_raw)
+
+        apk_target = state.get("apk_path", "")
+        if apk_target and Path(apk_target).is_file():
+            tasks["signature"] = asyncio.to_thread(self._apk_signature_auditor.audit, apk_target, min_sdk)
+
         results = await asyncio.gather(
             *tasks.values(), return_exceptions=True
         )
@@ -656,6 +669,17 @@ class Orchestrator:
                 state["crypto_api_inventory"] = result.get("inventory", [])
                 state["coverage"][name] = dict(result.get("coverage", {}))
                 engines[name] = state["coverage"][name].get("static_status", "incomplete")
+            elif name == "signature":
+                state["signature_analysis"] = result.to_dict()
+                state["coverage"][name] = {
+                    "static_status": "completed",
+                    "schemes": result.schemes,
+                    "janus_vulnerable": result.janus_vulnerable,
+                    "signing_block_found": result.signing_block_found,
+                    "certificates_count": len(result.certificates),
+                }
+                engines[name] = "completed"
+                all_findings.extend(self._apk_signature_auditor.audit_findings(state["apk_path"], min_sdk))
             elif isinstance(result, list):
                 all_findings.extend(result)
                 if name == "manifest":

@@ -726,4 +726,337 @@ class ADBManager:
             "output": out or "Done",
         }
 
+    async def get_device_posture(self, serial: str, guard=None) -> dict[str, Any]:
+        """Comprehensive security posture assessment of connected device."""
+        self._check_mutation_guard(guard)
+        prop_cmd = (
+            "getprop ro.build.version.release; echo '---'; "
+            "getprop ro.build.version.sdk; echo '---'; "
+            "getprop ro.product.model; echo '---'; "
+            "getprop ro.product.manufacturer; echo '---'; "
+            "getprop ro.product.cpu.abi; echo '---'; "
+            "getprop ro.build.version.security_patch; echo '---'; "
+            "getprop ro.build.type; echo '---'; "
+            "getprop ro.build.tags; echo '---'; "
+            "getprop ro.debuggable; echo '---'; "
+            "getenforce 2>/dev/null || echo 'Unknown'; echo '---'; "
+            "which su 2>/dev/null || echo 'none'"
+        )
+        code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", prop_cmd], timeout=8.0)
+        self._check_mutation_guard(guard)
+        raw_parts = [p.strip() for p in stdout.decode("utf-8", errors="replace").split("---")]
+
+        release = raw_parts[0] if len(raw_parts) > 0 and raw_parts[0] else "Unknown"
+        sdk = raw_parts[1] if len(raw_parts) > 1 and raw_parts[1] else "Unknown"
+        model = raw_parts[2] if len(raw_parts) > 2 and raw_parts[2] else "Android Device"
+        manufacturer = raw_parts[3] if len(raw_parts) > 3 and raw_parts[3] else "Generic"
+        abi = raw_parts[4] if len(raw_parts) > 4 and raw_parts[4] else "arm64-v8a"
+        patch = raw_parts[5] if len(raw_parts) > 5 and raw_parts[5] else "Unknown"
+        build_type = raw_parts[6] if len(raw_parts) > 6 and raw_parts[6] else "user"
+        tags = raw_parts[7] if len(raw_parts) > 7 and raw_parts[7] else "release-keys"
+        debuggable = raw_parts[8] == "1" if len(raw_parts) > 8 else False
+        selinux = raw_parts[9] if len(raw_parts) > 9 and raw_parts[9] else "Enforcing"
+        su_path = raw_parts[10] if len(raw_parts) > 10 and raw_parts[10] != "none" else None
+
+        is_rooted = bool(su_path or tags == "test-keys" or debuggable)
+        is_permissive = selinux.lower() in ("permissive", "disabled")
+
+        score = 100
+        findings = []
+        if is_permissive:
+            score -= 35
+            findings.append({
+                "severity": "CRITICAL",
+                "title": "SELinux Enforce Disabled / Permissive",
+                "detail": f"Device SELinux is set to '{selinux}'. Mandatory Access Control (MAC) protections are bypassed.",
+                "recommendation": "Execute 'setenforce 1' on production devices to re-enable kernel MAC isolation."
+            })
+        if is_rooted:
+            score -= 30
+            findings.append({
+                "severity": "HIGH",
+                "title": "Device Root / Superuser Access Detected",
+                "detail": f"Superuser binary found at '{su_path or tags}'. App sandbox integrity cannot be guaranteed.",
+                "recommendation": "Perform security audits on non-rooted production firmware to assess real-world defenses."
+            })
+        if debuggable:
+            score -= 15
+            findings.append({
+                "severity": "MEDIUM",
+                "title": "Android System Build Marked Debuggable (ro.debuggable=1)",
+                "detail": "Any application on this device can be attached and inspected via JDWP without run-as restrictions.",
+                "recommendation": "Deploy release builds (ro.debuggable=0) for client testing."
+            })
+        if tags == "test-keys":
+            score -= 10
+            findings.append({
+                "severity": "MEDIUM",
+                "title": "Firmware Signed with Public Test Keys",
+                "detail": "The OS build uses AOSP public test-keys rather than vendor private release keys.",
+                "recommendation": "Ensure production devices are signed with hardware OEM release keys."
+            })
+        if patch != "Unknown":
+            try:
+                year = int(patch.split("-")[0])
+                if year < 2024:
+                    score -= 15
+                    findings.append({
+                        "severity": "HIGH",
+                        "title": f"Outdated Android Security Patch Level ({patch})",
+                        "detail": f"Device security patch date is {patch}, leaving device vulnerable to known Android CVEs.",
+                        "recommendation": "Update device firmware to the latest available security patch level."
+                    })
+            except Exception:
+                pass
+
+        score = max(10, score)
+        return {
+            "serial": serial,
+            "model": model,
+            "manufacturer": manufacturer,
+            "android_version": release,
+            "sdk_level": sdk,
+            "abi": abi,
+            "security_patch": patch,
+            "build_type": build_type,
+            "build_tags": tags,
+            "debuggable": debuggable,
+            "selinux": selinux,
+            "is_rooted": is_rooted,
+            "is_permissive": is_permissive,
+            "su_path": su_path,
+            "posture_score": score,
+            "findings": findings,
+        }
+
+    async def wireless_mdns_services(self, guard=None) -> dict[str, Any]:
+        """Discover wireless ADB targets via mDNS."""
+        self._check_mutation_guard(guard)
+        code, stdout, stderr = await self._exec_cmd(["mdns", "services"], timeout=10.0)
+        self._check_mutation_guard(guard)
+        services = []
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or "List of" in line:
+                continue
+            m = re.match(r"^(\S+)\s+(_\S+\._tcp\.?)\s+(\S+:\d+)$", line)
+            if m:
+                services.append({
+                    "name": m.group(1),
+                    "type": m.group(2).rstrip("."),
+                    "addr": m.group(3),
+                })
+        return {
+            "status": "success",
+            "services": services,
+            "raw": stdout.decode("utf-8", errors="replace").strip(),
+        }
+
+    async def wireless_pair(self, addr: str, code: str, guard=None) -> dict[str, Any]:
+        """Pair with wireless Android 11+ device via IP:Port and pairing code."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[\w.-]+:\d+", addr):
+            raise ValueError("Address must be host:port")
+        if not re.fullmatch(r"\d{4,8}", code.strip()):
+            raise ValueError("Pairing code must be 4 to 8 digits")
+
+        ret, stdout, stderr = await self._exec_cmd(["pair", addr, code.strip()], timeout=30.0)
+        self._check_mutation_guard(guard)
+        out = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        success = ret == 0 and "success" in out.lower()
+        return {
+            "status": "success" if success else "failed",
+            "output": out or ("Successfully paired to " + addr if success else "Pairing failed"),
+        }
+
+    async def wireless_connect(self, addr: str, guard=None) -> dict[str, Any]:
+        """Connect to wireless ADB target."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[\w.-]+(?::\d+)?", addr):
+            raise ValueError("Address must be host or host:port")
+
+        ret, stdout, stderr = await self._exec_cmd(["connect", addr], timeout=20.0)
+        self._check_mutation_guard(guard)
+        out = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        success = ret == 0 and "connected to" in out.lower()
+        return {
+            "status": "success" if success else "failed",
+            "output": out or ("Connected to " + addr if success else "Connection failed"),
+        }
+
+    async def wireless_disconnect(self, addr: str, guard=None) -> dict[str, Any]:
+        """Disconnect wireless ADB target."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[\w.-]+(?::\d+)?", addr):
+            raise ValueError("Address must be host or host:port")
+
+        ret, stdout, stderr = await self._exec_cmd(["disconnect", addr], timeout=10.0)
+        self._check_mutation_guard(guard)
+        out = (stdout + stderr).decode("utf-8", errors="replace").strip()
+        return {
+            "status": "success",
+            "output": out or "Disconnected",
+        }
+
+    def prepare_ca_certificate(self, raw_bytes: bytes) -> dict[str, Any]:
+        """Turn PEM or DER CA certificate into Android trust-store format (<hash>.0)."""
+        import tempfile
+        import subprocess
+
+        openssl_bin = shutil.which("openssl") or "/usr/bin/openssl"
+        with tempfile.TemporaryDirectory(prefix="mobileag-ca-") as tmpdir:
+            in_file = Path(tmpdir) / "cert.in"
+            pem_file = Path(tmpdir) / "cert.pem"
+            in_file.write_bytes(raw_bytes)
+
+            form = "PEM"
+            res = subprocess.run([openssl_bin, "x509", "-inform", "PEM", "-in", str(in_file), "-noout"], capture_output=True)
+            if res.returncode != 0:
+                form = "DER"
+
+            conv = subprocess.run([openssl_bin, "x509", "-inform", form, "-in", str(in_file), "-outform", "PEM", "-out", str(pem_file)], capture_output=True)
+            if conv.returncode != 0:
+                raise ValueError("Invalid certificate format (requires valid PEM or DER X.509 CA certificate)")
+
+            hash_res = subprocess.run([openssl_bin, "x509", "-in", str(pem_file), "-subject_hash_old", "-noout"], capture_output=True, text=True)
+            subj_hash = hash_res.stdout.strip().splitlines()[0] if hash_res.stdout.strip() else ""
+            if not re.fullmatch(r"[0-9a-fA-F]{8}", subj_hash):
+                raise ValueError(f"Could not compute Android subject hash from certificate: {hash_res.stderr}")
+
+            subj_res = subprocess.run([openssl_bin, "x509", "-in", str(pem_file), "-subject", "-noout"], capture_output=True, text=True)
+            subject = subj_res.stdout.strip().replace("subject=", "").strip()
+
+            issuer_res = subprocess.run([openssl_bin, "x509", "-in", str(pem_file), "-issuer", "-noout"], capture_output=True, text=True)
+            issuer = issuer_res.stdout.strip().replace("issuer=", "").strip()
+
+            dates_res = subprocess.run([openssl_bin, "x509", "-in", str(pem_file), "-dates", "-noout"], capture_output=True, text=True)
+            dates = dates_res.stdout.strip()
+
+            pem_content = pem_file.read_text(encoding="utf-8")
+            android_filename = f"{subj_hash.lower()}.0"
+
+            return {
+                "hash": subj_hash.lower(),
+                "android_filename": android_filename,
+                "subject": subject,
+                "issuer": issuer,
+                "dates": dates,
+                "pem": pem_content,
+            }
+
+    async def install_ca_certificate(self, serial: str, cert_pem: str, filename: str, guard=None) -> dict[str, Any]:
+        """Stage CA certificate on device /data/local/tmp/ and guide trust installation."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}\.0", filename):
+            raise ValueError("Invalid Android CA filename (must be <hash>.0)")
+
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tf:
+            tf.write(cert_pem)
+            tpath = tf.name
+
+        target_path = f"/data/local/tmp/{filename}"
+        code, stdout, stderr = await self._exec_cmd(["-s", serial, "push", tpath, target_path], timeout=15.0)
+        self._check_mutation_guard(guard)
+        try:
+            Path(tpath).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if code != 0:
+            raise RuntimeError(f"Failed to push CA cert to device: {stderr.decode('utf-8', errors='replace')}")
+
+        await self._exec_cmd(["-s", serial, "shell", f"chmod 644 {target_path}"], timeout=5.0)
+
+        return {
+            "status": "staged",
+            "serial": serial,
+            "target_path": target_path,
+            "filename": filename,
+            "instructions": {
+                "user_install": f"adb shell am start -a android.credentials.INSTALL -t application/x-x509-ca-cert -d file://{target_path}",
+                "root_system_install": f"adb shell su -c 'mount -o rw,remount / && cp {target_path} /system/etc/security/cacerts/{filename} && chmod 644 /system/etc/security/cacerts/{filename}'",
+                "magisk_overlay": "Install 'MagiskTrustUserCerts' module to automatically promote user CA to system trust store."
+            }
+        }
+
+    async def get_package_memory_and_procs(self, serial: str, package_name: str, guard=None) -> dict[str, Any]:
+        """Inspect live memory usage and process telemetry for a target package."""
+        self._check_mutation_guard(guard)
+        if not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", package_name):
+            raise ValueError("Invalid package name format")
+
+        code, stdout, _ = await self._exec_cmd(["-s", serial, "shell", f"dumpsys meminfo {shlex.quote(package_name)}"], timeout=10.0)
+        self._check_mutation_guard(guard)
+        mem_text = stdout.decode("utf-8", errors="replace")
+
+        native_heap = 0
+        java_heap = 0
+        code_mem = 0
+        stack_mem = 0
+        graphics_mem = 0
+        private_dirty = 0
+        total_pss = 0
+        pid = None
+
+        pid_match = re.search(r"MEMINFO in pid\s+(\d+)", mem_text)
+        if pid_match:
+            pid = int(pid_match.group(1))
+
+        for line in mem_text.splitlines():
+            s = line.strip()
+            if "Native Heap" in s:
+                nums = re.findall(r"\d+", s)
+                if nums:
+                    native_heap = int(nums[0])
+            elif "Dalvik Heap" in s or "Java Heap" in s:
+                nums = re.findall(r"\d+", s)
+                if nums:
+                    java_heap = int(nums[0])
+            elif ".dex mmap" in s or ".so mmap" in s:
+                nums = re.findall(r"\d+", s)
+                if nums:
+                    code_mem += int(nums[0])
+            elif "Stack" in s:
+                nums = re.findall(r"\d+", s)
+                if nums:
+                    stack_mem = int(nums[0])
+            elif "GL mmap" in s or "Graphics" in s:
+                nums = re.findall(r"\d+", s)
+                if nums:
+                    graphics_mem = int(nums[0])
+            elif "TOTAL PSS:" in s or "TOTAL:" in s:
+                nums = re.findall(r"\d+", s)
+                if len(nums) >= 2:
+                    total_pss = int(nums[0])
+                    private_dirty = int(nums[1])
+
+        ps_code, ps_out, _ = await self._exec_cmd(["-s", serial, "shell", f"ps -A | grep {shlex.quote(package_name)}"], timeout=5.0)
+        processes = []
+        for line in ps_out.decode("utf-8", errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) >= 9 and package_name in parts[-1]:
+                processes.append({
+                    "user": parts[0],
+                    "pid": parts[1],
+                    "ppid": parts[2],
+                    "vsz": parts[4],
+                    "rss": parts[5],
+                    "name": parts[-1],
+                })
+
+        return {
+            "package_name": package_name,
+            "pid": pid or (processes[0]["pid"] if processes else None),
+            "total_pss_kb": total_pss,
+            "native_heap_kb": native_heap,
+            "java_heap_kb": java_heap,
+            "code_kb": code_mem,
+            "stack_kb": stack_mem,
+            "graphics_kb": graphics_mem,
+            "private_dirty_kb": private_dirty,
+            "active_processes": processes,
+            "is_running": bool(pid or processes),
+        }
+
 

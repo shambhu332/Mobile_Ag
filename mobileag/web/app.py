@@ -1378,6 +1378,26 @@ class PackagePullRequest(BaseModel):
     serial: str = Field(..., max_length=128)
     package_name: str = Field(..., max_length=256)
 
+
+class WirelessPairRequest(BaseModel):
+    addr: str = Field(..., max_length=128)
+    code: str = Field(..., min_length=4, max_length=16)
+
+
+class WirelessConnectRequest(BaseModel):
+    addr: str = Field(..., max_length=128)
+
+
+class CertPrepareRequest(BaseModel):
+    cert_data: str = Field(..., max_length=65536)
+
+
+class CertInstallRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    cert_pem: str = Field(..., max_length=65536)
+    filename: str = Field(..., pattern=r"^[0-9a-fA-F]{8}\.0$")
+
+
 def require_current_session(request: Request):
     token = request.state.authenticated_token
     if time.monotonic() >= app.state.session_deadline or not authorized(token, app.state.auth_token):
@@ -2257,6 +2277,158 @@ async def set_dast_clipboard(req: ClipboardActionRequest, request: Request) -> d
         res = await adb_manager.set_clipboard(req.serial, req.text or "", guard=guard)
     except PermissionError as e:
         raise HTTPException(403, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/device/posture")
+async def get_dast_device_posture(serial: str, request: Request) -> dict[str, Any]:
+    """Inspect comprehensive device hardware, OS version, SELinux status, and root posture."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "device_posture", {"serial": serial}):
+            raise HTTPException(403, "Device posture scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_device_posture(serial, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/wireless/mdns")
+async def get_dast_wireless_mdns(request: Request) -> dict[str, Any]:
+    """Discover available Android devices advertising wireless ADB on the local network."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", {}):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.wireless_mdns_services(guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/pair")
+async def pair_dast_wireless(req: WirelessPairRequest, request: Request) -> dict[str, Any]:
+    """Pair with wireless Android 11+ device via pairing code."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_pair(req.addr, req.code, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/connect")
+async def connect_dast_wireless(req: WirelessConnectRequest, request: Request) -> dict[str, Any]:
+    """Connect to wireless ADB target."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_connect(req.addr, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/disconnect")
+async def disconnect_dast_wireless(req: WirelessConnectRequest, request: Request) -> dict[str, Any]:
+    """Disconnect wireless ADB target."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_disconnect(req.addr, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/cert/prepare")
+async def prepare_dast_ca_cert(req: CertPrepareRequest, request: Request) -> dict[str, Any]:
+    """Compute Android trust-store subject hash (<hash>.0) and validate CA certificate."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "cert", {}):
+            raise HTTPException(403, "Certificate preparation scope is unavailable or revoked")
+    guard()
+    raw_data = req.cert_data.strip()
+    if raw_data.startswith("-----BEGIN"):
+        raw_bytes = raw_data.encode("utf-8")
+    else:
+        import base64
+        try:
+            raw_bytes = base64.b64decode(raw_data)
+        except Exception:
+            raw_bytes = raw_data.encode("utf-8")
+    try:
+        res = adb_manager.prepare_ca_certificate(raw_bytes)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/cert/install")
+async def install_dast_ca_cert(req: CertInstallRequest, request: Request) -> dict[str, Any]:
+    """Stage CA certificate on target device (/data/local/tmp/<hash>.0) and provide install guide."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "cert", req.model_dump()):
+            raise HTTPException(403, "Certificate install scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.install_ca_certificate(req.serial, req.cert_pem, req.filename, guard=guard)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/memory")
+async def get_dast_memory_procs(serial: str, package_name: str, request: Request) -> dict[str, Any]:
+    """Inspect live memory allocations (Java/Native heap, Graphics, Code, PSS) and processes for target package."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "memory", {"serial": serial, "package_name": package_name}):
+            raise HTTPException(403, "Memory inspection scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_package_memory_and_procs(serial, package_name, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     guard()
     return res
 

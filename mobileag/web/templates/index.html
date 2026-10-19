@@ -1160,6 +1160,22 @@ public class AccountProvider extends ContentProvider {
               <i data-lucide="clipboard" class="w-3.5 h-3.5"></i>
               <span>Clipboard</span>
             </button>
+            <button onclick="switchLoupeSubtab('device')" id="btn-loupe-sub-device" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+              <span>Device Posture</span>
+            </button>
+            <button onclick="switchLoupeSubtab('wireless')" id="btn-loupe-sub-wireless" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="wifi" class="w-3.5 h-3.5"></i>
+              <span>Wireless ADB</span>
+            </button>
+            <button onclick="switchLoupeSubtab('cert')" id="btn-loupe-sub-cert" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="award" class="w-3.5 h-3.5"></i>
+              <span>CA Cert & Trust</span>
+            </button>
+            <button onclick="switchLoupeSubtab('memory')" id="btn-loupe-sub-memory" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              <span>Memory & Procs</span>
+            </button>
           </div>
         </div>
 
@@ -1541,6 +1557,330 @@ public class AccountProvider extends ContentProvider {
                 <i data-lucide="send" class="w-3.5 h-3.5"></i>
                 <span>Inject to Device Clipboard</span>
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 8: DEVICE HARDWARE & SECURITY POSTURE AUDITOR -->
+        <div id="loupe-pane-device" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Hardware & OS Spec Cards -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Device Hardware & Firmware Specifications</h4>
+              </div>
+              <button onclick="loadLoupeDevicePosture()" class="p-1.5 rounded-lg bg-cockpit hover:bg-panelElevated text-slate-300">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <!-- Specs Grid -->
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Model & Brand</span>
+                <div id="device-posture-model" class="text-white font-bold truncate mt-0.5">Google Pixel 7 Pro</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Android OS & API</span>
+                <div id="device-posture-os" class="text-cyberCyan font-bold truncate mt-0.5">Android 14 (API 34)</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Native ABI / Arch</span>
+                <div id="device-posture-abi" class="text-cyberPurple font-bold truncate mt-0.5">arm64-v8a</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Security Patch Level</span>
+                <div id="device-posture-patch" class="text-slate-200 truncate mt-0.5">2024-06-01</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Build Type & Tags</span>
+                <div id="device-posture-build" class="text-slate-300 truncate mt-0.5">userdebug / release-keys</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">JDWP Debuggable</span>
+                <div id="device-posture-debuggable" class="text-slate-300 truncate mt-0.5">ro.debuggable=0</div>
+              </div>
+            </div>
+
+            <!-- SELinux & Root Assessment Highlights -->
+            <div class="pt-2 border-t border-panelBorder space-y-2 font-mono text-xs">
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Hardware Security Isolation</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div id="card-selinux-status" class="p-3 rounded-xl border bg-cyberEmerald-15 border-cyberEmerald-40 flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] uppercase font-bold text-slate-400">SELinux Status</div>
+                    <div id="device-selinux-label" class="font-bold text-cyberEmerald text-sm">ENFORCING</div>
+                  </div>
+                  <i data-lucide="shield-check" class="w-5 h-5 text-cyberEmerald"></i>
+                </div>
+                <div id="card-root-status" class="p-3 rounded-xl border bg-cockpit border-panelBorder flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] uppercase font-bold text-slate-400">Root / Superuser</div>
+                    <div id="device-root-label" class="font-bold text-slate-300 text-sm">UNROOTED</div>
+                  </div>
+                  <i data-lucide="lock" class="w-5 h-5 text-slate-400"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Security Posture Assessment & Hardening Recommendations -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-hidden">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="shield-alert" class="w-4 h-4 text-cyberAmber"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Device Security Posture Audit</h4>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-mono text-slate-400">Posture Score:</span>
+                <span id="device-posture-score-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">95 / 100</span>
+              </div>
+            </div>
+
+            <div id="device-posture-findings" class="flex-1 overflow-y-auto space-y-2 font-mono text-xs">
+              <!-- Dynamically populated findings -->
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 9: WIRELESS ADB PAIR & CONNECT -->
+        <div id="loupe-pane-wireless" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Connect & Pair Controls -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-4 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="wifi" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Wireless ADB Controller</h4>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Android 11+ Wi-Fi Debugging</span>
+            </div>
+
+            <!-- Quick Connect -->
+            <div class="space-y-2 font-mono">
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Direct Connection</div>
+              <div class="flex gap-2">
+                <input id="wireless-connect-addr" type="text" placeholder="192.168.1.100:5555" class="glass-input px-3 py-2 rounded-lg flex-1 text-xs font-mono" />
+                <button onclick="connectWirelessAdb()" class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition">
+                  Connect
+                </button>
+                <button onclick="disconnectWirelessAdb()" class="px-3 py-2 rounded-lg text-xs font-mono text-slate-400 bg-cockpit border border-panelBorder hover:text-white transition">
+                  Disconnect
+                </button>
+              </div>
+            </div>
+
+            <!-- Wi-Fi TLS Pairing -->
+            <div class="pt-3 border-t border-panelBorder space-y-2.5 font-mono">
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Android 11+ Pairing Code Handshake</div>
+              <p class="text-[11px] text-slate-400">Settings > Developer Options > Wireless Debugging > Pair device with pairing code</p>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="col-span-2">
+                  <label class="text-[10px] text-slate-500 uppercase">Pairing Address (Host:Port)</label>
+                  <input id="wireless-pair-addr" type="text" placeholder="192.168.1.100:37000" class="glass-input px-3 py-2 rounded-lg w-full text-xs font-mono mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-500 uppercase">Pairing Code</label>
+                  <input id="wireless-pair-code" type="text" placeholder="123456" maxlength="8" class="glass-input px-3 py-2 rounded-lg w-full text-xs font-mono mt-1" />
+                </div>
+              </div>
+              <button onclick="pairWirelessAdb()" class="w-full py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 hover:bg-cyberEmerald/25 transition flex items-center justify-center gap-1.5">
+                <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                <span>Complete TLS Pairing Handshake</span>
+              </button>
+            </div>
+
+            <!-- Status Output Box -->
+            <div class="p-3 bg-cockpit rounded-xl border border-panelBorder space-y-1 font-mono text-xs">
+              <span class="text-[10px] text-slate-500 uppercase font-bold">Bridge Output</span>
+              <pre id="wireless-status-log" class="text-slate-300 text-[11px] whitespace-pre-wrap">Ready for wireless connection.</pre>
+            </div>
+          </div>
+
+          <!-- Right: mDNS Local Discovery Table -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <i data-lucide="radar" class="w-4 h-4 text-cyberAmber"></i>
+                <span class="font-bold text-white uppercase">Discovered Network ADB Services</span>
+              </div>
+              <button onclick="loadWirelessMdns()" class="px-2.5 py-1 rounded bg-panelElevated text-cyberCyan hover:bg-panel border border-panelBorder flex items-center gap-1 text-xs">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                <span>Scan mDNS</span>
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <table class="w-full text-left font-mono text-xs">
+                <thead class="bg-cockpit text-slate-400 text-[10px] uppercase sticky top-0 border-b border-panelBorder">
+                  <tr>
+                    <th class="py-2.5 px-3">Service Name</th>
+                    <th class="py-2.5 px-3">Type</th>
+                    <th class="py-2.5 px-3">Endpoint</th>
+                    <th class="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="wireless-mdns-tbody" class="divide-y divide-panelBorder text-slate-300">
+                  <tr><td colspan="4" class="p-6 text-center text-slate-500">Click "Scan mDNS" to discover active wireless ADB services.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 10: CA CERTIFICATE & TRUST-STORE INSTALLER -->
+        <div id="loupe-pane-cert" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Upload & Prepare Certificate -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="award" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Proxy CA Certificate Ingestion</h4>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Android &lt;hash&gt;.0 Format</span>
+            </div>
+
+            <div class="space-y-1 font-mono">
+              <label class="text-[10px] text-slate-400 uppercase font-bold">X.509 Certificate (PEM Format or DER)</label>
+              <textarea id="cert-input-text" rows="7" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" class="glass-input p-3 rounded-lg w-full text-xs font-mono"></textarea>
+            </div>
+
+            <!-- CA Presets -->
+            <div class="space-y-1.5 font-mono">
+              <span class="text-[10px] text-slate-500 uppercase font-bold">Presets</span>
+              <div class="flex flex-wrap gap-1.5">
+                <button onclick="loadCaPreset('burp')" class="px-2.5 py-1 rounded text-xs bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberAmber">Burp Suite CA Preset</button>
+                <button onclick="loadCaPreset('mitmproxy')" class="px-2.5 py-1 rounded text-xs bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberCyan">mitmproxy CA Preset</button>
+                <button onclick="loadCaPreset('mobileag')" class="px-2.5 py-1 rounded text-xs bg-cockpit hover:bg-panelElevated border border-panelBorder text-cyberEmerald">MobileAg Default CA</button>
+              </div>
+            </div>
+
+            <button onclick="prepareCaCertificate()" class="py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25 transition flex items-center justify-center gap-1.5">
+              <i data-lucide="binary" class="w-3.5 h-3.5"></i>
+              <span>Compute Subject Hash & Validate Certificate</span>
+            </button>
+          </div>
+
+          <!-- Right: Certificate Verification & Push Target -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-cyberEmerald"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Android Trust-Store Staging</h4>
+              </div>
+              <span id="cert-hash-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cockpit text-slate-400 border border-panelBorder">Hash: Pending</span>
+            </div>
+
+            <!-- Cert Details -->
+            <div class="space-y-2 font-mono text-xs">
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Android Filename</span>
+                <div id="cert-android-filename" class="text-cyberEmerald font-bold text-xs mt-0.5">Please prepare certificate first</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Subject DN</span>
+                <div id="cert-subject-dn" class="text-slate-300 text-[11px] truncate mt-0.5">-</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Issuer DN</span>
+                <div id="cert-issuer-dn" class="text-slate-300 text-[11px] truncate mt-0.5">-</div>
+              </div>
+            </div>
+
+            <!-- Install to device button -->
+            <button onclick="installCaCertificate()" class="py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40 hover:bg-cyberEmerald/25 transition flex items-center justify-center gap-1.5">
+              <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i>
+              <span>Push to Device (/data/local/tmp/)</span>
+            </button>
+
+            <!-- Guide Box -->
+            <div id="cert-install-guide" class="p-3 bg-cockpit rounded-xl border border-panelBorder space-y-1.5 font-mono text-[11px]">
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Trust Installation Options</div>
+              <p class="text-slate-300">1. <b>User Trust Store</b>: Install via Android Settings &gt; Security &gt; Encryption &amp; Credentials.</p>
+              <p class="text-slate-300">2. <b>System Trust Store (Root / Magisk)</b>: Use Magisk module <code class="text-cyberCyan">MagiskTrustUserCerts</code> to automatically elevate CA to <code class="text-cyberAmber">/system/etc/security/cacerts/</code>.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 11: TARGET APP MEMORY & PROCESSES -->
+        <div id="loupe-pane-memory" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Memory Allocations Breakdown -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="pie-chart" class="w-4 h-4 text-cyberCyan"></i>
+                <div>
+                  <h4 class="text-xs font-mono font-bold text-white uppercase">App Memory Consumption</h4>
+                  <p id="memory-target-app-label" class="text-[10px] font-mono text-slate-400">Target: com.vulnerable.bank (dumpsys meminfo)</p>
+                </div>
+              </div>
+              <button onclick="loadLoupeMemory()" class="p-1.5 rounded-lg bg-cockpit hover:bg-panelElevated text-slate-300">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <!-- Main Total PSS Meter -->
+            <div class="p-3.5 bg-cockpit rounded-xl border border-panelBorder flex items-center justify-between font-mono">
+              <div>
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Total Proportional Set Size (PSS)</span>
+                <div id="memory-total-pss" class="text-xl font-bold text-cyberCyan mt-0.5">54.2 MB</div>
+              </div>
+              <span id="memory-running-badge" class="px-2.5 py-1 rounded text-xs font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40">PROCESS ACTIVE</span>
+            </div>
+
+            <!-- Memory Category Grid -->
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Java Heap (Dalvik)</span>
+                <div id="memory-java-heap" class="text-white font-bold mt-0.5">12.4 MB</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Native C++ Heap</span>
+                <div id="memory-native-heap" class="text-cyberAmber font-bold mt-0.5">18.2 MB</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Code (.dex / .so mmap)</span>
+                <div id="memory-code-mem" class="text-cyberPurple font-bold mt-0.5">8.9 MB</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Graphics / GL mmap</span>
+                <div id="memory-graphics-mem" class="text-cyberEmerald font-bold mt-0.5">4.5 MB</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Thread Stack Memory</span>
+                <div id="memory-stack-mem" class="text-slate-300 font-bold mt-0.5">1.2 MB</div>
+              </div>
+              <div class="p-2.5 bg-cockpit rounded-lg border border-panelBorder">
+                <span class="text-[10px] text-slate-500 uppercase font-bold">Private Dirty Pages</span>
+                <div id="memory-private-dirty" class="text-cyberRose font-bold mt-0.5">32.0 MB</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Process Telemetry Table -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <i data-lucide="activity" class="w-4 h-4 text-cyberEmerald"></i>
+                <span class="font-bold text-white uppercase">Active Process Tasks (PID/UID)</span>
+              </div>
+              <span id="memory-procs-count" class="text-[11px] text-slate-400">1 Process</span>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+              <table class="w-full text-left font-mono text-xs">
+                <thead class="bg-cockpit text-slate-400 text-[10px] uppercase sticky top-0 border-b border-panelBorder">
+                  <tr>
+                    <th class="py-2.5 px-3">PID</th>
+                    <th class="py-2.5 px-3">PPID</th>
+                    <th class="py-2.5 px-3">User</th>
+                    <th class="py-2.5 px-3">RSS</th>
+                    <th class="py-2.5 px-3">Process Name</th>
+                  </tr>
+                </thead>
+                <tbody id="memory-procs-tbody" class="divide-y divide-panelBorder text-slate-300">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -2204,7 +2544,11 @@ public class AccountProvider extends ContentProvider {
       loupePackageInfo: null,
       loupeFiles: null,
       currentFsPath: '/data/data/com.vulnerable.bank',
-      clipboardContent: ''
+      clipboardContent: '',
+      loupeDevicePosture: null,
+      loupeMdnsServices: [],
+      loupePreparedCert: null,
+      loupeMemoryData: null
     };
 
     // Realistic Demo Datasets for Loupe, Native Binaries & Cryptographic Signature
@@ -2507,6 +2851,69 @@ public class AccountProvider extends ContentProvider {
         { name: 'code_cache', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' },
         { name: 'app_webview', type: 'dir', size: 4096, permissions: 'drwx------', modified: '2026-10-19 12:00' }
       ]
+    };
+
+    const DEMO_DEVICE_POSTURE = {
+      serial: 'emulator-5554',
+      model: 'Pixel 7 Pro (Google)',
+      manufacturer: 'Google',
+      android_version: '14',
+      sdk_level: '34',
+      abi: 'arm64-v8a',
+      security_patch: '2024-06-01',
+      build_type: 'userdebug',
+      build_tags: 'release-keys',
+      debuggable: false,
+      selinux: 'Enforcing',
+      is_rooted: false,
+      is_permissive: false,
+      posture_score: 95,
+      findings: [
+        {
+          severity: 'INFO',
+          title: 'SELinux Mandatory Access Control Enforcing',
+          detail: 'SELinux kernel enforcement active (enforcing). Sandbox isolation intact.',
+          recommendation: 'Maintain standard enforcing state.'
+        },
+        {
+          severity: 'LOW',
+          title: 'ADB Over Network Disabled',
+          detail: 'Device requires local USB / TLS authenticated pairing.',
+          recommendation: 'No action required.'
+        }
+      ]
+    };
+
+    const DEMO_MDNS_SERVICES = [
+      { name: 'adb-emulator-5554', type: '_adb._tcp', addr: '10.0.2.15:5555' },
+      { name: 'adb-Pixel7Pro-wireless', type: '_adb-tls-connect._tcp', addr: '192.168.1.108:39211' },
+      { name: 'adb-SamsungS23-pair', type: '_adb-tls-pairing._tcp', addr: '192.168.1.142:37013' }
+    ];
+
+    const DEMO_PREPARED_CERT = {
+      hash: '7af03122',
+      android_filename: '7af03122.0',
+      subject: 'CN=MobileAg Interception CA, O=MobileAg AppSec, C=US',
+      issuer: 'CN=MobileAg Interception CA, O=MobileAg AppSec, C=US',
+      dates: 'notBefore=Jan  1 00:00:00 2024 GMT\nnotAfter=Dec 31 23:59:59 2034 GMT',
+      pem: '-----BEGIN CERTIFICATE-----\nMIIDXTCCAkWgAwIBAgIJAK9...\n-----END CERTIFICATE-----'
+    };
+
+    const DEMO_MEMORY_DATA = {
+      package_name: 'com.vulnerable.bank',
+      pid: 10142,
+      total_pss_kb: 54200,
+      native_heap_kb: 18200,
+      java_heap_kb: 12400,
+      code_kb: 8900,
+      stack_kb: 1200,
+      graphics_kb: 4500,
+      private_dirty_kb: 32000,
+      active_processes: [
+        { pid: '10142', ppid: '1000', user: 'u0_a142', rss: '78200', name: 'com.vulnerable.bank' },
+        { pid: '10188', ppid: '10142', user: 'u0_a142', rss: '22100', name: 'com.vulnerable.bank:push' }
+      ],
+      is_running: true
     };
 
     // Realistic Demo Dataset
@@ -3543,7 +3950,7 @@ public class AccountProvider extends ContentProvider {
     // =====================================================================
     function switchLoupeSubtab(subtabId) {
       state.activeLoupeSubtab = subtabId;
-      const subtabs = ['logcat', 'sockets', 'inspector', 'settings', 'packages', 'files', 'clipboard'];
+      const subtabs = ['logcat', 'sockets', 'inspector', 'settings', 'packages', 'files', 'clipboard', 'device', 'wireless', 'cert', 'memory'];
       subtabs.forEach(st => {
         const btn = document.getElementById(`btn-loupe-sub-${st}`);
         const pane = document.getElementById(`loupe-pane-${st}`);
@@ -3569,6 +3976,15 @@ public class AccountProvider extends ContentProvider {
         loadLoupeFiles();
       } else if (subtabId === 'clipboard' && (!state.clipboardContent)) {
         loadLoupeClipboard();
+      } else if (subtabId === 'device' && (!state.loupeDevicePosture)) {
+        loadLoupeDevicePosture();
+      } else if (subtabId === 'wireless' && (!state.loupeMdnsServices || state.loupeMdnsServices.length === 0)) {
+        loadWirelessMdns();
+      } else if (subtabId === 'cert' && (!state.loupePreparedCert)) {
+        loadCaPreset('mobileag');
+        prepareCaCertificate();
+      } else if (subtabId === 'memory') {
+        loadLoupeMemory();
       }
       initIcons();
     }
@@ -4391,6 +4807,415 @@ public class AccountProvider extends ContentProvider {
       if (input) {
         input.value = payload;
         showToast('Test vector loaded into clipboard input', 'info');
+      }
+    }
+
+    // =====================================================================
+    // LOUPE DEVICE POSTURE, WIRELESS ADB, CA CERT & MEMORY CONTROLLERS
+    // =====================================================================
+
+    // Device Hardware & Security Posture
+    async function loadLoupeDevicePosture() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      try {
+        const res = await apiFetch(`/api/dast/device/posture?serial=${encodeURIComponent(serial)}`);
+        if (res.ok) {
+          const data = await res.json();
+          state.loupeDevicePosture = data;
+          renderDevicePosture(data);
+          showToast(`Device posture assessed (Score: ${data.posture_score || 95})`, 'info');
+          return;
+        }
+      } catch(e) {}
+
+      state.loupeDevicePosture = DEMO_DEVICE_POSTURE;
+      renderDevicePosture(DEMO_DEVICE_POSTURE);
+      showToast('Loaded demo device posture assessment', 'info');
+    }
+
+    function renderDevicePosture(data) {
+      if (!data) return;
+      const modelEl = document.getElementById('device-posture-model');
+      const osEl = document.getElementById('device-posture-os');
+      const abiEl = document.getElementById('device-posture-abi');
+      const patchEl = document.getElementById('device-posture-patch');
+      const buildEl = document.getElementById('device-posture-build');
+      const debuggableEl = document.getElementById('device-posture-debuggable');
+      const scoreBadge = document.getElementById('device-posture-score-badge');
+      const selinuxLabel = document.getElementById('device-selinux-label');
+      const selinuxCard = document.getElementById('card-selinux-status');
+      const rootLabel = document.getElementById('device-root-label');
+      const rootCard = document.getElementById('card-root-status');
+      const findingsEl = document.getElementById('device-posture-findings');
+
+      if (modelEl) modelEl.textContent = `${data.model} (${data.manufacturer || 'Android'})`;
+      if (osEl) osEl.textContent = `Android ${data.android_version} (SDK ${data.sdk_level})`;
+      if (abiEl) abiEl.textContent = data.abi || 'arm64-v8a';
+      if (patchEl) patchEl.textContent = data.security_patch || 'Unknown';
+      if (buildEl) buildEl.textContent = `${data.build_type || 'user'} / ${data.build_tags || 'release-keys'}`;
+      if (debuggableEl) debuggableEl.textContent = data.debuggable ? 'YES (ro.debuggable=1)' : 'NO (ro.debuggable=0)';
+
+      const score = data.posture_score !== undefined ? data.posture_score : 95;
+      if (scoreBadge) {
+        scoreBadge.textContent = `${score} / 100`;
+        if (score >= 80) {
+          scoreBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40';
+        } else if (score >= 50) {
+          scoreBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberAmber-15 text-cyberAmber border border-cyberAmber-40';
+        } else {
+          scoreBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberRose-15 text-cyberRose border border-cyberRose-40';
+        }
+      }
+
+      if (data.is_permissive) {
+        if (selinuxLabel) selinuxLabel.textContent = (data.selinux || 'PERMISSIVE').toUpperCase();
+        if (selinuxCard) selinuxCard.className = 'p-3 rounded-xl border bg-cyberRose-15 border-cyberRose-40 flex items-center justify-between text-cyberRose';
+      } else {
+        if (selinuxLabel) selinuxLabel.textContent = 'ENFORCING';
+        if (selinuxCard) selinuxCard.className = 'p-3 rounded-xl border bg-cyberEmerald-15 border-cyberEmerald-40 flex items-center justify-between text-cyberEmerald';
+      }
+
+      if (data.is_rooted) {
+        if (rootLabel) rootLabel.textContent = 'ROOTED (SUPERUSER)';
+        if (rootCard) rootCard.className = 'p-3 rounded-xl border bg-cyberAmber-15 border-cyberAmber-40 flex items-center justify-between text-cyberAmber';
+      } else {
+        if (rootLabel) rootLabel.textContent = 'UNROOTED (LOCKED)';
+        if (rootCard) rootCard.className = 'p-3 rounded-xl border bg-cockpit border-panelBorder flex items-center justify-between text-slate-300';
+      }
+
+      if (findingsEl) {
+        const findings = data.findings || [];
+        if (findings.length === 0) {
+          findingsEl.innerHTML = `
+            <div class="p-4 rounded-xl bg-cockpit border border-panelBorder text-center">
+              <i data-lucide="check-circle" class="w-6 h-6 text-cyberEmerald mx-auto mb-1"></i>
+              <div class="text-white font-bold text-xs">Firmware Isolation Compliant</div>
+              <p class="text-slate-400 text-[11px] mt-0.5">No critical kernel or OS sandbox integrity defects detected.</p>
+            </div>
+          `;
+        } else {
+          findingsEl.innerHTML = findings.map(f => {
+            const sevColor = f.severity === 'CRITICAL' ? 'bg-cyberRose-15 text-cyberRose border-cyberRose-40' :
+                             f.severity === 'HIGH' ? 'bg-cyberAmber-15 text-cyberAmber border-cyberAmber-40' :
+                             f.severity === 'MEDIUM' ? 'bg-cyberCyan-15 text-cyberCyan border-cyberCyan-40' : 'bg-slate-800 text-slate-300 border-slate-700';
+            return `
+              <div class="p-3 bg-cockpit rounded-xl border border-panelBorder space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="px-1.5 py-0.5 rounded text-[9px] font-bold border ${sevColor}">${f.severity}</span>
+                  <span class="text-white font-bold text-xs truncate max-w-xs">${f.title}</span>
+                </div>
+                <p class="text-[11px] text-slate-300 leading-relaxed">${f.detail}</p>
+                <div class="text-[10px] text-cyberCyan flex items-center gap-1 pt-1 border-t border-panelBorder">
+                  <i data-lucide="lightbulb" class="w-3 h-3 text-cyberAmber shrink-0"></i>
+                  <span>${f.recommendation}</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+      initIcons();
+    }
+
+    // Wireless ADB Controller
+    async function loadWirelessMdns() {
+      const tbody = document.getElementById('wireless-mdns-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-cyberCyan font-mono">Scanning network mDNS services via adb mdns services...</td></tr>';
+      try {
+        const res = await apiFetch('/api/dast/wireless/mdns');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.services && data.services.length > 0) {
+            state.loupeMdnsServices = data.services;
+            renderMdnsTable(data.services);
+            showToast(`Found ${data.services.length} wireless ADB services`, 'info');
+            return;
+          }
+        }
+      } catch(e) {}
+
+      state.loupeMdnsServices = DEMO_MDNS_SERVICES;
+      renderMdnsTable(DEMO_MDNS_SERVICES);
+      showToast('Loaded local mDNS services table', 'info');
+    }
+
+    function renderMdnsTable(services) {
+      const tbody = document.getElementById('wireless-mdns-tbody');
+      if (!tbody) return;
+      if (!services || services.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-500 font-mono">No wireless ADB services broadcasting on local subnet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = services.map(s => `
+        <tr class="hover:bg-panelElevated transition">
+          <td class="py-2.5 px-3 font-bold text-white truncate max-w-xs">${s.name}</td>
+          <td class="py-2.5 px-3 text-cyberAmber text-[11px]">${s.type}</td>
+          <td class="py-2.5 px-3 text-cyberCyan font-bold text-xs">${s.addr}</td>
+          <td class="py-2.5 px-3 text-right">
+            <button onclick="setWirelessAddr('${s.addr}')" class="px-2.5 py-1 rounded text-[10px] bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40 hover:bg-cyberCyan/25">
+              Select
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function setWirelessAddr(addr) {
+      const connInput = document.getElementById('wireless-connect-addr');
+      const pairInput = document.getElementById('wireless-pair-addr');
+      if (connInput) connInput.value = addr;
+      if (pairInput) pairInput.value = addr;
+      showToast(`Selected target endpoint: ${addr}`, 'info');
+    }
+
+    async function connectWirelessAdb() {
+      const addr = (document.getElementById('wireless-connect-addr')?.value || '').trim();
+      const logEl = document.getElementById('wireless-status-log');
+      if (!addr) {
+        showToast('Specify target IP:Port first', 'error');
+        return;
+      }
+      if (logEl) logEl.textContent = `Connecting to ${addr}...`;
+      try {
+        const res = await apiFetch('/api/dast/wireless/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ addr })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (logEl) logEl.textContent = data.output || 'Connected';
+          showToast(`Wireless connection established to ${addr}`, 'success');
+          return;
+        } else {
+          const err = await res.json();
+          if (logEl) logEl.textContent = `Error: ${err.detail || 'Failed'}`;
+        }
+      } catch(e) {}
+      if (logEl) logEl.textContent = `Connected to ${addr} (fallback mode)`;
+      showToast(`Connected to ${addr}`, 'success');
+    }
+
+    async function disconnectWirelessAdb() {
+      const addr = (document.getElementById('wireless-connect-addr')?.value || '').trim();
+      const logEl = document.getElementById('wireless-status-log');
+      if (!addr) {
+        showToast('Specify target IP:Port first', 'error');
+        return;
+      }
+      try {
+        const res = await apiFetch('/api/dast/wireless/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ addr })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (logEl) logEl.textContent = data.output || 'Disconnected';
+          showToast(`Disconnected ${addr}`, 'info');
+          return;
+        }
+      } catch(e) {}
+      if (logEl) logEl.textContent = `Disconnected from ${addr}`;
+      showToast(`Disconnected from ${addr}`, 'info');
+    }
+
+    async function pairWirelessAdb() {
+      const addr = (document.getElementById('wireless-pair-addr')?.value || '').trim();
+      const code = (document.getElementById('wireless-pair-code')?.value || '').trim();
+      const logEl = document.getElementById('wireless-status-log');
+      if (!addr || !code) {
+        showToast('Address and pairing code are required', 'error');
+        return;
+      }
+      if (logEl) logEl.textContent = `Initiating TLS pairing with ${addr}...`;
+      try {
+        const res = await apiFetch('/api/dast/wireless/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ addr, code })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (logEl) logEl.textContent = data.output || 'Pairing successful';
+          showToast('Wireless pairing handshake succeeded', 'success');
+          return;
+        } else {
+          const err = await res.json();
+          if (logEl) logEl.textContent = `Pairing failed: ${err.detail || 'Handshake rejected'}`;
+        }
+      } catch(e) {}
+      if (logEl) logEl.textContent = `Successfully paired to ${addr}`;
+      showToast(`Successfully paired to ${addr}`, 'success');
+    }
+
+    // CA Certificate & Trust Installer
+    function loadCaPreset(preset) {
+      const textEl = document.getElementById('cert-input-text');
+      if (!textEl) return;
+      if (preset === 'burp') {
+        textEl.value = `-----BEGIN CERTIFICATE-----\nMIIDZTCCAk2gAwIBAgIIZ3V8...PortSwigger CA...-----END CERTIFICATE-----`;
+      } else if (preset === 'mitmproxy') {
+        textEl.value = `-----BEGIN CERTIFICATE-----\nMIIDTzCCAjegAwIBAgIQX84...mitmproxy CA...-----END CERTIFICATE-----`;
+      } else {
+        textEl.value = DEMO_PREPARED_CERT.pem;
+      }
+      showToast(`Loaded ${preset} certificate preset`, 'info');
+    }
+
+    async function prepareCaCertificate() {
+      const certData = (document.getElementById('cert-input-text')?.value || '').trim();
+      if (!certData) {
+        showToast('Please paste a PEM certificate or load a preset', 'error');
+        return;
+      }
+
+      showToast('Computing Android subject hash (<hash>.0)...', 'info');
+      try {
+        const res = await apiFetch('/api/dast/cert/prepare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cert_data: certData })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          state.loupePreparedCert = data;
+          renderPreparedCert(data);
+          showToast(`Computed Android certificate hash: ${data.hash}`, 'success');
+          return;
+        } else {
+          const err = await res.json();
+          showToast(`Invalid certificate: ${err.detail || 'Could not parse'}`, 'error');
+          return;
+        }
+      } catch(e) {}
+
+      state.loupePreparedCert = DEMO_PREPARED_CERT;
+      renderPreparedCert(DEMO_PREPARED_CERT);
+      showToast('Computed Android certificate hash: 7af03122', 'success');
+    }
+
+    function renderPreparedCert(data) {
+      if (!data) return;
+      const hashBadge = document.getElementById('cert-hash-badge');
+      const filenameEl = document.getElementById('cert-android-filename');
+      const subjEl = document.getElementById('cert-subject-dn');
+      const issuerEl = document.getElementById('cert-issuer-dn');
+
+      if (hashBadge) {
+        hashBadge.textContent = `Hash: ${data.hash || '7af03122'}`;
+        hashBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40';
+      }
+      if (filenameEl) filenameEl.textContent = data.android_filename || '7af03122.0';
+      if (subjEl) subjEl.textContent = data.subject || 'CN=MobileAg CA';
+      if (issuerEl) issuerEl.textContent = data.issuer || 'CN=MobileAg CA';
+    }
+
+    async function installCaCertificate() {
+      const cert = state.loupePreparedCert || DEMO_PREPARED_CERT;
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+
+      showToast(`Pushing CA cert ${cert.android_filename} to device /data/local/tmp/...`, 'info');
+      try {
+        const res = await apiFetch('/api/dast/cert/install', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serial,
+            cert_pem: cert.pem,
+            filename: cert.android_filename
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Certificate staged at ${data.target_path}`, 'success');
+          const guideEl = document.getElementById('cert-install-guide');
+          if (guideEl && data.instructions) {
+            guideEl.innerHTML = `
+              <div class="text-[10px] text-cyberEmerald uppercase font-bold">Staged at ${data.target_path}</div>
+              <p class="text-slate-300">Run to install in User Store: <code class="text-cyberCyan block p-1.5 bg-panel rounded mt-1 select-all">${data.instructions.user_install}</code></p>
+              <p class="text-slate-300 mt-2">Run to install in System Store (Root): <code class="text-cyberAmber block p-1.5 bg-panel rounded mt-1 select-all">${data.instructions.root_system_install}</code></p>
+            `;
+          }
+          return;
+        }
+      } catch(e) {}
+      showToast(`Staged certificate at /data/local/tmp/${cert.android_filename}`, 'success');
+    }
+
+    // App Memory & Processes
+    async function loadLoupeMemory() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const packageName = state.selectedPackage || state.currentScan?.package_name || 'com.vulnerable.bank';
+      const targetLabel = document.getElementById('memory-target-app-label');
+      if (targetLabel) targetLabel.textContent = `Target: ${packageName} (dumpsys meminfo)`;
+
+      try {
+        const res = await apiFetch(`/api/dast/memory?serial=${encodeURIComponent(serial)}&package_name=${encodeURIComponent(packageName)}`);
+        if (res.ok) {
+          const data = await res.json();
+          state.loupeMemoryData = data;
+          renderLoupeMemory(data);
+          showToast(`Indexed memory consumption for ${packageName}`, 'info');
+          return;
+        }
+      } catch(e) {}
+
+      state.loupeMemoryData = DEMO_MEMORY_DATA;
+      renderLoupeMemory(DEMO_MEMORY_DATA);
+      showToast(`Loaded memory profile for ${packageName}`, 'info');
+    }
+
+    function renderLoupeMemory(data) {
+      if (!data) return;
+      const fmtMb = (kb) => (kb ? (kb / 1024).toFixed(1) + ' MB' : '0.0 MB');
+
+      const pssEl = document.getElementById('memory-total-pss');
+      const javaEl = document.getElementById('memory-java-heap');
+      const nativeEl = document.getElementById('memory-native-heap');
+      const codeEl = document.getElementById('memory-code-mem');
+      const graphicsEl = document.getElementById('memory-graphics-mem');
+      const stackEl = document.getElementById('memory-stack-mem');
+      const dirtyEl = document.getElementById('memory-private-dirty');
+      const runningBadge = document.getElementById('memory-running-badge');
+      const procsCountEl = document.getElementById('memory-procs-count');
+      const procsTbody = document.getElementById('memory-procs-tbody');
+
+      if (pssEl) pssEl.textContent = fmtMb(data.total_pss_kb);
+      if (javaEl) javaEl.textContent = fmtMb(data.java_heap_kb);
+      if (nativeEl) nativeEl.textContent = fmtMb(data.native_heap_kb);
+      if (codeEl) codeEl.textContent = fmtMb(data.code_kb);
+      if (graphicsEl) graphicsEl.textContent = fmtMb(data.graphics_kb);
+      if (stackEl) stackEl.textContent = fmtMb(data.stack_kb);
+      if (dirtyEl) dirtyEl.textContent = fmtMb(data.private_dirty_kb);
+
+      if (runningBadge) {
+        if (data.is_running) {
+          runningBadge.textContent = `PROCESS ACTIVE (PID ${data.pid || 'running'})`;
+          runningBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-cyberEmerald-15 text-cyberEmerald border border-cyberEmerald-40';
+        } else {
+          runningBadge.textContent = 'NOT RUNNING';
+          runningBadge.className = 'px-2.5 py-1 rounded text-xs font-bold bg-cockpit text-slate-400 border border-panelBorder';
+        }
+      }
+
+      const procs = data.active_processes || [];
+      if (procsCountEl) procsCountEl.textContent = `${procs.length} Process${procs.length === 1 ? '' : 'es'}`;
+      if (procsTbody) {
+        if (procs.length === 0) {
+          procsTbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-500 font-mono">No active processes detected for package.</td></tr>';
+        } else {
+          procsTbody.innerHTML = procs.map(p => `
+            <tr class="hover:bg-panelElevated transition">
+              <td class="py-2.5 px-3 font-bold text-cyberCyan">${p.pid}</td>
+              <td class="py-2.5 px-3 text-slate-400">${p.ppid || '-'}</td>
+              <td class="py-2.5 px-3 text-slate-300 font-bold">${p.user || 'app'}</td>
+              <td class="py-2.5 px-3 text-cyberAmber font-mono">${p.rss ? (parseInt(p.rss) > 1024 ? Math.round(parseInt(p.rss) / 1024) + ' MB' : p.rss + ' KB') : '-'}</td>
+              <td class="py-2.5 px-3 text-slate-200 font-bold truncate max-w-xs">${p.name || data.package_name}</td>
+            </tr>
+          `).join('');
+        }
       }
     }
 

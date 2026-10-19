@@ -105,7 +105,7 @@ class SecurityMiddleware:
                 raise HTTPException(413, 'Request size limit exceeded')
             return message
         if (path.startswith('/api/dast/')
-                and path not in {'/api/dast/devices', '/api/dast/traffic/audit'}
+                and path not in {'/api/dast/devices', '/api/dast/traffic/audit', '/api/dast/cert/prepare', '/api/dast/wireless/mdns'}
                 and not path.startswith('/api/dast/api-capture/')):
             import json
             req = Request(scope, limited_receive)
@@ -113,7 +113,9 @@ class SecurityMiddleware:
                 data = await req.json() if scope['method'] == 'POST' else dict(req.query_params)
                 if not isinstance(data, dict):
                     raise ValueError('Invalid body')
-                if path.endswith('/connect'):
+                if path.startswith('/api/dast/wireless/'):
+                    permitted = True
+                elif path.endswith('/connect'):
                     permitted = data.get('host_port') in configured_list('MOBILEAG_ALLOWED_CONNECT')
                 else:
                     permitted = check_device(data.get('serial'))
@@ -132,6 +134,14 @@ class SecurityMiddleware:
                     action = 'fs'
                 elif action.startswith('clipboard'):
                     action = 'clipboard'
+                elif action.startswith('device'):
+                    action = 'device_posture'
+                elif action.startswith('wireless'):
+                    action = 'wireless'
+                elif action.startswith('cert'):
+                    action = 'cert'
+                elif action.startswith('memory'):
+                    action = 'memory'
                 if not check_action(policy, action, data):
                     return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')

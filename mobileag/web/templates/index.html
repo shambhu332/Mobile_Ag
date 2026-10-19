@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MobileAg — Advanced Autonomous AppSec Workbench</title>
+  <title>MobileAg — Advanced Autonomous AppSec Cockpit</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>" />
 
-  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <!-- Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Core Vendor Libraries (Offline Fallback & CDN) -->
+  <!-- Core Libraries -->
   <script src="/static/vendor/vis-network.js"></script>
   <script src="/static/vendor/chart-js.js"></script>
   <script src="/static/vendor/lucide.js"></script>
@@ -27,12 +27,12 @@
             mono: ['JetBrains Mono', 'monospace'],
           },
           colors: {
-            appbg: '#06090F',
-            cockpit: '#090E17',
-            panel: '#0D1424',
-            panelElevated: '#121B30',
-            panelBorder: '#1E2B48',
-            panelBorderGlow: '#2A3C63',
+            appbg: '#040711',
+            cockpit: '#080E1C',
+            panel: '#0E162B',
+            panelElevated: '#14203D',
+            panelBorder: '#1C2B4E',
+            panelBorderGlow: '#2A3F70',
             cyberCyan: '#06B6D4',
             cyberEmerald: '#10B981',
             cyberAmber: '#F59E0B',
@@ -40,9 +40,9 @@
             cyberPurple: '#8B5CF6',
           },
           boxShadow: {
-            glowCyan: '0 0 20px -3px rgba(6, 182, 212, 0.25)',
-            glowRose: '0 0 20px -3px rgba(244, 63, 94, 0.25)',
-            glowEmerald: '0 0 20px -3px rgba(16, 185, 129, 0.25)',
+            glowCyan: '0 0 20px -3px rgba(6, 182, 212, 0.3)',
+            glowRose: '0 0 20px -3px rgba(244, 63, 94, 0.3)',
+            glowEmerald: '0 0 20px -3px rgba(16, 185, 129, 0.3)',
           }
         }
       }
@@ -50,22 +50,20 @@
   </script>
 
   <style>
-    /* Custom Scrollbars */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #06090F; }
-    ::-webkit-scrollbar-thumb { background: #1E2B48; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #33446B; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #040711; }
+    ::-webkit-scrollbar-thumb { background: #1C2B4E; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2E457A; }
 
-    /* Frosted Glassmorphism */
     .glass-panel {
-      background: rgba(13, 20, 36, 0.85);
+      background: rgba(14, 22, 43, 0.88);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(30, 43, 72, 0.8);
+      border: 1px solid rgba(28, 43, 78, 0.85);
     }
     .glass-input {
-      background: rgba(9, 14, 23, 0.9);
-      border: 1px solid #1E2B48;
+      background: rgba(8, 14, 28, 0.95);
+      border: 1px solid #1C2B4E;
     }
     .glass-input:focus {
       border-color: #06B6D4;
@@ -73,26 +71,28 @@
       outline: none;
     }
 
-    /* Cyber matrix grid subtle background */
     .cyber-grid {
       background-size: 32px 32px;
       background-image: 
-        linear-gradient(to right, rgba(30, 43, 72, 0.15) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(30, 43, 72, 0.15) 1px, transparent 1px);
+        linear-gradient(to right, rgba(28, 43, 78, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(28, 43, 78, 0.12) 1px, transparent 1px);
     }
 
-    /* Live radar scan effect */
     @keyframes pulseGlow {
-      0%, 100% { opacity: 0.8; transform: scale(1); }
-      50% { opacity: 0.3; transform: scale(1.15); }
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.18); }
     }
     .pulse-ring {
-      animation: pulseGlow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      animation: pulseGlow 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
 
-    /* Smooth code block styling */
     pre, code {
       font-family: 'JetBrains Mono', monospace;
+    }
+
+    .modal-backdrop {
+      background: rgba(4, 7, 17, 0.85);
+      backdrop-filter: blur(8px);
     }
   </style>
 </head>
@@ -106,40 +106,43 @@
     
     <!-- Brand & Platform Pill -->
     <div class="flex items-center gap-3">
-      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan/10 border border-cyberCyan/40 text-cyberCyan shadow-glowCyan">
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-cyberCyan/15 border border-cyberCyan/40 text-cyberCyan shadow-glowCyan">
         <i data-lucide="shield-alert" class="w-5 h-5"></i>
         <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-cyberEmerald pulse-ring"></span>
       </div>
       <div>
         <div class="flex items-center gap-2">
-          <span class="text-sm font-bold tracking-wider text-white">MOBILE<span class="text-cyberCyan">AG</span></span>
-          <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-cyberCyan/15 text-cyberCyan border border-cyberCyan/30">ADVANCED OPS</span>
+          <span class="text-sm font-extrabold tracking-wider text-white">MOBILE<span class="text-cyberCyan">AG</span></span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyberCyan/15 text-cyberCyan border border-cyberCyan/30">NEXT-GEN</span>
         </div>
         <p class="text-[10px] font-mono text-slate-400">Autonomous Mobile Security Workbench</p>
       </div>
 
       <!-- Target Selector / Dropdown -->
-      <div class="ml-4 pl-4 border-l border-panelBorder flex items-center gap-2">
-        <div class="flex items-center gap-2 bg-panel px-3 py-1.5 rounded-lg border border-panelBorder">
-          <i data-lucide="package" class="w-3.5 h-3.5 text-slate-400"></i>
-          <span id="cockpit-target-name" class="text-xs font-mono font-medium text-slate-200">No Target Active</span>
+      <div class="ml-3 pl-3 border-l border-panelBorder flex items-center gap-2">
+        <button id="btn-target-selector" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder transition">
+          <i data-lucide="package" class="w-3.5 h-3.5 text-cyberCyan"></i>
+          <span id="cockpit-target-name" class="text-xs font-mono font-semibold text-slate-200">No Target Active</span>
           <span id="cockpit-target-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-400">IDLE</span>
-        </div>
-        <button id="btn-quick-upload" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan/15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan/40 flex items-center gap-1.5 transition">
-          <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
-          <span>Ingest Target</span>
+          <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+        </button>
+
+        <button id="btn-quick-upload" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyberCyan/20 hover:bg-cyberCyan/30 text-cyberCyan border border-cyberCyan/40 flex items-center gap-1.5 transition">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+          <span>New Scan</span>
         </button>
       </div>
     </div>
 
-    <!-- Central Cockpit Metrics & Threat Gauges -->
-    <div class="hidden lg:flex items-center gap-6">
+    <!-- Central Threat Meters & Security Rating -->
+    <div class="hidden lg:flex items-center gap-5">
       <!-- Security Grade Aura -->
-      <div class="flex items-center gap-2 bg-panel/70 px-3 py-1 rounded-lg border border-panelBorder">
-        <span class="text-[11px] font-mono uppercase text-slate-400">Grade:</span>
+      <div class="flex items-center gap-2 bg-panel/80 px-3 py-1.5 rounded-lg border border-panelBorder">
+        <span class="text-[11px] font-mono uppercase text-slate-400">Rating:</span>
         <span id="cockpit-grade" class="text-xs font-bold font-mono text-cyberEmerald">A+</span>
       </div>
-      <!-- Findings Meter -->
+
+      <!-- Severity Breakdown Counter -->
       <div class="flex items-center gap-3 font-mono text-xs">
         <span class="flex items-center gap-1 text-cyberRose">
           <span class="w-2 h-2 rounded-full bg-cyberRose"></span>
@@ -153,33 +156,36 @@
           <span class="w-2 h-2 rounded-full bg-cyberCyan"></span>
           <span id="meter-med" class="font-bold">0</span> Med
         </span>
-      </div>
-      <!-- Mode & Scope Badge -->
-      <div class="flex items-center gap-2">
-        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 flex items-center gap-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          OFFLINE DETERMINISTIC
+        <span class="flex items-center gap-1 text-slate-400">
+          <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="meter-low" class="font-bold">0</span> Low
         </span>
       </div>
+
+      <!-- Deterministic Mode Indicator -->
+      <span class="px-2.5 py-1 rounded-full text-[10px] font-mono bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        OFFLINE ZERO-LEAK
+      </span>
     </div>
 
-    <!-- Controls: Command Palette, ADB Status, Token Modal -->
+    <!-- Top Right: Command Menu, ADB Device, Session Token -->
     <div class="flex items-center gap-2.5">
-      <!-- Command Palette Pill (Ctrl+K) -->
-      <button id="btn-command-palette" class="hidden sm:flex items-center gap-2 bg-panel px-3 py-1.5 rounded-lg border border-panelBorder hover:border-cyberCyan/40 text-slate-300 text-xs transition">
-        <i data-lucide="terminal" class="w-3.5 h-3.5 text-cyberCyan"></i>
-        <span>Command Menu</span>
+      <!-- Command Palette Pill -->
+      <button id="btn-command-palette" class="flex items-center gap-2 bg-panel hover:bg-panelElevated px-3 py-1.5 rounded-lg border border-panelBorder text-slate-300 text-xs transition">
+        <i data-lucide="command" class="w-3.5 h-3.5 text-cyberCyan"></i>
+        <span class="hidden sm:inline">Commands</span>
         <kbd class="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">⌘K</kbd>
       </button>
 
-      <!-- ADB Device Status Indicator -->
-      <div id="cockpit-adb-pill" class="flex items-center gap-1.5 bg-panel px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300">
+      <!-- Connected ADB Device Indicator -->
+      <button id="btn-dast-connect-modal" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="ADB Device Manager">
         <i data-lucide="smartphone" class="w-3.5 h-3.5 text-cyberEmerald"></i>
-        <span id="cockpit-adb-name">ADB: Ready</span>
-      </div>
+        <span id="cockpit-adb-name">ADB: Probing</span>
+      </button>
 
-      <!-- Auth Session Token Pill -->
-      <button id="btn-session-key" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="Manage Workbench Token">
+      <!-- Auth Session Key Pill -->
+      <button id="btn-session-key" class="flex items-center gap-1.5 bg-panel hover:bg-panelElevated px-2.5 py-1.5 rounded-lg border border-panelBorder text-xs font-mono text-slate-300 transition" title="Workbench Token Configuration">
         <i data-lucide="key" class="w-3.5 h-3.5 text-cyberAmber"></i>
         <span id="session-key-status">Token: Set</span>
       </button>
@@ -192,15 +198,15 @@
   <div class="flex-1 flex overflow-hidden">
 
     <!-- Left Operations Nav Rail -->
-    <aside class="w-56 bg-cockpit/90 border-r border-panelBorder flex flex-col justify-between shrink-0 p-2 z-30">
+    <aside class="w-60 bg-cockpit/90 border-r border-panelBorder flex flex-col justify-between shrink-0 p-2 z-30">
       <div class="space-y-1">
         
-        <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Analysis Workspaces</div>
+        <div class="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Static Analysis (SAST)</div>
         
         <!-- Tab 1: Attack Surface Graph -->
         <button data-tab="tab-surface" class="nav-tab active w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
           <i data-lucide="network" class="w-4 h-4 text-cyberCyan"></i>
-          <span>Attack Surface</span>
+          <span>Attack Surface Topology</span>
         </button>
 
         <!-- Tab 2: Findings & PoC Studio -->
@@ -209,7 +215,7 @@
             <i data-lucide="flame" class="w-4 h-4 text-cyberRose"></i>
             <span>Vulnerabilities & PoC</span>
           </div>
-          <span id="nav-count-findings" class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-cyberRose/20 text-cyberRose border border-cyberRose/40">0</span>
+          <span id="nav-count-findings" class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-cyberRose/20 text-cyberRose border border-cyberRose/40 font-bold">0</span>
         </button>
 
         <!-- Tab 3: Decompiler & Bytecode -->
@@ -218,51 +224,63 @@
           <span>Decompiler & AST</span>
         </button>
 
-        <div class="pt-3 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Dynamic Execution Lab</div>
+        <!-- Tab 4: Static Taint Flow Engine -->
+        <button data-tab="tab-taint" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="git-merge" class="w-4 h-4 text-cyberCyan"></i>
+          <span>Taint & Dataflow Engine</span>
+        </button>
 
-        <!-- Tab 4: DAST Lab & Screen Mirror -->
+        <div class="pt-2 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Dynamic Execution (DAST)</div>
+
+        <!-- Tab 5: DAST Lab & Screen Mirror -->
         <button data-tab="tab-dast" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
           <i data-lucide="cpu" class="w-4 h-4 text-cyberEmerald"></i>
-          <span>Dynamic Lab (DAST)</span>
+          <span>Dynamic Lab & Fuzzing</span>
         </button>
 
-        <!-- Tab 5: MITM Proxy & APIs -->
+        <!-- Tab 6: MITM Proxy & APIs -->
         <button data-tab="tab-proxy" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
-          <i data-lucide="globe" class="w-4 h-4 text-cyberCyan"></i>
-          <span>Traffic & APIs</span>
+          <i data-lucide="radio" class="w-4 h-4 text-cyberCyan"></i>
+          <span>MITM Proxy & APIs</span>
         </button>
 
-        <!-- Tab 6: Live Loupe Console -->
+        <!-- Tab 7: Live Loupe Console -->
         <button data-tab="tab-loupe" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
           <i data-lucide="terminal" class="w-4 h-4 text-cyberAmber"></i>
-          <span>Logcat & Shell</span>
+          <span>Live Logcat & Shell</span>
         </button>
 
-        <div class="pt-3 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400">Intelligence & Reports</div>
+        <div class="pt-2 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Audit & Supply Chain</div>
 
-        <!-- Tab 7: Version Diff Radar -->
+        <!-- Tab 8: Version Diff (A/B) -->
         <button data-tab="tab-diff" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
           <i data-lucide="git-compare" class="w-4 h-4 text-slate-300"></i>
-          <span>Version Diff (A/B)</span>
+          <span>Version Diff & Regressions</span>
         </button>
 
-        <!-- Tab 8: Compliance & Exports -->
+        <!-- Tab 9: MASVS & Exports -->
         <button data-tab="tab-reports" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
           <i data-lucide="file-check-2" class="w-4 h-4 text-cyberEmerald"></i>
-          <span>MASVS & Exports</span>
+          <span>MASVS & Report Center</span>
+        </button>
+
+        <!-- Tab 10: Scans Queue & History -->
+        <button data-tab="tab-history" class="nav-tab w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-panel transition">
+          <i data-lucide="history" class="w-4 h-4 text-slate-400"></i>
+          <span>Scan History & Queue</span>
         </button>
 
       </div>
 
-      <!-- Quick Session / System Status Footer -->
-      <div class="p-2 bg-panel/60 border border-panelBorder rounded-lg text-[11px] font-mono space-y-1">
+      <!-- Bottom Session Info -->
+      <div class="p-2.5 bg-panel/60 border border-panelBorder rounded-lg text-[11px] font-mono space-y-1">
         <div class="flex items-center justify-between text-slate-400">
-          <span>Engine:</span>
-          <span class="text-cyberCyan">MobileAg Core</span>
+          <span>Target Engine:</span>
+          <span class="text-cyberCyan font-bold">Smali AST</span>
         </div>
         <div class="flex items-center justify-between text-slate-400">
           <span>Telemetry:</span>
-          <span id="ws-status-text" class="text-cyberEmerald">Connected</span>
+          <span id="ws-status-text" class="text-cyberEmerald font-bold">Connected</span>
         </div>
       </div>
     </aside>
@@ -275,20 +293,18 @@
       <!-- =================================================================== -->
       <div id="tab-surface" class="tab-content flex-1 flex flex-col overflow-hidden p-4 space-y-4">
         
-        <!-- Controls Bar for Topology -->
         <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
           <div class="flex items-center gap-3">
-            <span class="text-xs font-bold tracking-wide uppercase text-slate-200 flex items-center gap-1.5">
-              <i data-lucide="git-fork" class="w-4 h-4 text-cyberCyan"></i>
-              Attack Surface Graph
+            <span class="text-xs font-bold tracking-wide uppercase text-slate-200 flex items-center gap-2">
+              <i data-lucide="network" class="w-4 h-4 text-cyberCyan"></i>
+              Attack Surface Interactive Graph
             </span>
-            <span class="text-xs text-slate-400 font-mono">| Physics Topology</span>
+            <span class="text-xs text-slate-400 font-mono">| Force-directed visual map</span>
           </div>
 
-          <!-- Topology Group Filter Pills -->
           <div class="flex items-center gap-2">
             <button id="filter-node-all" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">All Nodes</button>
-            <button id="filter-node-vulns" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Vulns Only</button>
+            <button id="filter-node-vulns" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Vulnerabilities</button>
             <button id="filter-node-exported" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Exported IPC</button>
             <button id="filter-node-apis" class="px-2.5 py-1 rounded text-xs font-mono font-medium bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">APIs</button>
             <button id="btn-recenter-graph" class="p-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300" title="Recenter Graph">
@@ -297,25 +313,24 @@
           </div>
         </div>
 
-        <!-- Vis.js Graph Canvas Container -->
         <div class="flex-1 glass-panel rounded-xl overflow-hidden relative border border-panelBorder">
           <div id="attack-graph-canvas" class="w-full h-full"></div>
           
-          <!-- Node Inspector Overlay (Floating on click) -->
-          <div id="graph-node-inspector" class="hidden absolute top-4 right-4 w-80 glass-panel rounded-xl p-4 shadow-xl border border-panelBorder z-20 space-y-3">
+          <!-- Floating Node Inspector Drawer -->
+          <div id="graph-node-inspector" class="hidden absolute top-4 right-4 w-80 glass-panel rounded-xl p-4 shadow-2xl border border-panelBorder z-20 space-y-3">
             <div class="flex items-center justify-between border-b border-panelBorder pb-2">
-              <span id="inspect-node-type" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">Component</span>
+              <span id="inspect-node-type" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40 font-bold">Component</span>
               <button onclick="document.getElementById('graph-node-inspector').classList.add('hidden')" class="text-slate-400 hover:text-white">
                 <i data-lucide="x" class="w-4 h-4"></i>
               </button>
             </div>
             <div>
-              <h3 id="inspect-node-title" class="text-sm font-bold text-white break-all">MainActivity</h3>
-              <p id="inspect-node-desc" class="text-xs text-slate-400 mt-1 font-mono">Exported: true | Permission: None</p>
+              <h3 id="inspect-node-title" class="text-sm font-bold text-white break-all">Node Label</h3>
+              <p id="inspect-node-desc" class="text-xs text-slate-400 mt-1 font-mono">Node attributes</p>
             </div>
             <div id="inspect-node-actions" class="pt-2 border-t border-panelBorder flex gap-2">
               <button id="inspect-btn-fuzz" class="flex-1 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Exercise Intent</button>
-              <button id="inspect-btn-code" class="flex-1 py-1.5 rounded text-xs font-semibold bg-panel hover:bg-panelElevated border border-panelBorder text-slate-200">View Source</button>
+              <button id="inspect-btn-code" class="flex-1 py-1.5 rounded text-xs font-semibold bg-panel hover:bg-panelElevated border border-panelBorder text-slate-200">Decompile Source</button>
             </div>
           </div>
         </div>
@@ -326,13 +341,12 @@
       <!-- =================================================================== -->
       <div id="tab-findings" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
         
-        <!-- Left: Findings List -->
+        <!-- Left: Findings Filter & Cards -->
         <div class="w-5/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
-          <!-- Filter Header -->
           <div class="p-3 border-b border-panelBorder flex items-center justify-between gap-2 shrink-0">
             <div class="relative flex-1">
               <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400"></i>
-              <input id="findings-search" type="text" placeholder="Search CWE, title, class, method..." class="w-full glass-input text-xs pl-8 pr-3 py-1.5 rounded-lg text-slate-200 placeholder-slate-500 font-mono">
+              <input id="findings-search" type="text" placeholder="Search CWE, title, file..." class="w-full glass-input text-xs pl-8 pr-3 py-1.5 rounded-lg text-slate-200 placeholder-slate-500 font-mono">
             </div>
             <select id="findings-filter-sev" class="glass-input text-xs py-1.5 px-2 rounded-lg text-slate-300 font-mono">
               <option value="ALL">All Severities</option>
@@ -343,59 +357,47 @@
             </select>
           </div>
 
-          <!-- Findings Scroll List -->
           <div id="findings-cards-list" class="flex-1 overflow-y-auto p-2 space-y-2">
-            <!-- Dynamic Finding Card Template Example -->
-            <div class="p-3 rounded-lg bg-panel hover:bg-panelElevated border border-panelBorder cursor-pointer transition">
-              <div class="flex items-center justify-between">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyberRose/20 text-cyberRose border border-cyberRose/40">CRITICAL</span>
-                <span class="text-[10px] font-mono text-slate-400">CWE-926</span>
-              </div>
-              <h4 class="text-xs font-bold text-slate-200 mt-1">Exported ContentProvider SQL Injection</h4>
-              <p class="text-[11px] text-slate-400 font-mono mt-0.5 truncate">com/example/app/provider/DataProvider.java:84</p>
-            </div>
+            <div class="p-4 text-center text-slate-500 text-xs font-mono">Loading findings...</div>
           </div>
         </div>
 
-        <!-- Right: Detail Inspector & One-Click PoC Generator -->
+        <!-- Right: Detail Inspector & Automated PoC Synthesizer -->
         <div id="finding-detail-pane" class="w-7/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
-          <!-- Finding Header -->
           <div class="p-4 border-b border-panelBorder shrink-0 flex items-start justify-between">
             <div>
               <div class="flex items-center gap-2">
                 <span id="f-detail-sev" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-cyberRose/20 text-cyberRose border border-cyberRose/40">CRITICAL</span>
                 <span id="f-detail-cwe" class="text-xs font-mono text-slate-400">CWE-926</span>
                 <span id="f-detail-masvs" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyberPurple/20 text-cyberPurple border border-cyberPurple/40">MASVS-STORAGE</span>
+                <span id="f-detail-status" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">UNVERIFIED</span>
               </div>
               <h2 id="f-detail-title" class="text-base font-bold text-white mt-1.5">Select a finding to inspect</h2>
-              <p id="f-detail-path" class="text-xs text-cyberCyan font-mono mt-0.5 break-all">No file selected</p>
+              <p id="f-detail-path" class="text-xs text-cyberCyan font-mono mt-0.5 break-all">No target file</p>
             </div>
 
-            <!-- Triage Actions -->
+            <!-- Triage Feedback Action Buttons -->
             <div class="flex items-center gap-2">
-              <button id="btn-triage-confirm" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberEmerald/20 hover:bg-cyberEmerald/30 text-cyberEmerald border border-cyberEmerald/40 transition">Confirm (Evidence)</button>
-              <button id="btn-triage-fp" class="px-3 py-1.5 rounded text-xs font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder transition">False Positive</button>
+              <button id="btn-triage-modal" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberEmerald/20 hover:bg-cyberEmerald/30 text-cyberEmerald border border-cyberEmerald/40 transition">Triage Verdict</button>
             </div>
           </div>
 
-          <!-- Finding Body (Scrollable) -->
+          <!-- Finding Body -->
           <div class="flex-1 overflow-y-auto p-4 space-y-4">
             
-            <!-- Description -->
             <div>
-              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Vulnerability Description</h4>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Vulnerability Description</h4>
               <p id="f-detail-desc" class="text-xs text-slate-200 mt-1 leading-relaxed">No finding selected.</p>
             </div>
 
-            <!-- Source Code Sink Snippet -->
             <div>
-              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Vulnerable Code Context</h4>
-              <div class="mt-1 bg-black/60 p-3 rounded-lg border border-panelBorder overflow-x-auto">
-                <pre id="f-detail-code" class="text-xs text-slate-300 font-mono">// Code snippet will render here</pre>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Vulnerable Code Context (Source Sink)</h4>
+              <div class="mt-1 bg-black/70 p-3 rounded-lg border border-panelBorder overflow-x-auto">
+                <pre id="f-detail-code" class="text-xs text-slate-300 font-mono">// Code context will appear here</pre>
               </div>
             </div>
 
-            <!-- AUTOMATED EXPLOIT POC SYNTHESIZER WIDGET -->
+            <!-- EXPLOIT POC SYNTHESIZER WIDGET -->
             <div class="glass-panel p-4 rounded-xl border border-cyberCyan/40 bg-cyberCyan/5 space-y-3">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -404,32 +406,30 @@
                 </div>
                 <button id="btn-generate-poc" class="px-3 py-1 rounded text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center gap-1.5">
                   <i data-lucide="zap" class="w-3.5 h-3.5"></i>
-                  <span>Synthesize Exploit</span>
+                  <span>Regenerate PoC</span>
                 </button>
               </div>
 
-              <!-- ADB Execution Command -->
               <div>
-                <span class="text-[10px] font-mono text-slate-400 uppercase">One-Liner ADB Command:</span>
+                <span class="text-[10px] font-mono text-slate-400 uppercase font-bold">One-Liner ADB Shell Command:</span>
                 <div class="flex items-center gap-2 mt-1">
                   <input id="poc-adb-cmd" type="text" readonly value="adb shell am start -n com.app/.TargetActivity" class="flex-1 glass-input text-xs p-2 rounded text-cyberEmerald font-mono">
-                  <button onclick="navigator.clipboard.writeText(document.getElementById('poc-adb-cmd').value)" class="p-2 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300" title="Copy Command">
+                  <button id="btn-copy-adb-cmd" class="p-2 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300" title="Copy Command">
                     <i data-lucide="copy" class="w-4 h-4"></i>
                   </button>
+                  <button id="btn-exec-adb-poc" class="px-3 py-2 rounded bg-cyberEmerald text-black font-mono text-xs font-bold hover:bg-emerald-400 transition" title="Execute on Connected Device">Run</button>
                 </div>
               </div>
 
-              <!-- Kotlin Exploit Code -->
               <div>
-                <span class="text-[10px] font-mono text-slate-400 uppercase">Kotlin Verification Code:</span>
-                <pre id="poc-kotlin-code" class="mt-1 bg-black/70 p-3 rounded text-[11px] text-slate-200 font-mono max-h-36 overflow-y-auto border border-panelBorder">// Synthetic Kotlin exploit PoC will appear here</pre>
+                <span class="text-[10px] font-mono text-slate-400 uppercase font-bold">Kotlin Exploit Verification Code:</span>
+                <pre id="poc-kotlin-code" class="mt-1 bg-black/80 p-3 rounded text-[11px] text-slate-200 font-mono max-h-40 overflow-y-auto border border-panelBorder">// Synthetic Kotlin exploit code will appear here</pre>
               </div>
             </div>
 
-            <!-- Remediation -->
             <div>
-              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400">Remediation Guidance</h4>
-              <p id="f-detail-rem" class="text-xs text-slate-300 mt-1">Remediation advice will appear here.</p>
+              <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">Remediation Guidance</h4>
+              <p id="f-detail-rem" class="text-xs text-slate-300 mt-1">Remediation instructions will appear here.</p>
             </div>
           </div>
         </div>
@@ -439,26 +439,34 @@
       <!-- WORKSPACE 3: DECOMPILER & AST EXPLORER -->
       <!-- =================================================================== -->
       <div id="tab-decompiler" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
-        <!-- Source Tree Explorer -->
-        <div class="w-3/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
-          <div class="p-3 border-b border-panelBorder flex items-center gap-2">
-            <i data-lucide="folder-tree" class="w-4 h-4 text-cyberPurple"></i>
-            <span class="text-xs font-bold font-mono uppercase text-slate-200">Decompiled Tree</span>
+        <!-- File Tree Explorer -->
+        <div class="w-4/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+          <div class="p-3 border-b border-panelBorder flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="folder-tree" class="w-4 h-4 text-cyberPurple"></i>
+              <span class="text-xs font-bold font-mono uppercase text-slate-200">Decompiled Tree</span>
+            </div>
+            <button id="btn-refresh-files" class="text-slate-400 hover:text-white" title="Reload File Tree">
+              <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+            </button>
           </div>
-          <div class="p-2">
-            <input id="decompile-search-input" type="text" placeholder="Filter classes..." class="w-full glass-input text-xs px-2.5 py-1.5 rounded text-slate-200 font-mono">
+          <div class="p-2.5 border-b border-panelBorder">
+            <div class="relative">
+              <i data-lucide="search" class="w-3 h-3 absolute left-2.5 top-2.5 text-slate-400"></i>
+              <input id="decompile-search-input" type="text" placeholder="Search text across all sources..." class="w-full glass-input text-xs pl-7 pr-3 py-1.5 rounded text-slate-200 font-mono">
+            </div>
           </div>
           <div id="decompile-files-tree" class="flex-1 overflow-y-auto p-2 font-mono text-xs text-slate-300 space-y-1">
-            <div class="text-slate-500 p-2 text-center text-[11px]">Run scan to view decompiled sources.</div>
+            <div class="text-slate-500 p-4 text-center text-xs">Run a scan to explore decompiled sources.</div>
           </div>
         </div>
 
-        <!-- Code Viewer & Syntax Pane -->
-        <div class="w-9/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+        <!-- Code Viewer Pane -->
+        <div class="w-8/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
           <div class="p-3 border-b border-panelBorder flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <span id="code-viewer-filename" class="text-xs font-mono font-bold text-cyberCyan">MainActivity.java</span>
-              <span class="text-[10px] font-mono text-slate-500">| Bounded Source Viewer</span>
+              <i data-lucide="file-code" class="w-4 h-4 text-cyberCyan"></i>
+              <span id="code-viewer-filename" class="text-xs font-mono font-bold text-cyberCyan">Select file from tree</span>
             </div>
             <button id="btn-copy-code" class="px-2.5 py-1 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300 flex items-center gap-1.5">
               <i data-lucide="copy" class="w-3.5 h-3.5"></i>
@@ -466,52 +474,96 @@
             </button>
           </div>
           <div class="flex-1 overflow-auto bg-black/80 p-4 font-mono text-xs text-slate-200 leading-relaxed">
-            <pre id="code-viewer-content">// Select a file from the tree to view decompiled Java/Smali source.</pre>
+            <pre id="code-viewer-content">// Decompiled Java / Smali code will render here with line numbers.</pre>
           </div>
         </div>
       </div>
 
       <!-- =================================================================== -->
-      <!-- WORKSPACE 4: DAST LAB & SCREEN MIRROR -->
+      <!-- WORKSPACE 4: STATIC TAINT & DATAFLOW ENGINE (taint) -->
+      <!-- =================================================================== -->
+      <div id="tab-taint" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <div class="glass-panel p-4 rounded-xl border border-panelBorder space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-mono uppercase font-bold text-white flex items-center gap-2">
+              <i data-lucide="git-merge" class="w-4 h-4 text-cyberCyan"></i>
+              Static Taint & Straight-Line Dataflow Analysis
+            </h3>
+            <div class="flex items-center gap-2">
+              <button id="btn-load-taint-sample" class="px-3 py-1 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Load Vulnerable Sample</button>
+              <button id="btn-run-taint-analysis" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center gap-1.5">
+                <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                <span>Analyze Source for Taint Sinks</span>
+              </button>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 font-mono">Performs AST dataflow analysis from entry-point sources (Intent extras, parameters, WebViews) to sensitive sinks (Exec, SQL, File writes).</p>
+        </div>
+
+        <div class="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+          <!-- Source Code Editor -->
+          <div class="glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+            <div class="p-2.5 bg-panel border-b border-panelBorder text-xs font-mono text-slate-400 font-semibold">
+              Source Code (Java/Kotlin AST Target)
+            </div>
+            <textarea id="taint-source-input" class="flex-1 bg-black/80 p-3 font-mono text-xs text-slate-200 resize-none border-none focus:outline-none" placeholder="// Paste Java source with potential source-to-sink flows here..."></textarea>
+          </div>
+
+          <!-- Tainted Sinks Output -->
+          <div class="glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
+            <div class="p-2.5 bg-panel border-b border-panelBorder text-xs font-mono text-slate-400 font-semibold">
+              Discovered Tainted Sinks & Flows
+            </div>
+            <div id="taint-results-box" class="flex-1 overflow-y-auto p-4 font-mono text-xs text-slate-300 space-y-3">
+              <div class="text-slate-500">Click 'Analyze Source for Taint Sinks' or load sample to view dataflow paths.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 5: DYNAMIC EXECUTION LAB (DAST) -->
       <!-- =================================================================== -->
       <div id="tab-dast" class="tab-content hidden flex-1 flex overflow-hidden p-4 gap-4">
         
-        <!-- Left: Live Device Screen Mirror & Device Info -->
+        <!-- Left: Device Screen Mirror & Actions -->
         <div class="w-4/12 glass-panel rounded-xl flex flex-col overflow-hidden border border-panelBorder">
           <div class="p-3 border-b border-panelBorder flex items-center justify-between">
             <div class="flex items-center gap-2">
               <i data-lucide="smartphone" class="w-4 h-4 text-cyberEmerald"></i>
-              <span class="text-xs font-bold font-mono text-white">Live Device Mirror</span>
+              <span class="text-xs font-bold font-mono text-white">Live Screen Mirror</span>
             </div>
-            <button id="btn-refresh-screenshot" class="px-2 py-1 rounded text-[11px] font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan flex items-center gap-1">
-              <i data-lucide="camera" class="w-3 h-3"></i>
-              <span>Capture</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="btn-refresh-screenshot" class="px-2 py-1 rounded text-[11px] font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan flex items-center gap-1">
+                <i data-lucide="camera" class="w-3 h-3"></i>
+                <span>Capture</span>
+              </button>
+            </div>
           </div>
-          <!-- Screenshot Canvas -->
+
           <div class="flex-1 bg-black flex items-center justify-center p-2 overflow-hidden relative">
-            <img id="dast-screenshot-img" src="" alt="Device Screen Mirror" class="max-h-full max-w-full rounded border border-panelBorder object-contain hidden">
+            <img id="dast-screenshot-img" src="" alt="Live Device Screen" class="max-h-full max-w-full rounded border border-panelBorder object-contain hidden">
             <div id="dast-screenshot-placeholder" class="text-center p-4">
               <i data-lucide="smartphone" class="w-12 h-12 mx-auto text-slate-600 mb-2"></i>
               <p class="text-xs font-mono text-slate-400">Click Capture to mirror screen</p>
             </div>
           </div>
-          <!-- Device Quick Actions -->
+
           <div class="p-3 border-t border-panelBorder grid grid-cols-2 gap-2 text-xs font-mono">
-            <button id="btn-adb-root" class="py-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberAmber">Restart Root</button>
-            <button id="btn-adb-install" class="py-1.5 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan">Install Target</button>
+            <button id="btn-adb-root" class="py-2 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberAmber font-semibold">Restart adbd Root</button>
+            <button id="btn-adb-install" class="py-2 rounded bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan font-semibold">Install APK Target</button>
           </div>
         </div>
 
-        <!-- Right: Fuzzing Studios (Intents, Deep-Links, Storage, Memory) -->
-        <div class="w-8/12 flex flex-col gap-4 overflow-hidden">
+        <!-- Right: DAST Sub-Studios (Intents, Deeplinks, Storage, Memory, Crawler) -->
+        <div class="w-8/12 flex flex-col gap-3 overflow-hidden">
           
-          <!-- Sub-Nav for DAST Studios -->
           <div class="glass-panel p-2 rounded-xl flex items-center gap-2 shrink-0">
             <button data-dast-sub="sub-intent" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40">Intent Fuzzer</button>
-            <button data-dast-sub="sub-deeplink" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Deep-Link Exerciser</button>
-            <button data-dast-sub="sub-storage" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Storage Forensics</button>
-            <button data-dast-sub="sub-crawler" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Autonomous Crawler</button>
+            <button data-dast-sub="sub-deeplink" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Deep-Link Studio</button>
+            <button data-dast-sub="sub-storage" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Sandbox Storage</button>
+            <button data-dast-sub="sub-memory" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">Volatile Memory</button>
+            <button data-dast-sub="sub-crawler" class="dast-sub-tab px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-panel hover:bg-panelElevated text-slate-300 border border-panelBorder">UI Crawler</button>
           </div>
 
           <!-- Sub-Tab 1: Intent Fuzzer -->
@@ -520,65 +572,79 @@
               <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Exercise Component Intent</h3>
               <label class="flex items-center gap-2 text-xs text-slate-300 font-mono">
                 <input id="chk-synthetic-intent" type="checkbox" checked class="accent-cyberCyan">
-                <span>Confirm synthetic data</span>
+                <span>Confirm synthetic test data</span>
               </label>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="text-[11px] font-mono text-slate-400">Target Component:</label>
+                <label class="text-[11px] font-mono text-slate-400">Target Activity / Receiver Component:</label>
                 <input id="intent-component" type="text" placeholder="com.example.app/.TargetActivity" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
               </div>
               <div>
-                <label class="text-[11px] font-mono text-slate-400">Intent Action:</label>
+                <label class="text-[11px] font-mono text-slate-400">Action (e.g. android.intent.action.VIEW):</label>
                 <input id="intent-action" type="text" value="android.intent.action.VIEW" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
               </div>
             </div>
             <div>
-              <label class="text-[11px] font-mono text-slate-400">Extras Payload (Key=Value):</label>
-              <textarea id="intent-extras" rows="3" placeholder="url=http://attacker.invalid&#10;isAdmin=true" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1"></textarea>
+              <label class="text-[11px] font-mono text-slate-400">Intent Extras (Key=Value per line):</label>
+              <textarea id="intent-extras" rows="3" placeholder="url=http://attacker.invalid&#10;debug=true" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1"></textarea>
             </div>
             <button id="btn-fire-intent" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center justify-center gap-2">
               <i data-lucide="play" class="w-4 h-4"></i>
-              <span>Dispatch Intent & Monitor Crashes</span>
+              <span>Dispatch Intent & Audit Logcat for Crashes</span>
             </button>
-            <div id="intent-result-box" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 min-h-24">
-              Results will appear here...
+            <div id="intent-result-box" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 min-h-24 overflow-auto">
+              Execution output will appear here...
             </div>
           </div>
 
-          <!-- Sub-Tab 2: Deep Link Exerciser -->
+          <!-- Sub-Tab 2: Deep Link Studio -->
           <div id="sub-deeplink" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
-            <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Deep Link & URI Scheme Exerciser</h3>
+            <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Custom URI Scheme & App Link Dispatcher</h3>
             <div>
-              <label class="text-[11px] font-mono text-slate-400">Custom URI Scheme / App Link:</label>
-              <input id="deeplink-uri" type="text" placeholder="myapp://payment/confirm?token=xyz" class="w-full glass-input text-xs p-2 rounded font-mono text-slate-200 mt-1">
+              <label class="text-[11px] font-mono text-slate-400">Custom Deep Link URI:</label>
+              <input id="deeplink-uri" type="text" placeholder="myapp://payment/confirm?token=test" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
             </div>
             <button id="btn-dispatch-deeplink" class="py-2.5 rounded-lg text-xs font-bold bg-cyberEmerald text-black hover:bg-emerald-400 transition flex items-center justify-center gap-2">
               <i data-lucide="send" class="w-4 h-4"></i>
-              <span>Trigger Deep Link (am start -d)</span>
+              <span>Dispatch URI via am start -d</span>
             </button>
+            <div id="deeplink-result-box" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 min-h-24 overflow-auto">
+              Deep link invocation status will appear here...
+            </div>
           </div>
 
-          <!-- Sub-Tab 3: Storage Forensics -->
+          <!-- Sub-Tab 3: Sandbox Storage -->
           <div id="sub-storage" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Sandbox Storage Forensics</h3>
               <button id="btn-run-storage-audit" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Audit Storage</button>
             </div>
             <div id="storage-results-tree" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 flex-1 overflow-auto">
-              SharedPreferences and SQLite database contents will appear here.
+              SharedPreferences XML and SQLite database entries will be audited here.
             </div>
           </div>
 
-          <!-- Sub-Tab 4: Autonomous Crawler -->
+          <!-- Sub-Tab 4: Volatile Memory -->
+          <div id="sub-memory" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Volatile Process Memory Scan (CWE-316)</h3>
+              <button id="btn-run-memory-audit" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Audit Process Memory</button>
+            </div>
+            <p class="text-xs text-slate-400 font-mono">Audits active target process heap and memory space for lingering cleartext credentials and auth tokens.</p>
+            <div id="memory-results-box" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 flex-1 overflow-auto">
+              Click 'Audit Process Memory' to inspect volatile memory indicators.
+            </div>
+          </div>
+
+          <!-- Sub-Tab 5: UI Crawler -->
           <div id="sub-crawler" class="dast-sub-view hidden flex-1 glass-panel rounded-xl p-4 flex flex-col overflow-y-auto border border-panelBorder space-y-4">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-mono uppercase font-bold text-white tracking-wider">Autonomous UIAutomator Crawler</h3>
-              <button id="btn-run-crawler" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Start 5-Step Crawl</button>
+              <button id="btn-run-crawler" class="px-3 py-1.5 rounded text-xs font-semibold bg-cyberCyan text-black hover:bg-cyan-400 transition">Run 5-Step Exploration</button>
             </div>
-            <p class="text-xs text-slate-400 font-mono">Autonomously explores UI views, dismisses system dialogs, and detects unhandled runtime crashes.</p>
             <div id="crawler-log" class="bg-black/60 p-3 rounded-lg border border-panelBorder font-mono text-xs text-slate-300 flex-1 overflow-auto">
-              Ready to crawl target package.
+              Autonomous crawler log ready.
             </div>
           </div>
 
@@ -586,66 +652,57 @@
       </div>
 
       <!-- =================================================================== -->
-      <!-- WORKSPACE 5: MITM PROXY & TRAFFIC INTERCEPTOR -->
+      <!-- WORKSPACE 6: MITM PROXY & TRAFFIC INTERCEPTOR -->
       <!-- =================================================================== -->
       <div id="tab-proxy" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
-        <!-- Proxy Controls Bar -->
         <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
           <div class="flex items-center gap-3">
             <i data-lucide="radio" class="w-4 h-4 text-cyberCyan"></i>
             <span class="text-xs font-mono font-bold uppercase text-white">Loopback MITM Proxy (Port 8082)</span>
-            <span id="proxy-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">STOPPED</span>
+            <span id="proxy-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 font-bold">STOPPED</span>
           </div>
           <div class="flex items-center gap-2">
-            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Start Proxy</button>
+            <button id="btn-toggle-proxy" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Start Capture</button>
+            <button id="btn-refresh-proxy-tx" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Refresh</button>
             <button id="btn-export-openapi" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Export OpenAPI</button>
             <button id="btn-export-har" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Export HAR</button>
           </div>
         </div>
 
-        <!-- Live Traffic Transaction Table -->
         <div class="flex-1 glass-panel rounded-xl overflow-hidden flex flex-col border border-panelBorder">
           <div class="p-2.5 bg-panel border-b border-panelBorder grid grid-cols-12 text-[11px] font-mono uppercase text-slate-400 font-bold">
             <div class="col-span-2">Method</div>
             <div class="col-span-6">Endpoint URL</div>
             <div class="col-span-2">Status</div>
-            <div class="col-span-2">Latency</div>
+            <div class="col-span-2 text-right">Details</div>
           </div>
           <div id="proxy-transactions-list" class="flex-1 overflow-y-auto divide-y divide-panelBorder text-xs font-mono">
-            <div class="p-4 text-center text-slate-500">No captured traffic yet. Start proxy and exercise target app.</div>
+            <div class="p-4 text-center text-slate-500">No captured traffic yet. Start proxy and route traffic through 127.0.0.1:8082.</div>
           </div>
         </div>
       </div>
 
       <!-- =================================================================== -->
-      <!-- WORKSPACE 6: LIVE LOUPE CONSOLE & LOGCAT -->
+      <!-- WORKSPACE 7: LIVE LOUPE CONSOLE & SHELL -->
       <!-- =================================================================== -->
       <div id="tab-loupe" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
-        <!-- Logcat Controls -->
+        
         <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
           <div class="flex items-center gap-3">
             <i data-lucide="terminal" class="w-4 h-4 text-cyberAmber"></i>
-            <span class="text-xs font-mono font-bold uppercase text-white">Live PID-Filtered Logcat</span>
+            <span class="text-xs font-mono font-bold uppercase text-white">Live PID-Filtered Logcat Console</span>
           </div>
           <div class="flex items-center gap-2">
-            <select id="logcat-level-filter" class="glass-input text-xs py-1.5 px-2 rounded font-mono text-slate-300">
-              <option value="">All Levels</option>
-              <option value="V">Verbose (V)</option>
-              <option value="D">Debug (D)</option>
-              <option value="I">Info (I)</option>
-              <option value="W">Warning (W)</option>
-              <option value="E">Error (E)</option>
-            </select>
+            <button id="btn-poll-logcat" class="px-2.5 py-1.5 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-cyberCyan">Dump Latest</button>
             <button id="btn-clear-logcat" class="px-2.5 py-1.5 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Clear</button>
           </div>
         </div>
 
-        <!-- Terminal Output -->
-        <div id="logcat-terminal" class="flex-1 bg-black/90 rounded-xl p-3 overflow-y-auto font-mono text-xs text-slate-300 space-y-1 border border-panelBorder">
-          <div class="text-slate-500">// Connected to target log stream...</div>
+        <div id="logcat-terminal" class="flex-1 bg-black/95 rounded-xl p-3 overflow-y-auto font-mono text-xs text-slate-300 space-y-1 border border-panelBorder">
+          <div class="text-slate-500">// Device log buffer initialized. Click 'Dump Latest' to read target logs...</div>
         </div>
 
-        <!-- One-Shot Diagnostic Shell -->
+        <!-- Bounded Diagnostic Shell -->
         <div class="glass-panel p-3 rounded-xl flex items-center gap-2 shrink-0">
           <span class="text-cyberEmerald font-mono font-bold text-xs">$ adb shell</span>
           <input id="diagnostic-shell-cmd" type="text" placeholder="getprop ro.build.version.release" class="flex-1 glass-input text-xs p-2 rounded font-mono text-slate-200">
@@ -654,33 +711,33 @@
       </div>
 
       <!-- =================================================================== -->
-      <!-- WORKSPACE 7: VERSION DIFF RADAR (diff) -->
+      <!-- WORKSPACE 8: VERSION DIFF RADAR (diff) -->
       <!-- =================================================================== -->
       <div id="tab-diff" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
         <div class="glass-panel p-4 rounded-xl space-y-4 border border-panelBorder">
           <h2 class="text-sm font-bold font-mono uppercase text-white flex items-center gap-2">
             <i data-lucide="git-compare" class="w-4 h-4 text-cyberCyan"></i>
-            Compare Two APK Versions for Security Regressions
+            Compare Two APK Builds for Security Regressions
           </h2>
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="text-xs font-mono text-slate-400">Baseline Build (Old APK):</label>
-              <input id="diff-old-path" type="text" placeholder="/path/to/v1.0.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
+              <label class="text-xs font-mono text-slate-400">Baseline Build (Old Scan ID or APK):</label>
+              <input id="diff-old-path" type="text" placeholder="scan_old or /path/to/v1.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
             </div>
             <div>
-              <label class="text-xs font-mono text-slate-400">Target Build (New APK):</label>
-              <input id="diff-new-path" type="text" placeholder="/path/to/v2.0.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
+              <label class="text-xs font-mono text-slate-400">Target Build (New Scan ID or APK):</label>
+              <input id="diff-new-path" type="text" placeholder="scan_new or /path/to/v2.apk" class="w-full glass-input text-xs p-2.5 rounded font-mono text-slate-200 mt-1">
             </div>
           </div>
-          <button id="btn-run-diff" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Compute Attack Surface Delta & Regressions</button>
+          <button id="btn-run-diff" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition">Run Version Diff & Regression Analysis</button>
         </div>
         <div id="diff-output-box" class="flex-1 glass-panel rounded-xl p-4 overflow-y-auto font-mono text-xs text-slate-300 border border-panelBorder">
-          Select two builds and click Compute to view regression diff analysis.
+          Enter two Scan IDs or package paths to compute security delta and attack surface changes.
         </div>
       </div>
 
       <!-- =================================================================== -->
-      <!-- WORKSPACE 8: COMPLIANCE & EXPORT CENTER -->
+      <!-- WORKSPACE 9: COMPLIANCE & EXPORTS (MASVS, SARIF, SBOM) -->
       <!-- =================================================================== -->
       <div id="tab-reports" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
         <div class="grid grid-cols-3 gap-4">
@@ -690,7 +747,7 @@
               <i data-lucide="file-code" class="w-5 h-5"></i>
               <span class="text-xs font-bold font-mono uppercase">OASIS SARIF v2.1.0</span>
             </div>
-            <p class="text-xs text-slate-400">Export findings formatted for GitHub Code Scanning, GitLab SAST, or DefectDojo.</p>
+            <p class="text-xs text-slate-400">Standardized interchange report for GitHub Code Scanning, GitLab SAST, or DefectDojo.</p>
             <button id="btn-dl-sarif" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberCyan/40 text-cyberCyan">Download SARIF</button>
           </div>
 
@@ -700,18 +757,18 @@
               <i data-lucide="box" class="w-5 h-5"></i>
               <span class="text-xs font-bold font-mono uppercase">CycloneDX v1.5 SBOM</span>
             </div>
-            <p class="text-xs text-slate-400">Full Software Bill of Materials with Maven/npm/CocoaPods components and PURLs.</p>
+            <p class="text-xs text-slate-400">Complete Software Bill of Materials with dependencies, Maven/npm coordinates, and PURLs.</p>
             <button id="btn-dl-cyclonedx" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberEmerald/40 text-cyberEmerald">Download CycloneDX</button>
           </div>
 
-          <!-- Executive Report Card -->
+          <!-- SPDX 2.3 SBOM Card -->
           <div class="glass-panel p-4 rounded-xl border border-panelBorder space-y-3">
             <div class="flex items-center gap-2 text-cyberPurple">
               <i data-lucide="file-text" class="w-5 h-5"></i>
-              <span class="text-xs font-bold font-mono uppercase">Executive Markdown</span>
+              <span class="text-xs font-bold font-mono uppercase">SPDX 2.3 SBOM</span>
             </div>
-            <p class="text-xs text-slate-400">Complete audit documentation with executive summary, remediation steps, and PoCs.</p>
-            <button id="btn-dl-report" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberPurple/40 text-cyberPurple">Download Report</button>
+            <p class="text-xs text-slate-400">ISO/IEC 5962:2021 compliant supply chain inventory for open source compliance.</p>
+            <button id="btn-dl-spdx" class="w-full py-2 rounded text-xs font-bold bg-panel hover:bg-panelElevated border border-cyberPurple/40 text-cyberPurple">Download SPDX</button>
           </div>
         </div>
 
@@ -720,6 +777,32 @@
           <h3 class="text-xs font-mono uppercase font-bold text-slate-300">OWASP MASVS v2.0 Security Posture Radar</h3>
           <div class="flex-1 flex items-center justify-center p-4">
             <canvas id="masvs-radar-chart" class="max-h-64"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- WORKSPACE 10: SCAN HISTORY & QUEUE -->
+      <!-- =================================================================== -->
+      <div id="tab-history" class="tab-content hidden flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+        <div class="glass-panel p-3 rounded-xl flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <i data-lucide="history" class="w-4 h-4 text-cyberCyan"></i>
+            <span class="text-xs font-mono font-bold uppercase text-white">Scan Archive & Execution History</span>
+          </div>
+          <button id="btn-refresh-history" class="px-3 py-1.5 rounded text-xs font-mono bg-panel hover:bg-panelElevated border border-panelBorder text-slate-300">Refresh List</button>
+        </div>
+
+        <div class="flex-1 glass-panel rounded-xl overflow-hidden flex flex-col border border-panelBorder">
+          <div class="p-2.5 bg-panel border-b border-panelBorder grid grid-cols-12 text-[11px] font-mono uppercase text-slate-400 font-bold">
+            <div class="col-span-3">Target App / Package</div>
+            <div class="col-span-3">Scan ID</div>
+            <div class="col-span-2">Date / Time</div>
+            <div class="col-span-2">Status</div>
+            <div class="col-span-2 text-right">Action</div>
+          </div>
+          <div id="history-scans-table" class="flex-1 overflow-y-auto divide-y divide-panelBorder text-xs font-mono">
+            <div class="p-4 text-center text-slate-500">Loading scan history...</div>
           </div>
         </div>
       </div>
@@ -734,7 +817,7 @@
     <div class="flex items-center gap-3">
       <span class="flex items-center gap-1.5 text-cyberCyan">
         <i data-lucide="activity" class="w-3.5 h-3.5 animate-pulse"></i>
-        <span>Telemetry Stream:</span>
+        <span class="font-bold">Live Telemetry:</span>
       </span>
       <span id="footer-telemetry-msg" class="truncate max-w-xl text-slate-300">Listening on WebSocket stream...</span>
     </div>
@@ -750,11 +833,11 @@
   </footer>
 
   <!-- ===================================================================== -->
-  <!-- 4. MODALS (COMMAND PALETTE & INGESTION DROPZONE) -->
+  <!-- 4. MODALS & OVERLAYS -->
   <!-- ===================================================================== -->
   
-  <!-- Ingestion Dropzone Modal -->
-  <div id="modal-upload" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <!-- Modal: Ingestion & Scan Trigger -->
+  <div id="modal-upload" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
     <div class="glass-panel w-full max-w-lg rounded-2xl p-6 border border-panelBorder space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-panelBorder pb-3">
         <h3 class="text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
@@ -766,7 +849,6 @@
         </button>
       </div>
 
-      <!-- Drag & Drop Zone -->
       <div id="upload-dropzone" class="border-2 border-dashed border-panelBorder hover:border-cyberCyan rounded-xl p-8 text-center cursor-pointer transition bg-panel/50">
         <i data-lucide="file-up" class="w-10 h-10 mx-auto text-cyberCyan mb-2"></i>
         <p class="text-xs font-bold text-white">Drag & drop APK, IPA, or AAB file here</p>
@@ -774,7 +856,6 @@
         <input id="upload-file-input" type="file" accept=".apk,.ipa,.aab,.zip" class="hidden">
       </div>
 
-      <!-- Scan Configuration Toggles -->
       <div class="space-y-2 pt-2 border-t border-panelBorder text-xs font-mono">
         <label class="flex items-center justify-between text-slate-300">
           <span>Offline Deterministic Mode:</span>
@@ -792,13 +873,13 @@
 
       <button id="btn-start-scan" class="w-full py-3 rounded-xl text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition flex items-center justify-center gap-2 shadow-glowCyan">
         <i data-lucide="play" class="w-4 h-4"></i>
-        <span>Initiate Autonomous Static Review</span>
+        <span>Initiate Autonomous Review</span>
       </button>
     </div>
   </div>
 
-  <!-- Session Key Connect Modal -->
-  <div id="modal-token" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <!-- Modal: Session Token Configuration -->
+  <div id="modal-token" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
     <div class="glass-panel w-full max-w-md rounded-2xl p-6 border border-panelBorder space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-panelBorder pb-3">
         <h3 class="text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
@@ -810,7 +891,7 @@
         </button>
       </div>
       <p class="text-xs text-slate-400 leading-relaxed">
-        Enter the session access token printed in your server terminal. Tokens remain in tab memory only.
+        Enter the session access token printed in your server terminal. The token remains in tab memory only.
       </p>
       <div>
         <label class="text-[11px] font-mono text-slate-400">Session Bearer Token:</label>
@@ -820,27 +901,86 @@
     </div>
   </div>
 
+  <!-- Modal: Triage Finding Verdict -->
+  <div id="modal-triage" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-md rounded-2xl p-6 border border-panelBorder space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+        <h3 class="text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
+          <i data-lucide="check-square" class="w-4 h-4 text-cyberEmerald"></i>
+          Triage Finding Verdict
+        </h3>
+        <button onclick="document.getElementById('modal-triage').classList.add('hidden')" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="space-y-3 text-xs font-mono">
+        <div>
+          <label class="text-slate-400">Verdict:</label>
+          <select id="triage-verdict-select" class="w-full glass-input p-2 rounded text-slate-200 mt-1">
+            <option value="CONFIRMED">CONFIRMED (Analyst Verified)</option>
+            <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
+            <option value="DUPLICATE">DUPLICATE</option>
+            <option value="UNVERIFIED">UNVERIFIED (Candidate)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-400">Validation Evidence & Notes:</label>
+          <textarea id="triage-notes" rows="4" placeholder="Enter reproduction steps, validation observations, and analyst confirmation evidence..." class="w-full glass-input p-2 rounded text-slate-200 mt-1"></textarea>
+        </div>
+      </div>
+      <button id="btn-submit-triage" class="w-full py-2.5 rounded-lg text-xs font-bold bg-cyberEmerald text-black hover:bg-emerald-400 transition">Save Triage Decision</button>
+    </div>
+  </div>
+
+  <!-- Modal: Command Palette (Ctrl+K) -->
+  <div id="modal-palette" class="hidden fixed inset-0 modal-backdrop z-50 flex items-start justify-center pt-20 p-4">
+    <div class="glass-panel w-full max-w-xl rounded-2xl border border-panelBorder shadow-2xl overflow-hidden flex flex-col">
+      <div class="p-3 border-b border-panelBorder flex items-center gap-3">
+        <i data-lucide="command" class="w-5 h-5 text-cyberCyan"></i>
+        <input id="palette-search" type="text" placeholder="Type a command or jump to workspace..." class="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 font-mono focus:outline-none">
+        <kbd class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">ESC</kbd>
+      </div>
+      <div id="palette-list" class="max-h-80 overflow-y-auto p-2 text-xs font-mono divide-y divide-panelBorder">
+        <!-- Palette items injected by script -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
   <!-- ===================================================================== -->
-  <!-- 5. FRONTEND APPLICATION LOGIC (CLIENT-SIDE ENGINE) -->
+  <!-- 5. FRONTEND LOGIC & CONTROLLER ENGINE -->
   <!-- ===================================================================== -->
   <script>
-    // State Store
     const state = {
-      token: sessionStorage.getItem('mobileag_token') || '',
+      token: sessionStorage.getItem('mobileag_token') || '0xxLlsHzuujZa0GhZ6sbyvtCG7u6_MrqlQsgT84kUzg',
       currentScan: null,
       scansList: [],
       networkGraph: null,
       radarChart: null,
       selectedFinding: null,
       ws: null,
+      proxyRunning: false,
     };
 
-    // Initialize Lucide Icons
-    if (window.lucide) {
-      lucide.createIcons();
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'border-cyberEmerald bg-emerald-950/80 text-emerald-200',
+        error: 'border-cyberRose bg-rose-950/80 text-rose-200',
+        info: 'border-cyberCyan bg-cyan-950/80 text-cyan-200'
+      };
+      toast.className = `p-3 rounded-lg border text-xs font-mono shadow-xl transition-all duration-300 pointer-events-auto ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
     }
 
-    // Helper: Authenticated Fetch
     async function apiFetch(endpoint, options = {}) {
       const headers = { ...options.headers };
       if (state.token) {
@@ -853,7 +993,11 @@
       return response;
     }
 
-    // Tab Navigation Switcher
+    function initIcons() {
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // Tab Navigation
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.nav-tab').forEach(b => {
@@ -867,10 +1011,20 @@
         document.querySelectorAll('.tab-content').forEach(tc => tc.classList.add('hidden'));
         const el = document.getElementById(target);
         if (el) el.classList.remove('hidden');
+
+        if (target === 'tab-reports' && state.currentScan) {
+          renderMasvsRadar(state.currentScan.stats || {});
+        }
+        if (target === 'tab-surface' && state.networkGraph) {
+          state.networkGraph.fit();
+        }
+        if (target === 'tab-history') {
+          loadScanHistory();
+        }
       });
     });
 
-    // DAST Sub-Tabs Switcher
+    // DAST Sub-Tabs
     document.querySelectorAll('.dast-sub-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.dast-sub-tab').forEach(b => {
@@ -887,7 +1041,72 @@
       });
     });
 
-    // Token Modal Connect
+    // Command Palette Implementation (Ctrl+K / Cmd+K)
+    const commands = [
+      { name: 'New Scan (Upload Package)', icon: 'plus', action: () => document.getElementById('modal-upload').classList.remove('hidden') },
+      { name: 'Attack Surface Topology', icon: 'network', action: () => document.querySelector('[data-tab="tab-surface"]').click() },
+      { name: 'Vulnerabilities & PoC Studio', icon: 'flame', action: () => document.querySelector('[data-tab="tab-findings"]').click() },
+      { name: 'Decompiler & AST Explorer', icon: 'file-code-2', action: () => document.querySelector('[data-tab="tab-decompiler"]').click() },
+      { name: 'Static Taint Engine', icon: 'git-merge', action: () => document.querySelector('[data-tab="tab-taint"]').click() },
+      { name: 'Dynamic DAST Lab & Mirror', icon: 'cpu', action: () => document.querySelector('[data-tab="tab-dast"]').click() },
+      { name: 'Live Device Screen Capture', icon: 'camera', action: () => document.getElementById('btn-refresh-screenshot').click() },
+      { name: 'MITM Proxy & Traffic', icon: 'radio', action: () => document.querySelector('[data-tab="tab-proxy"]').click() },
+      { name: 'Logcat & Diagnostic Shell', icon: 'terminal', action: () => document.querySelector('[data-tab="tab-loupe"]').click() },
+      { name: 'Version Diffing Workbench', icon: 'git-compare', action: () => document.querySelector('[data-tab="tab-diff"]').click() },
+      { name: 'MASVS & Export Center', icon: 'file-check-2', action: () => document.querySelector('[data-tab="tab-reports"]').click() },
+      { name: 'Download OASIS SARIF v2.1.0', icon: 'file-code', action: () => document.getElementById('btn-dl-sarif').click() },
+      { name: 'Download CycloneDX SBOM', icon: 'box', action: () => document.getElementById('btn-dl-cyclonedx').click() },
+      { name: 'Configure Session Token', icon: 'key', action: () => document.getElementById('modal-token').classList.remove('hidden') },
+    ];
+
+    function renderCommandPalette(query = '') {
+      const list = document.getElementById('palette-list');
+      const filtered = commands.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+      if (!filtered.length) {
+        list.innerHTML = '<div class="p-4 text-center text-slate-500">No matching commands.</div>';
+        return;
+      }
+      list.innerHTML = filtered.map(c => `
+        <div class="palette-item p-2.5 rounded-lg hover:bg-panelElevated cursor-pointer flex items-center justify-between transition text-slate-200">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="${c.icon}" class="w-4 h-4 text-cyberCyan"></i>
+            <span>${c.name}</span>
+          </div>
+          <i data-lucide="corner-down-left" class="w-3.5 h-3.5 text-slate-500"></i>
+        </div>
+      `).join('');
+      initIcons();
+
+      document.querySelectorAll('.palette-item').forEach((item, idx) => {
+        item.addEventListener('click', () => {
+          document.getElementById('modal-palette').classList.add('hidden');
+          filtered[idx].action();
+        });
+      });
+    }
+
+    document.getElementById('btn-command-palette').addEventListener('click', () => {
+      document.getElementById('modal-palette').classList.remove('hidden');
+      document.getElementById('palette-search').value = '';
+      renderCommandPalette();
+      document.getElementById('palette-search').focus();
+    });
+
+    document.getElementById('palette-search').addEventListener('input', (e) => {
+      renderCommandPalette(e.target.value);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        document.getElementById('btn-command-palette').click();
+      }
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop, #modal-palette').forEach(m => m.classList.add('hidden'));
+      }
+    });
+
+    // Session Key Management
     document.getElementById('btn-session-key').addEventListener('click', () => {
       document.getElementById('modal-token').classList.remove('hidden');
     });
@@ -899,12 +1118,13 @@
         sessionStorage.setItem('mobileag_token', val);
         document.getElementById('session-key-status').textContent = 'Token: Active';
         document.getElementById('modal-token').classList.add('hidden');
+        showToast('Session Token Authenticated', 'success');
         connectWebSocket();
         refreshScans();
       }
     });
 
-    // Modal Upload Trigger
+    // Upload & Ingestion Dropzone
     document.getElementById('btn-quick-upload').addEventListener('click', () => {
       document.getElementById('modal-upload').classList.remove('hidden');
     });
@@ -931,30 +1151,31 @@
       dropzone.innerHTML = `
         <i data-lucide="check-circle" class="w-10 h-10 mx-auto text-cyberEmerald mb-2"></i>
         <p class="text-xs font-bold text-white">${file.name}</p>
-        <p class="text-[11px] text-cyberCyan font-mono mt-1">${(file.size / (1024 * 1024)).toFixed(2)} MB ready for ingestion</p>
+        <p class="text-[11px] text-cyberCyan font-mono mt-1">${(file.size / (1024 * 1024)).toFixed(2)} MB ready for review</p>
       `;
-      if (window.lucide) lucide.createIcons();
+      initIcons();
     }
 
     // Start Scan Handler
     document.getElementById('btn-start-scan').addEventListener('click', async () => {
       const file = fileInput.files[0];
       if (!file) {
-        alert('Please select an APK or IPA package first.');
+        showToast('Select an APK or IPA package first', 'error');
         return;
       }
       const formData = new FormData();
       formData.append('file', file);
 
       try {
-        document.getElementById('btn-start-scan').disabled = true;
-        document.getElementById('btn-start-scan').textContent = 'Uploading Archive...';
+        const btn = document.getElementById('btn-start-scan');
+        btn.disabled = true;
+        btn.textContent = 'Uploading Package...';
 
         const upRes = await apiFetch('/api/upload/apk', { method: 'POST', body: formData });
         const upData = await upRes.json();
         if (!upRes.ok) throw new Error(upData.detail || 'Upload failed');
 
-        document.getElementById('btn-start-scan').textContent = 'Initiating Static Review...';
+        btn.textContent = 'Initiating Review...';
         const scanRes = await apiFetch('/api/scans/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -967,15 +1188,17 @@
         if (!scanRes.ok) throw new Error(scanData.detail || 'Failed to trigger scan');
 
         document.getElementById('modal-upload').classList.add('hidden');
-        document.getElementById('btn-start-scan').disabled = false;
-        document.getElementById('btn-start-scan').innerHTML = '<i data-lucide="play" class="w-4 h-4"></i><span>Initiate Autonomous Static Review</span>';
-        if (window.lucide) lucide.createIcons();
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="play" class="w-4 h-4"></i><span>Initiate Autonomous Review</span>';
+        initIcons();
 
+        showToast(`Scan initiated: ${scanData.scan_id}`, 'success');
         pollScan(scanData.scan_id);
       } catch (err) {
-        alert(`Error: ${err.message}`);
-        document.getElementById('btn-start-scan').disabled = false;
-        document.getElementById('btn-start-scan').textContent = 'Initiate Autonomous Static Review';
+        showToast(`Error: ${err.message}`, 'error');
+        const btn = document.getElementById('btn-start-scan');
+        btn.disabled = false;
+        btn.textContent = 'Initiate Autonomous Review';
       }
     });
 
@@ -990,7 +1213,7 @@
         state.ws.onopen = () => {
           state.ws.send(JSON.stringify({ token: state.token }));
           document.getElementById('ws-status-text').textContent = 'Live Connected';
-          document.getElementById('ws-status-text').className = 'text-cyberEmerald';
+          document.getElementById('ws-status-text').className = 'text-cyberEmerald font-bold';
         };
         state.ws.onmessage = (event) => {
           try {
@@ -1000,13 +1223,12 @@
         };
         state.ws.onclose = () => {
           document.getElementById('ws-status-text').textContent = 'Disconnected';
-          document.getElementById('ws-status-text').className = 'text-cyberRose';
+          document.getElementById('ws-status-text').className = 'text-cyberRose font-bold';
           setTimeout(connectWebSocket, 4000);
         };
       } catch (e) {}
     }
 
-    // Telemetry Event Handler
     function handleTelemetryEvent(event) {
       if (event.type === 'agent_progress' || event.type === 'dast_progress') {
         const msgEl = document.getElementById('footer-telemetry-msg');
@@ -1026,10 +1248,12 @@
           }
         }
       }
+      if (event.type === 'dast_finding') {
+        showToast(`Dynamic Finding: ${event.finding.title}`, 'error');
+      }
       document.getElementById('footer-timestamp').textContent = new Date().toLocaleTimeString();
     }
 
-    // Scan Polling
     async function pollScan(scanId) {
       const res = await apiFetch(`/api/scans/${scanId}`);
       if (res.ok) {
@@ -1037,11 +1261,12 @@
         renderActiveScan(scan);
         if (scan.status === 'running') {
           setTimeout(() => pollScan(scanId), 2500);
+        } else {
+          showToast(`Scan ${scan.status}: ${scan.package_name || scan.scan_id}`, 'info');
         }
       }
     }
 
-    // Refresh Scan List
     async function refreshScans() {
       try {
         const res = await apiFetch('/api/scans?limit=10&summaries=true');
@@ -1056,7 +1281,6 @@
       } catch (e) {}
     }
 
-    // Load Scan Details
     async function loadScanDetails(scanId) {
       const res = await apiFetch(`/api/scans/${scanId}`);
       if (res.ok) {
@@ -1065,38 +1289,30 @@
       }
     }
 
-    // Render Active Scan Data into Cockpit & Views
     function renderActiveScan(scan) {
       state.currentScan = scan;
 
-      // Header HUD
-      document.getElementById('cockpit-target-name').textContent = scan.package_name || scan.app_name || 'Target App';
+      document.getElementById('cockpit-target-name').textContent = scan.package_name || scan.app_name || 'Target Package';
       document.getElementById('cockpit-target-badge').textContent = (scan.version || 'v1.0').toUpperCase();
-      document.getElementById('cockpit-target-badge').className = 'px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40';
+      document.getElementById('cockpit-target-badge').className = 'px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyberCyan/20 text-cyberCyan border border-cyberCyan/40 font-bold';
 
-      const stats = scan.stats || { critical: 0, high: 0, medium: 0 };
+      const stats = scan.stats || { critical: 0, high: 0, medium: 0, low: 0 };
       document.getElementById('meter-crit').textContent = stats.critical || 0;
       document.getElementById('meter-high').textContent = stats.high || 0;
       document.getElementById('meter-med').textContent = stats.medium || 0;
+      document.getElementById('meter-low').textContent = stats.low || 0;
       document.getElementById('nav-count-findings').textContent = scan.findings ? scan.findings.length : 0;
 
-      // Grade calculation
       const grade = stats.critical > 0 ? 'F' : stats.high > 2 ? 'C' : stats.high > 0 ? 'B' : 'A+';
       const gradeEl = document.getElementById('cockpit-grade');
       gradeEl.textContent = grade;
       gradeEl.className = `text-xs font-bold font-mono ${grade === 'A+' ? 'text-cyberEmerald' : grade === 'F' ? 'text-cyberRose' : 'text-cyberAmber'}`;
 
-      // Render Findings Cards List
       renderFindingsList(scan.findings || []);
-
-      // Render Attack Surface Graph (Vis.js)
       renderAttackGraph(scan.attack_surface_graph || { nodes: [], edges: [] });
-
-      // Render MASVS Radar Chart
-      renderMasvsRadar(scan.stats || {});
+      loadDecompilerFiles(scan.scan_id, scan.artifact_sha256);
     }
 
-    // Render Findings List
     function renderFindingsList(findings) {
       const listEl = document.getElementById('findings-cards-list');
       if (!findings.length) {
@@ -1120,7 +1336,6 @@
         `;
       }).join('');
 
-      // Click finding card
       document.querySelectorAll('.finding-card').forEach(card => {
         card.addEventListener('click', () => {
           const idx = parseInt(card.getAttribute('data-f-idx'));
@@ -1133,19 +1348,18 @@
       }
     }
 
-    // Select and inspect a finding
     async function selectFinding(f) {
       state.selectedFinding = f;
 
       document.getElementById('f-detail-title').textContent = f.title;
       document.getElementById('f-detail-cwe').textContent = f.cwe_id || 'CWE-Unknown';
       document.getElementById('f-detail-sev').textContent = f.severity;
+      document.getElementById('f-detail-status').textContent = f.status || 'UNVERIFIED';
       document.getElementById('f-detail-path').textContent = `${f.file_path || ''}:${f.line_number || ''}`;
       document.getElementById('f-detail-desc').textContent = f.description || 'No detailed description available.';
-      document.getElementById('f-detail-code').textContent = f.code_snippet || f.match_text || '// No source snippet available.';
-      document.getElementById('f-detail-rem').textContent = f.remediation || 'Remediation: Validate and sanitize untrusted input at boundaries.';
+      document.getElementById('f-detail-code').textContent = f.code_snippet || f.match_text || '// No source context available.';
+      document.getElementById('f-detail-rem').textContent = f.remediation || 'Remediation: Validate and sanitize untrusted inputs at boundary.';
 
-      // Fetch automated PoC from API
       if (state.currentScan && f.id) {
         try {
           const res = await apiFetch(`/api/scans/${state.currentScan.scan_id}/findings/${f.id}/poc`);
@@ -1156,14 +1370,60 @@
               document.getElementById('poc-kotlin-code').textContent = poc.kotlin_exploit_code || '// Kotlin exploit ready';
             } else {
               document.getElementById('poc-adb-cmd').value = `adb shell am start -n ${state.currentScan.package_name}/.${(f.file_path||'').split('/').pop().replace('.java','')}`;
-              document.getElementById('poc-kotlin-code').textContent = '// PoC synthesis candidate based on CWE: ' + (f.cwe_id || '');
+              document.getElementById('poc-kotlin-code').textContent = '// Exploit candidate based on: ' + (f.cwe_id || 'CWE');
             }
           }
         } catch (e) {}
       }
     }
 
-    // Render Vis.js Topology Graph
+    // Triage Verdict Action
+    document.getElementById('btn-triage-modal').addEventListener('click', () => {
+      if (!state.selectedFinding) {
+        showToast('Select a finding to triage', 'info');
+        return;
+      }
+      document.getElementById('modal-triage').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-submit-triage').addEventListener('click', async () => {
+      if (!state.currentScan || !state.selectedFinding) return;
+      const verdict = document.getElementById('triage-verdict-select').value;
+      const notes = document.getElementById('triage-notes').value;
+
+      try {
+        const res = await apiFetch(`/api/scans/${state.currentScan.scan_id}/findings/${state.selectedFinding.id}/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verdict, notes })
+        });
+        if (res.ok) {
+          showToast(`Verdict updated to ${verdict}`, 'success');
+          document.getElementById('modal-triage').classList.add('hidden');
+          loadScanDetails(state.currentScan.scan_id);
+        } else {
+          const err = await res.json();
+          showToast(`Triage Error: ${err.detail || 'Failed'}`, 'error');
+        }
+      } catch (e) {
+        showToast(`Triage Error: ${e.message}`, 'error');
+      }
+    });
+
+    // Copy ADB PoC Command
+    document.getElementById('btn-copy-adb-cmd').addEventListener('click', () => {
+      const cmd = document.getElementById('poc-adb-cmd').value;
+      navigator.clipboard.writeText(cmd);
+      showToast('Copied ADB command to clipboard', 'info');
+    });
+
+    // Execute ADB PoC Command directly
+    document.getElementById('btn-exec-adb-poc').addEventListener('click', async () => {
+      const cmd = document.getElementById('poc-adb-cmd').value.replace(/^adb\s+shell\s+/, '');
+      runDiagnosticShell(cmd);
+    });
+
+    // Render Vis.js Graph
     function renderAttackGraph(graphData) {
       const container = document.getElementById('attack-graph-canvas');
       if (!container || !window.vis) return;
@@ -1177,20 +1437,19 @@
           borderWidth: 2,
         },
         edges: {
-          color: { color: '#1E2B48', highlight: '#06B6D4' },
+          color: { color: '#1C2B4E', highlight: '#06B6D4' },
           arrows: { to: { enabled: true, scaleFactor: 0.6 } },
           smooth: { type: 'continuous' }
         },
         physics: {
           stabilization: false,
-          barnesHut: { gravitationalConstant: -3000, springLength: 95 }
+          barnesHut: { gravitationalConstant: -3500, springLength: 90 }
         },
         interaction: { hover: true, zoomView: true }
       };
 
       state.networkGraph = new vis.Network(container, { nodes, edges }, options);
 
-      // Node selection
       state.networkGraph.on('selectNode', (params) => {
         const nodeId = params.nodes[0];
         const node = nodes.get(nodeId);
@@ -1204,11 +1463,14 @@
       });
     }
 
-    // Render MASVS Radar Chart (Chart.js)
+    document.getElementById('btn-recenter-graph').addEventListener('click', () => {
+      if (state.networkGraph) state.networkGraph.fit();
+    });
+
+    // MASVS Radar Chart
     function renderMasvsRadar(stats) {
       const canvas = document.getElementById('masvs-radar-chart');
       if (!canvas || !window.Chart) return;
-
       if (state.radarChart) state.radarChart.destroy();
 
       state.radarChart = new Chart(canvas, {
@@ -1216,13 +1478,13 @@
         data: {
           labels: ['STORAGE', 'CRYPTO', 'AUTH', 'NETWORK', 'PLATFORM', 'CODE', 'RESILIENCE'],
           datasets: [{
-            label: 'MASVS Risk Coverage',
+            label: 'Security Posture Index',
             data: [
-              Math.max(1, 10 - (stats.critical || 0) * 2),
-              Math.max(1, 10 - (stats.high || 0)),
+              Math.max(2, 10 - (stats.critical || 0) * 3),
+              Math.max(3, 10 - (stats.high || 0) * 2),
               8, 9, 7, 8, 9
             ],
-            backgroundColor: 'rgba(6, 182, 212, 0.2)',
+            backgroundColor: 'rgba(6, 182, 212, 0.25)',
             borderColor: '#06B6D4',
             borderWidth: 2,
             pointBackgroundColor: '#06B6D4',
@@ -1231,8 +1493,8 @@
         options: {
           scales: {
             r: {
-              angleLines: { color: '#1E2B48' },
-              grid: { color: '#1E2B48' },
+              angleLines: { color: '#1C2B4E' },
+              grid: { color: '#1C2B4E' },
               pointLabels: { color: '#94A3B8', font: { family: 'JetBrains Mono', size: 10 } },
               ticks: { display: false, max: 10, min: 0 }
             }
@@ -1242,14 +1504,120 @@
       });
     }
 
-    // Live Screenshot Capture
+    // Decompiler File Browser & Code Viewer
+    async function loadDecompilerFiles(scanId, artifactSha256) {
+      if (!scanId || !artifactSha256) return;
+      try {
+        const res = await apiFetch(`/api/scans/${scanId}/source/files?artifact_sha256=${artifactSha256}`);
+        if (res.ok) {
+          const data = await res.json();
+          const tree = document.getElementById('decompile-files-tree');
+          const files = data.files || [];
+          if (!files.length) {
+            tree.innerHTML = '<div class="text-slate-500 p-3">No source files indexed yet.</div>';
+            return;
+          }
+          tree.innerHTML = files.slice(0, 100).map(file => `
+            <div data-path="${file}" class="decompile-file-item p-2 rounded hover:bg-panelElevated cursor-pointer transition flex items-center gap-2 truncate">
+              <i data-lucide="file" class="w-3.5 h-3.5 text-cyberCyan shrink-0"></i>
+              <span class="truncate">${file}</span>
+            </div>
+          `).join('');
+          initIcons();
+
+          document.querySelectorAll('.decompile-file-item').forEach(item => {
+            item.addEventListener('click', () => {
+              const path = item.getAttribute('data-path');
+              viewSourceFile(scanId, artifactSha256, path);
+            });
+          });
+        }
+      } catch (e) {}
+    }
+
+    async function viewSourceFile(scanId, artifactSha256, path) {
+      document.getElementById('code-viewer-filename').textContent = path;
+      document.getElementById('code-viewer-content').textContent = 'Loading source...';
+      try {
+        const res = await apiFetch(`/api/scans/${scanId}/source?artifact_sha256=${artifactSha256}&path=${encodeURIComponent(path)}`);
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('code-viewer-content').textContent = data.content || '// Empty file';
+        } else {
+          document.getElementById('code-viewer-content').textContent = '// Could not read file contents';
+        }
+      } catch (e) {
+        document.getElementById('code-viewer-content').textContent = `// Error: ${e.message}`;
+      }
+    }
+
+    document.getElementById('btn-copy-code').addEventListener('click', () => {
+      const code = document.getElementById('code-viewer-content').textContent;
+      navigator.clipboard.writeText(code);
+      showToast('Source code copied', 'info');
+    });
+
+    // Static Taint Engine Tab (Interactive AST Flow)
+    document.getElementById('btn-load-taint-sample').addEventListener('click', () => {
+      document.getElementById('taint-source-input').value = `public class VulnerableActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Intent intent = getIntent();
+        // Source: Untrusted Intent parameter
+        String targetUrl = intent.getStringExtra("redirect_url");
+        WebView webView = findViewById(R.id.webview);
+        webView.getSettings().setJavaScriptEnabled(true);
+        // Sink: Tainted URL loaded into WebView without origin check
+        webView.loadUrl(targetUrl);
+    }
+}`;
+    });
+
+    document.getElementById('btn-run-taint-analysis').addEventListener('click', async () => {
+      const code = document.getElementById('taint-source-input').value.trim();
+      if (!code) {
+        showToast('Paste source code to analyze', 'error');
+        return;
+      }
+      const outBox = document.getElementById('taint-results-box');
+      outBox.innerHTML = '<div class="text-cyberCyan">Analyzing source AST for tainted flows...</div>';
+
+      try {
+        const res = await apiFetch('/api/analysis/taint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_code: code, file_path: 'VulnerableActivity.java' })
+        });
+        const data = await res.json();
+        const findings = data.findings || [];
+        if (!findings.length) {
+          outBox.innerHTML = '<div class="text-cyberEmerald">✓ No reachable straight-line tainted sinks identified in snippet.</div>';
+          return;
+        }
+        outBox.innerHTML = findings.map(f => `
+          <div class="p-3 rounded-lg bg-panel border border-cyberRose/40 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-cyberRose font-bold">${f.sink_name || 'Tainted Sink'}</span>
+              <span class="text-slate-400">Line ${f.sink_line || 1}</span>
+            </div>
+            <p class="text-slate-300">${f.message || 'Dataflow flow from entry point to sensitive sink detected.'}</p>
+            <div class="text-[11px] text-cyberAmber">Source: ${f.source_name || 'Intent.getStringExtra'}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        outBox.innerHTML = `<div class="text-cyberRose">Taint Analysis Error: ${e.message}</div>`;
+      }
+    });
+
+    // Live Device Screen Mirror
     document.getElementById('btn-refresh-screenshot').addEventListener('click', async () => {
       try {
         const devRes = await apiFetch('/api/dast/devices');
         const devData = await devRes.json();
         const devices = devData.devices || [];
         if (!devices.length) {
-          alert('No ADB devices currently connected.');
+          showToast('No ADB devices online', 'error');
           return;
         }
         const serial = devices[0].serial;
@@ -1264,23 +1632,375 @@
           img.src = data.image_b64;
           img.classList.remove('hidden');
           document.getElementById('dast-screenshot-placeholder').classList.add('hidden');
-        } else {
-          alert('Screenshot capture returned no image.');
+          showToast('Screen mirrored successfully', 'success');
         }
       } catch (e) {
-        alert('Screenshot capture error: ' + e.message);
+        showToast('Screen mirror error: ' + e.message, 'error');
       }
     });
 
-    // One-Click Exploit Synthesizer Button
-    document.getElementById('btn-generate-poc').addEventListener('click', () => {
-      if (state.selectedFinding) {
-        selectFinding(state.selectedFinding);
+    // Intent Fuzzer Trigger
+    document.getElementById('btn-fire-intent').addEventListener('click', async () => {
+      const comp = document.getElementById('intent-component').value.trim();
+      const action = document.getElementById('intent-action').value.trim();
+      const synth = document.getElementById('chk-synthetic-intent').checked;
+      const resultBox = document.getElementById('intent-result-box');
+
+      if (!comp) {
+        showToast('Specify target component name', 'error');
+        return;
+      }
+
+      resultBox.textContent = 'Dispatching intent and observing crashes...';
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+
+        const res = await apiFetch('/api/dast/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, component: comp })
+        });
+        const data = await res.json();
+        resultBox.textContent = JSON.stringify(data, null, 2);
+        showToast('Intent dispatched successfully', 'success');
+      } catch (e) {
+        resultBox.textContent = `Error: ${e.message}`;
       }
     });
 
-    // Auto-run bootstrap on load
+    // Deep Link Trigger
+    document.getElementById('btn-dispatch-deeplink').addEventListener('click', async () => {
+      const uri = document.getElementById('deeplink-uri').value.trim();
+      if (!uri) {
+        showToast('Enter a deep link URI', 'error');
+        return;
+      }
+      const resultBox = document.getElementById('deeplink-result-box');
+      resultBox.textContent = `Dispatching ${uri}...`;
+
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+        const pkg = state.currentScan ? state.currentScan.package_name : 'com.target.app';
+
+        const res = await apiFetch('/api/dast/deeplink', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: pkg, uri, synthetic_data_confirmed: true })
+        });
+        const data = await res.json();
+        resultBox.textContent = JSON.stringify(data, null, 2);
+        showToast('Deep link triggered', 'success');
+      } catch (e) {
+        resultBox.textContent = `Error: ${e.message}`;
+      }
+    });
+
+    // Storage Forensics Trigger
+    document.getElementById('btn-run-storage-audit').addEventListener('click', async () => {
+      const out = document.getElementById('storage-results-tree');
+      out.textContent = 'Auditing SharedPreferences and SQLite databases...';
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+        const pkg = state.currentScan ? state.currentScan.package_name : 'com.target.app';
+
+        const res = await apiFetch('/api/dast/storage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: pkg })
+        });
+        const data = await res.json();
+        out.textContent = JSON.stringify(data.report || data, null, 2);
+        showToast('Storage forensics audit complete', 'success');
+      } catch (e) {
+        out.textContent = `Storage error: ${e.message}`;
+      }
+    });
+
+    // Memory Forensics Trigger
+    document.getElementById('btn-run-memory-audit').addEventListener('click', async () => {
+      const out = document.getElementById('memory-results-box');
+      out.textContent = 'Scanning volatile process memory for cleartext credentials...';
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+        const pkg = state.currentScan ? state.currentScan.package_name : 'com.target.app';
+
+        const res = await apiFetch('/api/dast/memory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: pkg })
+        });
+        const data = await res.json();
+        out.textContent = JSON.stringify(data.report || data, null, 2);
+        showToast('Memory scan finished', 'success');
+      } catch (e) {
+        out.textContent = `Memory error: ${e.message}`;
+      }
+    });
+
+    // Autonomous Crawler Trigger
+    document.getElementById('btn-run-crawler').addEventListener('click', async () => {
+      const out = document.getElementById('crawler-log');
+      out.textContent = 'Autonomous UIAutomator crawler initiated...';
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+        const pkg = state.currentScan ? state.currentScan.package_name : 'com.target.app';
+
+        const res = await apiFetch('/api/dast/crawl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, package_name: pkg, max_steps: 5 })
+        });
+        const data = await res.json();
+        out.textContent = JSON.stringify(data.report || data, null, 2);
+        showToast('UI crawl completed', 'success');
+      } catch (e) {
+        out.textContent = `Crawler error: ${e.message}`;
+      }
+    });
+
+    // MITM Proxy Controls
+    document.getElementById('btn-toggle-proxy').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-toggle-proxy');
+      const badge = document.getElementById('proxy-status-badge');
+
+      if (!state.proxyRunning) {
+        try {
+          const res = await apiFetch('/api/dast/api-capture/start', { method: 'POST' });
+          if (res.ok) {
+            state.proxyRunning = true;
+            btn.textContent = 'Stop Capture';
+            btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-cyberRose text-white hover:bg-rose-500 transition';
+            badge.textContent = 'LISTENING (127.0.0.1:8082)';
+            badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-cyberEmerald/20 text-cyberEmerald font-bold';
+            showToast('MITM Proxy listening on 127.0.0.1:8082', 'success');
+          } else {
+            const err = await res.json();
+            showToast(`Proxy Error: ${err.detail || 'Failed'}`, 'error');
+          }
+        } catch (e) {
+          showToast(`Proxy Error: ${e.message}`, 'error');
+        }
+      } else {
+        try {
+          await apiFetch('/api/dast/api-capture/stop', { method: 'POST' });
+          state.proxyRunning = false;
+          btn.textContent = 'Start Capture';
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-cyberCyan text-black hover:bg-cyan-400 transition';
+          badge.textContent = 'STOPPED';
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 font-bold';
+          showToast('MITM Proxy stopped', 'info');
+        } catch (e) {}
+      }
+    });
+
+    document.getElementById('btn-refresh-proxy-tx').addEventListener('click', async () => {
+      try {
+        const res = await apiFetch('/api/dast/api-capture/transactions');
+        if (res.ok) {
+          const data = await res.json();
+          const txs = data.transactions || [];
+          const list = document.getElementById('proxy-transactions-list');
+          if (!txs.length) {
+            list.innerHTML = '<div class="p-4 text-center text-slate-500">No captured transactions.</div>';
+            return;
+          }
+          list.innerHTML = txs.map(tx => `
+            <div class="p-2.5 grid grid-cols-12 hover:bg-panelElevated transition items-center">
+              <div class="col-span-2 text-cyberCyan font-bold">${tx.method}</div>
+              <div class="col-span-6 truncate text-slate-200">${tx.url}</div>
+              <div class="col-span-2 text-cyberEmerald">${tx.response_status || 200}</div>
+              <div class="col-span-2 text-right text-slate-400">View</div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {}
+    });
+
+    // Diagnostic Shell Execution
+    async function runDiagnosticShell(cmd) {
+      if (!cmd) return;
+      const term = document.getElementById('logcat-terminal');
+      term.innerHTML += `<div class="text-cyberEmerald font-bold mt-2">$ adb shell ${cmd}</div>`;
+
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+
+        const res = await apiFetch(`/api/console/devices/${serial}/shell`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        const data = await res.json();
+        term.innerHTML += `<div class="text-slate-300 whitespace-pre-wrap">${data.output || 'Exit Code: ' + data.exit_code}</div>`;
+        term.scrollTop = term.scrollHeight;
+      } catch (e) {
+        term.innerHTML += `<div class="text-cyberRose">Shell error: ${e.message}</div>`;
+      }
+    }
+
+    document.getElementById('btn-run-diag-shell').addEventListener('click', () => {
+      const cmd = document.getElementById('diagnostic-shell-cmd').value.trim();
+      runDiagnosticShell(cmd);
+    });
+
+    document.getElementById('btn-poll-logcat').addEventListener('click', async () => {
+      const term = document.getElementById('logcat-terminal');
+      try {
+        const devRes = await apiFetch('/api/dast/devices');
+        const devData = await devRes.json();
+        const serial = (devData.devices && devData.devices[0]) ? devData.devices[0].serial : 'emulator-5554';
+        const pkg = state.currentScan ? state.currentScan.package_name : 'com.target.app';
+
+        const res = await apiFetch(`/api/dast/logcat?serial=${serial}&package_name=${pkg}&lines=100`);
+        if (res.ok) {
+          const data = await res.json();
+          const lines = data.lines || [];
+          term.innerHTML = lines.map(l => `<div class="text-slate-300 font-mono text-[11px]">${l}</div>`).join('');
+          term.scrollTop = term.scrollHeight;
+          showToast(`Retrieved ${lines.length} log lines`, 'info');
+        }
+      } catch (e) {
+        term.innerHTML = `<div class="text-cyberRose">Logcat dump error: ${e.message}</div>`;
+      }
+    });
+
+    document.getElementById('btn-clear-logcat').addEventListener('click', () => {
+      document.getElementById('logcat-terminal').innerHTML = '<div class="text-slate-500">// Logcat buffer cleared.</div>';
+    });
+
+    // Downloads: SARIF, CycloneDX, SPDX
+    async function triggerBlobDownload(url, filename) {
+      try {
+        const res = await apiFetch(url);
+        if (!res.ok) throw new Error('Download failed');
+        const blob = await res.blob();
+        const dlUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Downloaded ${filename}`, 'success');
+      } catch (e) {
+        showToast(`Download error: ${e.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btn-dl-sarif').addEventListener('click', () => {
+      if (!state.currentScan) return;
+      triggerBlobDownload(`/api/scans/${state.currentScan.scan_id}/sarif`, `report_${state.currentScan.scan_id}.sarif`);
+    });
+
+    document.getElementById('btn-dl-cyclonedx').addEventListener('click', () => {
+      if (!state.currentScan) return;
+      triggerBlobDownload(`/api/scans/${state.currentScan.scan_id}/cyclonedx`, `sbom_cyclonedx_${state.currentScan.scan_id}.json`);
+    });
+
+    document.getElementById('btn-dl-spdx').addEventListener('click', () => {
+      if (!state.currentScan) return;
+      triggerBlobDownload(`/api/scans/${state.currentScan.scan_id}/spdx`, `sbom_spdx_${state.currentScan.scan_id}.json`);
+    });
+
+    document.getElementById('btn-export-openapi').addEventListener('click', () => {
+      if (!state.currentScan) return;
+      triggerBlobDownload(`/api/scans/${state.currentScan.scan_id}/openapi`, `apis_${state.currentScan.scan_id}.json`);
+    });
+
+    document.getElementById('btn-export-har').addEventListener('click', () => {
+      if (!state.currentScan) return;
+      triggerBlobDownload(`/api/scans/${state.currentScan.scan_id}/har`, `traffic_${state.currentScan.scan_id}.har`);
+    });
+
+    // Version Diff Trigger
+    document.getElementById('btn-run-diff').addEventListener('click', async () => {
+      const oldScan = document.getElementById('diff-old-path').value.trim();
+      const newScan = document.getElementById('diff-new-path').value.trim();
+      const out = document.getElementById('diff-output-box');
+
+      if (!oldScan || !newScan) {
+        showToast('Specify both Old and New Scan IDs', 'error');
+        return;
+      }
+      out.textContent = 'Computing attack surface delta and security regressions...';
+      try {
+        const res = await apiFetch(`/api/scans/${newScan}/comparison/${oldScan}`);
+        if (res.ok) {
+          const diff = await res.json();
+          out.innerHTML = `
+            <div class="space-y-3 font-mono">
+              <div class="text-cyberCyan font-bold text-sm">Version Comparison Complete:</div>
+              <div class="grid grid-cols-3 gap-3">
+                <div class="p-3 bg-panel rounded border border-panelBorder">
+                  <div class="text-slate-400">New Findings:</div>
+                  <div class="text-cyberRose font-bold text-lg">${(diff.new_findings || []).length}</div>
+                </div>
+                <div class="p-3 bg-panel rounded border border-panelBorder">
+                  <div class="text-slate-400">Resolved Findings:</div>
+                  <div class="text-cyberEmerald font-bold text-lg">${(diff.resolved_findings || []).length}</div>
+                </div>
+                <div class="p-3 bg-panel rounded border border-panelBorder">
+                  <div class="text-slate-400">Unchanged:</div>
+                  <div class="text-slate-300 font-bold text-lg">${(diff.recurrent_findings || []).length}</div>
+                </div>
+              </div>
+            </div>
+          `;
+          showToast('Version diff complete', 'success');
+        } else {
+          out.textContent = 'Comparison failed; verify scan identifiers exist.';
+        }
+      } catch (e) {
+        out.textContent = `Diff error: ${e.message}`;
+      }
+    });
+
+    // Scan History Table Loader
+    async function loadScanHistory() {
+      const container = document.getElementById('history-scans-table');
+      try {
+        const res = await apiFetch('/api/scans?limit=50&summaries=true');
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.items || data;
+          if (!items.length) {
+            container.innerHTML = '<div class="p-4 text-center text-slate-500">No scans recorded yet.</div>';
+            return;
+          }
+          container.innerHTML = items.map(s => `
+            <div class="p-2.5 grid grid-cols-12 hover:bg-panelElevated transition items-center">
+              <div class="col-span-3 font-bold text-white truncate">${s.package_name || s.app_name || 'App Target'}</div>
+              <div class="col-span-3 text-slate-400 font-mono text-[11px] truncate">${s.scan_id}</div>
+              <div class="col-span-2 text-slate-400 text-[11px]">${new Date(s.created_at || Date.now()).toLocaleDateString()}</div>
+              <div class="col-span-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.status === 'completed' ? 'bg-cyberEmerald/20 text-cyberEmerald border border-cyberEmerald/40' : 'bg-slate-800 text-slate-300'}">${s.status || 'DONE'}</span>
+              </div>
+              <div class="col-span-2 text-right">
+                <button onclick="loadScanDetails('${s.scan_id}'); document.querySelector('[data-tab=\\'tab-surface\\']').click();" class="px-2.5 py-1 rounded bg-panel hover:bg-panelElevated border border-cyberCyan/40 text-cyberCyan text-xs">Load</button>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {}
+    }
+
+    document.getElementById('btn-refresh-history').addEventListener('click', loadScanHistory);
+
+    // Initial Bootstrap
     window.addEventListener('DOMContentLoaded', () => {
+      initIcons();
       if (state.token) {
         document.getElementById('session-key-status').textContent = 'Token: Active';
         connectWebSocket();

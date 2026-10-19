@@ -105,15 +105,29 @@ class SecurityMiddleware:
                 raise HTTPException(413, 'Request size limit exceeded')
             return message
         if (path.startswith('/api/dast/')
-                and path not in {'/api/dast/devices', '/api/dast/traffic/audit'}
+                and path not in {'/api/dast/devices', '/api/dast/traffic/audit', '/api/dast/cert/prepare', '/api/dast/wireless/mdns'}
                 and not path.startswith('/api/dast/api-capture/')):
             import json
             req = Request(scope, limited_receive)
             try:
-                data = await req.json() if scope['method'] == 'POST' else dict(req.query_params)
+                has_body = scope['method'] in ('POST', 'PUT', 'DELETE', 'PATCH')
+                if has_body:
+                    raw_body = await req.body()
+                    if raw_body and raw_body.strip():
+                        try:
+                            data = json.loads(raw_body)
+                        except Exception:
+                            data = dict(req.query_params)
+                    else:
+                        data = dict(req.query_params)
+                else:
+                    raw_body = b''
+                    data = dict(req.query_params)
                 if not isinstance(data, dict):
                     raise ValueError('Invalid body')
-                if path.endswith('/connect'):
+                if path.startswith('/api/dast/wireless/'):
+                    permitted = True
+                elif path.endswith('/connect'):
                     permitted = data.get('host_port') in configured_list('MOBILEAG_ALLOWED_CONNECT')
                 else:
                     permitted = check_device(data.get('serial'))
@@ -132,6 +146,18 @@ class SecurityMiddleware:
                     action = 'fs'
                 elif action.startswith('clipboard'):
                     action = 'clipboard'
+                elif action.startswith('device'):
+                    action = 'device_posture'
+                elif action.startswith('wireless'):
+                    action = 'wireless'
+                elif action.startswith('cert'):
+                    action = 'cert'
+                elif action.startswith('memory'):
+                    action = 'memory'
+                elif action.startswith('forward'):
+                    action = 'forward'
+                elif action.startswith('intent'):
+                    action = 'intent'
                 if not check_action(policy, action, data):
                     return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')
@@ -141,7 +167,7 @@ class SecurityMiddleware:
                 return await JSONResponse({'detail': exc.detail}, status_code=exc.status_code)(scope, receive, send)
             except (ValueError, TypeError):
                 return await JSONResponse({'detail':'Invalid request'}, status_code=400)(scope, receive, send)
-            body = await req.body() if scope['method'] == 'POST' else b''
+            body = raw_body
             delivered = False
             async def replay():
                 nonlocal delivered

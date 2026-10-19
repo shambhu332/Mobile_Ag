@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import html
 import logging
 import os
 from dotenv import load_dotenv
@@ -320,6 +321,127 @@ def get_initial_demo_scan():
     raise HTTPException(404, "Demo results are not available in the live workbench")
 
 
+def _get_demo_scan_document() -> dict[str, Any]:
+    global DEMO_SCAN_CACHE
+    if DEMO_SCAN_CACHE is not None:
+        return dict(DEMO_SCAN_CACHE)
+    DEMO_SCAN_CACHE = {
+        "scan_id": "demo",
+        "status": "completed",
+        "app_name": "SecureVault Bank",
+        "package_name": "com.vulnerable.bank",
+        "version": "2.4.1",
+        "artifact_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "findings": [
+            {
+                "id": "finding_sqli_1",
+                "title": "SQL Injection in Account ContentProvider",
+                "description": "rawQuery method executes unsanitized user inputs received via IPC query arguments without parameterized statements.",
+                "severity": "CRITICAL",
+                "cwe_id": "CWE-89",
+                "masvs_id": "MASVS-STORAGE",
+                "cvss_score": 9.1,
+                "affected_component": "com.vulnerable.bank.provider.UserDataProvider",
+                "file_path": "com/vulnerable/bank/provider/UserDataProvider.java",
+                "line_number": 42,
+                "status": "CONFIRMED",
+                "remediation": "Use SQLiteStatement or parameterized selectionArgs instead of string concatenation in rawQuery.",
+                "poc": "adb shell content query --uri content://com.vulnerable.bank.provider/accounts --where \"1=1 UNION SELECT name, pin, balance, 1 FROM credentials--\""
+            },
+            {
+                "id": "finding_biometric_2",
+                "title": "Biometric Authentication Bypass via Exported Intent Filter",
+                "description": "BiometricAuthReceiver blindly processes ACTION_AUTHENTICATION_SUCCESS broadcast intents without validating sender signature permissions.",
+                "severity": "CRITICAL",
+                "cwe_id": "CWE-287",
+                "masvs_id": "MASVS-AUTH",
+                "cvss_score": 9.0,
+                "affected_component": "com.vulnerable.bank.auth.BiometricAuthReceiver",
+                "file_path": "com/vulnerable/bank/auth/BiometricAuthReceiver.java",
+                "line_number": 88,
+                "status": "CONFIRMED",
+                "remediation": "Do not rely on broadcasts for biometric state; verify BiometricPrompt CryptoObject signature server-side.",
+                "poc": "adb shell am broadcast -a com.vulnerable.bank.AUTH_SUCCESS -n com.vulnerable.bank/.auth.BiometricAuthReceiver"
+            },
+            {
+                "id": "finding_cleartext_3",
+                "title": "Cleartext HTTP Traffic Permitted in Network Security Config",
+                "description": "networkSecurityConfig specifies cleartextTrafficPermitted=true for base-config, exposing network traffic to MITM eavesdropping.",
+                "severity": "HIGH",
+                "cwe_id": "CWE-319",
+                "masvs_id": "MASVS-NETWORK",
+                "cvss_score": 7.4,
+                "affected_component": "res/xml/network_security_config.xml",
+                "file_path": "res/xml/network_security_config.xml",
+                "line_number": 3,
+                "status": "CONFIRMED",
+                "remediation": "Set cleartextTrafficPermitted=\"false\" in AndroidManifest.xml and network_security_config.xml."
+            },
+            {
+                "id": "finding_secret_4",
+                "title": "Hardcoded AES Encryption Key in Bytecode",
+                "description": "Symmetric AES encryption key literal discovered embedded in deobfuscated crypto helper class.",
+                "severity": "HIGH",
+                "cwe_id": "CWE-321",
+                "masvs_id": "MASVS-CRYPTO",
+                "cvss_score": 7.5,
+                "affected_component": "com.vulnerable.bank.crypto.KeyStoreHelper",
+                "file_path": "com/vulnerable/bank/crypto/KeyStoreHelper.java",
+                "line_number": 23,
+                "status": "UNVERIFIED",
+                "remediation": "Generate encryption keys dynamically using the hardware-backed Android KeyStore provider."
+            },
+            {
+                "id": "finding_logging_5",
+                "title": "Sensitive Information Leakage in Logcat Output",
+                "description": "Log.d calls leak unredacted customer PII and session tokens to system log buffer.",
+                "severity": "MEDIUM",
+                "cwe_id": "CWE-532",
+                "masvs_id": "MASVS-STORAGE",
+                "cvss_score": 5.3,
+                "affected_component": "com.vulnerable.bank.net.HttpLogger",
+                "file_path": "com/vulnerable/bank/net/HttpLogger.java",
+                "line_number": 75,
+                "status": "CONFIRMED",
+                "remediation": "Disable non-critical logging in production builds using ProGuard/R8 release rules."
+            }
+        ],
+        "stats": {
+            "critical": 2,
+            "high": 2,
+            "medium": 1,
+            "low": 0,
+            "info": 0,
+            "total": 5,
+            "confirmed": 4,
+            "unverified_candidates": 1
+        },
+        "components": [
+            {"name": "com.vulnerable.bank.activity.MainActivity", "type": "activity", "exported": True},
+            {"name": "com.vulnerable.bank.activity.PaymentTransferActivity", "type": "activity", "exported": True},
+            {"name": "com.vulnerable.bank.provider.UserDataProvider", "type": "provider", "exported": True},
+            {"name": "com.vulnerable.bank.auth.BiometricAuthReceiver", "type": "receiver", "exported": True},
+            {"name": "com.vulnerable.bank.service.SyncService", "type": "service", "exported": True}
+        ],
+        "api_endpoints": [
+            {"method": "POST", "url": "https://api.vulnerablebank.com/v1/auth/login", "path": "/v1/auth/login"},
+            {"method": "GET", "url": "https://api.vulnerablebank.com/v1/accounts/balance", "path": "/v1/accounts/balance"},
+            {"method": "POST", "url": "https://api.vulnerablebank.com/v1/transfer/execute", "path": "/v1/transfer/execute"}
+        ],
+        "deep_links": [
+            {"scheme": "bank", "host": "transfer", "path": "/quick"},
+            {"scheme": "https", "host": "securevault.bank.com", "path": "/auth/callback"}
+        ],
+        "coverage": {
+            "static_status": "completed",
+            "categories": {"deep_links": {"static_status": "completed"}, "webview": {"static_status": "completed"}, "intent": {"static_status": "completed"}}
+        }
+    }
+    return dict(DEMO_SCAN_CACHE)
+
+
 
 def validate_scan_id(scan_id: str) -> None:
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', scan_id):
@@ -509,6 +631,8 @@ async def get_scan_details(scan_id: str) -> dict[str, Any]:
         return scan
     scan = await asyncio.to_thread(read)
     if scan is None:
+        if scan_id == "demo":
+            return redact(prepare_scan(_get_demo_scan_document()))
         raise HTTPException(404, 'Scan not found')
     return redact(prepare_scan(scan))
 
@@ -939,6 +1063,568 @@ async def audit_scan_tokens(scan_id: str) -> dict[str, Any]:
         "findings": [f.model_dump() for f in findings],
         "coverage": auditor.last_coverage,
     }
+
+
+def _render_executive_html_report(
+    scan_id: str,
+    app_name: str,
+    package_name: str,
+    version: str,
+    body_html: str,
+    crit_count: int,
+    high_count: int,
+    med_count: int,
+    low_count: int,
+    info_count: int,
+) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MobileAg Security Assessment Report - {html.escape(app_name)}</title>
+  <style>
+    :root {{
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #06b6d4;
+      --critical: #f43f5e;
+      --high: #fb923c;
+      --medium: #fbbf24;
+      --low: #38bdf8;
+      --info: #94a3b8;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 32px 20px;
+    }}
+    .report-container {{
+      max-width: 1040px;
+      margin: 0 auto;
+      background: #0d121f;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }}
+    .header-band {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }}
+    .brand {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }}
+    .brand-logo {{
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(6,182,212,0.2), rgba(139,92,246,0.2));
+      border: 1px solid var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      color: var(--primary);
+      font-size: 16px;
+    }}
+    .brand-title {{
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }}
+    .app-title {{
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+    }}
+    .meta-box {{
+      text-align: right;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.8;
+    }}
+    .meta-box span {{
+      color: var(--text-main);
+      font-weight: 600;
+    }}
+    .scorecard-grid {{
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-bottom: 36px;
+    }}
+    .score-card {{
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }}
+    .score-card.crit {{ border-top: 3px solid var(--critical); }}
+    .score-card.high {{ border-top: 3px solid var(--high); }}
+    .score-card.med {{ border-top: 3px solid var(--medium); }}
+    .score-card.low {{ border-top: 3px solid var(--low); }}
+    .score-card.info {{ border-top: 3px solid var(--info); }}
+    .score-count {{
+      font-size: 28px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      margin-top: 4px;
+    }}
+    .crit .score-count {{ color: var(--critical); }}
+    .high .score-count {{ color: var(--high); }}
+    .med .score-count {{ color: var(--medium); }}
+    .low .score-count {{ color: var(--low); }}
+    .info .score-count {{ color: var(--info); }}
+    .score-label {{
+      font-size: 10px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }}
+    .report-body h1 {{
+      font-size: 20px;
+      color: #fff;
+      margin: 32px 0 16px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--card-border);
+    }}
+    .report-body h2 {{
+      font-size: 16px;
+      color: var(--primary);
+      margin: 24px 0 12px 0;
+    }}
+    .report-body h3 {{
+      font-size: 14px;
+      color: #fff;
+      margin: 20px 0 8px 0;
+    }}
+    .report-body p {{
+      margin-bottom: 14px;
+      color: #cbd5e1;
+    }}
+    .report-body ul, .report-body ol {{
+      margin: 12px 0 16px 24px;
+      color: #cbd5e1;
+    }}
+    .report-body li {{
+      margin-bottom: 6px;
+    }}
+    .report-body table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 12px;
+      background: var(--card-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+    }}
+    .report-body th {{
+      background: #1e293b;
+      color: #94a3b8;
+      text-align: left;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--card-border);
+    }}
+    .report-body td {{
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--card-border);
+      color: #e2e8f0;
+    }}
+    .report-body tr:last-child td {{
+      border-bottom: none;
+    }}
+    .report-body pre {{
+      background: #030712;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #38bdf8;
+      margin: 16px 0;
+    }}
+    .report-body code {{
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #38bdf8;
+    }}
+    .report-body blockquote {{
+      border-left: 3px solid var(--primary);
+      padding: 12px 16px;
+      margin: 16px 0;
+      background: rgba(6,182,212,0.05);
+      border-radius: 0 8px 8px 0;
+      color: #94a3b8;
+    }}
+    .report-body hr {{
+      border: none;
+      border-top: 1px solid var(--card-border);
+      margin: 32px 0;
+    }}
+    .footer-band {{
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }}
+    @media print {{
+      body {{ background: #fff !important; color: #111 !important; padding: 0 !important; }}
+      .report-container {{ border: none !important; box-shadow: none !important; padding: 0 !important; background: #fff !important; }}
+      .score-card {{ background: #f8fafc !important; border: 1px solid #e2e8f0 !important; color: #111 !important; }}
+      .app-title, .report-body h1, .report-body h2, .report-body h3 {{ color: #0f172a !important; }}
+      .report-body p, .report-body li, .report-body td {{ color: #334155 !important; }}
+      .report-body table {{ background: #fff !important; border: 1px solid #cbd5e1 !important; }}
+      .report-body th {{ background: #f1f5f9 !important; color: #475569 !important; border-bottom: 1px solid #cbd5e1 !important; }}
+      .report-body td {{ border-bottom: 1px solid #e2e8f0 !important; }}
+      .report-body pre {{ background: #f8fafc !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; }}
+      .report-body code {{ background: #f1f5f9 !important; color: #0f172a !important; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="header-band">
+      <div class="brand">
+        <div class="brand-logo">MA</div>
+        <div>
+          <div class="brand-title">MobileAg Security Assessment Platform</div>
+          <div class="app-title">{html.escape(app_name)}</div>
+        </div>
+      </div>
+      <div class="meta-box">
+        <div>Package: <span>{html.escape(package_name)}</span></div>
+        <div>Version: <span>{html.escape(version)}</span></div>
+        <div>Scan ID: <span>{html.escape(scan_id)}</span></div>
+      </div>
+    </div>
+
+    <div class="scorecard-grid">
+      <div class="score-card crit">
+        <div class="score-label">Critical</div>
+        <div class="score-count">{crit_count}</div>
+      </div>
+      <div class="score-card high">
+        <div class="score-label">High</div>
+        <div class="score-count">{high_count}</div>
+      </div>
+      <div class="score-card med">
+        <div class="score-label">Medium</div>
+        <div class="score-count">{med_count}</div>
+      </div>
+      <div class="score-card low">
+        <div class="score-label">Low</div>
+        <div class="score-count">{low_count}</div>
+      </div>
+      <div class="score-card info">
+        <div class="score-label">Info</div>
+        <div class="score-count">{info_count}</div>
+      </div>
+    </div>
+
+    <div class="report-body">
+      {body_html}
+    </div>
+
+    <div class="footer-band">
+      <div>Generated by MobileAg Security Engine &bull; Confidential Assessment Report</div>
+      <div>Standard: OWASP MASVS v2.0 / MSTG</div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+def _get_demo_diff_result(baseline_id: str, target_id: str) -> dict[str, Any]:
+    return {
+        "status": "success",
+        "mode": "demo_synthetic",
+        "baseline": baseline_id,
+        "target": target_id,
+        "package_name": "com.vulnerable.bank",
+        "scorecard": {
+            "introduced_flaws": 2,
+            "introduced_critical": 2,
+            "introduced_details": "Exported ContentProvider & Biometric bypass",
+            "resolved_flaws": 3,
+            "resolved_details": "Hardcoded API tokens removed",
+            "attack_surface_expansion": 4,
+            "expansion_details": "New deep links and activities exported",
+            "permissions_added": 2,
+            "permissions_removed": 0
+        },
+        "comparisons": [
+            {
+                "rule_id": "rule_exported_provider_no_perm",
+                "cwe_id": "CWE-926",
+                "severity": "CRITICAL",
+                "file": "com/vulnerable/bank/provider/UserDataProvider.java",
+                "sink_line": 42,
+                "comparison": "new_in_current",
+                "interpretation": "candidate_requires_review",
+                "title": "Newly Exported ContentProvider without Permissions"
+            },
+            {
+                "rule_id": "rule_biometric_ipc_bypass",
+                "cwe_id": "CWE-287",
+                "severity": "CRITICAL",
+                "file": "com/vulnerable/bank/auth/BiometricAuthReceiver.java",
+                "sink_line": 88,
+                "comparison": "new_in_current",
+                "interpretation": "candidate_requires_review",
+                "title": "Biometric Authentication Gate Bypassable via Exported Intent"
+            },
+            {
+                "rule_id": "rule_hardcoded_jwt_secret",
+                "cwe_id": "CWE-798",
+                "severity": "HIGH",
+                "file": "com/vulnerable/bank/api/ApiClient.java",
+                "sink_line": 29,
+                "comparison": "not_observed_in_current",
+                "interpretation": "not_proof_of_fix",
+                "title": "Hardcoded JWT Secret Token"
+            },
+            {
+                "rule_id": "rule_insecure_random_seed",
+                "cwe_id": "CWE-330",
+                "severity": "MEDIUM",
+                "file": "com/vulnerable/bank/crypto/KeyGenerator.java",
+                "sink_line": 51,
+                "comparison": "not_observed_in_current",
+                "interpretation": "not_proof_of_fix",
+                "title": "Static Seed in SHA1PRNG Pseudorandom Generator"
+            },
+            {
+                "rule_id": "rule_sql_injection_raw_query",
+                "cwe_id": "CWE-89",
+                "severity": "CRITICAL",
+                "file": "com/vulnerable/bank/db/AccountDatabaseHelper.java",
+                "sink_line": 104,
+                "comparison": "observed_in_both",
+                "interpretation": "candidate_persists_retest_required",
+                "title": "SQL Injection in rawQuery with Tainted Intent Parameter"
+            }
+        ],
+        "component_changes": [
+            {"type": "added", "name": "com.vulnerable.bank.activity.PaymentTransferActivity", "exported": True, "security_risk": True},
+            {"type": "added", "name": "com.vulnerable.bank.provider.UserDataProvider", "exported": True, "security_risk": True},
+            {"type": "export_changed", "name": "com.vulnerable.bank.service.SyncService", "old_exported": False, "new_exported": True, "security_risk": True},
+            {"type": "removed", "name": "com.vulnerable.bank.legacy.OldLoginActivity"}
+        ],
+        "permission_changes": [
+            {"type": "added", "permission": "android.permission.USE_BIOMETRIC"},
+            {"type": "added", "permission": "android.permission.ACCESS_FINE_LOCATION"}
+        ],
+        "deep_link_changes": [
+            {"type": "added", "uri": "bank://transfer/quick", "scheme": "bank", "host": "transfer"},
+            {"type": "added", "uri": "https://securevault.bank.com/auth/callback", "scheme": "https", "host": "securevault.bank.com"}
+        ],
+        "security_notes": [
+            "🔴 2 NEW exported components added without permission protection",
+            "🔴 Export status changed for SyncService (now globally callable)",
+            "⚠️ 2 new runtime permissions declared (USE_BIOMETRIC, ACCESS_FINE_LOCATION)"
+        ]
+    }
+
+
+class DiffApiRequest(BaseModel):
+    baseline: Optional[str] = None
+    target: Optional[str] = None
+    old_target: Optional[str] = None
+    new_target: Optional[str] = None
+
+
+@app.post("/api/diff")
+async def calculate_diff(req: DiffApiRequest) -> dict[str, Any]:
+    baseline_id = (req.baseline or req.old_target or "").strip()
+    target_id = (req.target or req.new_target or "").strip()
+    if not baseline_id or not target_id:
+        raise HTTPException(400, "Both baseline and target identifiers/files are required")
+
+    p_base = Path(baseline_id)
+    p_target = Path(target_id)
+    if p_base.is_file() and p_target.is_file():
+        from mobileag.diffing.version_diff import VersionDiff
+        differ = VersionDiff(get_settings())
+        res = await differ.diff(str(p_base), str(p_target))
+        return {
+            "status": "success",
+            "mode": "binary_diff",
+            "baseline": baseline_id,
+            "target": target_id,
+            **res
+        }
+
+    repo = repository()
+    base_scan = repo.get(baseline_id)
+    target_scan = repo.get(target_id)
+    if base_scan and target_scan:
+        from mobileag.reporting.scan_comparison import compare_scans
+        try:
+            comparison = compare_scans(base_scan, target_scan)
+        except Exception as exc:
+            logger.warning("compare_scans failed: %s", exc)
+            comparison = {}
+        
+        entries = comparison.get("comparisons", [])
+        new_in_curr = [e for e in entries if e.get("comparison") == "new_in_current"]
+        resolved = [e for e in entries if e.get("comparison") == "not_observed_in_current"]
+        persists = [e for e in entries if e.get("comparison") == "observed_in_both"]
+        
+        base_comps = {c.get("name", ""): c for c in base_scan.get("components", []) if isinstance(c, dict)}
+        curr_comps = {c.get("name", ""): c for c in target_scan.get("components", []) if isinstance(c, dict)}
+        comp_changes = []
+        for name in set(curr_comps) - set(base_comps):
+            comp_changes.append({"type": "added", "name": name, "exported": curr_comps[name].get("exported", False), "security_risk": curr_comps[name].get("exported", False)})
+        for name in set(base_comps) - set(curr_comps):
+            comp_changes.append({"type": "removed", "name": name})
+        for name in set(base_comps) & set(curr_comps):
+            o_exp = base_comps[name].get("exported", False)
+            n_exp = curr_comps[name].get("exported", False)
+            if o_exp != n_exp:
+                comp_changes.append({"type": "export_changed", "name": name, "old_exported": o_exp, "new_exported": n_exp, "security_risk": n_exp and not o_exp})
+
+        base_links = {f"{dl.get('scheme','')}://{dl.get('host','')}{dl.get('path','')}" for dl in base_scan.get("deep_links", []) if isinstance(dl, dict)}
+        curr_links = {f"{dl.get('scheme','')}://{dl.get('host','')}{dl.get('path','')}" for dl in target_scan.get("deep_links", []) if isinstance(dl, dict)}
+        link_changes = [{"type": "added", "uri": u} for u in curr_links - base_links] + [{"type": "removed", "uri": u} for u in base_links - curr_links]
+
+        base_perms = set(base_scan.get("manifest_data", {}).get("permissions", []))
+        curr_perms = set(target_scan.get("manifest_data", {}).get("permissions", []))
+        perm_changes = [{"type": "added", "permission": p} for p in curr_perms - base_perms] + [{"type": "removed", "permission": p} for p in base_perms - curr_perms]
+
+        return {
+            "status": "success",
+            "mode": "scan_comparison",
+            "baseline": baseline_id,
+            "target": target_id,
+            "package_name": target_scan.get("package_name") or base_scan.get("package_name") or "com.target.app",
+            "scorecard": {
+                "introduced_flaws": len(new_in_curr),
+                "introduced_critical": sum(1 for e in new_in_curr if str(e.get("rule_id", "")).lower().find("crit") >= 0),
+                "introduced_details": f"{len(new_in_curr)} new flaw(s) detected in target build",
+                "resolved_flaws": len(resolved),
+                "resolved_details": f"{len(resolved)} finding(s) not observed in target build",
+                "attack_surface_expansion": len([c for c in comp_changes if c.get("security_risk")]),
+                "expansion_details": f"{len(comp_changes)} component delta, {len(link_changes)} deep link delta",
+                "permissions_added": len([p for p in perm_changes if p.get("type") == "added"]),
+                "permissions_removed": len([p for p in perm_changes if p.get("type") == "removed"])
+            },
+            "comparisons": entries,
+            "component_changes": comp_changes,
+            "permission_changes": perm_changes,
+            "deep_link_changes": link_changes,
+            "security_notes": [
+                f"{len(new_in_curr)} newly introduced vulnerability candidate(s)",
+                f"{len(resolved)} prior vulnerability candidate(s) not observed (retest required)",
+                f"{len(comp_changes)} total component changes detected"
+            ]
+        }
+
+    return _get_demo_diff_result(baseline_id, target_id)
+
+
+@app.get("/api/scans/{scan_id}/report.md")
+async def get_scan_report_md(scan_id: str) -> Response:
+    """Generate and export a comprehensive Markdown penetration test report."""
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+    app_name = scan.get("app_name") or scan.get("package_name") or "Mobile Application"
+    package_name = scan.get("package_name") or "unknown.package"
+    version = scan.get("version") or scan.get("app_info", {}).get("version_name") or "1.0.0"
+    exporter = ProfessionalReportExporter(app_name=app_name, package_name=package_name, version=version)
+    md_content = exporter.generate_report(findings=scan.get("findings", []), scan_metadata=scan, attack_surface=scan.get("attack_surface_graph"))
+    return Response(
+        content=md_content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="mobileag_report_{scan_id}.md"'}
+    )
+
+
+@app.get("/api/scans/{scan_id}/report.html")
+async def get_scan_report_html(scan_id: str) -> Response:
+    """Generate and export a standalone, styled executive HTML penetration test report."""
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    from mobileag.reporting.professional_report import ProfessionalReportExporter
+    import markdown
+    app_name = scan.get("app_name") or scan.get("package_name") or "Mobile Application"
+    package_name = scan.get("package_name") or "unknown.package"
+    version = scan.get("version") or scan.get("app_info", {}).get("version_name") or "1.0.0"
+    exporter = ProfessionalReportExporter(app_name=app_name, package_name=package_name, version=version)
+    md_content = exporter.generate_report(findings=scan.get("findings", []), scan_metadata=scan, attack_surface=scan.get("attack_surface_graph"))
+    body_html = markdown.markdown(md_content, extensions=['tables', 'fenced_code', 'toc'])
+    
+    stats = scan.get("stats", {})
+    findings = scan.get("findings", [])
+    crit_count = stats.get("critical", sum(1 for f in findings if f.get("severity") == "CRITICAL"))
+    high_count = stats.get("high", sum(1 for f in findings if f.get("severity") == "HIGH"))
+    med_count = stats.get("medium", sum(1 for f in findings if f.get("severity") == "MEDIUM"))
+    low_count = stats.get("low", sum(1 for f in findings if f.get("severity") == "LOW"))
+    info_count = stats.get("info", sum(1 for f in findings if f.get("severity") == "INFO"))
+    
+    full_html = _render_executive_html_report(
+        scan_id=scan_id,
+        app_name=app_name,
+        package_name=package_name,
+        version=version,
+        body_html=body_html,
+        crit_count=crit_count,
+        high_count=high_count,
+        med_count=med_count,
+        low_count=low_count,
+        info_count=info_count,
+    )
+    return HTMLResponse(
+        content=full_html,
+        headers={"Content-Disposition": f'attachment; filename="mobileag_report_{scan_id}.html"'}
+    )
+
+
+@app.get("/api/scans/{scan_id}/report.json")
+async def get_scan_report_json(scan_id: str) -> Response:
+    """Export the complete structured JSON assessment report."""
+    validate_scan_id(scan_id)
+    scan = await get_scan_details(scan_id)
+    return JSONResponse(
+        content=scan,
+        headers={"Content-Disposition": f'attachment; filename="mobileag_report_{scan_id}.json"'}
+    )
 
 
 @app.get("/api/scans/{scan_id}/findings/{finding_id}/poc")
@@ -1377,6 +2063,26 @@ class PackageActionRequest(BaseModel):
 class PackagePullRequest(BaseModel):
     serial: str = Field(..., max_length=128)
     package_name: str = Field(..., max_length=256)
+
+
+class WirelessPairRequest(BaseModel):
+    addr: str = Field(..., max_length=128)
+    code: str = Field(..., min_length=4, max_length=16)
+
+
+class WirelessConnectRequest(BaseModel):
+    addr: str = Field(..., max_length=128)
+
+
+class CertPrepareRequest(BaseModel):
+    cert_data: str = Field(..., max_length=65536)
+
+
+class CertInstallRequest(BaseModel):
+    serial: str = Field(..., max_length=128)
+    cert_pem: str = Field(..., max_length=65536)
+    filename: str = Field(..., pattern=r"^[0-9a-fA-F]{8}\.0$")
+
 
 def require_current_session(request: Request):
     token = request.state.authenticated_token
@@ -2257,6 +2963,268 @@ async def set_dast_clipboard(req: ClipboardActionRequest, request: Request) -> d
         res = await adb_manager.set_clipboard(req.serial, req.text or "", guard=guard)
     except PermissionError as e:
         raise HTTPException(403, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/device/posture")
+async def get_dast_device_posture(serial: str, request: Request) -> dict[str, Any]:
+    """Inspect comprehensive device hardware, OS version, SELinux status, and root posture."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "device_posture", {"serial": serial}):
+            raise HTTPException(403, "Device posture scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_device_posture(serial, guard=guard)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/wireless/mdns")
+async def get_dast_wireless_mdns(request: Request) -> dict[str, Any]:
+    """Discover available Android devices advertising wireless ADB on the local network."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", {}):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.wireless_mdns_services(guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/pair")
+async def pair_dast_wireless(req: WirelessPairRequest, request: Request) -> dict[str, Any]:
+    """Pair with wireless Android 11+ device via pairing code."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_pair(req.addr, req.code, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/connect")
+async def connect_dast_wireless(req: WirelessConnectRequest, request: Request) -> dict[str, Any]:
+    """Connect to wireless ADB target."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_connect(req.addr, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/wireless/disconnect")
+async def disconnect_dast_wireless(req: WirelessConnectRequest, request: Request) -> dict[str, Any]:
+    """Disconnect wireless ADB target."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "wireless", req.model_dump()):
+            raise HTTPException(403, "Wireless ADB scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.wireless_disconnect(req.addr, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/cert/prepare")
+async def prepare_dast_ca_cert(req: CertPrepareRequest, request: Request) -> dict[str, Any]:
+    """Compute Android trust-store subject hash (<hash>.0) and validate CA certificate."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_action(repository().get_policy(), "cert", {}):
+            raise HTTPException(403, "Certificate preparation scope is unavailable or revoked")
+    guard()
+    raw_data = req.cert_data.strip()
+    if raw_data.startswith("-----BEGIN"):
+        raw_bytes = raw_data.encode("utf-8")
+    else:
+        import base64
+        try:
+            raw_bytes = base64.b64decode(raw_data)
+        except Exception:
+            raw_bytes = raw_data.encode("utf-8")
+    try:
+        res = adb_manager.prepare_ca_certificate(raw_bytes)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.post("/api/dast/cert/install")
+async def install_dast_ca_cert(req: CertInstallRequest, request: Request) -> dict[str, Any]:
+    """Stage CA certificate on target device (/data/local/tmp/<hash>.0) and provide install guide."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "cert", req.model_dump()):
+            raise HTTPException(403, "Certificate install scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.install_ca_certificate(req.serial, req.cert_pem, req.filename, guard=guard)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+@app.get("/api/dast/memory")
+async def get_dast_memory_procs(serial: str, package_name: str, request: Request) -> dict[str, Any]:
+    """Inspect live memory allocations (Java/Native heap, Graphics, Code, PSS) and processes for target package."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "memory", {"serial": serial, "package_name": package_name}):
+            raise HTTPException(403, "Memory inspection scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.get_package_memory_and_procs(serial, package_name, guard=guard)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
+class ForwardCreateRequest(BaseModel):
+    serial: str
+    local: str
+    remote: str
+    reverse: bool = False
+
+
+class ForwardRemoveRequest(BaseModel):
+    serial: str
+    local: Optional[str] = None
+    reverse: bool = False
+    all: bool = False
+
+
+class IntentDispatchRequest(BaseModel):
+    serial: str
+    target_type: str = "activity"
+    package_name: Optional[str] = None
+    component: Optional[str] = None
+    action: Optional[str] = None
+    data_uri: Optional[str] = None
+    mime_type: Optional[str] = None
+    categories: Optional[list[str]] = None
+    flags: Optional[list[str]] = None
+    extras: Optional[list[dict[str, str]]] = None
+    projection: Optional[str] = None
+    where: Optional[str] = None
+
+
+@app.get("/api/dast/forward")
+async def list_dast_forwards(serial: str, request: Request) -> dict[str, Any]:
+    """List active ADB forward and reverse socket tunnels."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "forward", {"serial": serial}):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.list_forwards(serial, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/forward")
+async def create_dast_forward(req: ForwardCreateRequest, request: Request) -> dict[str, Any]:
+    """Create a port forward (host -> device) or reverse port tunnel (device -> host)."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "forward", req.model_dump()):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.create_forward(req.serial, req.local, req.remote, reverse=req.reverse, guard=guard)
+    guard()
+    return res
+
+
+@app.delete("/api/dast/forward")
+async def remove_dast_forward(req: ForwardRemoveRequest, request: Request) -> dict[str, Any]:
+    """Remove a specific forward or all forwards."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "forward", req.model_dump()):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    if req.all:
+        res = await adb_manager.remove_all_forwards(req.serial, reverse=req.reverse, guard=guard)
+    else:
+        if not req.local:
+            raise HTTPException(400, "Local port specification is required to remove a forward")
+        res = await adb_manager.remove_forward(req.serial, req.local, reverse=req.reverse, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/intent/send")
+async def send_custom_intent(req: IntentDispatchRequest, request: Request) -> dict[str, Any]:
+    """Craft and dispatch arbitrary intents or query content providers."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "intent", req.model_dump()):
+            raise HTTPException(403, "Intent dispatch scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.dispatch_custom_intent(
+            serial=req.serial,
+            target_type=req.target_type,
+            component=req.component,
+            action=req.action,
+            data_uri=req.data_uri,
+            mime_type=req.mime_type,
+            categories=req.categories,
+            flags=req.flags,
+            extras=req.extras,
+            projection=req.projection,
+            where=req.where,
+            guard=guard,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     guard()
     return res
 

@@ -6,7 +6,8 @@ from mobileag.web.security import configured_list
 DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb','logcat',
                    'automation_observe','automation_execute','screenshot','storage','providers',
                    'deeplinks','memory','crawl','frida_status','fuzz','api_capture',
-                   'sockets','inspector','settings','proxy','packages','fs','clipboard'}
+                   'sockets','inspector','settings','proxy','packages','fs','clipboard',
+                   'device_posture','wireless','cert','forward','intent'}
 METHODS = {'GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'}
 
 def validate_policy(value):
@@ -31,6 +32,8 @@ def check_action(policy, action, data):
         return False
     if action == 'connect':
         return True  # Additional environment host:port check in middleware.
+    if action in {'wireless', 'cert'} and not data.get('serial'):
+        return True
     if action == 'api_capture':
         return bool(policy.get('origins') and policy.get('methods'))
     if data.get('serial') not in policy['devices']:

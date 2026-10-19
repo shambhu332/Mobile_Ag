@@ -310,3 +310,117 @@ def test_fs_and_clipboard_endpoints(client, monkeypatch):
         assert res.json()["status"] == "success"
 
 
+def test_device_posture_and_memory_endpoints(client, monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "emulator-5554")
+    repo = web.repository()
+    repo.save_policy({
+        "devices": ["emulator-5554"],
+        "packages": ["org.example.synthetic"],
+        "origins": ["http://localhost:8080"],
+        "methods": ["GET", "POST"],
+        "actions": ["device_posture", "memory"],
+    })
+
+    # 1. Device Posture
+    mock_posture = {
+        "serial": "emulator-5554",
+        "model": "Pixel 7 Pro",
+        "manufacturer": "Google",
+        "android_version": "14",
+        "sdk_level": "34",
+        "abi": "x86_64",
+        "security_patch": "2024-06-01",
+        "build_type": "userdebug",
+        "build_tags": "release-keys",
+        "debuggable": False,
+        "selinux": "Enforcing",
+        "is_rooted": False,
+        "is_permissive": False,
+        "posture_score": 95,
+        "findings": [],
+    }
+    with patch.object(web.adb_manager, "get_device_posture", AsyncMock(return_value=mock_posture)):
+        res = client.get("/api/dast/device/posture?serial=emulator-5554")
+        assert res.status_code == 200
+        assert res.json()["model"] == "Pixel 7 Pro"
+        assert res.json()["posture_score"] == 95
+
+    # 2. Package Memory & Procs
+    mock_mem = {
+        "package_name": "org.example.synthetic",
+        "pid": 4321,
+        "total_pss_kb": 54200,
+        "native_heap_kb": 18200,
+        "java_heap_kb": 12400,
+        "code_kb": 8900,
+        "stack_kb": 1200,
+        "graphics_kb": 4500,
+        "private_dirty_kb": 32000,
+        "active_processes": [{"pid": "4321", "name": "org.example.synthetic"}],
+        "is_running": True,
+    }
+    with patch.object(web.adb_manager, "get_package_memory_and_procs", AsyncMock(return_value=mock_mem)):
+        res = client.get("/api/dast/memory?serial=emulator-5554&package_name=org.example.synthetic")
+        assert res.status_code == 200
+        assert res.json()["pid"] == 4321
+        assert res.json()["total_pss_kb"] == 54200
+
+
+def test_wireless_and_cert_endpoints(client, monkeypatch):
+    monkeypatch.setenv("MOBILEAG_ALLOWED_DEVICES", "emulator-5554")
+    repo = web.repository()
+    repo.save_policy({
+        "devices": ["emulator-5554"],
+        "packages": ["org.example.synthetic"],
+        "origins": ["http://localhost:8080"],
+        "methods": ["GET", "POST"],
+        "actions": ["wireless", "cert"],
+    })
+
+    # 1. Wireless mDNS
+    with patch.object(web.adb_manager, "wireless_mdns_services", AsyncMock(return_value={"status": "success", "services": [{"name": "test-dev", "type": "_adb._tcp", "addr": "192.168.1.50:5555"}]})):
+        res = client.get("/api/dast/wireless/mdns")
+        assert res.status_code == 200
+        assert len(res.json()["services"]) == 1
+
+    # 2. Wireless pair
+    with patch.object(web.adb_manager, "wireless_pair", AsyncMock(return_value={"status": "success", "output": "Successfully paired"})):
+        res = client.post("/api/dast/wireless/pair", json={"addr": "192.168.1.50:37000", "code": "123456"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+    # 3. Wireless connect
+    with patch.object(web.adb_manager, "wireless_connect", AsyncMock(return_value={"status": "success", "output": "Connected to 192.168.1.50:5555"})):
+        res = client.post("/api/dast/wireless/connect", json={"addr": "192.168.1.50:5555"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+    # 4. Cert prepare
+    mock_prepared = {
+        "hash": "7af03122",
+        "android_filename": "7af03122.0",
+        "subject": "CN=Test CA",
+        "issuer": "CN=Test CA",
+        "dates": "notBefore=2024\nnotAfter=2034",
+        "pem": "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----",
+    }
+    with patch.object(web.adb_manager, "prepare_ca_certificate", return_value=mock_prepared):
+        res = client.post("/api/dast/cert/prepare", json={"cert_data": "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----"})
+        assert res.status_code == 200
+        assert res.json()["android_filename"] == "7af03122.0"
+
+    # 5. Cert install
+    mock_install = {
+        "status": "staged",
+        "serial": "emulator-5554",
+        "target_path": "/data/local/tmp/7af03122.0",
+        "filename": "7af03122.0",
+        "instructions": {"user_install": "am start..."},
+    }
+    with patch.object(web.adb_manager, "install_ca_certificate", AsyncMock(return_value=mock_install)):
+        res = client.post("/api/dast/cert/install", json={"serial": "emulator-5554", "cert_pem": "...", "filename": "7af03122.0"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "staged"
+
+
+

@@ -7,7 +7,7 @@ DYNAMIC_ACTIONS = {'connect','root','install','launch','deeplink','execute_adb',
                    'automation_observe','automation_execute','screenshot','storage','providers',
                    'deeplinks','memory','crawl','frida_status','fuzz','api_capture',
                    'sockets','inspector','settings','proxy','packages','fs','clipboard',
-                   'device_posture','wireless','cert'}
+                   'device_posture','wireless','cert','forward','intent'}
 METHODS = {'GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'}
 
 def validate_policy(value):

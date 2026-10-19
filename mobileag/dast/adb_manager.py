@@ -1059,4 +1059,169 @@ class ADBManager:
             "is_running": bool(pid or processes),
         }
 
+    async def list_forwards(self, serial: str, guard: Optional[callable] = None) -> dict[str, list[dict[str, str]]]:
+        """List active forward and reverse port tunnels."""
+        if guard:
+            guard()
+        fwd_code, fwd_out, _ = await self._exec_cmd(["-s", serial, "forward", "--list"], timeout=4.0)
+        if guard:
+            guard()
+        rev_code, rev_out, _ = await self._exec_cmd(["-s", serial, "reverse", "--list"], timeout=4.0)
+        if guard:
+            guard()
+        forwards = []
+        for line in fwd_out.decode("utf-8", errors="replace").splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 3 and parts[0] == serial:
+                forwards.append({"serial": parts[0], "local": parts[1], "remote": parts[2], "type": "forward"})
+        reverse = []
+        for line in rev_out.decode("utf-8", errors="replace").splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 3 and parts[0] == serial:
+                reverse.append({"serial": parts[0], "local": parts[1], "remote": parts[2], "type": "reverse"})
+        return {
+            "status": "success",
+            "serial": serial,
+            "forwards": forwards + reverse,
+            "forward_only": forwards,
+            "reverse_only": reverse,
+        }
+
+    async def create_forward(self, serial: str, local: str, remote: str, reverse: bool = False, guard: Optional[callable] = None) -> dict[str, Any]:
+        """Create a port forward or reverse port tunnel."""
+        if guard:
+            guard()
+        cmd = ["-s", serial, "reverse" if reverse else "forward", local, remote]
+        code, out, err = await self._exec_cmd(cmd, timeout=5.0)
+        if guard:
+            guard()
+        return {
+            "status": "success" if code == 0 else "error",
+            "type": "reverse" if reverse else "forward",
+            "serial": serial,
+            "local": local,
+            "remote": remote,
+            "code": code,
+            "output": out.decode("utf-8", errors="replace").strip(),
+            "error": err.decode("utf-8", errors="replace").strip(),
+        }
+
+    async def remove_forward(self, serial: str, local: str, reverse: bool = False, guard: Optional[callable] = None) -> dict[str, Any]:
+        """Remove a specific forward or reverse tunnel."""
+        if guard:
+            guard()
+        cmd = ["-s", serial, "reverse" if reverse else "forward", "--remove", local]
+        code, out, err = await self._exec_cmd(cmd, timeout=5.0)
+        if guard:
+            guard()
+        return {
+            "status": "success" if code == 0 else "error",
+            "serial": serial,
+            "local": local,
+            "reverse": reverse,
+            "output": out.decode("utf-8", errors="replace").strip(),
+        }
+
+    async def remove_all_forwards(self, serial: str, reverse: bool = False, guard: Optional[callable] = None) -> dict[str, Any]:
+        """Remove all forwards or reverse tunnels."""
+        if guard:
+            guard()
+        cmd = ["-s", serial, "reverse" if reverse else "forward", "--remove-all"]
+        code, out, err = await self._exec_cmd(cmd, timeout=5.0)
+        if guard:
+            guard()
+        return {
+            "status": "success" if code == 0 else "error",
+            "serial": serial,
+            "reverse": reverse,
+            "all": True,
+            "output": out.decode("utf-8", errors="replace").strip(),
+        }
+
+    async def dispatch_custom_intent(
+        self,
+        serial: str,
+        target_type: str,
+        component: Optional[str] = None,
+        action: Optional[str] = None,
+        data_uri: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        categories: Optional[list[str]] = None,
+        flags: Optional[list[str]] = None,
+        extras: Optional[list[dict[str, str]]] = None,
+        projection: Optional[str] = None,
+        where: Optional[str] = None,
+        guard: Optional[callable] = None,
+    ) -> dict[str, Any]:
+        """Craft and dispatch arbitrary intents or query content providers via ADB."""
+        if guard:
+            guard()
+
+        if target_type == "content_query":
+            uri = data_uri or component or ""
+            cmd = ["-s", serial, "shell", "content", "query", "--uri", uri]
+            if projection:
+                cmd.extend(["--projection", projection])
+            if where:
+                cmd.extend(["--where", where])
+        elif target_type == "content_delete":
+            uri = data_uri or component or ""
+            cmd = ["-s", serial, "shell", "content", "delete", "--uri", uri]
+            if where:
+                cmd.extend(["--where", where])
+        elif target_type in ("activity", "broadcast", "service"):
+            subcmd = "start" if target_type == "activity" else ("broadcast" if target_type == "broadcast" else "start-service")
+            cmd = ["-s", serial, "shell", "am", subcmd]
+            if component:
+                cmd.extend(["-n", component])
+            if action:
+                cmd.extend(["-a", action])
+            if data_uri:
+                cmd.extend(["-d", data_uri])
+            if mime_type:
+                cmd.extend(["-t", mime_type])
+            if categories:
+                for cat in categories:
+                    if cat:
+                        cmd.extend(["-c", cat])
+            if flags:
+                for flg in flags:
+                    if flg:
+                        cmd.extend(["-f", flg])
+            if extras:
+                for extra in extras:
+                    etype = extra.get("type", "string")
+                    k = extra.get("key", "")
+                    v = extra.get("value", "")
+                    if not k:
+                        continue
+                    if etype in ("bool", "boolean"):
+                        cmd.extend(["--ez", k, str(v).lower()])
+                    elif etype in ("int", "integer"):
+                        cmd.extend(["--ei", k, str(v)])
+                    elif etype == "long":
+                        cmd.extend(["--el", k, str(v)])
+                    elif etype == "float":
+                        cmd.extend(["--ef", k, str(v)])
+                    else:
+                        cmd.extend(["--es", k, str(v)])
+        else:
+            raise ValueError(f"Unknown target type: {target_type}")
+
+        code, out, err = await self._exec_cmd(cmd, timeout=8.0)
+        if guard:
+            guard()
+        out_text = out.decode("utf-8", errors="replace").strip()
+        err_text = err.decode("utf-8", errors="replace").strip()
+        crashed = "Exception" in out_text or "Error" in out_text or "CRASH" in out_text
+        return {
+            "status": "success" if code == 0 else "error",
+            "code": code,
+            "output": out_text or err_text,
+            "raw_stdout": out_text,
+            "raw_stderr": err_text,
+            "crashed": crashed,
+            "command": " ".join(cmd),
+        }
+
 

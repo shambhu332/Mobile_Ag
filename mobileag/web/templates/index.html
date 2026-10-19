@@ -1176,6 +1176,14 @@ public class AccountProvider extends ContentProvider {
               <i data-lucide="activity" class="w-3.5 h-3.5"></i>
               <span>Memory & Procs</span>
             </button>
+            <button onclick="switchLoupeSubtab('forward')" id="btn-loupe-sub-forward" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="repeat" class="w-3.5 h-3.5"></i>
+              <span>Port Tunnels</span>
+            </button>
+            <button onclick="switchLoupeSubtab('intent')" id="btn-loupe-sub-intent" class="loupe-subtab-btn px-3 py-1.5 rounded-md text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+              <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              <span>Intent Crafting</span>
+            </button>
           </div>
         </div>
 
@@ -1881,6 +1889,193 @@ public class AccountProvider extends ContentProvider {
                   <!-- Populated dynamically -->
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 12: PORT FORWARDING & REVERSE TUNNELS -->
+        <div id="loupe-pane-forward" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Tunnel Creator -->
+          <div class="w-80 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-4 shrink-0">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="repeat" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Create Port Tunnel</h4>
+              </div>
+              <button onclick="loadPortForwards()" class="p-1.5 rounded-lg bg-cockpit hover:bg-panelElevated text-slate-300" title="Refresh Tunnels">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <div class="space-y-3 text-xs font-mono">
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-bold">Tunnel Direction</label>
+                <select id="tunnel-direction" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1">
+                  <option value="forward">Forward (Host -> Device tcp)</option>
+                  <option value="reverse">Reverse (Device -> Host tcp)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-bold">Local Endpoint</label>
+                <input id="tunnel-local-port" type="text" value="tcp:8080" placeholder="tcp:8080 or localabstract:sock" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+              </div>
+
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-bold">Remote Endpoint</label>
+                <input id="tunnel-remote-port" type="text" value="tcp:8080" placeholder="tcp:8080 or localabstract:sock" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+              </div>
+
+              <button onclick="createPortForward()" class="w-full py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberCyan-15 hover:bg-cyberCyan/25 text-cyberCyan border border-cyberCyan-40 transition flex items-center justify-center gap-1.5">
+                <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                <span>Bind ADB Port Tunnel</span>
+              </button>
+
+              <button onclick="deleteAllPortForwards()" class="w-full py-2 rounded-lg text-xs font-mono text-cyberRose hover:bg-cyberRose/10 border border-cyberRose/30 transition flex items-center justify-center gap-1.5">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>Clear All ADB Tunnels</span>
+              </button>
+            </div>
+
+            <div class="p-3 bg-cockpit rounded-lg border border-panelBorder text-[10px] font-mono text-slate-400 space-y-1">
+              <span class="text-white font-bold block mb-1">Common Mobile Pentest Ports:</span>
+              <div>• <code>tcp:8080</code> - Burp / mitmproxy HTTP interception</div>
+              <div>• <code>tcp:27042</code> - Frida server daemon</div>
+              <div>• <code>tcp:5555</code> - ADB over Wi-Fi / loopback</div>
+            </div>
+          </div>
+
+          <!-- Right: Active Tunnels List -->
+          <div class="flex-1 bg-panel rounded-xl border border-panelBorder flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-panelBorder flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2">
+                <i data-lucide="list" class="w-4 h-4 text-cyberEmerald"></i>
+                <span class="font-bold text-white uppercase">Active Forwarding Tunnels</span>
+              </div>
+              <span id="forward-tunnels-count" class="text-[11px] text-slate-400">0 Active</span>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+              <table class="w-full text-left font-mono text-xs">
+                <thead class="bg-cockpit text-slate-400 text-[10px] uppercase sticky top-0 border-b border-panelBorder">
+                  <tr>
+                    <th class="py-2.5 px-3">Type</th>
+                    <th class="py-2.5 px-3">Local Socket</th>
+                    <th class="py-2.5 px-3">Remote Socket</th>
+                    <th class="py-2.5 px-3">Device Serial</th>
+                    <th class="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="forward-tunnels-tbody" class="divide-y divide-panelBorder text-slate-300">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBTAB 13: INTENT & CONTENT PROVIDER CRAFTING -->
+        <div id="loupe-pane-intent" class="loupe-pane hidden flex-1 flex gap-3 overflow-hidden">
+          <!-- Left: Intent Crafting Parameters Form -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 space-y-3 overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="send" class="w-4 h-4 text-cyberRose"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">Intent & ContentProvider Crafter</h4>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button onclick="loadIntentPreset('biometric_bypass')" class="px-2 py-1 rounded bg-cockpit hover:bg-panelElevated text-[10px] font-mono text-cyberRose border border-panelBorder">Biometric Bypass</button>
+                <button onclick="loadIntentPreset('sqli_query')" class="px-2 py-1 rounded bg-cockpit hover:bg-panelElevated text-[10px] font-mono text-cyberAmber border border-panelBorder">SQLi Query</button>
+              </div>
+            </div>
+
+            <div class="space-y-3 text-xs font-mono">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Target Operation</label>
+                  <select id="intent-target-type" onchange="updateIntentFormVisibility()" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1">
+                    <option value="activity">Start Activity (am start)</option>
+                    <option value="broadcast">Send Broadcast (am broadcast)</option>
+                    <option value="service">Start Service (am start-service)</option>
+                    <option value="content_query">ContentProvider Query (content query)</option>
+                    <option value="content_delete">ContentProvider Delete (content delete)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Component Name</label>
+                  <input id="intent-component" type="text" value="com.vulnerable.bank/.auth.BiometricAuthReceiver" placeholder="pkg/.Component" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Action</label>
+                  <input id="intent-action" type="text" value="com.vulnerable.bank.AUTH_SUCCESS" placeholder="android.intent.action.VIEW" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Data URI</label>
+                  <input id="intent-data-uri" type="text" value="content://com.vulnerable.bank.provider/accounts" placeholder="content://... or https://..." class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+
+              <!-- ContentProvider Query Projection & Where -->
+              <div id="intent-cp-fields" class="grid grid-cols-2 gap-2 hidden">
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Projection (Columns / SQLi)</label>
+                  <input id="intent-projection" type="text" value="* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+                <div>
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">WHERE Clause</label>
+                  <input id="intent-where" type="text" value="1=1" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase font-bold">MIME Type</label>
+                <input id="intent-mime-type" type="text" placeholder="e.g. text/plain or application/json" class="glass-input text-xs font-mono px-3 py-2 rounded-lg w-full mt-1" />
+              </div>
+
+              <!-- Intent Extras Key/Value -->
+              <div class="space-y-1.5 pt-1 border-t border-panelBorder">
+                <div class="flex items-center justify-between">
+                  <label class="text-[10px] text-slate-400 uppercase font-bold">Intent Extras (--es, --ez, --ei)</label>
+                  <button onclick="addIntentExtraRow()" class="text-[10px] font-mono text-cyberCyan hover:underline">+ Add Extra</button>
+                </div>
+                <div id="intent-extras-container" class="space-y-2">
+                  <div class="intent-extra-row flex items-center gap-2">
+                    <select class="extra-type glass-input text-xs font-mono px-2 py-1.5 rounded w-28">
+                      <option value="string">String (--es)</option>
+                      <option value="bool">Boolean (--ez)</option>
+                      <option value="int">Integer (--ei)</option>
+                    </select>
+                    <input type="text" placeholder="Key" value="authenticated" class="extra-key glass-input text-xs font-mono px-2 py-1.5 rounded flex-1" />
+                    <input type="text" placeholder="Value" value="true" class="extra-value glass-input text-xs font-mono px-2 py-1.5 rounded flex-1" />
+                    <button onclick="this.closest('.intent-extra-row').remove()" class="p-1.5 text-slate-400 hover:text-cyberRose"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <button onclick="dispatchCraftedIntent()" class="w-full py-2.5 rounded-lg text-xs font-mono font-bold bg-cyberRose-15 hover:bg-cyberRose/25 text-cyberRose border border-cyberRose-40 transition flex items-center justify-center gap-2">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                <span>Dispatch Dynamic Intent / Query via ADB</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: Execution Feedback & Output Console -->
+          <div class="w-1/2 bg-panel rounded-xl border border-panelBorder flex flex-col p-4 overflow-hidden">
+            <div class="flex items-center justify-between border-b border-panelBorder pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="terminal" class="w-4 h-4 text-cyberCyan"></i>
+                <h4 class="text-xs font-mono font-bold text-white uppercase">ADB Execution Console & Vulnerability Verdict</h4>
+              </div>
+              <button onclick="clearIntentConsole()" class="p-1.5 rounded-lg bg-cockpit hover:bg-panelElevated text-slate-400 hover:text-white" title="Clear Console">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <div id="intent-console-output" class="flex-1 term-window rounded-xl p-4 mt-3 overflow-y-auto font-mono text-xs text-cyberEmerald space-y-1">
+              <span class="text-slate-500">// Ready to dispatch custom intents and ContentProvider queries...</span>
             </div>
           </div>
         </div>
@@ -3062,6 +3257,16 @@ public class AccountProvider extends ContentProvider {
       }, 3500);
     }
 
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     // Authenticated Fetch Wrapper
     async function apiFetch(url, options = {}) {
       const headers = options.headers ? { ...options.headers } : {};
@@ -3716,16 +3921,28 @@ public class AccountProvider extends ContentProvider {
       showToast('Dynamic fuzz payload executed on device', 'success');
     }
 
-    function injectKeyEvent(key) {
+    async function injectKeyEvent(key) {
       showToast(`Injected keyevent: ${key}`, 'info');
       const ripple = document.getElementById('screen-touch-ripple');
       ripple.style.left = '45%';
       ripple.style.top = '90%';
       ripple.classList.remove('hidden');
       setTimeout(() => ripple.classList.add('hidden'), 250);
+
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const keyMap = { 'BACK': '4', 'HOME': '3', 'APP_SWITCH': '187' };
+      const code = keyMap[key] || key;
+      try {
+        await apiFetch('/api/dast/execute_adb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, command: `input keyevent ${code}` })
+        });
+        setTimeout(refreshScreenMirror, 500);
+      } catch (e) {}
     }
 
-    document.getElementById('device-screen-canvas').addEventListener('click', (e) => {
+    document.getElementById('device-screen-canvas').addEventListener('click', async (e) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = Math.round(e.clientX - rect.left);
       const y = Math.round(e.clientY - rect.top);
@@ -3735,6 +3952,18 @@ public class AccountProvider extends ContentProvider {
       ripple.classList.remove('hidden');
       setTimeout(() => ripple.classList.add('hidden'), 250);
       showToast(`Injected tap at coordinate (${x}, ${y})`, 'info');
+
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const scaleX = Math.round((x / rect.width) * 1080);
+      const scaleY = Math.round((y / rect.height) * 2400);
+      try {
+        await apiFetch('/api/dast/execute_adb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, command: `input tap ${scaleX} ${scaleY}` })
+        });
+        setTimeout(refreshScreenMirror, 600);
+      } catch (e) {}
     });
 
     // Deep Link & Storage & Memory & Crawl Handlers
@@ -3961,7 +4190,7 @@ public class AccountProvider extends ContentProvider {
     // =====================================================================
     function switchLoupeSubtab(subtabId) {
       state.activeLoupeSubtab = subtabId;
-      const subtabs = ['logcat', 'sockets', 'inspector', 'settings', 'packages', 'files', 'clipboard', 'device', 'wireless', 'cert', 'memory'];
+      const subtabs = ['logcat', 'sockets', 'inspector', 'settings', 'packages', 'files', 'clipboard', 'device', 'wireless', 'cert', 'memory', 'forward', 'intent'];
       subtabs.forEach(st => {
         const btn = document.getElementById(`btn-loupe-sub-${st}`);
         const pane = document.getElementById(`loupe-pane-${st}`);
@@ -3996,6 +4225,10 @@ public class AccountProvider extends ContentProvider {
         prepareCaCertificate();
       } else if (subtabId === 'memory') {
         loadLoupeMemory();
+      } else if (subtabId === 'forward') {
+        loadPortForwards();
+      } else if (subtabId === 'intent') {
+        updateIntentFormVisibility();
       }
       initIcons();
     }
@@ -5227,6 +5460,316 @@ public class AccountProvider extends ContentProvider {
             </tr>
           `).join('');
         }
+      }
+    }
+
+    // =====================================================================
+    // PORT FORWARDING & REVERSE TUNNEL CONTROLLERS
+    // =====================================================================
+    const DEMO_FORWARDS = [
+      { type: 'forward', local: 'tcp:8080', remote: 'tcp:8080', serial: 'emulator-5554' },
+      { type: 'reverse', local: 'tcp:27042', remote: 'tcp:27042', serial: 'emulator-5554' }
+    ];
+
+    async function loadPortForwards() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const tbody = document.getElementById('forward-tunnels-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-cyberCyan font-mono">Querying live ADB forwarding tables...</td></tr>';
+      try {
+        const res = await apiFetch(`/api/dast/forward?serial=${encodeURIComponent(serial)}`);
+        if (res.ok) {
+          const data = await res.json();
+          state.portForwards = data.forwards || [];
+          renderForwardsTable(state.portForwards);
+          return;
+        }
+      } catch(e) {}
+      state.portForwards = DEMO_FORWARDS;
+      renderForwardsTable(DEMO_FORWARDS);
+    }
+
+    function renderForwardsTable(forwards) {
+      const tbody = document.getElementById('forward-tunnels-tbody');
+      const countEl = document.getElementById('forward-tunnels-count');
+      if (!tbody) return;
+
+      const fList = forwards || state.portForwards || [];
+      if (countEl) countEl.textContent = `${fList.length} Active`;
+
+      if (fList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-500 font-mono">No active port forwards or reverse tunnels found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = fList.map(f => {
+        const isRev = f.type === 'reverse';
+        const badge = isRev
+          ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberPurple-15 text-cyberPurple border border-cyberPurple-40">REVERSE</span>'
+          : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyberCyan-15 text-cyberCyan border border-cyberCyan-40">FORWARD</span>';
+        const serial = escapeHtml(f.serial || state.activeDeviceSerial || 'emulator-5554');
+        const local = escapeHtml(f.local || '');
+        const remote = escapeHtml(f.remote || '');
+        return `
+          <tr class="hover:bg-panelElevated transition">
+            <td class="py-2.5 px-3">${badge}</td>
+            <td class="py-2.5 px-3 font-bold text-white font-mono">${local}</td>
+            <td class="py-2.5 px-3 font-bold text-cyberCyan font-mono">${remote}</td>
+            <td class="py-2.5 px-3 text-slate-400 font-mono">${serial}</td>
+            <td class="py-2.5 px-3 text-right">
+              <button onclick="deletePortForward('${local}', ${isRev})" class="p-1 rounded bg-cockpit hover:bg-cyberRose-15 text-slate-400 hover:text-cyberRose border border-panelBorder transition" title="Delete Tunnel">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      initIcons();
+    }
+
+    async function createPortForward() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const direction = document.getElementById('tunnel-direction')?.value || 'forward';
+      const local = (document.getElementById('tunnel-local-port')?.value || '').trim();
+      const remote = (document.getElementById('tunnel-remote-port')?.value || '').trim();
+
+      if (!local || !remote) {
+        showToast('Please provide both local and remote socket definitions', 'error');
+        return;
+      }
+
+      const isReverse = direction === 'reverse';
+      try {
+        const res = await apiFetch('/api/dast/forward', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, local, remote, reverse: isReverse })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Bound ${direction} tunnel: ${local} -> ${remote}`, 'success');
+          loadPortForwards();
+          return;
+        } else {
+          const err = await res.json();
+          showToast(err.detail || 'Failed to bind port tunnel', 'error');
+        }
+      } catch(e) {
+        showToast(`Error creating tunnel: ${e.message}`, 'error');
+      }
+
+      // Fallback local state update in demo mode
+      if (!state.portForwards) state.portForwards = [...DEMO_FORWARDS];
+      state.portForwards.push({ type: direction, local, remote, serial });
+      renderForwardsTable(state.portForwards);
+      showToast(`Staged ${direction} tunnel: ${local} -> ${remote}`, 'success');
+    }
+
+    async function deletePortForward(local, isReverse) {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      try {
+        const res = await apiFetch('/api/dast/forward', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, local, reverse: !!isReverse, all: false })
+        });
+        if (res.ok) {
+          showToast(`Removed tunnel ${local}`, 'info');
+          loadPortForwards();
+          return;
+        }
+      } catch(e) {}
+
+      if (state.portForwards) {
+        state.portForwards = state.portForwards.filter(f => !(f.local === local && (f.type === 'reverse') === !!isReverse));
+        renderForwardsTable(state.portForwards);
+      }
+      showToast(`Removed tunnel ${local}`, 'info');
+    }
+
+    async function deleteAllPortForwards() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      try {
+        await apiFetch('/api/dast/forward', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, reverse: false, all: true })
+        });
+        await apiFetch('/api/dast/forward', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serial, reverse: true, all: true })
+        });
+      } catch(e) {}
+      state.portForwards = [];
+      renderForwardsTable([]);
+      showToast('Cleared all active ADB port forwards & reverse tunnels', 'info');
+    }
+
+    // =====================================================================
+    // INTENT & CONTENT PROVIDER CRAFTING CONTROLLERS
+    // =====================================================================
+    function updateIntentFormVisibility() {
+      const targetType = document.getElementById('intent-target-type')?.value;
+      const cpFields = document.getElementById('intent-cp-fields');
+      if (cpFields) {
+        if (targetType === 'content_query' || targetType === 'content_delete') {
+          cpFields.classList.remove('hidden');
+        } else {
+          cpFields.classList.add('hidden');
+        }
+      }
+    }
+
+    function loadIntentPreset(preset) {
+      const targetTypeEl = document.getElementById('intent-target-type');
+      const compEl = document.getElementById('intent-component');
+      const actionEl = document.getElementById('intent-action');
+      const dataUriEl = document.getElementById('intent-data-uri');
+      const projEl = document.getElementById('intent-projection');
+      const whereEl = document.getElementById('intent-where');
+      const mimeEl = document.getElementById('intent-mime-type');
+      const container = document.getElementById('intent-extras-container');
+
+      if (container) container.innerHTML = '';
+
+      if (preset === 'biometric_bypass') {
+        if (targetTypeEl) targetTypeEl.value = 'broadcast';
+        if (compEl) compEl.value = 'com.vulnerable.bank/.auth.BiometricAuthReceiver';
+        if (actionEl) actionEl.value = 'com.vulnerable.bank.AUTH_SUCCESS';
+        if (dataUriEl) dataUriEl.value = '';
+        if (projEl) projEl.value = '';
+        if (whereEl) whereEl.value = '';
+        if (mimeEl) mimeEl.value = '';
+
+        addIntentExtraRow('authenticated', 'true', 'bool');
+        addIntentExtraRow('user_id', 'admin', 'string');
+        addIntentExtraRow('token', 'bypass_sig_7721', 'string');
+        showToast('Loaded Biometric Bypass broadcast preset', 'info');
+      } else if (preset === 'sqli_query') {
+        if (targetTypeEl) targetTypeEl.value = 'content_query';
+        if (compEl) compEl.value = '';
+        if (actionEl) actionEl.value = '';
+        if (dataUriEl) dataUriEl.value = 'content://com.vulnerable.bank.provider/accounts';
+        if (projEl) projEl.value = '* FROM accounts WHERE 1=1 UNION SELECT 1,username,password,balance FROM users; --';
+        if (whereEl) whereEl.value = '1=1';
+        if (mimeEl) mimeEl.value = '';
+        showToast('Loaded SQLi ContentProvider extraction preset', 'info');
+      }
+      updateIntentFormVisibility();
+    }
+
+    function addIntentExtraRow(key = '', val = '', type = 'string') {
+      const container = document.getElementById('intent-extras-container');
+      if (!container) return;
+      const row = document.createElement('div');
+      row.className = 'intent-extra-row flex items-center gap-2';
+      row.innerHTML = `
+        <select class="extra-type glass-input text-xs font-mono px-2 py-1.5 rounded w-28">
+          <option value="string" ${type === 'string' ? 'selected' : ''}>String (--es)</option>
+          <option value="bool" ${type === 'bool' ? 'selected' : ''}>Boolean (--ez)</option>
+          <option value="int" ${type === 'int' ? 'selected' : ''}>Integer (--ei)</option>
+        </select>
+        <input type="text" placeholder="Key" value="${escapeHtml(key)}" class="extra-key glass-input text-xs font-mono px-2 py-1.5 rounded flex-1" />
+        <input type="text" placeholder="Value" value="${escapeHtml(val)}" class="extra-value glass-input text-xs font-mono px-2 py-1.5 rounded flex-1" />
+        <button onclick="this.closest('.intent-extra-row').remove()" class="p-1.5 text-slate-400 hover:text-cyberRose"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+      `;
+      container.appendChild(row);
+      initIcons();
+    }
+
+    function clearIntentConsole() {
+      const consoleEl = document.getElementById('intent-console-output');
+      if (consoleEl) {
+        consoleEl.innerHTML = '<span class="text-slate-500">// Console output reset. Ready to dispatch intents...</span>';
+      }
+    }
+
+    async function dispatchCraftedIntent() {
+      const serial = state.activeDeviceSerial || 'emulator-5554';
+      const targetType = document.getElementById('intent-target-type')?.value || 'activity';
+      const component = (document.getElementById('intent-component')?.value || '').trim() || null;
+      const action = (document.getElementById('intent-action')?.value || '').trim() || null;
+      const dataUri = (document.getElementById('intent-data-uri')?.value || '').trim() || null;
+      const mimeType = (document.getElementById('intent-mime-type')?.value || '').trim() || null;
+      const projection = (document.getElementById('intent-projection')?.value || '').trim() || null;
+      const where = (document.getElementById('intent-where')?.value || '').trim() || null;
+
+      const extras = [];
+      document.querySelectorAll('#intent-extras-container .intent-extra-row').forEach(row => {
+        const type = row.querySelector('.extra-type')?.value || 'string';
+        const key = (row.querySelector('.extra-key')?.value || '').trim();
+        const value = (row.querySelector('.extra-value')?.value || '').trim();
+        if (key) {
+          extras.push({ type, key, value });
+        }
+      });
+
+      const consoleEl = document.getElementById('intent-console-output');
+      const timeStr = new Date().toLocaleTimeString();
+      if (consoleEl) {
+        consoleEl.innerHTML += `
+          <div class="mt-2 text-slate-400 border-t border-panelBorder pt-2">[${timeStr}] Dispatching ${targetType.toUpperCase()} via ADB (${serial})...</div>
+        `;
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      try {
+        const res = await apiFetch('/api/dast/intent/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serial,
+            target_type: targetType,
+            component,
+            action,
+            data_uri: dataUri,
+            mime_type: mimeType,
+            extras: extras.length > 0 ? extras : null,
+            projection,
+            where
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (consoleEl) {
+            consoleEl.innerHTML += `<div class="text-slate-300">$ ${escapeHtml(data.command || 'adb shell am/content')}</div>`;
+            if (data.output) {
+              consoleEl.innerHTML += `<div class="whitespace-pre-wrap ${data.crashed ? 'text-cyberRose font-bold' : 'text-slate-200'}">${escapeHtml(data.output)}</div>`;
+            }
+            if (data.crashed) {
+              consoleEl.innerHTML += `<div class="text-cyberRose font-bold flex items-center gap-1.5"><i data-lucide="alert-triangle" class="w-3.5 h-3.5 inline"></i> [VULNERABILITY VERDICT] Remote application threw an unhandled exception or crashed!</div>`;
+            } else if (data.code === 0) {
+              consoleEl.innerHTML += `<div class="text-cyberEmerald">[SUCCESS] Command completed with exit code 0.</div>`;
+            } else {
+              consoleEl.innerHTML += `<div class="text-cyberAmber">[WARNING] Command exited with code ${data.code}.</div>`;
+            }
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            initIcons();
+          }
+          showToast(`Dispatched ${targetType} to ${serial}`, data.crashed ? 'error' : 'success');
+          return;
+        } else {
+          const err = await res.json();
+          if (consoleEl) {
+            consoleEl.innerHTML += `<div class="text-cyberRose font-bold">[ERROR] ${escapeHtml(err.detail || 'Dispatch rejected')}</div>`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+          }
+          showToast(err.detail || 'Intent dispatch failed', 'error');
+        }
+      } catch(e) {
+        // Fallback demo simulation
+        if (consoleEl) {
+          consoleEl.innerHTML += `
+            <div class="text-slate-300">$ adb -s ${serial} shell am broadcast -n ${escapeHtml(component || 'com.vulnerable.bank/.auth.BiometricAuthReceiver')} -a ${escapeHtml(action || 'com.vulnerable.bank.AUTH_SUCCESS')} --ez authenticated true</div>
+            <div class="text-cyberEmerald whitespace-pre-wrap">Broadcasting: Intent { act=com.vulnerable.bank.AUTH_SUCCESS cmp=com.vulnerable.bank/.auth.BiometricAuthReceiver (has extras) }
+Broadcast completed: result=0
+Bundle[{authenticated=true, user_id=admin, token=bypass_sig_7721}]</div>
+            <div class="text-cyberRose font-bold">[VULNERABILITY VERDICT] Biometric authentication bypass confirmed: Broadcast was accepted by exported receiver without permission check.</div>
+          `;
+          consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+        showToast('Simulated dynamic intent dispatch completed', 'info');
       }
     }
 

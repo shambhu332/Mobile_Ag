@@ -3119,6 +3119,116 @@ async def get_dast_memory_procs(serial: str, package_name: str, request: Request
     return res
 
 
+class ForwardCreateRequest(BaseModel):
+    serial: str
+    local: str
+    remote: str
+    reverse: bool = False
+
+
+class ForwardRemoveRequest(BaseModel):
+    serial: str
+    local: Optional[str] = None
+    reverse: bool = False
+    all: bool = False
+
+
+class IntentDispatchRequest(BaseModel):
+    serial: str
+    target_type: str = "activity"
+    package_name: Optional[str] = None
+    component: Optional[str] = None
+    action: Optional[str] = None
+    data_uri: Optional[str] = None
+    mime_type: Optional[str] = None
+    categories: Optional[list[str]] = None
+    flags: Optional[list[str]] = None
+    extras: Optional[list[dict[str, str]]] = None
+    projection: Optional[str] = None
+    where: Optional[str] = None
+
+
+@app.get("/api/dast/forward")
+async def list_dast_forwards(serial: str, request: Request) -> dict[str, Any]:
+    """List active ADB forward and reverse socket tunnels."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(serial) or not check_action(repository().get_policy(), "forward", {"serial": serial}):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.list_forwards(serial, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/forward")
+async def create_dast_forward(req: ForwardCreateRequest, request: Request) -> dict[str, Any]:
+    """Create a port forward (host -> device) or reverse port tunnel (device -> host)."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "forward", req.model_dump()):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    res = await adb_manager.create_forward(req.serial, req.local, req.remote, reverse=req.reverse, guard=guard)
+    guard()
+    return res
+
+
+@app.delete("/api/dast/forward")
+async def remove_dast_forward(req: ForwardRemoveRequest, request: Request) -> dict[str, Any]:
+    """Remove a specific forward or all forwards."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "forward", req.model_dump()):
+            raise HTTPException(403, "Port forwarding scope is unavailable or revoked")
+    guard()
+    if req.all:
+        res = await adb_manager.remove_all_forwards(req.serial, reverse=req.reverse, guard=guard)
+    else:
+        if not req.local:
+            raise HTTPException(400, "Local port specification is required to remove a forward")
+        res = await adb_manager.remove_forward(req.serial, req.local, reverse=req.reverse, guard=guard)
+    guard()
+    return res
+
+
+@app.post("/api/dast/intent/send")
+async def send_custom_intent(req: IntentDispatchRequest, request: Request) -> dict[str, Any]:
+    """Craft and dispatch arbitrary intents or query content providers."""
+    require_current_session(request)
+    def guard():
+        from mobileag.web.policy import check_action
+        require_current_session(request)
+        if not check_device(req.serial) or not check_action(repository().get_policy(), "intent", req.model_dump()):
+            raise HTTPException(403, "Intent dispatch scope is unavailable or revoked")
+    guard()
+    try:
+        res = await adb_manager.dispatch_custom_intent(
+            serial=req.serial,
+            target_type=req.target_type,
+            component=req.component,
+            action=req.action,
+            data_uri=req.data_uri,
+            mime_type=req.mime_type,
+            categories=req.categories,
+            flags=req.flags,
+            extras=req.extras,
+            projection=req.projection,
+            where=req.where,
+            guard=guard,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    guard()
+    return res
+
+
 @app.post("/api/analysis/taint")
 async def analyze_taint(req: TaintAnalyzeRequest) -> dict[str, Any]:
     """Find potential straight-line source-to-sink flows; results require manual validation."""

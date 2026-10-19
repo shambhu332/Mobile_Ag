@@ -110,7 +110,19 @@ class SecurityMiddleware:
             import json
             req = Request(scope, limited_receive)
             try:
-                data = await req.json() if scope['method'] == 'POST' else dict(req.query_params)
+                has_body = scope['method'] in ('POST', 'PUT', 'DELETE', 'PATCH')
+                if has_body:
+                    raw_body = await req.body()
+                    if raw_body and raw_body.strip():
+                        try:
+                            data = json.loads(raw_body)
+                        except Exception:
+                            data = dict(req.query_params)
+                    else:
+                        data = dict(req.query_params)
+                else:
+                    raw_body = b''
+                    data = dict(req.query_params)
                 if not isinstance(data, dict):
                     raise ValueError('Invalid body')
                 if path.startswith('/api/dast/wireless/'):
@@ -142,6 +154,10 @@ class SecurityMiddleware:
                     action = 'cert'
                 elif action.startswith('memory'):
                     action = 'memory'
+                elif action.startswith('forward'):
+                    action = 'forward'
+                elif action.startswith('intent'):
+                    action = 'intent'
                 if not check_action(policy, action, data):
                     return await JSONResponse({'detail':'Device action is not approved in the UI scope policy'}, status_code=403)(scope, receive, send)
                 package = data.get('package_name')
@@ -151,7 +167,7 @@ class SecurityMiddleware:
                 return await JSONResponse({'detail': exc.detail}, status_code=exc.status_code)(scope, receive, send)
             except (ValueError, TypeError):
                 return await JSONResponse({'detail':'Invalid request'}, status_code=400)(scope, receive, send)
-            body = await req.body() if scope['method'] == 'POST' else b''
+            body = raw_body
             delivered = False
             async def replay():
                 nonlocal delivered

@@ -51,7 +51,7 @@ async def lifespan(application):
 
 from fastapi import Request, BackgroundTasks, Query, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, model_validator
@@ -120,6 +120,47 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 MAX_LEGACY_IMPORT_ENTRIES = 5_000
 MAX_LEGACY_IMPORT_FILE_BYTES = 16 * 1024 * 1024
 MAX_LEGACY_IMPORT_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_SCAN_GUIDES = 100
+MAX_SCAN_GUIDE_BYTES = 64 * 1024
+MAX_SCAN_GUIDE_TOTAL_BYTES = 2 * 1024 * 1024
+
+
+def attach_review_guides(findings: Any, guides: Any) -> dict[str, int]:
+    """Attach bounded, generated review-only guides to their exact findings."""
+    if not isinstance(findings, list):
+        return {'generated': 0, 'attached': 0, 'omitted_by_limit': 0, 'unmatched': 0}
+    candidates = [finding for finding in findings if isinstance(finding, dict)]
+    by_id = {str(finding['id']): finding for finding in candidates if finding.get('id') is not None}
+    if not isinstance(guides, list):
+        guides = []
+    generated = len(guides)
+    attached = omitted = unmatched = total_bytes = 0
+    seen = set()
+    for guide in guides[:MAX_SCAN_GUIDES]:
+        if not isinstance(guide, dict) or guide.get('finding_id') is None:
+            unmatched += 1
+            continue
+        finding_id = str(guide['finding_id'])
+        finding = by_id.get(finding_id)
+        text = guide.get('poc_guide')
+        if finding is None or finding_id in seen or not isinstance(text, str):
+            unmatched += 1
+            continue
+        seen.add(finding_id)
+        text = redact(text)
+        size = len(text.encode('utf-8')) if isinstance(text, str) else MAX_SCAN_GUIDE_BYTES + 1
+        if (not isinstance(text, str) or size > MAX_SCAN_GUIDE_BYTES or
+                total_bytes + size > MAX_SCAN_GUIDE_TOTAL_BYTES):
+            finding['poc_guide_status'] = 'omitted_size_limit'
+            omitted += 1
+            continue
+        finding['poc_guide'] = text
+        finding['poc_guide_status'] = 'generated_review_only'
+        total_bytes += size
+        attached += 1
+    omitted += max(0, generated - MAX_SCAN_GUIDES)
+    return {'generated': generated, 'attached': attached,
+            'omitted_by_limit': omitted, 'unmatched': unmatched}
 
 app = FastAPI(
     title="MobileAg API",
@@ -140,14 +181,25 @@ if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
-@app.api_route("/ui", methods=["GET", "HEAD"], response_class=HTMLResponse)
-async def get_dashboard() -> HTMLResponse:
-    """Serve the single-page MobileAg Enterprise Dashboard."""
-    index_path = TEMPLATES_DIR / "index.html"
-    if not index_path.exists():
-        raise HTTPException(status_code=404, detail="Dashboard template not found.")
-    return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+@app.get("/")
+async def get_dashboard() -> Response:
+    """Expose a small API landing response; the optional Studio is served at /ui."""
+    if getattr(app.state, "studio_enabled", False):
+        return RedirectResponse("/ui", status_code=307)
+    return JSONResponse({
+        "service": "MobileAg API",
+        "browser_ui": "disabled",
+        "enable": "python -m mobileag.cli web --ui",
+    })
+
+
+@app.get("/ui", response_class=HTMLResponse)
+async def get_studio() -> Response:
+    """Serve the evidence-first browser Studio only when explicitly enabled."""
+    if not getattr(app.state, "studio_enabled", False):
+        raise HTTPException(status_code=404, detail="Browser Studio is disabled. Restart with --ui to enable it.")
+    from mobileag.studio import ASSETS
+    return FileResponse(ASSETS / "index.html", media_type="text/html")
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation_error(request: Request, exc: RequestValidationError):
@@ -3564,6 +3616,8 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["findings"] = redact(state.get("filtered_findings", []))
         for finding in scan["findings"]:
             finding["status"] = "UNVERIFIED"
+        scan["poc_guide_coverage"] = attach_review_guides(
+            scan["findings"], state.get("generated_poc_guides", []))
         scan["components"] = state.get("components", [])
         scan["deep_links"] = state.get("deep_links", [])
         scan["api_endpoints"] = state.get("api_endpoints", [])
@@ -3774,14 +3828,18 @@ from mobileag.web.console_routes import router as console_router
 app.include_router(console_router)
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
+def run_server(host: str = "127.0.0.1", port: int = 8080, ui: bool = False) -> None:
     """Entrypoint to launch the web dashboard."""
     import uvicorn
     print(f"\n=======================================================")
     print(f"[*] Starting MobileAg Enterprise AppSec Dashboard")
     print(f"[*] Live WebSockets:  ws://{host}:{port}/ws/telemetry")
     print(f"[*] Neo4j Status:     {'Connected' if attack_graph._connected else 'Embedded Fallback'}")
-    print(f"[*] Web Dashboard:    http://{host}:{port}")
+    app.state.studio_enabled = bool(ui)
+    if ui:
+        from mobileag.studio import enable_studio
+        enable_studio(app)
+    print(f"[*] Browser Studio:   {'enabled at /ui' if ui else 'disabled (API-only mode)'}")
     print(f"=======================================================\n")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("This release supports loopback only; remote/shared deployment requires a separate identity/TLS design")

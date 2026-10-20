@@ -195,7 +195,8 @@ def diff(old: str, new: str, output: str):
 @main.command()
 @click.option("--host", default="127.0.0.1", help="Host address to bind to")
 @click.option("--port", default=8080, help="Port to listen on", type=int)
-def web(host: str, port: int):
+@click.option("--ui", is_flag=True, help="Enable the optional evidence-first browser Studio at /ui")
+def web(host: str, port: int, ui: bool = False):
     """Launch the MobileAg API."""
     import socket
     from mobileag.web.app import run_server
@@ -219,13 +220,13 @@ def web(host: str, port: int):
             console.print(f"[bold yellow]Notice:[/] Port {port} is in use. Auto-switching to port [bold green]{actual_port}[/].")
 
     console.print(Panel.fit(
-        f"[bold cyan]MobileAg Web Dashboard & API[/]\n"
+        f"[bold cyan]MobileAg API[/]\n"
         f"URL: [bold green]http://{host}:{actual_port}[/]\n"
-        f"Open in your browser to access the full UI/UX dashboard.",
+        f"Browser Studio: {'enabled at /ui' if ui else 'disabled (API-only default)'}",
         border_style="cyan"
     ))
     try:
-        run_server(host=host, port=actual_port)
+        run_server(host=host, port=actual_port, ui=ui)
     except KeyboardInterrupt:
         console.print("\n[yellow]Web API stopped.[/]")
 

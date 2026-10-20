@@ -56,7 +56,9 @@ class SecurityMiddleware:
         allowed = {'127.0.0.1', 'localhost', '::1'} | configured_list('MOBILEAG_ALLOWED_HOSTS')
         # Browser UI assets and dashboard entrypoint are public; API routes require bearer auth.
         path = scope.get('path', '')
-        public_asset = path in ('/', '/ui') or path.startswith('/static/')
+        public_asset = (path in ('/', '/ui') or path.startswith('/static/') or
+                        (getattr(self.owner.state, 'studio_enabled', False) and
+                         path in {'/ui/app.js', '/ui/advanced.js', '/ui/style.css'}))
         error = None
         status = 403
         if hostname not in allowed or not origin_allowed(headers.get('origin'), host):

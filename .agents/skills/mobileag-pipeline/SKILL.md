@@ -11,13 +11,15 @@ description: Run and test the MobileAg dashboard and authorized mobile-analysis 
 python -m mobileag.cli web --host 127.0.0.1 --port 8080
 ```
 
-Open the printed URL and enter the session token printed in the terminal using the labelled connection form. API routes require bearer authentication; WebSockets authenticate with an initial JSON token message. Do not put tokens in URLs or durable evidence.
+This starts API-only mode. To enable the optional evidence-first browser Studio, explicitly add `--ui` and open `/ui`. Public HTML/JS assets do not confer API authorization; API requests still require the bearer token and preserve scope gates. Opening the Studio does not start scans or device/network actions.
 
-For read-only dashboard automation, `python -m mobileag.cli dashboard api --transport curl` and `python -m mobileag.cli dashboard navigate` use `MOBILEAG_API_TOKEN` or a private prompt. Navigation connects through the real token form and visits exact sections; external requests, redirects, writes and real telemetry connections are blocked. No browser profile or credentials are saved. This is dashboard navigation, not target login or execution approval. See `docs/dashboard-self-navigation-2026-10-11/README.md`.
+In API-only mode, use the bearer-authenticated API/CLI clients. With `--ui`, open the printed URL plus `/ui` and enter the session token printed in the terminal using the labelled connection form. WebSockets authenticate with an initial JSON token message. Do not put tokens in URLs or durable evidence.
+
+For API-only read navigation, `python -m mobileag.cli dashboard api --transport curl` uses `MOBILEAG_API_TOKEN` or a private prompt. Do not mistake UI navigation or a connected session for target authorization or execution approval. No browser profile or credentials should be saved.
 
 ## Scanning
 
-Upload an APK/IPA through the dashboard. Uploads have opaque names, ZIP validation and size limits. Drag-and-drop uploads the artifact; a separate explicit start action begins static analysis. It never selects a device or enables bypass hooks. Missing files are errors, never demo scans.
+When the optional Studio is enabled, upload an APK/IPA there. Uploads have opaque names, ZIP validation and size limits. Staging never starts a scan; a separate explicit consent and start action begins static analysis. It never selects a device or enables bypass hooks. Missing files are errors, never demo scans.
 
 `python -m mobileag.cli scan --apk owned.apk --offline --output ./output` enforces no LLM/OSV networking for that scan. Install JADX and APKTool for Android decompilation. Failures are reported as incomplete scans rather than successful clean results.
 

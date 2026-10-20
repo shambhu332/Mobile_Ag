@@ -38,7 +38,15 @@ def test_catalog_covers_registered_api_and_retired_actions(studio):
     assert 'ConfirmationEvidence' in data['schemas']
     assert web.app.state.auth_token not in response.text
     assert 'OPENAI_API_KEY' not in response.text  # configuration values never enter static schema
-    assert len(data['cli_mapping'])==9
+    assert len(data['cli_mapping'])==12
+    commands={item['command'] for item in data['cli_mapping']}
+    assert {'scan --apk/--app','ios --ipa','diff --old --new','taint --src',
+            'import-sarif --input --output','import-mobsf-json --input --output',
+            'inventory-aab --input --output','dashboard api','web --host --port [--ui]',
+            'dast --package …'} <= commands
+    assert all(item['ui'] and item['status'] for item in data['cli_mapping'])
+    assert any('intentionally unavailable' in item['status'] for item in data['cli_mapping'])
+    assert all(item.get('action') for item in data['cli_mapping'] if item['command']!='web --host --port [--ui]')
 
 
 def test_importers_match_cli_projection_and_never_confirm(studio):

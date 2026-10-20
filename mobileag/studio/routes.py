@@ -83,15 +83,18 @@ def catalog(app):
                 'Web static workers remain offline; CLI cloud source review and OSV egress are not enabled in the browser.',
                 'File inputs use browser-selected uploads, output uses downloads; no arbitrary host filesystem access.'],
             'cli_mapping':[
-                {'command':'scan / ios','ui':'New assessment + Reports & exports','status':'offline browser equivalent; CLI cloud/advisory flags intentionally unavailable'},
-                {'command':'diff','ui':'Scans & comparison','status':'stored scan comparison or isolated two-APK comparison'},
-                {'command':'taint','ui':'Source & taint','status':'source snippet, isolated uploaded-source archive, or APK scan taint; no arbitrary host directory access'},
-                {'command':'import-sarif','ui':'Imports & inventory','status':'same bounded importer; download candidate projection'},
-                {'command':'import-mobsf-json','ui':'Imports & inventory','status':'same bounded importer; download candidate projection'},
-                {'command':'inventory-aab','ui':'Imports & inventory','status':'same bounded inventory; temporary upload removed'},
-                {'command':'dashboard api','ui':'Advanced tools','status':'authenticated parameter forms and result downloads'},
-                {'command':'web','ui':'server lifecycle','status':'launch/host/token environment remain terminal-managed'},
-                {'command':'dast','ui':'Device diagnostics / Guided assessments','status':'legacy full suite stays disabled; scoped individual actions available'}]}
+                {'command':'scan --apk/--app','ui':'New assessment','action':'assessment','status':'available: APK/IPA/ZIP upload, explicit consent, isolated offline assessment; browser never runs cloud review or OSV lookup'},
+                {'command':'scan --format markdown|json|sarif; ios --format …','ui':'Coverage & evidence / Reports & exports','action':'reports','status':'available as report downloads: JSON/Markdown per assessment and SARIF export; output directories are browser downloads, not server paths'},
+                {'command':'scan --offline / --lookup-advisories','ui':'New assessment','action':'assessment','status':'offline behavior is enforced; OSV/advisory egress is intentionally unavailable in browser'},
+                {'command':'ios --ipa','ui':'New assessment','action':'assessment','status':'available through the shared IPA static-assessment flow; CLI-specific output-path behavior is unavailable'},
+                {'command':'diff --old --new','ui':'Scans & comparison','action':'comparison','status':'available: compare stored scans or upload two bounded APKs; output is a result download, not a server output directory'},
+                {'command':'taint --src','ui':'Source & taint','action':'source','status':'partial: source snippets, APK scan taint, or isolated uploaded-source ZIP; arbitrary host directory access is intentionally unavailable'},
+                {'command':'import-sarif --input --output','ui':'Imports & inventory','action':'imports','status':'available: same bounded importer; candidate projection is downloaded, not written to an arbitrary path'},
+                {'command':'import-mobsf-json --input --output','ui':'Imports & inventory','action':'imports','status':'available: same bounded importer; candidate projection is downloaded, no MobSF server contacted'},
+                {'command':'inventory-aab --input --output','ui':'Imports & inventory','action':'imports','status':'available: same inventory-only operation; temporary upload removed and result downloaded'},
+                {'command':'dashboard api','ui':'Advanced tools → Workflow controls','action':'all-tools','status':'API operations exposed as authenticated parameter forms with review, explicit approval and result download; server remains authoritative'},
+                {'command':'web --host --port [--ui]','ui':'server lifecycle','status':'terminal-only: launch, bind address/port, session token and process lifecycle are not controlled by browser'},
+                {'command':'dast --package …','ui':'Device diagnostics / Guided assessments','action':'diagnostics','status':'full CLI suite is disabled; only individually scoped backend actions are exposed. Root/shell access is not ordinary-app proof'}]}
 
 
 async def bounded_file(file, limit):

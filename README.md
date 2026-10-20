@@ -89,7 +89,7 @@ The diagram shows logical boundaries, not a claim that every optional integratio
 | Static analysis | `mobileag/analysis/` | Manifest, API, secrets, code, taint, crypto API metadata, native, dependency, network-security, framework and platform checks. Results are bounded review candidates. |
 | Candidate annotation | `mobileag/filters/`, `mobileag/llm/` | Optional heuristic prioritization or explicitly approved model review; annotations do not prove exploitability or silently erase candidates. |
 | Dynamic testing | `mobileag/dast/`, `mobileag/security/network.py` | Device diagnostics, traffic auditing/capture, route cataloging, explicit replay and selected narrow test helpers. Exact scope is enforced at action/network boundaries. |
-| Web application | `mobileag/web/`, `mobileag/dashboard/` | Bearer-authenticated local API, scope policy, isolated jobs, scan/evidence persistence, and reporting. No browser UI is shipped or served. |
+| Web application | `mobileag/web/`, `mobileag/dashboard/`, `mobileag/studio/` | Bearer-authenticated local API, scope policy, isolated jobs, scan/evidence persistence, and reporting. The browser Studio is opt-in (`mobileag web --ui`) and served at `/ui`; API-only remains the default. |
 | Reporting/evidence | `mobileag/reporting/` | Finding schema, coverage, reports, SARIF interchange/import, structured analyst confirmation and provenance. |
 | Optional knowledge | `mobileag/knowledge/` | Neo4j/Qdrant adapters and feedback abstractions. Not required for the standard offline scan. |
 | Regression and docs | `tests/`, `docs/` | Synthetic, isolated checks; workflow evidence; schemas and roadmap. Tests do not certify field recall or absence of vulnerabilities. |

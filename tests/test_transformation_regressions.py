@@ -243,12 +243,25 @@ async def test_real_worker_timeout_and_cancellation(tmp_path,monkeypatch):
 async def test_incomplete_worker_preserves_candidates(monkeypatch):
     sid='scan_partial';web.ACTIVE_SCANS[sid]=scan(sid,status='running')
     monkeypatch.setattr(web,'validate_archive',lambda path:'android')
-    monkeypatch.setattr(web,'isolated_analysis',AsyncMock(return_value={'errors':['synthetic tool incomplete'], 'filtered_findings':[{'id':'lead','title':'Synthetic candidate','description':'synthetic','severity':'LOW','status':'CONFIRMED'}], 'coverage':{'phase':'incomplete'}}))
+    monkeypatch.setattr(web,'isolated_analysis',AsyncMock(return_value={'errors':['synthetic tool incomplete'], 'filtered_findings':[{'id':'lead','title':'Synthetic candidate','description':'synthetic','severity':'LOW','status':'CONFIRMED'}], 'generated_poc_guides':[{'finding_id':'lead','poc_guide':'Synthetic review-only guide. No application behavior was tested.'}], 'coverage':{'phase':'incomplete'}}))
     request=web.RunScanRequest(apk_path=str(web.UPLOAD_DIR/'synthetic.apk'),output_dir=str(web.OUTPUT_DIR))
     await web.live_scan_telemetry_worker(sid,'synthetic',request)
     result=web.repository().get(sid)
     assert result['status']=='partial' and result['findings'][0]['status']=='UNVERIFIED'
+    assert result['findings'][0]['poc_guide']=='Synthetic review-only guide. No application behavior was tested.'
+    assert result['poc_guide_coverage']=={'generated':1,'attached':1,'omitted_by_limit':0,'unmatched':0}
     assert result['coverage']=={'phase':'incomplete'}
+
+def test_review_guides_are_matched_and_size_bounded():
+    findings=[{'id':'match'},{'id':'large'}]
+    result=web.attach_review_guides(findings,[
+        {'finding_id':'match','poc_guide':'Synthetic guide'},
+        {'finding_id':'large','poc_guide':'x'*(web.MAX_SCAN_GUIDE_BYTES+1)},
+        {'finding_id':'missing','poc_guide':'orphan'}])
+    assert findings[0]['poc_guide']=='Synthetic guide'
+    assert findings[0]['poc_guide_status']=='generated_review_only'
+    assert 'poc_guide' not in findings[1] and findings[1]['poc_guide_status']=='omitted_size_limit'
+    assert result=={'generated':3,'attached':1,'omitted_by_limit':1,'unmatched':1}
 
 @pytest.mark.asyncio
 async def test_concurrent_job_reservations_never_exceed_capacity():

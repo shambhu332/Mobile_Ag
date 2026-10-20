@@ -120,6 +120,47 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 MAX_LEGACY_IMPORT_ENTRIES = 5_000
 MAX_LEGACY_IMPORT_FILE_BYTES = 16 * 1024 * 1024
 MAX_LEGACY_IMPORT_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_SCAN_GUIDES = 100
+MAX_SCAN_GUIDE_BYTES = 64 * 1024
+MAX_SCAN_GUIDE_TOTAL_BYTES = 2 * 1024 * 1024
+
+
+def attach_review_guides(findings: Any, guides: Any) -> dict[str, int]:
+    """Attach bounded, generated review-only guides to their exact findings."""
+    if not isinstance(findings, list):
+        return {'generated': 0, 'attached': 0, 'omitted_by_limit': 0, 'unmatched': 0}
+    candidates = [finding for finding in findings if isinstance(finding, dict)]
+    by_id = {str(finding['id']): finding for finding in candidates if finding.get('id') is not None}
+    if not isinstance(guides, list):
+        guides = []
+    generated = len(guides)
+    attached = omitted = unmatched = total_bytes = 0
+    seen = set()
+    for guide in guides[:MAX_SCAN_GUIDES]:
+        if not isinstance(guide, dict) or guide.get('finding_id') is None:
+            unmatched += 1
+            continue
+        finding_id = str(guide['finding_id'])
+        finding = by_id.get(finding_id)
+        text = guide.get('poc_guide')
+        if finding is None or finding_id in seen or not isinstance(text, str):
+            unmatched += 1
+            continue
+        seen.add(finding_id)
+        text = redact(text)
+        size = len(text.encode('utf-8')) if isinstance(text, str) else MAX_SCAN_GUIDE_BYTES + 1
+        if (not isinstance(text, str) or size > MAX_SCAN_GUIDE_BYTES or
+                total_bytes + size > MAX_SCAN_GUIDE_TOTAL_BYTES):
+            finding['poc_guide_status'] = 'omitted_size_limit'
+            omitted += 1
+            continue
+        finding['poc_guide'] = text
+        finding['poc_guide_status'] = 'generated_review_only'
+        total_bytes += size
+        attached += 1
+    omitted += max(0, generated - MAX_SCAN_GUIDES)
+    return {'generated': generated, 'attached': attached,
+            'omitted_by_limit': omitted, 'unmatched': unmatched}
 
 app = FastAPI(
     title="MobileAg API",
@@ -3575,6 +3616,8 @@ async def live_scan_telemetry_worker(scan_id: str, apk_name: str, req: Optional[
         scan["findings"] = redact(state.get("filtered_findings", []))
         for finding in scan["findings"]:
             finding["status"] = "UNVERIFIED"
+        scan["poc_guide_coverage"] = attach_review_guides(
+            scan["findings"], state.get("generated_poc_guides", []))
         scan["components"] = state.get("components", [])
         scan["deep_links"] = state.get("deep_links", [])
         scan["api_endpoints"] = state.get("api_endpoints", [])

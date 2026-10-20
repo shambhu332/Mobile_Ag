@@ -10,6 +10,7 @@ def run(page,base,output,temp,posts,accessibility):
     def tools():
         page.locator('.advanced-nav').evaluate('(node)=>node.open=true')
         page.get_by_role('link',name='Workflow controls',exact=True).click()
+        page.locator('#operation-group').select_option('');page.locator('#operation-search').fill('')
         page.locator('.operation-card').first.wait_for()
     def select(method,path):
         tools();page.locator('.operation-card').filter(has=page.locator('small',has_text=path)) if False else None
@@ -36,6 +37,12 @@ def run(page,base,output,temp,posts,accessibility):
         expect(page.locator('#operation-title')).not_to_be_empty()
     assert len(posts)==before
     checks.append(f'all {count} operation forms render without execution')
+    tools();page.locator('#parity-list .parity-row').filter(has_text='diff --old --new').get_by_role('button',name='Open related controls').click()
+    expect(page.locator('#operation-group')).to_have_value('Scans & comparison')
+    expect(page.locator('#operation-search')).to_have_value('compare')
+    assert page.locator('#operation-list .operation-card').count()>0
+    assert page.locator('#parity-list .parity-row').filter(has_text='web --host --port').get_by_role('button',name='Open related controls').count()==0
+    checks.append('CLI parity links open matching controls and do not expose terminal lifecycle')
     select('POST','/api/dast/frida');assert page.locator('#op-review').is_disabled();checks.append('retired hooks stay disabled')
     select('POST','/api/scope')
     for k in ['devices','packages','origins','methods','actions']:fill(k,[])

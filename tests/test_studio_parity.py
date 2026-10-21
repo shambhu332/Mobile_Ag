@@ -47,6 +47,10 @@ def test_catalog_covers_registered_api_and_retired_actions(studio):
     assert all(item['ui'] and item['status'] for item in data['cli_mapping'])
     assert any('intentionally unavailable' in item['status'] for item in data['cli_mapping'])
     assert all(item.get('action') for item in data['cli_mapping'] if item['command']!='web --host --port [--ui]')
+    from mobileag.cli import main as cli
+    represented={item['command'].split()[0] for item in data['cli_mapping']}
+    assert set(cli.commands) <= represented
+    assert 'api' in {item['command'].split()[-1] for item in data['cli_mapping'] if item['command'].startswith('dashboard ')}
 
 
 def test_importers_match_cli_projection_and_never_confirm(studio):

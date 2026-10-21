@@ -53,7 +53,9 @@ async def test_guided_static_without_device_or_ai(setup):
     assert doc['status']=='completed' and doc['stages']['sast']['status']=='completed'
     assert doc['stages']['api']['status']=='not_selected' and doc['stages']['dast']['status']=='not_selected'
     driver.snapshot.assert_not_called();svc.broker.transport.assert_not_called()
-    assert not svc.tasks and 'api_authorization' not in json.dumps(doc)
+    assert not svc.tasks and 'authorization_dynamic_comparisons' not in doc
+    # The coverage inventory names this untested surface; it must not imply a probe ran.
+    assert doc['coverage_ledger']['runtime_surfaces']['surfaces']['api_authorization_pair']['runtime_state'] == 'not_tested'
 
 @pytest.mark.asyncio
 async def test_package_mismatch_blocks_all_live_stages(setup):

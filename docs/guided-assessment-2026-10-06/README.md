@@ -82,6 +82,8 @@ PYTHONPATH="$PWD" python tests/guided_local_regression.py \
   --apk docs/automation-2026-10-05/validation/navigation-synthetic.apk --output /private/fixture-evidence
 ```
 
+The persisted guided-DAST `runtime_surfaces` ledger makes this boundary explicit per assessment. It can mark only exact APK identity binding, permission snapshot, target-attributed startup/UI log review, screen mapping, and the bounded API account-pair probe as `observed`, and only when the corresponding receipt exists. IPC authorization, serialization/parser runtime behavior, file/provider/URI grants, WebView bridges/navigation, TLS/traffic, crypto/native runtime, business logic/mutating flows, and iOS remain `not_tested` unless a future implementation supplies evidence. Every row remains `proof_status=not_proven`; this is a coverage inventory, not a vulnerability verdict or a claim of exhaustive DAST.
+
 Still not implemented/proven: native iOS live automation, credential/form filling, transparent TLS capture, a general authorization/ownership test matrix beyond the bounded exact-marker two-account probe, write/payment/business transactions, full screen-reader/contrast/native performance testing, every platform DAST check, representative corpus/load acceptance or numerical production certification. LLM integration does not turn those gaps into coverage. Owned APK/package, exact staging origins, dedicated account identifiers and current unrooted devices remain necessary for real-app acceptance; never use discovered credentials or test unrelated targets.
 
 ## Security continuation

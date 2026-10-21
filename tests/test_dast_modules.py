@@ -57,6 +57,32 @@ def test_logcat_auditor_sensitive_token_leak():
     assert "Bearer" in findings[0].title
 
 
+@pytest.mark.parametrize(("message", "expected"), [
+    ("ApiClient: refresh_token=synthetic-refresh-token-value", "Plaintext Password or Credential"),
+    ("Http: Set-Cookie: sessionid=synthetic-session-cookie; Path=/; HttpOnly", "Session Cookie in Logcat"),
+])
+def test_logcat_auditor_detects_more_session_material_but_redacts_values(message, expected):
+    auditor = LogcatAuditor()
+    lines = [
+        "10-21 10:00:00.000 1234 1234 I ActivityManager: Process: com.test.app, PID: 1234",
+        f"10-21 10:00:01.000 1234 1234 D {message}",
+    ]
+    findings = auditor.audit_lines(lines, package_name="com.test.app")
+    assert len(findings) == 1
+    assert expected in findings[0].title
+    assert "UNVERIFIED" == findings[0].status.value
+    assert "synthetic-refresh-token-value" not in repr(findings)
+    assert "synthetic-session-cookie" not in repr(findings)
+
+
+def test_logcat_session_detector_stays_attributed_to_exact_target_pid():
+    lines = [
+        "10-21 10:00:00.000 1234 1234 I ActivityManager: Process: com.test.app, PID: 1234",
+        "10-21 10:00:01.000 9876 9876 D Http: Set-Cookie: sessionid=synthetic-session-cookie; Path=/",
+    ]
+    assert LogcatAuditor().audit_lines(lines, package_name="com.test.app") == []
+
+
 def test_logcat_auditor_crash_detection():
     auditor = LogcatAuditor()
     log_sample = [

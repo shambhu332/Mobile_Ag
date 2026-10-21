@@ -31,8 +31,13 @@ _LEAK_PATTERNS: Final[list[tuple[str, re.Pattern[str], str]]] = [
     ),
     (
         "Plaintext Password or Credential in Logcat",
-        re.compile(r"(?i)\b(?:password|passwd|pwd|auth_token|secret_key)\s*[:=]\s*([^\s,;\"'<>]{4,})"),
-        "A user password or authentication secret parameter was written to system logcat.",
+        re.compile(r"(?i)\b(?:password|passwd|pwd|auth_token|access_token|refresh_token|id_token|client_secret|secret_key|session(?:_id|_token)?)\s*[:=]\s*[\"']?([^\s,;\"'<>]{4,})"),
+        "A credential or session-secret-like parameter was written to system logcat.",
+    ),
+    (
+        "Session Cookie in Logcat",
+        re.compile(r"(?i)\b(?:set-cookie|cookie)\s*:\s*[^\r\n]*(?:session(?:id|_id|_token)?|auth|sid|jwt)\s*=\s*[^;\s,]{8,}"),
+        "A cookie header containing a session/authentication-like value was written to system logcat.",
     ),
     (
         "Private Cryptographic Key Header in Logcat",

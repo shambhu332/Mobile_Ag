@@ -152,16 +152,32 @@ def guided_coverage(document: dict) -> dict:
             if selected and (status != 'completed' or row['assessment_coverage'] != 'recorded_no_static_gaps'):
                 gaps.append('sast: incomplete or unknown static coverage')
         elif name == 'api':
+            comparisons=document.get('authorization_comparisons',[])
+            live_comparisons=document.get('authorization_dynamic_comparisons',[])
             row.update(executed_requests=stage.get('executed', 0),
                        untested_requests=stage.get('untested'),
-                       authorization_validation='operator_imported_comparison' if document.get('authorization_comparisons') else 'not_tested',
-                       imported_comparisons=len(document.get('authorization_comparisons', [])))
+                       authorization_validation=('live_scoped_read_only_probe' if live_comparisons else
+                           'operator_imported_comparison' if comparisons else 'not_tested'),
+                       imported_comparisons=len(comparisons),
+                       live_read_only_pair_probes=len(live_comparisons),
+                       authorization_probe_attempts=document.get('authorization_probe_attempts',0))
             if selected:
-                gaps.append('api: no independently verified multi-account authorization coverage')
+                gaps.append('api: multi-account authorization evidence is bounded and unverified; exhaustive authorization coverage is not established')
         elif name == 'dast':
             navigation = document.get('latest_navigation_report', {})
             device = navigation.get('application_map', {}).get('device_metadata', stage.get('device_metadata', {}))
-            row.update(device_metadata=device, runtime_artifact_binding='not_verified',
+            identity=stage.get('runtime_artifact_identity',{})
+            permission_snapshot=stage.get('runtime_permission_snapshot',{})
+            log_observation=stage.get('runtime_log_observation',{})
+            binding=('matched_single_apk' if identity.get('status')=='matched' and identity.get('apk_count')==1
+                     else identity.get('status','not_verified'))
+            row.update(device_metadata=device, runtime_artifact_binding=binding,
+                       runtime_permission_snapshot_status=permission_snapshot.get('status','not_tested'),
+                       runtime_requested_permission_count=permission_snapshot.get('requested_permission_count'),
+                       runtime_granted_permission_count=permission_snapshot.get('granted_permission_count'),
+                       runtime_static_permission_comparison=permission_snapshot.get('static_comparison_status','not_available'),
+                       runtime_log_status=log_observation.get('status','not_tested'),
+                       runtime_log_candidates=log_observation.get('candidate_count'),
                        observed_screens=len(navigation['screen_graph']['nodes']) if 'screen_graph' in navigation else stage.get('screens', 0),
                        authentication_status='not_verified', account_role='not_recorded',
                        workflow_coverage='not_measured', os_build=device.get('fingerprint', 'not_recorded'),
@@ -169,6 +185,10 @@ def guided_coverage(document: dict) -> dict:
                        attacker_context='not_established', proof_status='not_proven')
             if selected:
                 gaps.append('dast: UI mapping does not establish authentication, workflow coverage or exploitability')
+                if permission_snapshot.get('status')!='observed':
+                    gaps.append('dast: installed runtime permission state was not observed')
+                if log_observation.get('status')!='observed':
+                    gaps.append('dast: target-attributed startup/UI log review was not completed')
         else:
             row['security_validation'] = 'not_performed_by_metadata_review'
         if selected and status not in {'completed', 'completed_with_observations'}:

@@ -144,6 +144,23 @@ class AssessmentService:
                     self.persist(doc)
                     if identity.get('status')!='matched':
                         raise PermissionError('Installed build could not be matched to the analyzed APK; DAST was not launched')
+                    # Collect a read-only installed permission snapshot only
+                    # after the installed base APK has matched the analyzed one.
+                    # Never persist dumpsys output, code paths or data paths.
+                    try:
+                        package_info=await self.adb.get_package_info(req.serial,req.package_name,guard=identity_guard)
+                        from mobileag.dast.runtime_package_auditor import summarize_runtime_package
+                        manifest=scan.get('manifest_data') if isinstance(scan.get('manifest_data'),dict) else {}
+                        static_permissions=manifest.get('permissions') if isinstance(manifest.get('permissions'),list) else None
+                        snapshot=summarize_runtime_package(req.package_name,package_info,static_permissions)
+                        doc['stages']['dast']['runtime_permission_snapshot']=snapshot
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        doc['stages']['dast']['runtime_permission_snapshot']={
+                            'status':'unavailable','reason':'Package-manager permission state could not be safely observed',
+                            'proof_status':'not_proven'}
+                    self.persist(doc)
                     if req.launch:
                         def launch_guard():
                             self.guard(doc,token)
@@ -154,11 +171,56 @@ class AssessmentService:
                         result=await self.adb.launch_activity(req.serial,req.component,guard=launch_guard)
                         if result['status']!='success':raise ValueError('Launch failed')
                     self.guard(doc,token)
+                    # Keep a bounded shared-buffer baseline; only new lines
+                    # attributed to the exact target package/PIDs are examined.
+                    try:
+                        from mobileag.dast.runtime_evidence import new_lines
+                        from mobileag.dast.logcat_auditor import LogcatAuditor
+                        baseline_pids=await self.adb.get_process_pids(req.serial,req.package_name,guard=identity_guard)
+                        before_logs=await self.adb.get_logcat_dump(req.serial,lines=500,guard=identity_guard)
+                        self.guard(doc,token)
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        baseline_pids=[];before_logs=[]
+                    log_baseline_available=isinstance(before_logs,list) and bool(before_logs)
                     auto=await self.automation().create(CreateRun(serial=req.serial,package_name=req.package_name,component=req.component,
                         environment='dedicated_staging',dedicated_device_confirmed=True,dedicated_account_confirmed=True,max_steps=req.max_steps,max_requests=0),token)
                     doc['automation_run_id']=auto['id'];screens=len(auto['screens'])
                     doc['stages']['dast'].update(status='awaiting_action_review' if screens else 'paused',screens=screens,run_id=auto['id'],
                         device_metadata=auto.get('device_metadata',{}),authentication_state=auto.get('auth_state','unknown'));self.persist(doc)
+                    try:
+                        await asyncio.sleep(0.5)
+                        self.guard(doc,token)
+                        after_pids=await self.adb.get_process_pids(req.serial,req.package_name,guard=identity_guard)
+                        after_logs=await self.adb.get_logcat_dump(req.serial,lines=500,guard=identity_guard)
+                        if not isinstance(after_logs,list):raise ValueError('Logcat collection did not return a bounded line list')
+                        pids=sorted(set(baseline_pids+after_pids))
+                        post_snapshot_available=bool(after_logs)
+                        delta=new_lines(before_logs,after_logs) if log_baseline_available and post_snapshot_available else []
+                        findings=LogcatAuditor().audit_lines(delta,package_name=req.package_name,
+                                                              process_pids=pids or None)
+                        doc['stages']['dast']['runtime_log_observation']={
+                            'status':'observed' if log_baseline_available and post_snapshot_available else
+                                'post_snapshot_empty_or_unavailable' if log_baseline_available else 'baseline_unavailable',
+                            'new_lines_examined':len(delta),'attributed_pid_count':len(pids),
+                            'candidate_count':len(findings),
+                            'observations':[finding.model_dump(mode='json',include={
+                                'title','description','severity','cwe_id','affected_component','file_path',
+                                'line_number','code_snippet','detection_method','status','remediation'})
+                                for finding in findings[:20]],
+                            'proof_status':'not_proven',
+                            'limitations':['Only bounded logcat output collected during startup/UI mapping was examined.',
+                                           'A shared log buffer and timing do not establish causal input or ordinary-app exploitability.',
+                                           'No new log lines is not evidence that sensitive values are never logged.'],
+                        }
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        doc['stages']['dast']['runtime_log_observation']={
+                            'status':'unavailable','reason':'Target-attributed log observation could not be completed',
+                            'proof_status':'not_proven'}
+                    self.persist(doc)
                 if req.llm_provider:
                     self.guard(doc,token);doc['stages']['llm']['status']='running';self.persist(doc)
                     try:

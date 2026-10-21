@@ -87,6 +87,9 @@ async def test_live_authorization_probe_uses_three_read_only_requests_and_persis
         'Bearer synthetic-owner-token','Bearer synthetic-other-token','Bearer synthetic-other-token']
     saved=json.dumps(svc.store().get(doc['id']))
     assert all(secret not in saved for secret in ('synthetic-owner-token','synthetic-other-token',marker_owner,marker_other,owner_url,other_url))
+    coverage=svc.report(doc['id'])['coverage_ledger']['stages']['api']
+    assert coverage['live_read_only_pair_probes']==1
+    assert coverage['authorization_validation']=='live_scoped_read_only_probe'
     with pytest.raises(ValueError,match='budget exhausted'):
         await svc.run_authorization_probe(doc['id'],live_probe(owner_url,other_url),token)
     assert svc.api_transport.await_count==3

@@ -14,6 +14,7 @@ from mobileag.web.security import check_device,configured_list
 from mobileag.automation.android import digest
 from mobileag.automation.models import CreateRun,ExecuteRun
 from mobileag.security.archives import validate_archive
+from mobileag.security.network import scoped_request
 from mobileag.llm.broker import aggregate,configured,validate_review_selection,LLMReviewError
 
 class AssessmentCancelled(Exception):pass
@@ -22,7 +23,9 @@ class AssessmentService:
     def __init__(self,output,uploads,repository,session_valid,static_runner,automation,adb,broker,hash_file):
         self.output,self.uploads,self.repository,self.session_valid=output,uploads,repository,session_valid
         self.static_runner,self.automation,self.adb,self.broker,self.hash_file=static_runner,automation,adb,broker,hash_file
+        self.api_transport=scoped_request
         self.tasks={}
+        self.authorization_probe_busy=set()
     def store(self):return AssessmentStore(self.output())
     def guard(self,doc,token):
         if not self.session_valid(token):raise PermissionError('Session expired/rotated')
@@ -221,6 +224,99 @@ class AssessmentService:
         rows.append(result)
         self.persist(doc)
         return result
+
+    async def run_authorization_probe(self,rid,probe,token):
+        """Run three exact, read-only API requests and retain only a marker comparison."""
+        from urllib.parse import urlsplit
+        from mobileag.analysis.authorization_pair import compare_authorization_pair
+        from mobileag.web.security import configured_list
+
+        doc=self.store().get(rid)
+        self.guard(doc,token)
+        if rid in self.tasks or doc.get('status') in {'running','cancelled','interrupted'}:
+            raise ValueError('Assessment must be stopped or complete before a paired API probe')
+        if doc.get('stages',{}).get('api',{}).get('status') not in {'completed_with_observations','completed'}:
+            raise PermissionError('A completed, explicitly scoped API stage is required')
+        owner_parts=urlsplit(probe.owner_url);other_parts=urlsplit(probe.other_url)
+        owner_origin=f'{owner_parts.scheme}://{owner_parts.netloc}'
+        other_origin=f'{other_parts.scheme}://{other_parts.netloc}'
+        if owner_origin != other_origin:
+            raise PermissionError('Both controlled-account URLs must use the same approved origin')
+        if (owner_origin not in doc['scope'].get('origins',[]) or
+                owner_origin not in configured_list('MOBILEAG_ALLOWED_ORIGINS') or
+                'GET' not in doc['scope'].get('methods',[]) or
+                not check_replay(self.repository().get_policy(),probe.owner_url,'GET') or
+                not check_replay(self.repository().get_policy(),probe.other_url,'GET')):
+            raise PermissionError('Paired probe origin or GET method is outside current exact scope')
+        inventory=doc.get('stages',{}).get('api',{}).get('inventory',[])
+        owner_capture=next((c for c in inventory if c.get('id')==probe.owner_capture_id),None)
+        other_capture=next((c for c in inventory if c.get('id')==probe.other_capture_id),None)
+        if not owner_capture or not other_capture or any(
+            not c.get('protected') or c.get('method')!='GET' or c.get('origin')!=owner_origin
+            for c in (owner_capture,other_capture)
+        ):
+            raise PermissionError('Both URLs must match protected GET captures from this assessment')
+        if (digest('GET '+probe.owner_url)!=probe.owner_capture_id or
+                digest('GET '+probe.other_url)!=probe.other_capture_id):
+            raise PermissionError('Probe URLs do not match the approved imported captures')
+        comparisons=doc.setdefault('authorization_dynamic_comparisons',[])
+        if rid in self.authorization_probe_busy:
+            raise ValueError('A paired API probe is already active for this assessment')
+        if doc.get('authorization_probe_attempts',0)>=1:
+            raise ValueError('Paired API probe budget exhausted: one three-request probe per assessment')
+        if not callable(self.api_transport):
+            raise ValueError('Scoped API transport is unavailable')
+
+        # Reserve the fixed three-request budget before network I/O so retries
+        # after timeouts or process interruption cannot silently multiply it.
+        self.authorization_probe_busy.add(rid)
+        try:
+            doc['authorization_probe_attempts']=doc.get('authorization_probe_attempts',0)+1
+            self.persist(doc)
+        except Exception:
+            self.authorization_probe_busy.discard(rid)
+            raise
+
+        requests=[
+            (probe.owner_url,probe.owner_authorization.get_secret_value()),
+            (probe.other_url,probe.other_authorization.get_secret_value()),
+            (probe.owner_url,probe.other_authorization.get_secret_value()),
+        ]
+        try:
+            observations=[]
+            for url,authorization in requests:
+                self.guard(doc,token)
+                if not check_replay(self.repository().get_policy(),url,'GET'):
+                    raise PermissionError('Paired probe scope was revoked')
+                await asyncio.sleep(0.5)
+                self.guard(doc,token)
+                result=await self.api_transport(url,'GET',headers={'Authorization':authorization})
+                body=result.get('body','')
+                if not isinstance(body,str) or len(body.encode('utf-8',errors='replace'))>16384:
+                    body='{}'  # bounded evidence parser treats oversize/non-text as inconclusive
+                observations.append({'status_code':int(result.get('status_code',0)),
+                    'response_json':body,'evidence_id':'probe-'+uuid.uuid4().hex})
+            from mobileag.analysis.authorization_pair import AuthorizationPair
+            pair=AuthorizationPair.model_validate({
+                'artifact_sha256':doc['artifact_sha256'],'capture_id':probe.owner_capture_id,
+                'owner_baseline':observations[0],'other_account_baseline':observations[1],
+                'cross_account':observations[2],'marker_path':probe.marker_path,
+                'owner_marker':probe.owner_marker,'other_marker':probe.other_marker,
+                'authorized_synthetic_captures':True,'distinct_controlled_accounts_confirmed':True,
+                'same_owner_resource_requested':True,'identities_checked':True,
+            })
+            result=compare_authorization_pair(pair)
+            result.update({'network_requests_sent':3,'basis':'live_scoped_read_only_probe',
+                'origin':owner_origin,'owner_capture_id':probe.owner_capture_id,
+                'other_capture_id':probe.other_capture_id,
+                'limitations':['Account identities, synthetic markers, resource ownership and URL semantics are operator assertions.',
+                               'Only exact JSON marker equality is compared; non-JSON, oversized, or changed schemas are inconclusive.',
+                               'A denial observation is not exhaustive authorization proof.']})
+            comparisons.append(result)
+            self.persist(doc)
+            return result
+        finally:
+            self.authorization_probe_busy.discard(rid)
 
     def report(self,rid):
         doc=self.store().get(rid)

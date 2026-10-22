@@ -154,9 +154,12 @@ class UICrawler:
                         step_delay: float = 1.0, guard=None) -> dict[str, Any]:
         if not 1 <= max_steps <= 20:
             raise ValueError("UI observation steps must be between 1 and 20")
+        from mobileag.dast.webview_runtime_auditor import WebViewRuntimeAuditor
+        webview_auditor = WebViewRuntimeAuditor()
         base = {"package_name": package_name, "device_serial": serial,
                 "screens_explored": 0, "dialogs_dismissed": 0, "inputs_filled": 0,
-                "buttons_clicked": 0, "mode": "observe_only", "planned_actions": []}
+                "buttons_clicked": 0, "mode": "observe_only", "planned_actions": [],
+                "webview_runtime_observation": webview_auditor.audit_elements([], package_name)}
         if (not isinstance(serial, str) or not serial.strip() or len(serial) > 256
                 or not isinstance(package_name, str)
                 or not re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package_name)
@@ -169,15 +172,20 @@ class UICrawler:
         xml = await self.dump_ui_hierarchy(serial, guard=guard)
         elements = self.parse_ui_elements(xml)
         if not elements:
-            return {**base, "status": "inconclusive", "reason": "Foreground UI is unavailable"}
+            return {**base, "status": "inconclusive", "reason": "Foreground UI is unavailable",
+                    "webview_runtime_observation": {**base["webview_runtime_observation"],
+                        "status": "snapshot_unavailable"}}
+        webview_observation = webview_auditor.audit_elements(elements, package_name)
         # Missing package identity is not safe enough to assume the intended app.
         if any(el.get("package") != package_name for el in elements):
-            return {**base, "status": "blocked", "reason": "Foreground is outside the intended package or includes a system dialog"}
+            return {**base, "status": "blocked", "reason": "Foreground is outside the intended package or includes a system dialog",
+                    "webview_runtime_observation": webview_observation}
         from mobileag.security.privacy import redact
         plans = [{"label": redact(el["text"] or el["content_desc"]),
                   "resource_id": el["resource_id"], "requires_explicit_review": True}
                  for el in elements if el["clickable"]][:50]
         return {**base, "status": "observed", "screens_explored": 1, "planned_actions": plans,
+                "webview_runtime_observation": webview_observation,
                 "reason": "Read-only snapshot; no taps, consent, text input or transactions were performed"}
 
     def get_smart_crawler(self, test_user: str | None = None, test_pass: str | None = None,

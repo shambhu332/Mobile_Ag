@@ -664,6 +664,37 @@ def test_completed_guided_execution_does_not_infer_login_or_api_authorization():
     assert report['independently_verified_exploits'] == 0
 
 
+def test_guided_runtime_surface_ledger_keeps_unimplemented_dast_areas_explicit():
+    report = guided_coverage({'artifact_sha256': 'a' * 64, 'stages': {
+        'dast': {'status': 'completed', 'screens': 2,
+                 'runtime_artifact_identity': {'status': 'matched', 'apk_count': 1},
+                 'runtime_permission_snapshot': {'status': 'observed'},
+                 'runtime_log_observation': {'status': 'observed'}}}})
+    ledger = report['runtime_surfaces']
+    assert ledger['exhaustive'] is False
+    assert ledger['security_verdict'] == 'not_established'
+    surfaces = ledger['surfaces']
+    assert surfaces['installed_artifact_binding']['runtime_state'] == 'observed'
+    assert surfaces['runtime_permission_state']['runtime_state'] == 'observed'
+    assert surfaces['startup_ui_logcat']['runtime_state'] == 'observed'
+    assert surfaces['ui_navigation_mapping']['runtime_state'] == 'observed'
+    for gap in ('ipc_and_intent_authorization', 'serialization_and_parser_runtime',
+                'files_providers_and_uri_grants', 'webview_bridges_and_navigation',
+                'network_tls_and_traffic', 'api_authorization_pair',
+                'crypto_and_native_runtime', 'business_logic_and_mutating_flows', 'ios_runtime'):
+        assert surfaces[gap]['runtime_state'] == 'not_tested'
+        assert surfaces[gap]['proof_status'] == 'not_proven'
+
+
+def test_guided_runtime_surface_ledger_only_marks_api_pair_when_receipt_exists():
+    from mobileag.reporting.coverage import guided_runtime_surface_ledger
+    assert guided_runtime_surface_ledger({'stages': {}})['surfaces']['api_authorization_pair']['runtime_state'] == 'not_tested'
+    result = guided_runtime_surface_ledger({'stages': {}, 'authorization_dynamic_comparisons': [{'status': 'observed'}]})
+    row = result['surfaces']['api_authorization_pair']
+    assert row['runtime_state'] == 'observed'
+    assert row['proof_status'] == 'not_proven'
+
+
 def test_guided_coverage_does_not_call_empty_assessment_static_only():
     result = guided_coverage({'stages': {name: {'status': 'not_selected'}
         for name in ('sast', 'api', 'dast', 'llm')}})

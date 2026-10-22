@@ -133,6 +133,100 @@ def review_surface_ledger(coverage: dict | None) -> dict:
     }
 
 
+def guided_runtime_surface_ledger(document: dict) -> dict:
+    """Inventory runtime surfaces actually observed by guided assessment.
+
+    This intentionally separates a small set of bounded observations from
+    vulnerability testing. A surface becomes ``observed`` only when the
+    corresponding persisted receipt exists; all other surfaces remain explicit
+    gaps. No row can establish safety or exploitability.
+    """
+    stages = document.get('stages', {}) if isinstance(document, dict) else {}
+    dast = stages.get('dast', {}) if isinstance(stages, dict) else {}
+    if not isinstance(dast, dict):
+        dast = {}
+    identity = dast.get('runtime_artifact_identity', {})
+    permissions = dast.get('runtime_permission_snapshot', {})
+    logs = dast.get('runtime_log_observation', {})
+    navigation = document.get('latest_navigation_report', {}) if isinstance(document, dict) else {}
+    if not isinstance(navigation, dict):
+        navigation = {}
+    graph = navigation.get('screen_graph', {})
+    nodes = graph.get('nodes', []) if isinstance(graph, dict) else []
+    screens = len(nodes) if isinstance(nodes, list) else 0
+    if not screens:
+        screens = dast.get('screens', 0)
+    comparisons = document.get('authorization_dynamic_comparisons', []) if isinstance(document, dict) else []
+
+    definitions = {
+        'installed_artifact_binding': ('not_tested', None,
+            'Exact single-APK identity check was not recorded.'),
+        'runtime_permission_state': ('not_tested', None,
+            'Installed Package Manager permission snapshot was not recorded.'),
+        'startup_ui_logcat': ('not_tested', None,
+            'Bounded target-attributed before/after logcat review was not completed.'),
+        'ui_navigation_mapping': ('not_tested', None,
+            'No mapped screens were recorded; navigation mapping is not workflow testing.'),
+        'ipc_and_intent_authorization': ('not_tested', None,
+            'No runtime IPC authorization matrix is implemented in guided DAST.'),
+        'serialization_and_parser_runtime': ('not_tested', None,
+            'No runtime untrusted-serialization/parser test is implemented in guided DAST.'),
+        'files_providers_and_uri_grants': ('not_tested', None,
+            'No runtime file/provider/URI-grant access test is implemented in guided DAST.'),
+        'webview_bridges_and_navigation': ('not_tested', None,
+            'No runtime WebView origin/bridge behavior test is implemented in guided DAST.'),
+        'network_tls_and_traffic': ('not_tested', None,
+            'Transparent HTTPS capture and runtime TLS validation are not implemented.'),
+        'api_authorization_pair': ('not_tested', None,
+            'No live two-account GET comparison receipt was recorded.'),
+        'crypto_and_native_runtime': ('not_tested', None,
+            'Runtime crypto and native instrumentation are not implemented in guided DAST.'),
+        'business_logic_and_mutating_flows': ('not_tested', None,
+            'Business-logic/write/payment flows are outside the implemented guided DAST.'),
+        'ios_runtime': ('not_tested', None,
+            'Native iOS live automation is not implemented.'),
+    }
+    if isinstance(identity, dict) and identity.get('status') == 'matched' and identity.get('apk_count') == 1:
+        definitions['installed_artifact_binding'] = ('observed', 'stages.dast.runtime_artifact_identity',
+            'Single installed APK matched the analyzed artifact hash; this is identity evidence only.')
+    if isinstance(permissions, dict) and permissions.get('status') == 'observed':
+        definitions['runtime_permission_state'] = ('observed', 'stages.dast.runtime_permission_snapshot',
+            'Bounded requested/granted permission metadata was observed; not a vulnerability verdict.')
+    if isinstance(logs, dict) and logs.get('status') == 'observed':
+        definitions['startup_ui_logcat'] = ('observed', 'stages.dast.runtime_log_observation',
+            'Bounded target-attributed logcat delta was examined; no finding absence is inferred.')
+    if type(screens) is int and screens > 0:
+        definitions['ui_navigation_mapping'] = ('observed', 'latest_navigation_report.screen_graph',
+            'Screen mapping was recorded; it does not establish authenticated workflow coverage.')
+    if isinstance(comparisons, list) and comparisons:
+        definitions['api_authorization_pair'] = ('observed', 'authorization_dynamic_comparisons',
+            'A bounded read-only account-pair observation was recorded; it is not independent authorization proof.')
+
+    surfaces = {
+        name: {
+            'runtime_state': state,
+            'evidence_reference': reference,
+            'proof_status': 'not_proven',
+            'independently_verified': False,
+            'gap': reason,
+        }
+        for name, (state, reference, reason) in definitions.items()
+    }
+    return {
+        'schema_version': 1,
+        'surfaces': surfaces,
+        'observed_count': sum(row['runtime_state'] == 'observed' for row in surfaces.values()),
+        'not_tested_count': sum(row['runtime_state'] == 'not_tested' for row in surfaces.values()),
+        'exhaustive': False,
+        'security_verdict': 'not_established',
+        'limitations': [
+            'Observed means only that the named bounded runtime receipt exists.',
+            'Not tested is a coverage gap, not a pass.',
+            'This inventory is not exhaustive and does not establish absence of vulnerabilities.',
+        ],
+    }
+
+
 def guided_coverage(document: dict) -> dict:
     """Summarize persisted observations only; never infer login or exploit proof.
 
@@ -152,16 +246,32 @@ def guided_coverage(document: dict) -> dict:
             if selected and (status != 'completed' or row['assessment_coverage'] != 'recorded_no_static_gaps'):
                 gaps.append('sast: incomplete or unknown static coverage')
         elif name == 'api':
+            comparisons=document.get('authorization_comparisons',[])
+            live_comparisons=document.get('authorization_dynamic_comparisons',[])
             row.update(executed_requests=stage.get('executed', 0),
                        untested_requests=stage.get('untested'),
-                       authorization_validation='operator_imported_comparison' if document.get('authorization_comparisons') else 'not_tested',
-                       imported_comparisons=len(document.get('authorization_comparisons', [])))
+                       authorization_validation=('live_scoped_read_only_probe' if live_comparisons else
+                           'operator_imported_comparison' if comparisons else 'not_tested'),
+                       imported_comparisons=len(comparisons),
+                       live_read_only_pair_probes=len(live_comparisons),
+                       authorization_probe_attempts=document.get('authorization_probe_attempts',0))
             if selected:
-                gaps.append('api: no independently verified multi-account authorization coverage')
+                gaps.append('api: multi-account authorization evidence is bounded and unverified; exhaustive authorization coverage is not established')
         elif name == 'dast':
             navigation = document.get('latest_navigation_report', {})
             device = navigation.get('application_map', {}).get('device_metadata', stage.get('device_metadata', {}))
-            row.update(device_metadata=device, runtime_artifact_binding='not_verified',
+            identity=stage.get('runtime_artifact_identity',{})
+            permission_snapshot=stage.get('runtime_permission_snapshot',{})
+            log_observation=stage.get('runtime_log_observation',{})
+            binding=('matched_single_apk' if identity.get('status')=='matched' and identity.get('apk_count')==1
+                     else identity.get('status','not_verified'))
+            row.update(device_metadata=device, runtime_artifact_binding=binding,
+                       runtime_permission_snapshot_status=permission_snapshot.get('status','not_tested'),
+                       runtime_requested_permission_count=permission_snapshot.get('requested_permission_count'),
+                       runtime_granted_permission_count=permission_snapshot.get('granted_permission_count'),
+                       runtime_static_permission_comparison=permission_snapshot.get('static_comparison_status','not_available'),
+                       runtime_log_status=log_observation.get('status','not_tested'),
+                       runtime_log_candidates=log_observation.get('candidate_count'),
                        observed_screens=len(navigation['screen_graph']['nodes']) if 'screen_graph' in navigation else stage.get('screens', 0),
                        authentication_status='not_verified', account_role='not_recorded',
                        workflow_coverage='not_measured', os_build=device.get('fingerprint', 'not_recorded'),
@@ -169,6 +279,10 @@ def guided_coverage(document: dict) -> dict:
                        attacker_context='not_established', proof_status='not_proven')
             if selected:
                 gaps.append('dast: UI mapping does not establish authentication, workflow coverage or exploitability')
+                if permission_snapshot.get('status')!='observed':
+                    gaps.append('dast: installed runtime permission state was not observed')
+                if log_observation.get('status')!='observed':
+                    gaps.append('dast: target-attributed startup/UI log review was not completed')
         else:
             row['security_validation'] = 'not_performed_by_metadata_review'
         if selected and status not in {'completed', 'completed_with_observations'}:
@@ -182,8 +296,10 @@ def guided_coverage(document: dict) -> dict:
         gaps.append('assessment: no stages selected or recorded')
     coverage_state = ('unknown' if not selected_count else
                       'partial' if gaps else 'bounded_static_only')
+    runtime_surfaces = guided_runtime_surface_ledger(document)
     return {'schema_version': 1, 'artifact_sha256': document.get('artifact_sha256'),
             'package_name': document.get('package_name'), 'stages': rows,
+            'runtime_surfaces': runtime_surfaces,
             'assessment_coverage': coverage_state,
             'gaps': gaps, 'exhaustive': False, 'security_verdict': 'not_established',
             'independently_verified_exploits': 0}

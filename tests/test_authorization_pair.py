@@ -1,12 +1,15 @@
 """Synthetic imported captures; no live device or API proof is claimed."""
 import copy
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from mobileag.analysis.authorization_pair import AuthorizationPair, compare_authorization_pair
+from mobileag.analysis.authorization_pair import LiveAuthorizationProbe
 from tests.test_guided_assessments import setup, plan, finish, web
+from mobileag.automation.android import digest
 
 
 def payload():
@@ -31,6 +34,116 @@ def test_exact_marker_with_distinct_baselines_produces_only_an_imported_candidat
     assert result['network_requests_sent'] == 0
     assert data['owner_marker'] not in json.dumps(result)
     assert data['other_marker'] not in json.dumps(result)
+
+
+def live_probe(owner_url, other_url):
+    return LiveAuthorizationProbe.model_validate({
+        'owner_capture_id': digest('GET '+owner_url), 'other_capture_id': digest('GET '+other_url),
+        'owner_url': owner_url, 'other_url': other_url,
+        'owner_authorization': 'Bearer synthetic-owner-token',
+        'other_authorization': 'Bearer synthetic-other-token',
+        'marker_path': ['data','marker'],
+        'owner_marker': 'mobileag-test-owner-fixture-marker',
+        'other_marker': 'mobileag-test-other-fixture-marker',
+        'authorized_synthetic_captures': True, 'distinct_controlled_accounts_confirmed': True,
+        'same_owner_resource_requested': True, 'identities_checked': True,
+    })
+
+
+@pytest.mark.asyncio
+async def test_live_authorization_probe_uses_three_read_only_requests_and_persists_no_secrets(setup, monkeypatch):
+    svc,apk,_,_,token=setup
+    origin='https://synthetic.invalid'
+    monkeypatch.setenv('MOBILEAG_ALLOWED_ORIGINS',origin)
+    owner_url=origin+'/v1/items/owner-fixture'
+    other_url=origin+'/v1/items/other-fixture'
+    scope={'devices':[],'packages':[plan(apk).package_name],'origins':[origin],
+           'methods':['GET'],'actions':[]}
+    captures=[{'url':owner_url,'method':'GET','label':'Owner fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200},
+              {'url':other_url,'method':'GET','label':'Other fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200}]
+    captures=[{'url':owner_url,'method':'GET','label':'Owner fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200},
+              {'url':other_url,'method':'GET','label':'Other fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200}]
+    doc=await finish(svc,plan(apk,api=True,dedicated_account_confirmed=True,scope=scope,
+                              captures=captures,max_requests=0),token)
+    assert doc['stages']['api']['status']=='completed_with_observations'
+    marker_owner='mobileag-test-owner-fixture-marker'
+    marker_other='mobileag-test-other-fixture-marker'
+    svc.api_transport=AsyncMock(side_effect=[
+        {'status_code':200,'body':json.dumps({'data':{'marker':marker_owner}})},
+        {'status_code':200,'body':json.dumps({'data':{'marker':marker_other}})},
+        {'status_code':200,'body':json.dumps({'data':{'marker':marker_owner}})},
+    ])
+    monkeypatch.setattr('mobileag.assessments.service.asyncio.sleep',AsyncMock())
+    result=await svc.run_authorization_probe(doc['id'],live_probe(owner_url,other_url),token)
+    assert result['outcome']=='cross_account_disclosure_candidate'
+    assert result['network_requests_sent']==3 and result['basis']=='live_scoped_read_only_probe'
+    assert result['status']=='UNVERIFIED'
+    assert [call.args[1] for call in svc.api_transport.await_args_list]==['GET']*3
+    assert [call.kwargs['headers']['Authorization'] for call in svc.api_transport.await_args_list]==[
+        'Bearer synthetic-owner-token','Bearer synthetic-other-token','Bearer synthetic-other-token']
+    saved=json.dumps(svc.store().get(doc['id']))
+    assert all(secret not in saved for secret in ('synthetic-owner-token','synthetic-other-token',marker_owner,marker_other,owner_url,other_url))
+    coverage=svc.report(doc['id'])['coverage_ledger']['stages']['api']
+    assert coverage['live_read_only_pair_probes']==1
+    assert coverage['authorization_validation']=='live_scoped_read_only_probe'
+    with pytest.raises(ValueError,match='budget exhausted'):
+        await svc.run_authorization_probe(doc['id'],live_probe(owner_url,other_url),token)
+    assert svc.api_transport.await_count==3
+
+
+@pytest.mark.asyncio
+async def test_live_authorization_probe_rejects_unapproved_capture_before_network(setup,monkeypatch):
+    svc,apk,_,_,token=setup
+    origin='https://synthetic.invalid';monkeypatch.setenv('MOBILEAG_ALLOWED_ORIGINS',origin)
+    request=plan(apk,scope={'devices':[],'packages':[plan(apk).package_name],
+        'origins':[origin],'methods':['GET'],'actions':[]})
+    doc=await finish(svc,request,token)
+    doc['stages']['api'].update(status='completed_with_observations',inventory=[])
+    svc.store().save(doc)
+    svc.api_transport=AsyncMock()
+    probe=live_probe(origin+'/owner',origin+'/other')
+    with pytest.raises(PermissionError):await svc.run_authorization_probe(doc['id'],probe,token)
+    svc.api_transport.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_live_authorization_probe_route_returns_redacted_comparison_only(setup,monkeypatch):
+    svc,apk,_,_,token=setup
+    origin='https://synthetic.invalid';monkeypatch.setenv('MOBILEAG_ALLOWED_ORIGINS',origin)
+    owner_url=origin+'/v1/items/owner-route-fixture';other_url=origin+'/v1/items/other-route-fixture'
+    scope={'devices':[],'packages':[plan(apk).package_name],'origins':[origin],
+           'methods':['GET'],'actions':[]}
+    captures=[{'url':owner_url,'method':'GET','label':'Owner fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200},
+              {'url':other_url,'method':'GET','label':'Other fixture','protected':True,
+               'read_only_confirmed':True,'response_status':200}]
+    doc=await finish(svc,plan(apk,api=True,dedicated_account_confirmed=True,scope=scope,
+                              captures=captures,max_requests=0),token)
+    assert doc['stages']['api']['status']=='completed_with_observations'
+    owner='mobileag-test-owner-route-marker';other='mobileag-test-other-route-marker'
+    svc.api_transport=AsyncMock(side_effect=[
+        {'status_code':200,'body':json.dumps({'data':{'marker':owner}})},
+        {'status_code':200,'body':json.dumps({'data':{'marker':other}})},
+        {'status_code':403,'body':'{}'},
+    ])
+    monkeypatch.setattr('mobileag.assessments.service.asyncio.sleep',AsyncMock())
+    body={'owner_capture_id':digest('GET '+owner_url),'other_capture_id':digest('GET '+other_url),
+        'owner_url':owner_url,'other_url':other_url,
+        'owner_authorization':'Bearer synthetic-owner-route-token',
+        'other_authorization':'Bearer synthetic-other-route-token',
+        'marker_path':['data','marker'],'owner_marker':owner,'other_marker':other,
+        'authorized_synthetic_captures':True,'distinct_controlled_accounts_confirmed':True,
+        'same_owner_resource_requested':True,'identities_checked':True}
+    client=TestClient(web.app,headers={'Authorization':'Bearer '+token})
+    response=client.post('/api/assessments/'+doc['id']+'/authorization-probe',json=body)
+    assert response.status_code==200
+    assert response.json()['outcome']=='denial_observed_not_exhaustive'
+    assert all(secret not in response.text for secret in (owner,other,'synthetic-owner-route-token','synthetic-other-route-token',owner_url,other_url))
+    assert all(secret not in json.dumps(svc.store().get(doc['id'])) for secret in (owner,other,'synthetic-owner-route-token','synthetic-other-route-token',owner_url,other_url))
 
 
 @pytest.mark.parametrize('body', ['{}', '{bad', '"mobileag-test-owner-fixture-marker"', '{"data":{"marker":"prefix-mobileag-test-owner-fixture-marker"}}'])

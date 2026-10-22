@@ -3,7 +3,7 @@ import asyncio
 import importlib
 import json
 import zipfile
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 from mobileag.assessments.models import Assessment
@@ -32,6 +32,14 @@ def setup(monkeypatch):
     svc=AssessmentService(lambda:web.OUTPUT_DIR,lambda:web.UPLOAD_DIR,web.repository,lambda t:t==web.app.state.auth_token,
         AsyncMock(side_effect=static),lambda:auto,web.adb_manager,LLMBroker(AsyncMock()),web.hash_file)
     web.adb_manager.installed_apk_identity=AsyncMock(return_value={'status':'matched','apk_count':1,'installed_sha256':'a'*64,'reason':None})
+    web.adb_manager.get_package_info=AsyncMock(return_value={
+        'package_name':PKG,'version_name':'fixture-1','version_code':'1','target_sdk':'35',
+        'requested_permissions':['android.permission.CAMERA','org.example.synthetic.CUSTOM'],
+        'granted_permissions':['android.permission.CAMERA'],
+        'data_dir':'/data/user/0/org.example.synthetic','code_path':'/data/app/fixture.apk',
+    })
+    web.adb_manager.get_process_pids=AsyncMock(return_value=[])
+    web.adb_manager.get_logcat_dump=AsyncMock(return_value=[])
     monkeypatch.setattr(web.app.state,'assessment_service',svc,raising=False)
     return svc,apk,result,driver,web.app.state.auth_token
 
@@ -45,7 +53,9 @@ async def test_guided_static_without_device_or_ai(setup):
     assert doc['status']=='completed' and doc['stages']['sast']['status']=='completed'
     assert doc['stages']['api']['status']=='not_selected' and doc['stages']['dast']['status']=='not_selected'
     driver.snapshot.assert_not_called();svc.broker.transport.assert_not_called()
-    assert not svc.tasks and 'api_authorization' not in json.dumps(doc)
+    assert not svc.tasks and 'authorization_dynamic_comparisons' not in doc
+    # The coverage inventory names this untested surface; it must not imply a probe ran.
+    assert doc['coverage_ledger']['runtime_surfaces']['surfaces']['api_authorization_pair']['runtime_state'] == 'not_tested'
 
 @pytest.mark.asyncio
 async def test_package_mismatch_blocks_all_live_stages(setup):
@@ -72,11 +82,46 @@ async def test_scope_and_model_ceiling_fail_before_static_or_mutation(setup):
 @pytest.mark.asyncio
 async def test_dast_mapping_is_live_observation_not_automatic_taps(setup):
     svc,apk,result,driver,token=setup
+    result['manifest_data']={'permissions':['android.permission.CAMERA','org.example.synthetic.CUSTOM']}
     scope={'devices':['emulator-5554'],'packages':[PKG],'origins':[],'methods':['GET'],'actions':['automation_observe']}
     doc=await finish(svc,plan(apk,dast=True,serial='emulator-5554',component=PKG+'/.Main',dedicated_device_confirmed=True,dedicated_account_confirmed=True,scope=scope),token)
     assert doc['status']=='awaiting_action_review' and doc['stages']['dast']['screens']==1
     driver.snapshot.assert_awaited_once();driver.act.assert_not_called()
     assert doc['stages']['dast']['runtime_artifact_identity']['status']=='matched'
+    snapshot=doc['stages']['dast']['runtime_permission_snapshot']
+    assert snapshot['status']=='observed' and snapshot['granted_requested_permissions']==['android.permission.CAMERA']
+    assert snapshot['requested_not_granted_permissions']==['org.example.synthetic.CUSTOM']
+    assert snapshot['static_comparison_status']=='matched'
+    assert '/data/user/' not in json.dumps(doc) and '/data/app/' not in json.dumps(doc)
+    web.adb_manager.get_package_info.assert_awaited_once_with('emulator-5554',PKG,guard=ANY)
+    assert doc['stages']['dast']['runtime_log_observation']['status']=='baseline_unavailable'
+    assert doc['coverage_ledger']['stages']['dast']['runtime_artifact_binding']=='matched_single_apk'
+    assert doc['coverage_ledger']['stages']['dast']['runtime_permission_snapshot_status']=='observed'
+
+
+@pytest.mark.asyncio
+async def test_guided_dast_logs_only_new_target_pid_candidates_and_redacts_secrets(setup):
+    svc,apk,result,driver,token=setup
+    scope={'devices':['emulator-5554'],'packages':[PKG],'origins':[],'methods':['GET'],'actions':['automation_observe']}
+    before=[
+        f'10-21 10:00:00.000 1234 1234 I ActivityManager: Process: {PKG}, PID: 1234',
+        '10-21 10:00:00.100 1234 1234 I App: app initialized',
+    ]
+    after=before+[
+        '10-21 10:00:01.000 1234 1234 E App: refresh_token=synthetic-runtime-token-value',
+        '10-21 10:00:01.001 9876 9876 E OtherApp: password=unrelated-process-secret',
+    ]
+    web.adb_manager.get_process_pids=AsyncMock(side_effect=[[1234],[1234]])
+    web.adb_manager.get_logcat_dump=AsyncMock(side_effect=[before,after])
+    doc=await finish(svc,plan(apk,dast=True,serial='emulator-5554',component=PKG+'/.Main',
+        dedicated_device_confirmed=True,dedicated_account_confirmed=True,scope=scope),token)
+    evidence=doc['stages']['dast']['runtime_log_observation']
+    assert evidence['status']=='observed' and evidence['new_lines_examined']==2
+    assert evidence['candidate_count']==1
+    assert 'Plaintext Password or Credential' in evidence['observations'][0]['title']
+    persisted=json.dumps(doc)
+    assert 'synthetic-runtime-token-value' not in persisted
+    assert 'unrelated-process-secret' not in persisted
 
 @pytest.mark.asyncio
 async def test_dast_identity_mismatch_is_recorded_and_blocks_live_mapping(setup):

@@ -4,8 +4,10 @@ No HTTP requests, credentials, mutation, inferred ownership, or automatic
 confirmation. Baselines and a distinct marker are required before raising a lead.
 """
 import json
+import re
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from urllib.parse import parse_qsl, urlsplit
 
 
 class Observation(BaseModel):
@@ -44,6 +46,50 @@ class AuthorizationPair(BaseModel):
         ids = [o.evidence_id for o in (self.owner_baseline, self.other_account_baseline, self.cross_account)]
         if len(set(ids)) != 3 or any(not key or len(key) > 128 for key in self.marker_path):
             raise ValueError('Distinct evidence IDs and bounded JSON keys are required')
+        return self
+
+
+class LiveAuthorizationProbe(BaseModel):
+    """Explicit, read-only two-account probe; secrets are request-only values."""
+    model_config = ConfigDict(extra='forbid')
+    owner_capture_id: str = Field(pattern=r'^[a-f0-9]{24}$')
+    other_capture_id: str = Field(pattern=r'^[a-f0-9]{24}$')
+    owner_url: str = Field(min_length=1, max_length=2048)
+    other_url: str = Field(min_length=1, max_length=2048)
+    owner_authorization: SecretStr
+    other_authorization: SecretStr
+    marker_path: list[str] = Field(min_length=1, max_length=8)
+    owner_marker: SecretStr
+    other_marker: SecretStr
+    authorized_synthetic_captures: Literal[True]
+    distinct_controlled_accounts_confirmed: Literal[True]
+    same_owner_resource_requested: Literal[True]
+    identities_checked: Literal[True]
+
+    @model_validator(mode='after')
+    def validate_controls(self):
+        if self.owner_capture_id == self.other_capture_id:
+            raise ValueError('Owner and other-account captures must be distinct')
+        owner_auth = self.owner_authorization.get_secret_value()
+        other_auth = self.other_authorization.get_secret_value()
+        if (not owner_auth or not other_auth or owner_auth == other_auth or
+                len(owner_auth) > 4096 or len(other_auth) > 4096 or
+                '\r' in owner_auth or '\n' in owner_auth or
+                '\r' in other_auth or '\n' in other_auth):
+            raise ValueError('Provide distinct bounded single-line test authorization values')
+        markers = [self.owner_marker.get_secret_value(), self.other_marker.get_secret_value()]
+        if (markers[0] == markers[1] or any(not marker.startswith('mobileag-test-') or
+                not 24 <= len(marker) <= 128 for marker in markers)):
+            raise ValueError('Use distinct bounded synthetic test markers')
+        if any(not key or len(key) > 128 for key in self.marker_path):
+            raise ValueError('JSON marker path keys must be bounded')
+        for value in (self.owner_url, self.other_url):
+            parsed = urlsplit(value)
+            if (parsed.scheme not in {'http', 'https'} or not parsed.hostname or
+                    parsed.username or parsed.password or parsed.fragment or
+                    any(re.search(r'(?i)(token|password|secret|authorization|api.?key|session|cookie)', key)
+                        for key, _ in parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=64))):
+                raise ValueError('Probe URLs must be scoped HTTP(S) URLs without credentials or sensitive query fields')
         return self
 
 

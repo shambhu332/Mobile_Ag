@@ -14,6 +14,7 @@ from mobileag.web.security import check_device,configured_list
 from mobileag.automation.android import digest
 from mobileag.automation.models import CreateRun,ExecuteRun
 from mobileag.security.archives import validate_archive
+from mobileag.security.network import scoped_request
 from mobileag.llm.broker import aggregate,configured,validate_review_selection,LLMReviewError
 
 class AssessmentCancelled(Exception):pass
@@ -22,7 +23,9 @@ class AssessmentService:
     def __init__(self,output,uploads,repository,session_valid,static_runner,automation,adb,broker,hash_file):
         self.output,self.uploads,self.repository,self.session_valid=output,uploads,repository,session_valid
         self.static_runner,self.automation,self.adb,self.broker,self.hash_file=static_runner,automation,adb,broker,hash_file
+        self.api_transport=scoped_request
         self.tasks={}
+        self.authorization_probe_busy=set()
     def store(self):return AssessmentStore(self.output())
     def guard(self,doc,token):
         if not self.session_valid(token):raise PermissionError('Session expired/rotated')
@@ -141,6 +144,23 @@ class AssessmentService:
                     self.persist(doc)
                     if identity.get('status')!='matched':
                         raise PermissionError('Installed build could not be matched to the analyzed APK; DAST was not launched')
+                    # Collect a read-only installed permission snapshot only
+                    # after the installed base APK has matched the analyzed one.
+                    # Never persist dumpsys output, code paths or data paths.
+                    try:
+                        package_info=await self.adb.get_package_info(req.serial,req.package_name,guard=identity_guard)
+                        from mobileag.dast.runtime_package_auditor import summarize_runtime_package
+                        manifest=scan.get('manifest_data') if isinstance(scan.get('manifest_data'),dict) else {}
+                        static_permissions=manifest.get('permissions') if isinstance(manifest.get('permissions'),list) else None
+                        snapshot=summarize_runtime_package(req.package_name,package_info,static_permissions)
+                        doc['stages']['dast']['runtime_permission_snapshot']=snapshot
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        doc['stages']['dast']['runtime_permission_snapshot']={
+                            'status':'unavailable','reason':'Package-manager permission state could not be safely observed',
+                            'proof_status':'not_proven'}
+                    self.persist(doc)
                     if req.launch:
                         def launch_guard():
                             self.guard(doc,token)
@@ -151,11 +171,56 @@ class AssessmentService:
                         result=await self.adb.launch_activity(req.serial,req.component,guard=launch_guard)
                         if result['status']!='success':raise ValueError('Launch failed')
                     self.guard(doc,token)
+                    # Keep a bounded shared-buffer baseline; only new lines
+                    # attributed to the exact target package/PIDs are examined.
+                    try:
+                        from mobileag.dast.runtime_evidence import new_lines
+                        from mobileag.dast.logcat_auditor import LogcatAuditor
+                        baseline_pids=await self.adb.get_process_pids(req.serial,req.package_name,guard=identity_guard)
+                        before_logs=await self.adb.get_logcat_dump(req.serial,lines=500,guard=identity_guard)
+                        self.guard(doc,token)
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        baseline_pids=[];before_logs=[]
+                    log_baseline_available=isinstance(before_logs,list) and bool(before_logs)
                     auto=await self.automation().create(CreateRun(serial=req.serial,package_name=req.package_name,component=req.component,
                         environment='dedicated_staging',dedicated_device_confirmed=True,dedicated_account_confirmed=True,max_steps=req.max_steps,max_requests=0),token)
                     doc['automation_run_id']=auto['id'];screens=len(auto['screens'])
                     doc['stages']['dast'].update(status='awaiting_action_review' if screens else 'paused',screens=screens,run_id=auto['id'],
                         device_metadata=auto.get('device_metadata',{}),authentication_state=auto.get('auth_state','unknown'));self.persist(doc)
+                    try:
+                        await asyncio.sleep(0.5)
+                        self.guard(doc,token)
+                        after_pids=await self.adb.get_process_pids(req.serial,req.package_name,guard=identity_guard)
+                        after_logs=await self.adb.get_logcat_dump(req.serial,lines=500,guard=identity_guard)
+                        if not isinstance(after_logs,list):raise ValueError('Logcat collection did not return a bounded line list')
+                        pids=sorted(set(baseline_pids+after_pids))
+                        post_snapshot_available=bool(after_logs)
+                        delta=new_lines(before_logs,after_logs) if log_baseline_available and post_snapshot_available else []
+                        findings=LogcatAuditor().audit_lines(delta,package_name=req.package_name,
+                                                              process_pids=pids or None)
+                        doc['stages']['dast']['runtime_log_observation']={
+                            'status':'observed' if log_baseline_available and post_snapshot_available else
+                                'post_snapshot_empty_or_unavailable' if log_baseline_available else 'baseline_unavailable',
+                            'new_lines_examined':len(delta),'attributed_pid_count':len(pids),
+                            'candidate_count':len(findings),
+                            'observations':[finding.model_dump(mode='json',include={
+                                'title','description','severity','cwe_id','affected_component','file_path',
+                                'line_number','code_snippet','detection_method','status','remediation'})
+                                for finding in findings[:20]],
+                            'proof_status':'not_proven',
+                            'limitations':['Only bounded logcat output collected during startup/UI mapping was examined.',
+                                           'A shared log buffer and timing do not establish causal input or ordinary-app exploitability.',
+                                           'No new log lines is not evidence that sensitive values are never logged.'],
+                        }
+                    except PermissionError:
+                        raise
+                    except Exception:
+                        doc['stages']['dast']['runtime_log_observation']={
+                            'status':'unavailable','reason':'Target-attributed log observation could not be completed',
+                            'proof_status':'not_proven'}
+                    self.persist(doc)
                 if req.llm_provider:
                     self.guard(doc,token);doc['stages']['llm']['status']='running';self.persist(doc)
                     try:
@@ -221,6 +286,99 @@ class AssessmentService:
         rows.append(result)
         self.persist(doc)
         return result
+
+    async def run_authorization_probe(self,rid,probe,token):
+        """Run three exact, read-only API requests and retain only a marker comparison."""
+        from urllib.parse import urlsplit
+        from mobileag.analysis.authorization_pair import compare_authorization_pair
+        from mobileag.web.security import configured_list
+
+        doc=self.store().get(rid)
+        self.guard(doc,token)
+        if rid in self.tasks or doc.get('status') in {'running','cancelled','interrupted'}:
+            raise ValueError('Assessment must be stopped or complete before a paired API probe')
+        if doc.get('stages',{}).get('api',{}).get('status') not in {'completed_with_observations','completed'}:
+            raise PermissionError('A completed, explicitly scoped API stage is required')
+        owner_parts=urlsplit(probe.owner_url);other_parts=urlsplit(probe.other_url)
+        owner_origin=f'{owner_parts.scheme}://{owner_parts.netloc}'
+        other_origin=f'{other_parts.scheme}://{other_parts.netloc}'
+        if owner_origin != other_origin:
+            raise PermissionError('Both controlled-account URLs must use the same approved origin')
+        if (owner_origin not in doc['scope'].get('origins',[]) or
+                owner_origin not in configured_list('MOBILEAG_ALLOWED_ORIGINS') or
+                'GET' not in doc['scope'].get('methods',[]) or
+                not check_replay(self.repository().get_policy(),probe.owner_url,'GET') or
+                not check_replay(self.repository().get_policy(),probe.other_url,'GET')):
+            raise PermissionError('Paired probe origin or GET method is outside current exact scope')
+        inventory=doc.get('stages',{}).get('api',{}).get('inventory',[])
+        owner_capture=next((c for c in inventory if c.get('id')==probe.owner_capture_id),None)
+        other_capture=next((c for c in inventory if c.get('id')==probe.other_capture_id),None)
+        if not owner_capture or not other_capture or any(
+            not c.get('protected') or c.get('method')!='GET' or c.get('origin')!=owner_origin
+            for c in (owner_capture,other_capture)
+        ):
+            raise PermissionError('Both URLs must match protected GET captures from this assessment')
+        if (digest('GET '+probe.owner_url)!=probe.owner_capture_id or
+                digest('GET '+probe.other_url)!=probe.other_capture_id):
+            raise PermissionError('Probe URLs do not match the approved imported captures')
+        comparisons=doc.setdefault('authorization_dynamic_comparisons',[])
+        if rid in self.authorization_probe_busy:
+            raise ValueError('A paired API probe is already active for this assessment')
+        if doc.get('authorization_probe_attempts',0)>=1:
+            raise ValueError('Paired API probe budget exhausted: one three-request probe per assessment')
+        if not callable(self.api_transport):
+            raise ValueError('Scoped API transport is unavailable')
+
+        # Reserve the fixed three-request budget before network I/O so retries
+        # after timeouts or process interruption cannot silently multiply it.
+        self.authorization_probe_busy.add(rid)
+        try:
+            doc['authorization_probe_attempts']=doc.get('authorization_probe_attempts',0)+1
+            self.persist(doc)
+        except Exception:
+            self.authorization_probe_busy.discard(rid)
+            raise
+
+        requests=[
+            (probe.owner_url,probe.owner_authorization.get_secret_value()),
+            (probe.other_url,probe.other_authorization.get_secret_value()),
+            (probe.owner_url,probe.other_authorization.get_secret_value()),
+        ]
+        try:
+            observations=[]
+            for url,authorization in requests:
+                self.guard(doc,token)
+                if not check_replay(self.repository().get_policy(),url,'GET'):
+                    raise PermissionError('Paired probe scope was revoked')
+                await asyncio.sleep(0.5)
+                self.guard(doc,token)
+                result=await self.api_transport(url,'GET',headers={'Authorization':authorization})
+                body=result.get('body','')
+                if not isinstance(body,str) or len(body.encode('utf-8',errors='replace'))>16384:
+                    body='{}'  # bounded evidence parser treats oversize/non-text as inconclusive
+                observations.append({'status_code':int(result.get('status_code',0)),
+                    'response_json':body,'evidence_id':'probe-'+uuid.uuid4().hex})
+            from mobileag.analysis.authorization_pair import AuthorizationPair
+            pair=AuthorizationPair.model_validate({
+                'artifact_sha256':doc['artifact_sha256'],'capture_id':probe.owner_capture_id,
+                'owner_baseline':observations[0],'other_account_baseline':observations[1],
+                'cross_account':observations[2],'marker_path':probe.marker_path,
+                'owner_marker':probe.owner_marker,'other_marker':probe.other_marker,
+                'authorized_synthetic_captures':True,'distinct_controlled_accounts_confirmed':True,
+                'same_owner_resource_requested':True,'identities_checked':True,
+            })
+            result=compare_authorization_pair(pair)
+            result.update({'network_requests_sent':3,'basis':'live_scoped_read_only_probe',
+                'origin':owner_origin,'owner_capture_id':probe.owner_capture_id,
+                'other_capture_id':probe.other_capture_id,
+                'limitations':['Account identities, synthetic markers, resource ownership and URL semantics are operator assertions.',
+                               'Only exact JSON marker equality is compared; non-JSON, oversized, or changed schemas are inconclusive.',
+                               'A denial observation is not exhaustive authorization proof.']})
+            comparisons.append(result)
+            self.persist(doc)
+            return result
+        finally:
+            self.authorization_probe_busy.discard(rid)
 
     def report(self,rid):
         doc=self.store().get(rid)

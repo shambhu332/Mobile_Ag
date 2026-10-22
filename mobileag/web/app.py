@@ -1994,6 +1994,8 @@ class DastFuzzRequest(BaseModel):
     package_name: BoundedPackageName
     apk_path: Optional[Annotated[str, Field(max_length=4096)]] = None
     activities: Optional[list[BoundedActivityName]] = Field(default=None,max_length=30)
+    services: Optional[list[BoundedActivityName]] = Field(default=None,max_length=30)
+    receivers: Optional[list[BoundedActivityName]] = Field(default=None,max_length=30)
     deeplinks: Optional[list[BoundedDeepLink]] = Field(default=None,max_length=30)
     authorities: Optional[list[BoundedProviderAuthority]] = Field(default=None,max_length=30)
     targeted_extras: Optional[dict[BoundedExtraName, BoundedExtraValues]] = Field(default=None, max_length=30)
@@ -2311,6 +2313,7 @@ async def dispatch_dast_deeplink(req: DispatchDeeplinkRequest, request: Request)
         action="android.intent.action.VIEW",
         data_uri=req.uri,
         guard=guard,
+        synthetic_data_confirmed=req.synthetic_data_confirmed,
     )
     return {
         "status": "success" if not res.get("crashed") else "crashed",
@@ -3408,8 +3411,28 @@ async def run_dast_background_task(req: DastFuzzRequest, token: str) -> None:
 
     guard()
     _, findings = await intent_fuzzer.fuzz_activity_intents(
-        serial, pkg, acts, targeted_extras=req.targeted_extras, guard=guard
+        serial, pkg, acts, targeted_extras=req.targeted_extras, guard=guard,
+        synthetic_data_confirmed=req.synthetic_data_confirmed,
     )
+
+    # One bounded inert explicit dispatch for every operator-selected service/receiver.
+    services, receivers = req.services or [], req.receivers or []
+    if len(services) + len(receivers) > 30:
+        raise HTTPException(422, "Service/receiver IPC component budget exceeded")
+    if services or receivers:
+        await manager.broadcast({
+            "type": "dast_progress",
+            "stage": "Service and Receiver IPC",
+            "message": f"Observing {len(services) + len(receivers)} explicit components with a synthetic marker...",
+            "progress": 58,
+            "timestamp": datetime.now().isoformat(),
+        })
+        guard()
+        _, ipc_findings = await intent_fuzzer.fuzz_service_and_receiver_components(
+            serial, pkg, services=services, receivers=receivers, guard=guard,
+            synthetic_data_confirmed=req.synthetic_data_confirmed,
+        )
+        findings.extend(ipc_findings)
 
     # Deep-link fuzzing
     if req.deeplinks:

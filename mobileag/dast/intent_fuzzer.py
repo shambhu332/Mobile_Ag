@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 from typing import Any, Optional
 
 from mobileag.dast.adb_manager import ADBManager
@@ -28,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 class IntentFuzzer:
     """Exerciser and fuzzer for Android IPC components, URI schemes, and storage forensics."""
+
+    MAX_COMPONENT_CASES = 30
+    _SERIAL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+    _PACKAGE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\Z")
+    _COMPONENT_CLASS_RE = re.compile(r"(?:\.[A-Za-z_$][A-Za-z0-9_.$]*|[A-Za-z][A-Za-z0-9_.$]*)\Z")
+    _ACTION_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.]{0,255}\Z")
 
     def __init__(
         self,
@@ -57,16 +64,63 @@ class IntentFuzzer:
         data_uri: Optional[str] = None,
         extra_args: Optional[list[str]] = None,
         guard=None,
+        *,
+        component_type: str = "activity",
+        synthetic_data_confirmed: bool = False,
     ) -> dict[str, Any]:
-        """Launch a specific component via `am start` and monitor for crash/leak."""
-        full_comp = component_name if "/" in component_name else f"{package_name}/{component_name}"
+        """Dispatch one exact component with inert test inputs and observe target logs.
 
-        cmd_args = ["-s", serial, "shell", "am", "start", "-W"]
+        Activity Manager output is reduced to a bounded status; it is never
+        copied into durable evidence. ADB shell is a privileged diagnostic
+        caller, not an ordinary third-party-app reproduction.
+        """
+        if synthetic_data_confirmed is not True:
+            raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
+        if (not isinstance(serial, str) or not self._SERIAL_RE.fullmatch(serial)
+                or not isinstance(package_name, str) or not self._PACKAGE_RE.fullmatch(package_name)
+                or not isinstance(component_type, str) or component_type not in {"activity", "service", "receiver"}
+                or not isinstance(component_name, str) or len(component_name) > 512):
+            raise ValueError("IPC dispatch target is invalid or exceeds limits")
+        full_comp = ""
+        if component_name:
+            if component_name.count("/") > 1:
+                raise ValueError("IPC component name is invalid")
+            if "/" in component_name:
+                component_package, class_name = component_name.split("/", 1)
+                if component_package != package_name:
+                    raise ValueError("IPC component must belong to the approved package")
+            else:
+                component_package, class_name = package_name, component_name
+            if (not self._COMPONENT_CLASS_RE.fullmatch(class_name)
+                    or (not class_name.startswith(".") and not class_name.startswith(package_name + "."))):
+                raise ValueError("IPC component name is invalid")
+            full_comp = f"{component_package}/{class_name}"
+        elif component_type != "activity" or not (action or data_uri):
+            raise ValueError("An explicit component or activity action/data URI is required")
+        if action is not None and (not isinstance(action, str) or not self._ACTION_RE.fullmatch(action)):
+            raise ValueError("Intent action is invalid or exceeds limits")
+        if data_uri is not None and (not isinstance(data_uri, str) or not data_uri or len(data_uri) > 8192
+                or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in data_uri)):
+            raise ValueError("Intent data URI is invalid or exceeds limits")
+        if extra_args is not None:
+            if (not isinstance(extra_args, list) or len(extra_args) > 96 or len(extra_args) % 3 != 0
+                    or any(not isinstance(extra_args[i], str) or extra_args[i] != "--es"
+                           or not isinstance(extra_args[i + 1], str)
+                           or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,127}", extra_args[i + 1])
+                           or not isinstance(extra_args[i + 2], str) or len(extra_args[i + 2]) > 512
+                           or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in extra_args[i + 2])
+                           for i in range(0, len(extra_args), 3))):
+                raise ValueError("Only bounded synthetic string extras are supported")
+
+        operation = {"activity": "start", "service": "startservice", "receiver": "broadcast"}[component_type]
+        cmd_args = ["-s", serial, "shell", "am", operation]
+        if component_type == "activity":
+            cmd_args.append("-W")
         if action:
             cmd_args.extend(["-a", action])
         if data_uri:
             cmd_args.extend(["-d", data_uri])
-        if not action and not data_uri:
+        if full_comp:
             cmd_args.extend(["-n", full_comp])
         if extra_args:
             cmd_args.extend(extra_args)
@@ -76,13 +130,14 @@ class IntentFuzzer:
             cmd_args.extend(["-p", package_name])
 
         result: dict[str, Any] = {
-            "component": full_comp,
+            "component": full_comp or "[implicit activity intent]",
+            "component_type": component_type,
             "action": action,
             "data_uri": redact(data_uri),
             "crashed": False,
             "crash_exception": None,
             "findings": [],
-            "raw_output": "",
+            "dispatch_status": "not_attempted",
         }
 
         def checked_guard():
@@ -107,9 +162,10 @@ class IntentFuzzer:
             code, stdout, stderr = await self.adb._exec_cmd(cmd_args, timeout=3.0)
             checked_guard()
             out_text = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
-            result["raw_output"] = redact(out_text.strip())
             if code != 0 or "Error:" in out_text:
+                result["dispatch_status"] = "rejected_or_failed"
                 return result
+            result["dispatch_status"] = "accepted_by_activity_manager"
 
             # Small delay to capture asynchronous runtime exceptions on Android main thread
             await asyncio.sleep(0.5)
@@ -128,9 +184,9 @@ class IntentFuzzer:
 
         except PermissionError:
             raise
-        except Exception as e:
-            logger.warning("Error exercising component %s: %s", full_comp, e)
-            result["raw_output"] = redact(f"Execution error: {e}")
+        except Exception:
+            logger.warning("IPC component observation failed; diagnostic output withheld")
+            result["dispatch_status"] = "observation_unavailable"
 
         return result
 
@@ -141,8 +197,12 @@ class IntentFuzzer:
         activities: list[str],
         targeted_extras: Optional[dict[str, list[str]]] = None,
         guard=None,
+        *,
+        synthetic_data_confirmed: bool = False,
     ) -> tuple[list[dict[str, Any]], list[Finding]]:
         """Systematically exercise activities with empty, null, boundary, and SAST-bound extras."""
+        if synthetic_data_confirmed is not True:
+            raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
         results: list[dict[str, Any]] = []
         all_findings: list[Finding] = []
 
@@ -173,6 +233,7 @@ class IntentFuzzer:
                     component_name=act,
                     extra_args=extras,
                     guard=guard,
+                    synthetic_data_confirmed=synthetic_data_confirmed,
                 )
                 res["test_name"] = test_name
                 results.append(res)
@@ -183,6 +244,58 @@ class IntentFuzzer:
                     break
 
         return results, all_findings
+
+    async def fuzz_service_and_receiver_components(
+        self,
+        serial: str,
+        package_name: str,
+        *,
+        services: Optional[list[str]] = None,
+        receivers: Optional[list[str]] = None,
+        guard=None,
+        synthetic_data_confirmed: bool = False,
+    ) -> tuple[list[dict[str, Any]], list[Finding]]:
+        """Make one bounded explicit synthetic dispatch to each named component.
+
+        The caller must source names from the exact reviewed APK/manifest and
+        obtain per-run approval. These are shell-caller observations only.
+        """
+        if synthetic_data_confirmed is not True:
+            raise PermissionError("Researcher-controlled target and synthetic test data must be confirmed")
+        if (not isinstance(services, (list, tuple)) or not isinstance(receivers, (list, tuple))
+                or not isinstance(serial, str) or not self._SERIAL_RE.fullmatch(serial)
+                or not isinstance(package_name, str) or not self._PACKAGE_RE.fullmatch(package_name)):
+            raise ValueError("Service and receiver component lists are required")
+        if len(services) + len(receivers) > self.MAX_COMPONENT_CASES:
+            raise ValueError("IPC component dispatch budget exceeded")
+        # Validate the complete batch before the first device operation.
+        all_components = [(kind, item) for kind, items in (("service", services), ("receiver", receivers))
+                          for item in items]
+        if any(not isinstance(item, str) or not item or len(item) > 512 for _, item in all_components):
+            raise ValueError("IPC component name is invalid or exceeds limits")
+        if len({(kind, item) for kind, item in all_components}) != len(all_components):
+            raise ValueError("Duplicate IPC component names are not allowed")
+        for _, item in all_components:
+            normalized = item.split("/", 1)[1] if "/" in item and item.count("/") == 1 else item
+            component_package = item.split("/", 1)[0] if "/" in item and item.count("/") == 1 else package_name
+            if (item.count("/") > 1 or component_package != package_name
+                    or not self._COMPONENT_CLASS_RE.fullmatch(normalized)
+                    or (not normalized.startswith(".") and not normalized.startswith(package_name + "."))):
+                raise ValueError("IPC component must be valid and belong to the approved package")
+        results: list[dict[str, Any]] = []
+        findings: list[Finding] = []
+        for component_type, components in (("service", services), ("receiver", receivers)):
+            for component in components:
+                result = await self.exercise_component(
+                    serial, package_name, component,
+                    extra_args=["--es", "mobileag_canary", "synthetic"],
+                    guard=guard, component_type=component_type,
+                    synthetic_data_confirmed=synthetic_data_confirmed,
+                )
+                result["test_name"] = "synthetic_explicit_component_dispatch"
+                results.append(result)
+                findings.extend(result["findings"])
+        return results, findings
 
     async def fuzz_deeplinks(
         self,

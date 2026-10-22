@@ -150,6 +150,7 @@ async def test_intent_fuzzer_crash_capture():
         package_name="com.target.app",
         component_name="com.target.app.VulnActivity",
         guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
 
     assert res["crashed"] is True

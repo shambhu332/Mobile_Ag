@@ -149,6 +149,7 @@ async def test_intent_crash_requires_fresh_target_evidence(monkeypatch, scenario
                           get_logcat_dump=AsyncMock(side_effect=[before, after]))
     result = await IntentFuzzer(adb=adb).exercise_component(
         'synthetic', 'org.example.fixture', '.Entry', guard=lambda: None,
+        synthetic_data_confirmed=True,
     )
     assert result['crashed'] is (scenario == 'new_target')
     if result['findings']:
@@ -167,7 +168,8 @@ async def test_intent_revocation_during_baseline_blocks_launch(monkeypatch):
             raise PermissionError('Synthetic revocation')
     adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock(side_effect=baseline))
     with pytest.raises(PermissionError):
-        await IntentFuzzer(adb=adb).exercise_component('synthetic', 'org.example.fixture', '.Entry', guard=guard)
+        await IntentFuzzer(adb=adb).exercise_component('synthetic', 'org.example.fixture', '.Entry', guard=guard,
+                                                       synthetic_data_confirmed=True)
     adb._exec_cmd.assert_not_awaited()
 
 
@@ -177,6 +179,7 @@ async def test_intent_explicit_false_scope_denial_blocks_baseline():
     with pytest.raises(PermissionError):
         await IntentFuzzer(adb=adb).exercise_component(
             'synthetic', 'org.example.fixture', '.Entry', guard=lambda: False,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
@@ -192,9 +195,70 @@ async def test_intent_async_scope_guard_fails_closed_before_baseline():
     with pytest.raises(PermissionError, match="must be synchronous"):
         await IntentFuzzer(adb=adb).exercise_component(
             'synthetic', 'org.example.fixture', '.Entry', guard=async_deny,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_not_awaited()
     adb._exec_cmd.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_service_receiver_ipc_dispatch_is_explicit_bounded_and_redacts_adb_output(monkeypatch):
+    import mobileag.dast.intent_fuzzer as module
+    monkeypatch.setattr(module, 'asyncio', SimpleNamespace(sleep=AsyncMock()))
+    adb = SimpleNamespace(
+        _exec_cmd=AsyncMock(return_value=(0, b'accepted syntheticSecretEcho', b'')),
+        get_logcat_dump=AsyncMock(side_effect=[[], [], [], []]),
+    )
+    results, findings = await IntentFuzzer(adb=adb).fuzz_service_and_receiver_components(
+        'emulator-5554', 'org.example.fixture',
+        services=['.SyncService'], receivers=['org.example.fixture/.RefreshReceiver'],
+        guard=lambda: True, synthetic_data_confirmed=True,
+    )
+    assert findings == []
+    assert [result['dispatch_status'] for result in results] == [
+        'accepted_by_activity_manager', 'accepted_by_activity_manager']
+    assert all('raw_output' not in result and 'syntheticSecretEcho' not in repr(result) for result in results)
+    commands = [call.args[0] for call in adb._exec_cmd.await_args_list]
+    assert commands[0][4] == 'startservice' and commands[1][4] == 'broadcast'
+    assert all(commands[index].count('--es') == 1 for index in (0, 1))
+    assert all(commands[index][commands[index].index('-n') + 1].startswith('org.example.fixture/')
+               for index in (0, 1))
+
+
+@pytest.mark.asyncio
+async def test_service_receiver_ipc_dispatch_requires_confirmation_and_caps_total_components():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    fuzzer = IntentFuzzer(adb=adb)
+    with pytest.raises(PermissionError, match='synthetic test data'):
+        await fuzzer.fuzz_service_and_receiver_components(
+            'emulator-5554', 'org.example.fixture', services=['.SyncService'], receivers=[],
+            guard=lambda: True,
+        )
+    with pytest.raises(ValueError, match='budget'):
+        await fuzzer.fuzz_service_and_receiver_components(
+            'emulator-5554', 'org.example.fixture', services=['.S'] * 16, receivers=['.R'] * 15,
+            guard=lambda: True, synthetic_data_confirmed=True,
+        )
+    adb._exec_cmd.assert_not_awaited()
+    adb.get_logcat_dump.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_component_ipc_rejects_cross_package_and_unsafe_extra_flags_before_device_io():
+    adb = SimpleNamespace(_exec_cmd=AsyncMock(), get_logcat_dump=AsyncMock())
+    fuzzer = IntentFuzzer(adb=adb)
+    with pytest.raises(ValueError, match='approved package'):
+        await fuzzer.exercise_component(
+            'emulator-5554', 'org.example.fixture', 'org.attacker/.Activity',
+            guard=lambda: True, synthetic_data_confirmed=True,
+        )
+    with pytest.raises(ValueError, match='synthetic string extras'):
+        await fuzzer.exercise_component(
+            'emulator-5554', 'org.example.fixture', '.Activity', extra_args=['--user', '0'],
+            guard=lambda: True, synthetic_data_confirmed=True,
+        )
+    adb._exec_cmd.assert_not_awaited()
+    adb.get_logcat_dump.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -214,6 +278,7 @@ async def test_intent_explicit_false_after_baseline_blocks_launch(monkeypatch):
     with pytest.raises(PermissionError):
         await IntentFuzzer(adb=adb).exercise_component(
             'synthetic', 'org.example.fixture', '.Entry', guard=revoke_after_baseline,
+            synthetic_data_confirmed=True,
         )
     adb.get_logcat_dump.assert_awaited_once()
     adb._exec_cmd.assert_not_awaited()

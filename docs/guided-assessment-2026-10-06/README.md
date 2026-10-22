@@ -86,6 +86,8 @@ The persisted guided-DAST `runtime_surfaces` ledger makes this boundary explicit
 
 The opt-in advanced DAST fuzzer now also accepts explicitly named service and receiver components. It performs at most one explicit dispatch per selected component with a fixed synthetic string extra, after whole-batch validation, synthetic-data confirmation and repeated exact-scope guard checks; Activity Manager output is not retained. This is a bounded shell-caller diagnostic, not a third-party-app authorization test, and any apparent crash/leak remains an unverified observation. The guided assessment stage does not run this advanced matrix automatically.
 
+The read-only UIAutomator observer now reports the count of visible WebView-class widgets in the captured foreground hierarchy, retaining no page text or URL. A positive count only establishes widget presence in that snapshot; a zero count does not mean the app has no WebViews. Origin validation, JavaScript settings, bridge exposure, navigation behavior, TLS decisions and script execution remain untested by this observer.
+
 Still not implemented/proven: native iOS live automation, credential/form filling, transparent TLS capture, a general authorization/ownership test matrix beyond the bounded exact-marker two-account probe, write/payment/business transactions, full screen-reader/contrast/native performance testing, every platform DAST check, representative corpus/load acceptance or numerical production certification. LLM integration does not turn those gaps into coverage. Owned APK/package, exact staging origins, dedicated account identifiers and current unrooted devices remain necessary for real-app acceptance; never use discovered credentials or test unrelated targets.
 
 ## Security continuation

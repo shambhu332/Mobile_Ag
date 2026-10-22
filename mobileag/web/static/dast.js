@@ -500,9 +500,9 @@
             }
           });
           renderDastFindings();
-          showToast(`Provider Audit: ${findings.length} IPC/SQL flaws found!`, 'error');
+          showToast(`Provider diagnostic: ${findings.length} unverified observation(s); review evidence before triage`, 'info');
         } else {
-          showToast('No candidates reported in this diagnostic; authorization is not established', 'success');
+          showToast('No observations returned. This does not establish authorization or absence of provider issues.', 'info');
         }
       } catch (e) {
         showToast(`Provider audit error: ${e}`, 'error');
